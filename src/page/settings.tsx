@@ -1,6 +1,6 @@
 import { Button, Form, Input, Space } from "antd";
 import BasicLayout from "../components/layout";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { AppConfig } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import useMessage from "antd/es/message/useMessage";

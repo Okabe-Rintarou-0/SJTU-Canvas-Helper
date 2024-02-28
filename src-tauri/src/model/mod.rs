@@ -16,9 +16,17 @@ pub struct File {
     pub display_name: String,
     pub filename: String,
     pub url: String,
+    pub size: u64,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppConfig {
     pub token: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProgressPayload {
+    pub uuid: String,
+    pub downloaded: u64,
+    pub total: u64,
 }

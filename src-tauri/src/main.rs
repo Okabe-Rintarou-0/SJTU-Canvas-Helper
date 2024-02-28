@@ -5,7 +5,8 @@ use std::fs;
 
 use client::Client;
 use error::Result;
-use model::{AppConfig, Course, File};
+use model::{AppConfig, Course, File, ProgressPayload};
+use tauri::{Runtime, Window};
 use tokio::sync::RwLock;
 mod client;
 mod error;
@@ -60,9 +61,15 @@ impl App {
             .await
     }
 
-    async fn download_file(&self, url: &str, out_path: &str) -> Result<()> {
+    async fn download_file<F: Fn(ProgressPayload) + Send>(
+        &self,
+        file: &File,
+        progress_handler: F,
+    ) -> Result<()> {
+        let guard: tokio::sync::RwLockReadGuard<'_, AppConfig> = self.config.read().await;
+        let token = guard.token.clone();
         self.client
-            .download_file(url, out_path, &self.config.read().await.token)
+            .download_file(file, &token, progress_handler)
             .await?;
         Ok(())
     }
@@ -88,8 +95,11 @@ async fn get_config() -> AppConfig {
 }
 
 #[tauri::command]
-async fn download_file(url: String, out_path: String) -> Result<()> {
-    APP.download_file(&url, &out_path).await
+async fn download_file<R: Runtime>(window: Window<R>, file: File) -> Result<()> {
+    APP.download_file(&file, &|progress| {
+        let _ = window.emit("download://progress", progress);
+    })
+    .await
 }
 
 #[tauri::command]

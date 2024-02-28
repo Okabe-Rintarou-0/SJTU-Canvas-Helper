@@ -4,9 +4,8 @@ use reqwest::Response;
 
 use crate::{
     error::Result,
-    model::{Course, File},
+    model::{Course, File, ProgressPayload},
 };
-
 const BASE_URL: &'static str = "https://oc.sjtu.edu.cn";
 
 pub struct Client {
@@ -47,15 +46,30 @@ impl Client {
         Ok(courses)
     }
 
-    pub async fn download_file(&self, url: &str, out_path: &str, token: &str) -> Result<()> {
-        let response = self
-            .get_request(url, None, token)
+    pub async fn download_file<F: Fn(ProgressPayload) + Send>(
+        &self,
+        file: &File,
+        token: &str,
+        progress_handler: F,
+    ) -> Result<()> {
+        let mut response = self
+            .get_request(&file.url, None, token)
             .await?
             .error_for_status()?;
-        let body = response.bytes().await?;
-        let mut file = fs::File::create(out_path)?;
-        file.write_all(&body)?;
-        tracing::info!("File downloaded successfully at: {}", out_path);
+
+        let mut payload = ProgressPayload {
+            uuid: file.uuid.clone(),
+            downloaded: 0,
+            total: file.size,
+        };
+        let mut file = fs::File::create(format!("../{}", &file.display_name))?;
+        while let Some(chunk) = response.chunk().await? {
+            payload.downloaded += chunk.len() as u64;
+            progress_handler(payload.clone());
+            file.write_all(&chunk)?;
+        }
+
+        tracing::info!("File downloaded successfully!");
         Ok(())
     }
 
