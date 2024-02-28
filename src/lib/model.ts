@@ -24,6 +24,7 @@ export type FileDownloadTask = {
 
 export type AppConfig = {
     token: string,
+    save_path: string,
 }
 
 export type ProgressPayload = {

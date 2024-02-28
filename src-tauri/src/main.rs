@@ -1,7 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::fs;
+use std::{fs, path::Path};
 
 use client::Client;
 use error::Result;
@@ -66,16 +66,27 @@ impl App {
         file: &File,
         progress_handler: F,
     ) -> Result<()> {
-        let guard: tokio::sync::RwLockReadGuard<'_, AppConfig> = self.config.read().await;
-        let token = guard.token.clone();
+        let guard = self.config.read().await;
+        let token = &guard.token.clone();
+        let save_path = &guard.save_path.clone();
         self.client
-            .download_file(file, &token, progress_handler)
+            .download_file(file, token, save_path, progress_handler)
             .await?;
         Ok(())
     }
 
     async fn save_config(&self, config: AppConfig) {
         *self.config.write().await = config;
+    }
+
+    fn check_path(path: &str) -> bool {
+        let path = Path::new(path);
+        if path.exists() {
+            if let Ok(metadata) = fs::metadata(path) {
+                return metadata.is_dir();
+            }
+        }
+        false
     }
 }
 
@@ -92,6 +103,11 @@ async fn list_files(course_id: i32) -> Result<Vec<File>> {
 #[tauri::command]
 async fn get_config() -> AppConfig {
     APP.get_config().await
+}
+
+#[tauri::command]
+fn check_path(path: String) -> bool {
+    App::check_path(&path)
 }
 
 #[tauri::command]
@@ -118,7 +134,8 @@ fn main() {
             list_files,
             get_config,
             save_config,
-            download_file
+            download_file,
+            check_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

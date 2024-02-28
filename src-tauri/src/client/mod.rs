@@ -1,4 +1,4 @@
-use std::{fs, io::Write};
+use std::{fs, io::Write, path::Path};
 
 use reqwest::Response;
 
@@ -50,6 +50,7 @@ impl Client {
         &self,
         file: &File,
         token: &str,
+        save_path: &str,
         progress_handler: F,
     ) -> Result<()> {
         let mut response = self
@@ -62,7 +63,8 @@ impl Client {
             downloaded: 0,
             total: file.size,
         };
-        let mut file = fs::File::create(format!("../{}", &file.display_name))?;
+        let path = Path::new(save_path).join(&file.display_name);
+        let mut file = fs::File::create(path.to_str().unwrap())?;
         while let Some(chunk) = response.chunk().await? {
             payload.downloaded += chunk.len() as u64;
             progress_handler(payload.clone());

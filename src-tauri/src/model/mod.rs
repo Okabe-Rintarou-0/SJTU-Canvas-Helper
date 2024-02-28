@@ -21,7 +21,10 @@ pub struct File {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppConfig {
+    #[serde(default)]
     pub token: String,
+    #[serde(default)]
+    pub save_path: String
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

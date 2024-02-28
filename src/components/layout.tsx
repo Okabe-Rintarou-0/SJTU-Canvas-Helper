@@ -41,7 +41,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
                 </div>
             </Content>
             <Footer style={{ textAlign: 'center' }}>
-                SJTU Canvas Helper ©{new Date().getFullYear()} Created by Okabe
+                SJTU Canvas Helper ©{new Date().getFullYear()} Created by <a target="_blank" href='https://github.com/Okabe-Rintarou-0'>Okabe</a>
             </Footer>
         </Layout>
     </Layout>

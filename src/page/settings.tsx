@@ -29,9 +29,14 @@ export default function SettingsPage() {
         }
     }
 
+    const savePathValidator = async (_: any, savePath: string) => {
+        let valid = await invoke("check_path", { path: savePath });
+        return valid ? Promise.resolve() : Promise.reject(new Error("保存路径无效！请检查目录是否存在！"));
+    }
+
     return <BasicLayout>
         {contextHolder}
-        <Space direction="vertical">
+        <Space direction="vertical" style={{ width: "100%" }}>
             <Form
                 form={form}
                 layout="vertical"
@@ -44,6 +49,9 @@ export default function SettingsPage() {
                     required
                 >
                     <Password placeholder="请输入 Canvas Token" />
+                </Form.Item>
+                <Form.Item name="save_path" label="下载保存目录" required rules={[{ validator: savePathValidator }]}>
+                    <Input placeholder="请输入文件下载保存目录" />
                 </Form.Item>
                 <Form.Item>
                     <Button type="primary" htmlType="submit">
