@@ -17,6 +17,20 @@ pub struct File {
     pub filename: String,
     pub url: String,
     pub size: u64,
+    pub locked: bool,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Folder {
+    pub id: i64,
+    pub name: String,
+    pub full_name: String,
+    pub parent_folder_id: Option<i64>,
+    pub locked: bool,
+    pub folders_url: String,
+    pub files_url: String,
+    pub files_count: i64,
+    pub folders_count: i64,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -24,7 +38,7 @@ pub struct AppConfig {
     #[serde(default)]
     pub token: String,
     #[serde(default)]
-    pub save_path: String
+    pub save_path: String,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

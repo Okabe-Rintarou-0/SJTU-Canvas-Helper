@@ -1,19 +1,24 @@
-import { Button, Checkbox, CheckboxProps, Progress, Select, Space, Table } from "antd";
+import { Button, Checkbox, CheckboxProps, Progress, Select, Space, Table, Tooltip } from "antd";
 import { appWindow } from "@tauri-apps/api/window";
 import BasicLayout from "../components/layout";
 import { useEffect, useState } from "react";
-import { Course, File, FileDownloadTask, ProgressPayload } from "../lib/model";
+import { Course, File, FileDownloadTask, Folder, ProgressPayload } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import useMessage from "antd/es/message/useMessage";
+import { InfoCircleOutlined } from '@ant-design/icons';
 
 export default function FilePage() {
+    const ALL_FILES = "全部文件";
     const [courses, setCourses] = useState<Course[]>([]);
-    const [_selectedCourse, setSelectedCourse] = useState<string>("");
+    const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [files, setFiles] = useState<File[]>([]);
+    const [folders, setFolders] = useState<Folder[]>([]);
     const [showAllFiles, setShowAllFiles] = useState<boolean>(false);
     const [downloadTasks, setDownloadTasks] = useState<FileDownloadTask[]>([]);
     const [messageApi, contextHolder] = useMessage();
+    const [operating, setOperating] = useState<boolean>(false);
+    const [currentFolder, setCurrentFolder] = useState<string>(ALL_FILES);
     useEffect(() => {
         initCourses();
         appWindow.listen<ProgressPayload>("download://progress", ({ payload }) => {
@@ -30,17 +35,65 @@ export default function FilePage() {
         }
     }
 
-    const handleSelect = async (selected: string) => {
-        setSelectedCourse(selected);
+    const handleGetFiles = async (courseId: number) => {
+        setOperating(true);
+        try {
+            let files = await invoke("list_course_files", { courseId }) as File[];
+            files.map(file => file.key = file.uuid);
+            setFiles(files);
+        } catch (_) {
+            setFiles([]);
+        }
+        setOperating(false);
+    }
+
+    const handleGetFolderFiles = async (folderId: number) => {
+        setOperating(true);
+        try {
+            let files = await invoke("list_folder_files", { folderId }) as File[];
+            files.map(file => file.key = file.uuid);
+            setFiles(files);
+        } catch (e) {
+            setFiles([]);
+        }
+        setOperating(false);
+    }
+
+    const handleGetFolders = async (courseId: number) => {
+        setOperating(true);
+        try {
+            let folders = await invoke("list_folders", { courseId }) as Folder[];
+            setFolders(folders);
+        } catch (e) {
+            setFolders([]);
+        }
+        setOperating(false);
+    }
+
+    const handleCourseSelect = async (selected: string) => {
         let selectedCourse = courses.find(course => course.name === selected);
         if (selectedCourse) {
-            try {
-                let files = await invoke("list_files", { courseId: selectedCourse.id }) as File[];
-                files.map(file => file.key = file.uuid);
-                setFiles(files);
-            } catch (_) {
-                setFiles([]);
-            }
+            setSelectedCourseId(selectedCourse.id);
+            handleGetFiles(selectedCourse.id);
+            handleGetFolders(selectedCourse.id);
+            setSelectedFiles([]);
+            setCurrentFolder(ALL_FILES);
+        }
+    }
+
+    const handleFolderSelect = async (selected: string) => {
+        if (selected === currentFolder) {
+            return;
+        }
+        setCurrentFolder(selected);
+        if (selected == ALL_FILES) {
+            handleGetFiles(selectedCourseId);
+            return;
+        }
+
+        let selectedFolder = folders.find(folder => folder.full_name === selected);
+        if (selectedFolder) {
+            handleGetFolderFiles(selectedFolder.id);
         }
     }
 
@@ -74,7 +127,7 @@ export default function FilePage() {
             await invoke("download_file", { file });
             // unlisten();
             updateTaskProgress(file.uuid, 100);
-            messageApi.success("下载成功！");
+            messageApi.success("下载成功！", 0.5);
         } catch (e) {
             messageApi.error(e as string);
         }
@@ -141,6 +194,11 @@ export default function FilePage() {
         }
     }
 
+    const folderOptions = [{ label: ALL_FILES, value: ALL_FILES }, ...folders.map(folder => ({
+        label: folder.full_name,
+        value: folder.full_name
+    }))];
+
     return <BasicLayout>
         {contextHolder}
         <Space direction="vertical" style={{ width: "100%" }} size={"large"}>
@@ -148,15 +206,34 @@ export default function FilePage() {
                 <span>选择课程：</span>
                 <Select
                     style={{ width: 300 }}
-                    onChange={handleSelect}
+                    disabled={operating}
+                    onChange={handleCourseSelect}
                     options={courses.map(course => ({
                         label: course.name,
                         value: course.name
                     }))}
                 />
             </Space>
-            <Checkbox onChange={handleSetShowAllFiles}>显示全部</Checkbox>
-            <Table style={{ width: "100%" }} columns={fileColumns} dataSource={showAllFiles ? files : files.filter(file => file.url)} rowSelection={{ onChange: handleSelected }} />
+            <Space>
+                <span>选择目录：</span>
+                <Select
+                    style={{ width: 300 }}
+                    disabled={operating}
+                    onChange={handleFolderSelect}
+                    value={currentFolder}
+                    defaultValue={currentFolder}
+                    options={folderOptions}
+                />
+                <Tooltip placement="top" title={"course files 为默认的根目录名"}>
+                    <InfoCircleOutlined />
+                </Tooltip>
+            </Space>
+            <Checkbox onChange={handleSetShowAllFiles} defaultChecked>只显示可下载文件</Checkbox>
+            <Table style={{ width: "100%" }}
+                columns={fileColumns}
+                dataSource={showAllFiles ? files : files.filter(file => file.url)}
+                rowSelection={{ onChange: handleSelected }}
+            />
             <Button onClick={handleDownloadSelectedFiles}>下载</Button>
             <Table style={{ width: "100%" }} columns={task_columns} dataSource={downloadTasks} />
         </Space>

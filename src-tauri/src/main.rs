@@ -5,7 +5,7 @@ use std::{fs, path::Path};
 
 use client::Client;
 use error::Result;
-use model::{AppConfig, Course, File, ProgressPayload};
+use model::{AppConfig, Course, File, Folder, ProgressPayload};
 use tauri::{Runtime, Window};
 use tokio::sync::RwLock;
 mod client;
@@ -55,9 +55,21 @@ impl App {
             .await
     }
 
-    async fn list_files(&self, course_id: i32) -> Result<Vec<File>> {
+    async fn list_course_files(&self, course_id: i32) -> Result<Vec<File>> {
         self.client
-            .list_files(course_id, &self.config.read().await.token)
+            .list_course_files(course_id, &self.config.read().await.token)
+            .await
+    }
+
+    async fn list_folder_files(&self, folder_id: i32) -> Result<Vec<File>> {
+        self.client
+            .list_folder_files(folder_id, &self.config.read().await.token)
+            .await
+    }
+
+    async fn list_folders(&self, course_id: i32) -> Result<Vec<Folder>> {
+        self.client
+            .list_folders(course_id, &self.config.read().await.token)
             .await
     }
 
@@ -96,8 +108,18 @@ async fn list_courses() -> Result<Vec<Course>> {
 }
 
 #[tauri::command]
-async fn list_files(course_id: i32) -> Result<Vec<File>> {
-    APP.list_files(course_id).await
+async fn list_course_files(course_id: i32) -> Result<Vec<File>> {
+    APP.list_course_files(course_id).await
+}
+
+#[tauri::command]
+async fn list_folder_files(folder_id: i32) -> Result<Vec<File>> {
+    APP.list_folder_files(folder_id).await
+}
+
+#[tauri::command]
+async fn list_folders(course_id: i32) -> Result<Vec<Folder>> {
+    APP.list_folders(course_id).await
 }
 
 #[tauri::command]
@@ -131,7 +153,9 @@ fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             list_courses,
-            list_files,
+            list_course_files,
+            list_folder_files,
+            list_folders,
             get_config,
             save_config,
             download_file,
