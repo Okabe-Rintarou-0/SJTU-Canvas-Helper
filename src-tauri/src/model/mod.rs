@@ -47,3 +47,16 @@ pub struct ProgressPayload {
     pub downloaded: u64,
     pub total: u64,
 }
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct User {
+    pub id: i64,
+    pub name: String,
+    pub created_at: String,
+    pub sortable_name: String,
+    pub short_name: String,
+    #[serde(default)]
+    pub login_id: String,
+    #[serde(default)]
+    pub email: String,
+}

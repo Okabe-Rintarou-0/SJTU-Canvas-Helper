@@ -5,11 +5,13 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum ClientError {
     #[error("Network error: {0}")]
-    NetworkError(#[from] reqwest::Error),
+    Network(#[from] reqwest::Error),
     #[error("Json parse error: {0}")]
-    JsonParseError(#[from] serde_json::Error),
+    JsonParse(#[from] serde_json::Error),
     #[error("I/O error: {0}")]
-    IOError(#[from] io::Error),
+    IO(#[from] io::Error),
+    #[error("Excel error: {0}")]
+    Excel(#[from] xlsxwriter::XlsxError),
 }
 
 impl serde::Serialize for ClientError {

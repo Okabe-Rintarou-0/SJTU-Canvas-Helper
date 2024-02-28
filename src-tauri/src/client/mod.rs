@@ -1,12 +1,13 @@
 use std::{fs, io::Write, path::Path};
 
 use reqwest::Response;
+use serde::de::DeserializeOwned;
 
 use crate::{
     error::Result,
-    model::{Course, File, Folder, ProgressPayload},
+    model::{Course, File, Folder, ProgressPayload, User},
 };
-const BASE_URL: &'static str = "https://oc.sjtu.edu.cn";
+const BASE_URL: &str = "https://oc.sjtu.edu.cn";
 
 pub struct Client {
     cli: reqwest::Client,
@@ -75,81 +76,62 @@ impl Client {
         Ok(())
     }
 
-    pub async fn list_files_with_page(
+    pub async fn list_items_with_page<T: DeserializeOwned>(
         &self,
         url: &str,
         token: &str,
         page: u64,
-    ) -> Result<Vec<File>> {
+    ) -> Result<Vec<T>> {
         let res = self
             .get_request(
-                &url,
+                url,
                 Some(&vec![("page".to_owned(), page.to_string())]),
                 token,
             )
             .await?
             .error_for_status()?;
 
-        let files = serde_json::from_slice(&res.bytes().await?)?;
+        let files = serde_json::from_slice::<Vec<T>>(&res.bytes().await?)?;
         Ok(files)
     }
 
-    pub async fn list_files(&self, url: &str, token: &str) -> Result<Vec<File>> {
-        let mut all_files = vec![];
+    pub async fn list_items<T: DeserializeOwned>(&self, url: &str, token: &str) -> Result<Vec<T>> {
+        let mut all_items = vec![];
         let mut page = 1;
 
         loop {
-            let files = self.list_files_with_page(&url, token, page).await?;
-            if files.is_empty() {
+            let items = self.list_items_with_page(url, token, page).await?;
+            if items.is_empty() {
                 break;
             }
             page += 1;
-            all_files.extend(files);
+            all_items.extend(items);
         }
-        Ok(all_files)
+        Ok(all_items)
     }
 
     pub async fn list_course_files(&self, course_id: i32, token: &str) -> Result<Vec<File>> {
         let url = format!("{}/api/v1/courses/{}/files", BASE_URL, course_id);
-        self.list_files(&url, token).await
+        self.list_items(&url, token).await
     }
 
     pub async fn list_folder_files(&self, folder_id: i32, token: &str) -> Result<Vec<File>> {
         let url = format!("{}/api/v1/folders/{}/files", BASE_URL, folder_id);
-        self.list_files(&url, token).await
-    }
-
-    pub async fn list_folders_with_page(
-        &self,
-        course_id: i32,
-        token: &str,
-        page: u64,
-    ) -> Result<Vec<Folder>> {
-        let url = format!("{}/api/v1/courses/{}/folders", BASE_URL, course_id);
-        let res = self
-            .get_request(
-                &url,
-                Some(&vec![("page".to_owned(), page.to_string())]),
-                token,
-            )
-            .await?
-            .error_for_status()?;
-
-        let files = serde_json::from_slice(&res.bytes().await?)?;
-        Ok(files)
+        self.list_items(&url, token).await
     }
 
     pub async fn list_folders(&self, course_id: i32, token: &str) -> Result<Vec<Folder>> {
-        let mut all_folders = vec![];
-        let mut page = 1;
-        loop {
-            let folders = self.list_folders_with_page(course_id, token, page).await?;
-            if folders.is_empty() {
-                break;
-            }
-            page += 1;
-            all_folders.extend(folders);
-        }
-        Ok(all_folders)
+        let url = format!("{}/api/v1/courses/{}/folders", BASE_URL, course_id);
+        self.list_items(&url, token).await
+    }
+
+    pub async fn list_course_users(&self, course_id: i32, token: &str) -> Result<Vec<User>> {
+        let url = format!("{}/api/v1/courses/{}/users", BASE_URL, course_id);
+        self.list_items(&url, token).await
+    }
+
+    pub async fn list_course_students(&self, course_id: i32, token: &str) -> Result<Vec<User>> {
+        let url = format!("{}/api/v1/courses/{}/students", BASE_URL, course_id);
+        self.list_items_with_page(&url, token, 0).await
     }
 }

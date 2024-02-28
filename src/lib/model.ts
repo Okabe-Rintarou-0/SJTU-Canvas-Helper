@@ -29,6 +29,17 @@ export interface Folder {
     folders_count: number;
 }
 
+export interface User {
+    id: number;
+    key: number,
+    name: string;
+    created_at: string;
+    sortable_name: string;
+    short_name: string;
+    login_id: string;
+    email: string;
+}
+
 export interface FileDownloadTask {
     key: string,
     file: File
@@ -38,6 +49,10 @@ export interface FileDownloadTask {
 export interface AppConfig {
     token: string,
     save_path: string,
+}
+
+export interface ExportUsersConfig {
+    save_name: string,
 }
 
 export interface ProgressPayload {

@@ -6,8 +6,8 @@
     "distDir": "../dist"
   },
   "package": {
-    "productName": "canvas",
-    "version": "0.0.0"
+    "productName": "SJTU Canvas Helper",
+    "version": "1.0.0"
   },
   "tauri": {
     "allowlist": {
@@ -19,7 +19,7 @@
     },
     "windows": [
       {
-        "title": "canvas",
+        "title": "SJTU Canvas Helper",
         "width": 800,
         "height": 600
       }

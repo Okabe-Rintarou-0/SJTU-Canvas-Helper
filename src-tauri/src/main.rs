@@ -5,9 +5,10 @@ use std::{fs, path::Path};
 
 use client::Client;
 use error::Result;
-use model::{AppConfig, Course, File, Folder, ProgressPayload};
+use model::{AppConfig, Course, File, Folder, ProgressPayload, User};
 use tauri::{Runtime, Window};
 use tokio::sync::RwLock;
+use xlsxwriter::Workbook;
 mod client;
 mod error;
 mod model;
@@ -19,7 +20,7 @@ lazy_static! {
     static ref APP: App = App::new();
 }
 
-const CONFIG_PATH: &'static str = "./config.json";
+const CONFIG_PATH: &str = "./config.json";
 
 struct App {
     client: Client,
@@ -58,6 +59,18 @@ impl App {
     async fn list_course_files(&self, course_id: i32) -> Result<Vec<File>> {
         self.client
             .list_course_files(course_id, &self.config.read().await.token)
+            .await
+    }
+
+    async fn list_course_users(&self, course_id: i32) -> Result<Vec<User>> {
+        self.client
+            .list_course_users(course_id, &self.config.read().await.token)
+            .await
+    }
+
+    async fn list_course_students(&self, course_id: i32) -> Result<Vec<User>> {
+        self.client
+            .list_course_students(course_id, &self.config.read().await.token)
             .await
     }
 
@@ -100,6 +113,36 @@ impl App {
         }
         false
     }
+
+    async fn export_users(&self, users: &Vec<User>, save_name: &str) -> Result<()> {
+        let save_path = self.config.read().await.save_path.clone();
+        let path = Path::new(&save_path).join(save_name);
+
+        let workbook = Workbook::new(path.to_str().unwrap())?;
+        let mut sheet = workbook.add_worksheet(None)?;
+
+        // setup headers
+        sheet.write_string(0, 0, "id", None)?;
+        sheet.write_string(0, 1, "name", None)?;
+        sheet.write_string(0, 2, "created_at", None)?;
+        sheet.write_string(0, 3, "sortable_name", None)?;
+        sheet.write_string(0, 4, "short_name", None)?;
+        sheet.write_string(0, 5, "login_id", None)?;
+        sheet.write_string(0, 5, "email", None)?;
+
+        for (row, user) in users.iter().enumerate() {
+            let row = row as u32 + 1;
+            sheet.write_string(row, 0, &user.id.to_string(), None)?;
+            sheet.write_string(row, 1, &user.name, None)?;
+            sheet.write_string(row, 2, &user.created_at, None)?;
+            sheet.write_string(row, 3, &user.sortable_name, None)?;
+            sheet.write_string(row, 4, &user.short_name, None)?;
+            sheet.write_string(row, 5, &user.login_id, None)?;
+            sheet.write_string(row, 5, &user.email, None)?;
+        }
+        workbook.close()?;
+        Ok(())
+    }
 }
 
 #[tauri::command]
@@ -110,6 +153,16 @@ async fn list_courses() -> Result<Vec<Course>> {
 #[tauri::command]
 async fn list_course_files(course_id: i32) -> Result<Vec<File>> {
     APP.list_course_files(course_id).await
+}
+
+#[tauri::command]
+async fn list_course_users(course_id: i32) -> Result<Vec<User>> {
+    APP.list_course_users(course_id).await
+}
+
+#[tauri::command]
+async fn list_course_students(course_id: i32) -> Result<Vec<User>> {
+    APP.list_course_students(course_id).await
 }
 
 #[tauri::command]
@@ -130,6 +183,11 @@ async fn get_config() -> AppConfig {
 #[tauri::command]
 fn check_path(path: String) -> bool {
     App::check_path(&path)
+}
+
+#[tauri::command]
+async fn export_users(users: Vec<User>, save_name: String) -> Result<()> {
+    APP.export_users(&users, &save_name).await
 }
 
 #[tauri::command]
@@ -154,12 +212,15 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             list_courses,
             list_course_files,
+            list_course_users,
+            list_course_students,
             list_folder_files,
             list_folders,
             get_config,
             save_config,
             download_file,
             check_path,
+            export_users,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

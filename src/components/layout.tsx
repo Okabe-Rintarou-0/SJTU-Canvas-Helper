@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileOutlined, SettingOutlined } from '@ant-design/icons';
+import { FileOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons';
 import { Layout, Menu, theme } from 'antd';
 import { Link, useLocation } from 'react-router-dom';
 
@@ -10,6 +10,10 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
         key: 'file',
         icon: <FileOutlined />,
         label: <Link to={'/file'}>文件</Link>,
+    }, {
+        key: 'users',
+        icon: <UserOutlined />,
+        label: <Link to={'/users'}>人员导出</Link>,
     }, {
         key: 'settings',
         icon: <SettingOutlined />,

@@ -14,7 +14,7 @@ export default function FilePage() {
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [files, setFiles] = useState<File[]>([]);
     const [folders, setFolders] = useState<Folder[]>([]);
-    const [showAllFiles, setShowAllFiles] = useState<boolean>(false);
+    const [downloadableOnly, setDownloadableOnly] = useState<boolean>(true);
     const [downloadTasks, setDownloadTasks] = useState<FileDownloadTask[]>([]);
     const [messageApi, contextHolder] = useMessage();
     const [operating, setOperating] = useState<boolean>(false);
@@ -125,7 +125,6 @@ export default function FilePage() {
                 return;
             }
             await invoke("download_file", { file });
-            // unlisten();
             updateTaskProgress(file.uuid, 100);
             messageApi.success("下载成功！", 0.5);
         } catch (e) {
@@ -181,7 +180,7 @@ export default function FilePage() {
     ];
 
     const handleSetShowAllFiles: CheckboxProps['onChange'] = (e) => {
-        setShowAllFiles(e.target.checked);
+        setDownloadableOnly(e.target.checked);
     }
 
     const handleSelected = (_: React.Key[], selectedFiles: File[]) => {
@@ -231,10 +230,11 @@ export default function FilePage() {
             <Checkbox onChange={handleSetShowAllFiles} defaultChecked>只显示可下载文件</Checkbox>
             <Table style={{ width: "100%" }}
                 columns={fileColumns}
-                dataSource={showAllFiles ? files : files.filter(file => file.url)}
+                pagination={false}
+                dataSource={downloadableOnly ? files.filter(file => file.url) : files}
                 rowSelection={{ onChange: handleSelected }}
             />
-            <Button onClick={handleDownloadSelectedFiles}>下载</Button>
+            <Button disabled={operating} onClick={handleDownloadSelectedFiles}>下载</Button>
             <Table style={{ width: "100%" }} columns={task_columns} dataSource={downloadTasks} />
         </Space>
     </BasicLayout>
