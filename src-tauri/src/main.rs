@@ -4,6 +4,7 @@
 use std::{fs, path::Path};
 
 use client::Client;
+use directories::ProjectDirs;
 use error::Result;
 use model::{AppConfig, Course, File, Folder, ProgressPayload, User};
 use tauri::{Runtime, Window};
@@ -20,28 +21,35 @@ lazy_static! {
     static ref APP: App = App::new();
 }
 
-const CONFIG_PATH: &str = "./config.json";
-
 struct App {
     client: Client,
+    config_path: String,
     config: RwLock<AppConfig>,
 }
 
 impl App {
     fn new() -> Self {
-        let config = match App::read_config_from_file() {
+        let proj_dirs = ProjectDirs::from("com", "Okabe", "Sjtu Canvas Helper").unwrap();
+        let config_dir = proj_dirs.config_dir();
+        if !config_dir.exists() || !config_dir.is_dir() {
+            fs::create_dir(config_dir).unwrap();
+        }
+        let config_path = format!("{}/{}", config_dir.to_str().unwrap(), "config.json");
+
+        let config = match App::read_config_from_file(&config_path) {
             Ok(config) => config,
             Err(_) => Default::default(),
         };
 
         Self {
+            config_path,
             client: Client::new(),
             config: RwLock::new(config),
         }
     }
 
-    fn read_config_from_file() -> Result<AppConfig> {
-        let content = fs::read(CONFIG_PATH)?;
+    fn read_config_from_file(config_path: &str) -> Result<AppConfig> {
+        let content = fs::read(config_path)?;
         let config = serde_json::from_slice(&content)?;
         Ok(config)
     }
@@ -201,7 +209,7 @@ async fn download_file<R: Runtime>(window: Window<R>, file: File) -> Result<()> 
 #[tauri::command]
 async fn save_config(config: AppConfig) -> Result<()> {
     tracing::info!("Receive config: {:?}", config);
-    fs::write(CONFIG_PATH, serde_json::to_vec(&config).unwrap())?;
+    fs::write(&APP.config_path, serde_json::to_vec(&config).unwrap())?;
     APP.save_config(config).await;
     Ok(())
 }
