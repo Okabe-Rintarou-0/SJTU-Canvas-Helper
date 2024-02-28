@@ -114,7 +114,7 @@ impl App {
         false
     }
 
-    async fn export_users(&self, users: &Vec<User>, save_name: &str) -> Result<()> {
+    async fn export_users(&self, users: &[User], save_name: &str) -> Result<()> {
         let save_path = self.config.read().await.save_path.clone();
         let path = Path::new(&save_path).join(save_name);
 
