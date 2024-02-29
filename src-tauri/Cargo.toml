@@ -21,7 +21,6 @@ lazy_static = "1.4.0"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 xlsxwriter = "0.6.0"
-directories = "5.0.1"
 
 [features]
 # This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!!

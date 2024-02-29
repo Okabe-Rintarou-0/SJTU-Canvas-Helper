@@ -4,10 +4,9 @@
 use std::{fs, path::Path};
 
 use client::Client;
-use directories::ProjectDirs;
 use error::Result;
 use model::{AppConfig, Assignment, Course, File, Folder, ProgressPayload, Submission, User};
-use tauri::{Runtime, Window};
+use tauri::{api::path::download_dir, Runtime, Window};
 use tokio::sync::RwLock;
 use xlsxwriter::Workbook;
 mod client;
@@ -29,12 +28,12 @@ struct App {
 
 impl App {
     fn new() -> Self {
-        let proj_dirs = ProjectDirs::from("com", "Okabe", "Sjtu Canvas Helper").unwrap();
-        let config_dir = proj_dirs.config_dir();
-        if !config_dir.exists() || !config_dir.is_dir() {
-            fs::create_dir(config_dir).unwrap();
-        }
-        let config_path = format!("{}/{}", config_dir.to_str().unwrap(), "config.json");
+        let config_dir = download_dir().unwrap();
+        let config_path = format!(
+            "{}/{}",
+            config_dir.to_str().unwrap(),
+            "sjtu_canvas_helper_config.json"
+        );
 
         let config = match App::read_config_from_file(&config_path) {
             Ok(config) => config,
