@@ -5,7 +5,7 @@ use serde::de::DeserializeOwned;
 
 use crate::{
     error::Result,
-    model::{Course, File, Folder, ProgressPayload, User},
+    model::{Assignment, Course, File, Folder, ProgressPayload, User},
 };
 const BASE_URL: &str = "https://oc.sjtu.edu.cn";
 
@@ -37,14 +37,6 @@ impl Client {
 
         let res = req.send().await?;
         Ok(res)
-    }
-
-    pub async fn list_courses(&self, token: &str) -> Result<Vec<Course>> {
-        let url = format!("{}/api/v1/courses", BASE_URL);
-        let res = self.get_request(&url, None, token).await?;
-
-        let courses = serde_json::from_slice(&res.bytes().await?)?;
-        Ok(courses)
     }
 
     pub async fn download_file<F: Fn(ProgressPayload) + Send>(
@@ -133,5 +125,22 @@ impl Client {
     pub async fn list_course_students(&self, course_id: i32, token: &str) -> Result<Vec<User>> {
         let url = format!("{}/api/v1/courses/{}/students", BASE_URL, course_id);
         self.list_items_with_page(&url, token, 0).await
+    }
+
+    pub async fn list_courses(&self, token: &str) -> Result<Vec<Course>> {
+        let url = format!("{}/api/v1/courses", BASE_URL);
+        self.list_items(&url, token).await
+    }
+
+    pub async fn list_course_assignments(
+        &self,
+        course_id: i32,
+        token: &str,
+    ) -> Result<Vec<Assignment>> {
+        let url = format!(
+            "{}/api/v1/courses/{}/assignments?include[]=submission",
+            BASE_URL, course_id
+        );
+        self.list_items(&url, token).await
     }
 }

@@ -47,7 +47,7 @@ export default function SettingsPage() {
                     name="token"
                     label="Token"
                     required
-                    style={{margin: "0px"}}
+                    style={{ margin: "0px" }}
                 >
                     <Password placeholder="请输入 Canvas Token" />
                 </Form.Item>

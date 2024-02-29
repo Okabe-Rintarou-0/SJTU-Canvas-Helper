@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons';
+import { FileOutlined, SettingOutlined, UserOutlined, FormOutlined } from '@ant-design/icons';
 import { Layout, Menu, theme } from 'antd';
 import { Link, useLocation } from 'react-router-dom';
 
@@ -7,9 +7,13 @@ const { Content, Footer, Sider } = Layout;
 
 export default function BasicLayout({ children }: React.PropsWithChildren) {
     const items = [{
-        key: 'file',
+        key: 'files',
         icon: <FileOutlined />,
-        label: <Link to={'/file'}>文件</Link>,
+        label: <Link to={'/files'}>文件</Link>,
+    }, {
+        key: 'assignments',
+        icon: <FormOutlined />,
+        label: <Link to={'/assignments'}>查看作业</Link>,
     }, {
         key: 'users',
         icon: <UserOutlined />,

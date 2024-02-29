@@ -7,7 +7,7 @@ import { invoke } from "@tauri-apps/api";
 import useMessage from "antd/es/message/useMessage";
 import { InfoCircleOutlined } from '@ant-design/icons';
 
-export default function FilePage() {
+export default function FilesPage() {
     const ALL_FILES = "全部文件";
     const [courses, setCourses] = useState<Course[]>([]);
     const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
@@ -109,6 +109,12 @@ export default function FilePage() {
 
     const handleRemoveTask = async (taskToRemove: FileDownloadTask) => {
         setDownloadTasks(tasks => tasks.filter(task => task.file.uuid !== taskToRemove.file.uuid));
+        try {
+            await invoke("delete_file", { file: taskToRemove.file });
+            messageApi.success("删除成功！", 0.5);
+        } catch (e) {
+            messageApi.error(e as string)
+        }
     }
 
     const handleDownloadFile = async (file: File) => {
@@ -227,7 +233,7 @@ export default function FilePage() {
                     <InfoCircleOutlined />
                 </Tooltip>
             </Space>
-            <Checkbox onChange={handleSetShowAllFiles} defaultChecked>只显示可下载文件</Checkbox>
+            <Checkbox disabled={operating} onChange={handleSetShowAllFiles} defaultChecked>只显示可下载文件</Checkbox>
             <Table style={{ width: "100%" }}
                 columns={fileColumns}
                 pagination={false}

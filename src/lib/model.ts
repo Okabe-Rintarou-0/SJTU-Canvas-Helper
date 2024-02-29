@@ -40,6 +40,49 @@ export interface User {
     email: string;
 }
 
+export interface Assignment {
+    id: number;
+    key: number,
+    description: string;
+    due_at: string;
+    unlock_at: string | null;
+    lock_at: string;
+    points_possible: number;
+    course_id: number;
+    name: string;
+    html_url: string;
+    allowed_extensions?: string[];
+    published: boolean;
+    has_submitted_submissions: boolean,
+    submission?: Submission,
+}
+
+export type WorkflowState = "submitted" | "unsubmitted";
+
+export interface Submission {
+    id: number;
+    submitted_at?: string;
+    assignment_id: number;
+    user_id: number;
+    late: boolean;
+    attachments: Attachment[];
+    workflow_state: WorkflowState,
+}
+
+export interface Attachment {
+    id: number;
+    uuid: string;
+    folder_id: number;
+    display_name: string;
+    filename: string;
+    content_type: string;
+    url: string;
+    size: number;
+    locked: boolean;
+    mime_class: string;
+    preview_url: string;
+}
+
 export interface FileDownloadTask {
     key: string,
     file: File

@@ -6,7 +6,7 @@ use std::{fs, path::Path};
 use client::Client;
 use directories::ProjectDirs;
 use error::Result;
-use model::{AppConfig, Course, File, Folder, ProgressPayload, User};
+use model::{AppConfig, Assignment, Course, File, Folder, ProgressPayload, User};
 use tauri::{Runtime, Window};
 use tokio::sync::RwLock;
 use xlsxwriter::Workbook;
@@ -82,6 +82,12 @@ impl App {
             .await
     }
 
+    async fn list_course_assignments(&self, course_id: i32) -> Result<Vec<Assignment>> {
+        self.client
+            .list_course_assignments(course_id, &self.config.read().await.token)
+            .await
+    }
+
     async fn list_folder_files(&self, folder_id: i32) -> Result<Vec<File>> {
         self.client
             .list_folder_files(folder_id, &self.config.read().await.token)
@@ -105,6 +111,13 @@ impl App {
         self.client
             .download_file(file, token, save_path, progress_handler)
             .await?;
+        Ok(())
+    }
+
+    async fn delete_file(&self, file: &File) -> Result<()> {
+        let save_path = &self.config.read().await.save_path;
+        let path = Path::new(save_path).join(&file.display_name);
+        fs::remove_file(path)?;
         Ok(())
     }
 
@@ -174,6 +187,11 @@ async fn list_course_students(course_id: i32) -> Result<Vec<User>> {
 }
 
 #[tauri::command]
+async fn list_course_assignments(course_id: i32) -> Result<Vec<Assignment>> {
+    APP.list_course_assignments(course_id).await
+}
+
+#[tauri::command]
 async fn list_folder_files(folder_id: i32) -> Result<Vec<File>> {
     APP.list_folder_files(folder_id).await
 }
@@ -196,6 +214,11 @@ fn check_path(path: String) -> bool {
 #[tauri::command]
 async fn export_users(users: Vec<User>, save_name: String) -> Result<()> {
     APP.export_users(&users, &save_name).await
+}
+
+#[tauri::command]
+async fn delete_file(file: File) -> Result<()> {
+    APP.delete_file(&file).await
 }
 
 #[tauri::command]
@@ -222,10 +245,12 @@ fn main() {
             list_course_files,
             list_course_users,
             list_course_students,
+            list_course_assignments,
             list_folder_files,
             list_folders,
             get_config,
             save_config,
+            delete_file,
             download_file,
             check_path,
             export_users,

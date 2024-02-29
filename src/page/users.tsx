@@ -12,14 +12,17 @@ export default function UsersPage() {
     const [courses, setCourses] = useState<Course[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
-    // const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
+    const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
     const [form] = Form.useForm<ExportUsersConfig>();
     useEffect(() => {
         initCourses();
         form.setFieldsValue({ save_name: "用户名单" } as ExportUsersConfig)
     }, []);
 
-    const handleGetUsers = async (courseId: number) => {
+    const handleGetUsers = async (courseId: number, onlyExportStudents: boolean) => {
+        if (courseId === -1) {
+            return;
+        }
         setOperating(true);
         try {
             let users = onlyExportStudents ?
@@ -51,8 +54,8 @@ export default function UsersPage() {
     const handleCourseSelect = async (selected: string) => {
         let selectedCourse = courses.find(course => course.name === selected);
         if (selectedCourse) {
-            // setSelectedCourseId(selectedCourse.id);
-            handleGetUsers(selectedCourse.id);
+            setSelectedCourseId(selectedCourse.id);
+            handleGetUsers(selectedCourse.id, onlyExportStudents);
         }
     }
 
@@ -70,7 +73,9 @@ export default function UsersPage() {
     }
 
     const handleSetOnlyExportStudents: CheckboxProps['onChange'] = (e) => {
-        setOnlyExportStudents(e.target.checked);
+        let onlyExportStudents = e.target.checked;
+        setOnlyExportStudents(onlyExportStudents);
+        handleGetUsers(selectedCourseId, onlyExportStudents);
     }
 
     return <BasicLayout>
@@ -88,7 +93,7 @@ export default function UsersPage() {
                     }))}
                 />
             </Space>
-            <Checkbox onChange={handleSetOnlyExportStudents} defaultChecked>只导出学生</Checkbox>
+            <Checkbox disabled={operating} onChange={handleSetOnlyExportStudents} defaultChecked>只导出学生</Checkbox>
             <Table style={{ width: "100%" }}
                 columns={columns}
                 dataSource={users}
