@@ -1,4 +1,4 @@
-import { Button, Checkbox, CheckboxProps, Progress, Select, Space, Table, Tooltip } from "antd";
+import { Button, Checkbox, CheckboxProps, Select, Space, Table, Tooltip } from "antd";
 import { appWindow } from "@tauri-apps/api/window";
 import BasicLayout from "../components/layout";
 import { useEffect, useState } from "react";
@@ -6,6 +6,8 @@ import { Course, File, FileDownloadTask, Folder, ProgressPayload } from "../lib/
 import { invoke } from "@tauri-apps/api";
 import useMessage from "antd/es/message/useMessage";
 import { InfoCircleOutlined } from '@ant-design/icons';
+import CourseSelect from "../components/course_select";
+import FileDownloadTable from "../components/file_download_table";
 
 export default function FilesPage() {
     const ALL_FILES = "全部文件";
@@ -25,6 +27,26 @@ export default function FilesPage() {
             updateTaskProgress(payload.uuid, payload.downloaded / payload.total * 100);
         });
     }, []);
+
+    const fileColumns = [
+        {
+            title: '文件名',
+            dataIndex: 'display_name',
+            key: 'display_name',
+        },
+        {
+            title: '操作',
+            dataIndex: 'operation',
+            key: 'operation',
+            render: (_: any, file: File) => (
+                file.url ?
+                    <a onClick={e => {
+                        e.preventDefault();
+                        handleDownloadFile(file);
+                    }}>下载</a> : '未开放下载'
+            ),
+        }
+    ];
 
     const initCourses = async () => {
         try {
@@ -138,58 +160,11 @@ export default function FilesPage() {
         }
     }
 
-    const fileColumns = [
-        {
-            title: '文件名',
-            dataIndex: 'display_name',
-            key: 'display_name',
-        },
-        {
-            title: '操作',
-            dataIndex: 'operation',
-            key: 'operation',
-            render: (_: any, file: File) => (
-                file.url ?
-                    <a onClick={e => {
-                        e.preventDefault();
-                        handleDownloadFile(file);
-                    }}>下载</a> : '未开放下载'
-            ),
-        }
-    ];
-
-    const task_columns = [
-        {
-            title: '文件名',
-            dataIndex: 'file',
-            key: 'file',
-            render: (_: any, task: FileDownloadTask) => task.file.display_name
-        },
-        {
-            title: '进度条',
-            dataIndex: 'progress',
-            render: (_: any, task: FileDownloadTask) => <Progress percent={task.progress} />
-        },
-        {
-            title: '操作',
-            dataIndex: 'operation',
-            key: 'operation',
-            render: (_: any, task: FileDownloadTask) => (
-                <Space size="middle">
-                    <a onClick={e => {
-                        e.preventDefault();
-                        handleRemoveTask(task);
-                    }}>删除</a>
-                </Space>
-            ),
-        }
-    ];
-
     const handleSetShowAllFiles: CheckboxProps['onChange'] = (e) => {
         setDownloadableOnly(e.target.checked);
     }
 
-    const handleSelected = (_: React.Key[], selectedFiles: File[]) => {
+    const handleFileSelect = (_: React.Key[], selectedFiles: File[]) => {
         setSelectedFiles(selectedFiles);
     }
 
@@ -207,18 +182,7 @@ export default function FilesPage() {
     return <BasicLayout>
         {contextHolder}
         <Space direction="vertical" style={{ width: "100%" }} size={"large"}>
-            <Space>
-                <span>选择课程：</span>
-                <Select
-                    style={{ width: 300 }}
-                    disabled={operating}
-                    onChange={handleCourseSelect}
-                    options={courses.map(course => ({
-                        label: course.name,
-                        value: course.name
-                    }))}
-                />
-            </Space>
+            <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} />
             <Space>
                 <span>选择目录：</span>
                 <Select
@@ -238,10 +202,10 @@ export default function FilesPage() {
                 columns={fileColumns}
                 pagination={false}
                 dataSource={downloadableOnly ? files.filter(file => file.url) : files}
-                rowSelection={{ onChange: handleSelected }}
+                rowSelection={{ onChange: handleFileSelect }}
             />
             <Button disabled={operating} onClick={handleDownloadSelectedFiles}>下载</Button>
-            <Table style={{ width: "100%" }} columns={task_columns} dataSource={downloadTasks} />
+            <FileDownloadTable tasks={downloadTasks} handleRemoveTask={handleRemoveTask} />
         </Space>
     </BasicLayout>
 }

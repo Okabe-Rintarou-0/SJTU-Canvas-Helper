@@ -1,33 +1,32 @@
-import { Button, Checkbox, CheckboxProps, Form, Input, Select, Space, Table } from "antd";
+import { Button, Form, Input, Space, Table } from "antd";
 import BasicLayout from "../components/layout";
 import useMessage from "antd/es/message/useMessage";
 import { useEffect, useState } from "react";
 import { Course, ExportUsersConfig, User } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
+import CourseSelect from "../components/course_select";
 
 export default function UsersPage() {
     const [messageApi, contextHolder] = useMessage();
     const [operating, setOperating] = useState<boolean>(false);
-    const [onlyExportStudents, setOnlyExportStudents] = useState<boolean>(true);
+    // const [onlyExportStudents, setOnlyExportStudents] = useState<boolean>(true);
     const [courses, setCourses] = useState<Course[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
-    const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
+    // const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
     const [form] = Form.useForm<ExportUsersConfig>();
     useEffect(() => {
         initCourses();
         form.setFieldsValue({ save_name: "用户名单" } as ExportUsersConfig)
     }, []);
 
-    const handleGetUsers = async (courseId: number, onlyExportStudents: boolean) => {
+    const handleGetUsers = async (courseId: number) => {
         if (courseId === -1) {
             return;
         }
         setOperating(true);
         try {
-            let users = onlyExportStudents ?
-                await invoke("list_course_students", { courseId }) as User[]
-                : await invoke("list_course_users", { courseId }) as User[];
+            let users = await invoke("list_course_users", { courseId }) as User[];
             users.map(user => user.key = user.id);
             setUsers(users);
         } catch (e) {
@@ -36,7 +35,7 @@ export default function UsersPage() {
         setOperating(false);
     }
 
-    const columns = ['id', 'name', 'created_at', 'sortable_name', 'short_name', 'login_id', 'email'].map(column => ({
+    const columns = ['id', 'name', 'email', 'created_at', 'sortable_name', 'short_name', 'login_id'].map(column => ({
         title: column,
         dataIndex: column,
         key: column,
@@ -54,8 +53,8 @@ export default function UsersPage() {
     const handleCourseSelect = async (selected: string) => {
         let selectedCourse = courses.find(course => course.name === selected);
         if (selectedCourse) {
-            setSelectedCourseId(selectedCourse.id);
-            handleGetUsers(selectedCourse.id, onlyExportStudents);
+            // setSelectedCourseId(selectedCourse.id);
+            handleGetUsers(selectedCourse.id);
         }
     }
 
@@ -72,28 +71,10 @@ export default function UsersPage() {
         }
     }
 
-    const handleSetOnlyExportStudents: CheckboxProps['onChange'] = (e) => {
-        let onlyExportStudents = e.target.checked;
-        setOnlyExportStudents(onlyExportStudents);
-        handleGetUsers(selectedCourseId, onlyExportStudents);
-    }
-
     return <BasicLayout>
         {contextHolder}
         <Space direction="vertical" style={{ width: "100%", overflow: "scroll" }} size={"large"}>
-            <Space>
-                <span>选择课程：</span>
-                <Select
-                    style={{ width: 300 }}
-                    disabled={operating}
-                    onChange={handleCourseSelect}
-                    options={courses.map(course => ({
-                        label: course.name,
-                        value: course.name
-                    }))}
-                />
-            </Space>
-            <Checkbox disabled={operating} onChange={handleSetOnlyExportStudents} defaultChecked>只导出学生</Checkbox>
+            <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} />
             <Table style={{ width: "100%" }}
                 columns={columns}
                 dataSource={users}

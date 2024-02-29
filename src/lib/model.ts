@@ -3,6 +3,17 @@ export interface Course {
     uuid: string,
     name: string,
     course_code: string,
+    enrollments: Enrollment[],
+}
+
+export type EnrollmentRole = "TaEnrollment" | "StudentEnrollment";
+
+export interface Enrollment {
+    type: string,
+    role: EnrollmentRole,
+    role_id: number,
+    user_id: number,
+    enrollment_state: string,
 }
 
 export interface File {
@@ -61,6 +72,7 @@ export type WorkflowState = "submitted" | "unsubmitted";
 
 export interface Submission {
     id: number;
+    key: number,
     submitted_at?: string;
     assignment_id: number;
     user_id: number;
@@ -70,7 +82,11 @@ export interface Submission {
 }
 
 export interface Attachment {
+    user?: string,
+    submitted_at?: string;
     id: number;
+    key: number,
+    late: boolean,
     uuid: string;
     folder_id: number;
     display_name: string;

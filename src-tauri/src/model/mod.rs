@@ -6,6 +6,8 @@ pub struct Course {
     pub uuid: String,
     pub name: String,
     pub course_code: String,
+    #[serde(default)]
+    pub enrollments: Vec<Enrollment>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -125,4 +127,26 @@ pub struct Attachment {
     pub locked: bool,
     #[serde(default)]
     pub mime_class: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum EnrollmentRole {
+    StudentEnrollment,
+    TaEnrollment,
+}
+
+impl Default for EnrollmentRole {
+    fn default() -> Self {
+        Self::StudentEnrollment
+    }
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Enrollment {
+    #[serde(rename = "type")]
+    pub tp: String,
+    pub role: EnrollmentRole,
+    pub role_id: i64,
+    pub user_id: i64,
+    pub enrollment_state: String,
 }

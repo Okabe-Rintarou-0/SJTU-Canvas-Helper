@@ -1,10 +1,11 @@
-import { Checkbox, CheckboxProps, Divider, Select, Space, Table, Tag } from "antd";
+import { Checkbox, CheckboxProps, Divider, Space, Table, Tag } from "antd";
 import BasicLayout from "../components/layout";
 import useMessage from "antd/es/message/useMessage";
 import { useEffect, useState } from "react";
 import { Assignment, Course, Submission } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import { formatDate } from "../lib/utils";
+import CourseSelect from "../components/course_select";
 
 export default function AssignmentsPage() {
     const [messageApi, contextHolder] = useMessage();
@@ -29,8 +30,6 @@ export default function AssignmentsPage() {
             if (onlyShowUnfinished) {
                 assignments = assignments.filter(assignment => assignment.submission?.workflow_state === "unsubmitted")
             }
-            console.log(assignments);
-
             setAssignments(assignments);
         } catch (e) {
             messageApi.error(e as string);
@@ -85,7 +84,7 @@ export default function AssignmentsPage() {
             }
             return <Tag color="red">未提交</Tag>;
         }
-    },]
+    }]
 
     const handleCourseSelect = async (selected: string) => {
         let selectedCourse = courses.find(course => course.name === selected);
@@ -115,18 +114,7 @@ export default function AssignmentsPage() {
     return <BasicLayout>
         {contextHolder}
         <Space direction="vertical" style={{ width: "100%", overflow: "scroll" }} size={"large"}>
-            <Space>
-                <span>选择课程：</span>
-                <Select
-                    style={{ width: 300 }}
-                    disabled={operating}
-                    onChange={handleCourseSelect}
-                    options={courses.map(course => ({
-                        label: course.name,
-                        value: course.name
-                    }))}
-                />
-            </Space>
+            <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} />
             <Checkbox disabled={operating} onChange={handleSetOnlyShowUnfinished} defaultChecked>只显示未完成</Checkbox>
             <Table style={{ width: "100%" }}
                 columns={columns}

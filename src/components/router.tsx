@@ -3,6 +3,7 @@ import FilesPage from "../page/files";
 import SettingsPage from "../page/settings";
 import UsersPage from "../page/users";
 import AssignmentsPage from "../page/assignments";
+import SubmissionsPage from "../page/submissions";
 
 export default function AppRouter() {
     return <BrowserRouter>
@@ -10,6 +11,7 @@ export default function AppRouter() {
             <Route index element={<Navigate to={"/files"} />} />
             <Route path="/files" element={<FilesPage />} />
             <Route path="/assignments" element={<AssignmentsPage />} />
+            <Route path="/submissions" element={<SubmissionsPage />} />
             <Route path="/users" element={<UsersPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to={"/"} />} />

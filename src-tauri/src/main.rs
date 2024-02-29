@@ -6,7 +6,7 @@ use std::{fs, path::Path};
 use client::Client;
 use directories::ProjectDirs;
 use error::Result;
-use model::{AppConfig, Assignment, Course, File, Folder, ProgressPayload, User};
+use model::{AppConfig, Assignment, Course, File, Folder, ProgressPayload, Submission, User};
 use tauri::{Runtime, Window};
 use tokio::sync::RwLock;
 use xlsxwriter::Workbook;
@@ -61,6 +61,26 @@ impl App {
     async fn list_courses(&self) -> Result<Vec<Course>> {
         self.client
             .list_courses(&self.config.read().await.token)
+            .await
+    }
+
+    async fn list_course_assignment_submissions(
+        &self,
+        course_id: i32,
+        assignment_id: i32,
+    ) -> Result<Vec<Submission>> {
+        self.client
+            .list_course_assignment_submissions(
+                course_id,
+                assignment_id,
+                &self.config.read().await.token,
+            )
+            .await
+    }
+
+    async fn list_ta_courses(&self) -> Result<Vec<Course>> {
+        self.client
+            .list_ta_courses(&self.config.read().await.token)
             .await
     }
 
@@ -172,6 +192,20 @@ async fn list_courses() -> Result<Vec<Course>> {
 }
 
 #[tauri::command]
+async fn list_course_assignment_submissions(
+    course_id: i32,
+    assignment_id: i32,
+) -> Result<Vec<Submission>> {
+    APP.list_course_assignment_submissions(course_id, assignment_id)
+        .await
+}
+
+#[tauri::command]
+async fn list_ta_courses() -> Result<Vec<Course>> {
+    APP.list_ta_courses().await
+}
+
+#[tauri::command]
 async fn list_course_files(course_id: i32) -> Result<Vec<File>> {
     APP.list_course_files(course_id).await
 }
@@ -242,10 +276,12 @@ fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             list_courses,
+            list_ta_courses,
             list_course_files,
             list_course_users,
             list_course_students,
             list_course_assignments,
+            list_course_assignment_submissions,
             list_folder_files,
             list_folders,
             get_config,
