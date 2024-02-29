@@ -93,6 +93,7 @@ pub struct Assignment {
 pub enum WorkflowState {
     Submitted,
     Unsubmitted,
+    Graded
 }
 
 impl Default for WorkflowState {

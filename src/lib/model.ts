@@ -68,8 +68,8 @@ export interface Assignment {
     submission?: Submission,
 }
 
-export type WorkflowState = "submitted" | "unsubmitted";
-
+export type WorkflowState = "submitted" | "unsubmitted" | "graded";
+ 
 export interface Submission {
     id: number;
     key: number,

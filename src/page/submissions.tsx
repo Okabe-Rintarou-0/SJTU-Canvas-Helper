@@ -42,7 +42,7 @@ export default function SubmissionsPage() {
         title: '状态',
         dataIndex: 'late',
         key: 'late',
-        render: (late: boolean) => late ? <Tag color="green">迟交</Tag> : <Tag color="green">按时提交</Tag>
+        render: (late: boolean) => late ? <Tag color="red">迟交</Tag> : <Tag color="green">按时提交</Tag>
     }, {
         title: '操作',
         dataIndex: 'operation',

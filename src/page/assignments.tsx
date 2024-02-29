@@ -80,7 +80,7 @@ export default function AssignmentsPage() {
                 return <Tag>无需提交</Tag>;
             }
             if (submission.workflow_state === "submitted") {
-                return submission.late ? <Tag color="green">迟交</Tag> : <Tag color="green">已提交</Tag>;
+                return submission.late ? <Tag color="red">迟交</Tag> : <Tag color="green">已提交</Tag>;
             }
             return <Tag color="red">未提交</Tag>;
         }
