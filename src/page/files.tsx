@@ -1,8 +1,7 @@
 import { Button, Checkbox, CheckboxProps, Select, Space, Table, Tooltip } from "antd";
-import { appWindow } from "@tauri-apps/api/window";
 import BasicLayout from "../components/layout";
 import { useEffect, useState } from "react";
-import { Course, File, FileDownloadTask, Folder, ProgressPayload } from "../lib/model";
+import { Course, File, FileDownloadTask, Folder } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import useMessage from "antd/es/message/useMessage";
 import { InfoCircleOutlined } from '@ant-design/icons';
@@ -20,12 +19,10 @@ export default function FilesPage() {
     const [downloadTasks, setDownloadTasks] = useState<FileDownloadTask[]>([]);
     const [messageApi, contextHolder] = useMessage();
     const [operating, setOperating] = useState<boolean>(false);
+    const [loading, setLoading] = useState<boolean>(false);
     const [currentFolder, setCurrentFolder] = useState<string>(ALL_FILES);
     useEffect(() => {
         initCourses();
-        appWindow.listen<ProgressPayload>("download://progress", ({ payload }) => {
-            updateTaskProgress(payload.uuid, payload.downloaded / payload.total * 100);
-        });
     }, []);
 
     const fileColumns = [
@@ -59,6 +56,7 @@ export default function FilesPage() {
 
     const handleGetFiles = async (courseId: number) => {
         setOperating(true);
+        setLoading(true);
         try {
             let files = await invoke("list_course_files", { courseId }) as File[];
             files.map(file => file.key = file.uuid);
@@ -67,10 +65,12 @@ export default function FilesPage() {
             setFiles([]);
         }
         setOperating(false);
+        setLoading(false);
     }
 
     const handleGetFolderFiles = async (folderId: number) => {
         setOperating(true);
+        setLoading(true);
         try {
             let files = await invoke("list_folder_files", { folderId }) as File[];
             files.map(file => file.key = file.uuid);
@@ -79,6 +79,7 @@ export default function FilesPage() {
             setFiles([]);
         }
         setOperating(false);
+        setLoading(false);
     }
 
     const handleGetFolders = async (courseId: number) => {
@@ -96,9 +97,10 @@ export default function FilesPage() {
         let selectedCourse = courses.find(course => course.name === selected);
         if (selectedCourse) {
             setSelectedCourseId(selectedCourse.id);
+            setSelectedFiles([]);
+            setFiles([]);
             handleGetFiles(selectedCourse.id);
             handleGetFolders(selectedCourse.id);
-            setSelectedFiles([]);
             setCurrentFolder(ALL_FILES);
         }
     }
@@ -107,6 +109,8 @@ export default function FilesPage() {
         if (selected === currentFolder) {
             return;
         }
+        setSelectedFiles([]);
+        setFiles([]);
         setCurrentFolder(selected);
         if (selected == ALL_FILES) {
             handleGetFiles(selectedCourseId);
@@ -119,44 +123,29 @@ export default function FilesPage() {
         }
     }
 
-    const updateTaskProgress = (uuid: string, progress: number) => {
-        setDownloadTasks(tasks => {
-            let task = tasks.find(task => task.file.uuid === uuid);
-            if (task) {
-                task.progress = Math.ceil(progress);
-            }
-            return [...tasks];
-        });
-    }
-
     const handleRemoveTask = async (taskToRemove: FileDownloadTask) => {
         setDownloadTasks(tasks => tasks.filter(task => task.file.uuid !== taskToRemove.file.uuid));
         try {
             await invoke("delete_file", { file: taskToRemove.file });
-            messageApi.success("删除成功！", 0.5);
+            // messageApi.success("删除成功🎉！", 0.5);
         } catch (e) {
-            messageApi.error(e as string)
+            if (taskToRemove.state !== "fail") {
+                // no need to show error message for already failed tasks
+                messageApi.error(e as string);
+            }
         }
     }
 
     const handleDownloadFile = async (file: File) => {
-        try {
-            let task = downloadTasks.find(task => task.file.uuid === file.uuid);
-            if (!task) {
-                setDownloadTasks(tasks => [...tasks, {
-                    key: file.uuid,
-                    file,
-                    progress: 0
-                } as FileDownloadTask]);
-            } else if (task.progress !== 100) {
-                messageApi.warning("当前任务正在下载！请勿重复添加！");
-                return;
-            }
-            await invoke("download_file", { file });
-            updateTaskProgress(file.uuid, 100);
-            messageApi.success("下载成功！", 0.5);
-        } catch (e) {
-            messageApi.error(e as string);
+        if (!downloadTasks.find(task => task.file.uuid === file.uuid)) {
+            setDownloadTasks(tasks => [...tasks, {
+                key: file.uuid,
+                file,
+                progress: 0
+            } as FileDownloadTask]);
+        } else {
+            messageApi.warning("请勿重复添加任务！");
+            return;
         }
     }
 
@@ -200,9 +189,10 @@ export default function FilesPage() {
             <Checkbox disabled={operating} onChange={handleSetShowAllFiles} defaultChecked>只显示可下载文件</Checkbox>
             <Table style={{ width: "100%" }}
                 columns={fileColumns}
+                loading={loading}
                 pagination={false}
                 dataSource={downloadableOnly ? files.filter(file => file.url) : files}
-                rowSelection={{ onChange: handleFileSelect }}
+                rowSelection={{ onChange: handleFileSelect, selectedRowKeys: selectedFiles.map(file => file.key) }}
             />
             <Button disabled={operating} onClick={handleDownloadSelectedFiles}>下载</Button>
             <FileDownloadTable tasks={downloadTasks} handleRemoveTask={handleRemoveTask} />

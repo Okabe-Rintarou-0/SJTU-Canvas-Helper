@@ -164,21 +164,21 @@ impl App {
         // setup headers
         sheet.write_string(0, 0, "id", None)?;
         sheet.write_string(0, 1, "name", None)?;
-        sheet.write_string(0, 2, "created_at", None)?;
-        sheet.write_string(0, 3, "sortable_name", None)?;
-        sheet.write_string(0, 4, "short_name", None)?;
-        sheet.write_string(0, 5, "login_id", None)?;
-        sheet.write_string(0, 5, "email", None)?;
+        sheet.write_string(0, 2, "email", None)?;
+        sheet.write_string(0, 3, "created_at", None)?;
+        sheet.write_string(0, 4, "sortable_name", None)?;
+        sheet.write_string(0, 5, "short_name", None)?;
+        sheet.write_string(0, 6, "login_id", None)?;
 
         for (row, user) in users.iter().enumerate() {
             let row = row as u32 + 1;
             sheet.write_string(row, 0, &user.id.to_string(), None)?;
             sheet.write_string(row, 1, &user.name, None)?;
-            sheet.write_string(row, 2, &user.created_at, None)?;
-            sheet.write_string(row, 3, &user.sortable_name, None)?;
-            sheet.write_string(row, 4, &user.short_name, None)?;
-            sheet.write_string(row, 5, &user.login_id, None)?;
-            sheet.write_string(row, 5, &user.email, None)?;
+            sheet.write_string(row, 2, &user.email, None)?;
+            sheet.write_string(row, 3, &user.created_at, None)?;
+            sheet.write_string(row, 4, &user.sortable_name, None)?;
+            sheet.write_string(row, 5, &user.short_name, None)?;
+            sheet.write_string(row, 6, &user.login_id, None)?;
         }
         workbook.close()?;
         Ok(())

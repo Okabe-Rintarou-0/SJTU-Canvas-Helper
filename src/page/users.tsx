@@ -17,7 +17,7 @@ export default function UsersPage() {
     const [form] = Form.useForm<ExportUsersConfig>();
     useEffect(() => {
         initCourses();
-        form.setFieldsValue({ save_name: "用户名单" } as ExportUsersConfig)
+        form.setFieldsValue({ save_name: "用户名单" } as ExportUsersConfig);
     }, []);
 
     const handleGetUsers = async (courseId: number) => {
@@ -54,6 +54,8 @@ export default function UsersPage() {
         let selectedCourse = courses.find(course => course.name === selected);
         if (selectedCourse) {
             // setSelectedCourseId(selectedCourse.id);
+            setSelectedUsers([]);
+            setUsers([]);
             handleGetUsers(selectedCourse.id);
         }
     }
@@ -76,10 +78,11 @@ export default function UsersPage() {
         <Space direction="vertical" style={{ width: "100%", overflow: "scroll" }} size={"large"}>
             <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} />
             <Table style={{ width: "100%" }}
+                loading={operating}
                 columns={columns}
                 dataSource={users}
                 pagination={false}
-                rowSelection={{ onChange: handleSelected }}
+                rowSelection={{ onChange: handleSelected, selectedRowKeys: selectedUsers.map(user => user.key) }}
             />
             <Form
                 form={form}

@@ -8,6 +8,7 @@ use crate::{
     model::{Assignment, Course, File, Folder, ProgressPayload, Submission, User},
 };
 const BASE_URL: &str = "https://oc.sjtu.edu.cn";
+const CHUNK_SIZE: u64 = 512 * 1024;
 
 pub struct Client {
     cli: reqwest::Client,
@@ -57,10 +58,16 @@ impl Client {
             total: file.size,
         };
         let path = Path::new(save_path).join(&file.display_name);
+        let total = file.size;
         let mut file = fs::File::create(path.to_str().unwrap())?;
+        let mut last_chunk_no = 0;
         while let Some(chunk) = response.chunk().await? {
             payload.downloaded += chunk.len() as u64;
-            progress_handler(payload.clone());
+            let chunk_no = payload.downloaded / CHUNK_SIZE;
+            if chunk_no != last_chunk_no || payload.downloaded == total {
+                last_chunk_no = chunk_no;
+                progress_handler(payload.clone());
+            }
             file.write_all(&chunk)?;
         }
 
@@ -77,7 +84,10 @@ impl Client {
         let res = self
             .get_request(
                 url,
-                Some(&vec![("page".to_owned(), page.to_string())]),
+                Some(&vec![
+                    ("page".to_owned(), page.to_string()),
+                    ("per_page".to_owned(), "100".to_owned()),
+                ]),
                 token,
             )
             .await?

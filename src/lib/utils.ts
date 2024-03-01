@@ -10,3 +10,7 @@ export function formatDate(inputDate: string): string {
     const minutes = date.getMinutes().toString().padStart(2, '0');
     return `${year}/${month}/${day} ${hours}:${minutes}`;
 }
+
+export function sleep(time: number) {
+    return new Promise((resolve) => setTimeout(resolve, time));
+}

@@ -55,10 +55,10 @@ export interface Assignment {
     id: number;
     key: number,
     description: string;
-    due_at: string;
-    unlock_at: string | null;
-    lock_at: string;
-    points_possible: number;
+    due_at?: string;
+    unlock_at?: string;
+    lock_at?: string;
+    points_possible?: number;
     course_id: number;
     name: string;
     html_url: string;
@@ -69,7 +69,7 @@ export interface Assignment {
 }
 
 export type WorkflowState = "submitted" | "unsubmitted" | "graded";
- 
+
 export interface Submission {
     id: number;
     key: number,
@@ -103,7 +103,10 @@ export interface FileDownloadTask {
     key: string,
     file: File
     progress: number,
+    state: FileDownloadState,
 }
+
+export type FileDownloadState = "downloading" | "succeed" | "fail";
 
 export interface AppConfig {
     token: string,

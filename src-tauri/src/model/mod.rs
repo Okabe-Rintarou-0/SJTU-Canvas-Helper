@@ -69,13 +69,13 @@ pub struct Assignment {
     #[serde(default)]
     pub description: String,
     #[serde(default)]
-    pub due_at: String,
+    pub due_at: Option<String>,
     #[serde(default)]
     pub unlock_at: Option<String>,
     #[serde(default)]
-    pub lock_at: String,
+    pub lock_at: Option<String>,
     #[serde(default)]
-    pub points_possible: f64,
+    pub points_possible: Option<f64>,
     pub course_id: i64,
     pub name: String,
     pub html_url: String,

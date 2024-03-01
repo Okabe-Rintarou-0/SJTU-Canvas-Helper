@@ -11,6 +11,7 @@ import FileDownloadTable from "../components/file_download_table";
 export default function SubmissionsPage() {
     const [messageApi, contextHolder] = useMessage();
     const [operating, setOperating] = useState<boolean>(false);
+    const [loading, setLoading] = useState<boolean>(false);
     const [courses, setCourses] = useState<Course[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -91,6 +92,7 @@ export default function SubmissionsPage() {
             return;
         }
         setOperating(true);
+        setLoading(true);
         try {
             let submissions = await invoke("list_course_assignment_submissions", { courseId, assignmentId }) as Submission[];
             let attachments: Attachment[] = [];
@@ -109,6 +111,7 @@ export default function SubmissionsPage() {
             messageApi.error(e as string);
         }
         setOperating(false);
+        setLoading(false);
     }
 
     const initCourses = async () => {
@@ -118,16 +121,6 @@ export default function SubmissionsPage() {
         } catch (e) {
             messageApi.error(e as string);
         }
-    }
-
-    const updateTaskProgress = (uuid: string, progress: number) => {
-        setDownloadTasks(tasks => {
-            let task = tasks.find(task => task.file.uuid === uuid);
-            if (task) {
-                task.progress = Math.ceil(progress);
-            }
-            return [...tasks];
-        });
     }
 
     const handleDownloadAttachment = async (attachment: Attachment) => {
@@ -141,29 +134,25 @@ export default function SubmissionsPage() {
             filename: attachment.filename,
             size: attachment.size,
         } as File;
-        try {
-            let task = downloadTasks.find(task => task.file.uuid === file.uuid);
-            if (!task) {
-                setDownloadTasks(tasks => [...tasks, {
-                    key: file.uuid,
-                    file,
-                    progress: 0
-                } as FileDownloadTask]);
-            } else if (task.progress !== 100) {
-                messageApi.warning("当前任务正在下载！请勿重复添加！");
-                return;
-            }
-            await invoke("download_file", { file });
-            updateTaskProgress(file.uuid, 100);
-            messageApi.success("下载成功！", 0.5);
-        } catch (e) {
-            messageApi.error(e as string);
+
+        if (!downloadTasks.find(task => task.file.uuid === file.uuid)) {
+            setDownloadTasks(tasks => [...tasks, {
+                key: file.uuid,
+                file,
+                progress: 0
+            } as FileDownloadTask]);
+        } else {
+            messageApi.warning("当前任务已存在！请勿重复添加！");
+            return;
         }
     }
 
     const handleCourseSelect = async (selected: string) => {
         let selectedCourse = courses.find(course => course.name === selected);
         if (selectedCourse) {
+            setAttachments([]);
+            setSelectedAttachments([]);
+            setSelectedAssignment(undefined);
             setSelectedCourseId(selectedCourse.id);
             handleGetUsers(selectedCourse.id);
             handleGetAssignments(selectedCourse.id);
@@ -173,6 +162,8 @@ export default function SubmissionsPage() {
     const handleAssignmentSelect = (selected: string) => {
         let assignment = assignments.find(assignment => assignment.name === selected);
         setSelectedAssignment(assignment);
+        setAttachments([]);
+        setSelectedAttachments([]);
         if (assignment) {
             handleGetSubmissions(selectedCourseId, assignment.id);
         }
@@ -192,9 +183,12 @@ export default function SubmissionsPage() {
         setDownloadTasks(tasks => tasks.filter(task => task.file.uuid !== taskToRemove.file.uuid));
         try {
             await invoke("delete_file", { file: taskToRemove.file });
-            messageApi.success("删除成功！", 0.5);
+            // messageApi.success("删除成功🎉！", 0.5);
         } catch (e) {
-            messageApi.error(e as string)
+            if (taskToRemove.state !== "fail") {
+                // no need to show error message for already failed tasks
+                messageApi.error(e as string);
+            }
         }
     }
 
@@ -220,9 +214,10 @@ export default function SubmissionsPage() {
             </Space>
             <Table style={{ width: "100%" }}
                 columns={columns}
+                loading={loading}
                 dataSource={attachments}
                 pagination={false}
-                rowSelection={{ onChange: handleAttachmentSelect }}
+                rowSelection={{ onChange: handleAttachmentSelect, selectedRowKeys: selectedAttachments.map(attachment => attachment.key) }}
             />
             <Button disabled={operating} onClick={handleDownloadSelectedAttachments}>下载</Button>
             <FileDownloadTable tasks={downloadTasks} handleRemoveTask={handleRemoveTask} />

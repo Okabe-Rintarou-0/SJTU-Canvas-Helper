@@ -51,7 +51,7 @@ export default function SettingsPage() {
                 >
                     <Password placeholder="请输入 Canvas Token" />
                 </Form.Item>
-                <p>请参考 <a href="https://oc.sjtu.edu.cn/profile/settings" target="_blank">https://oc.sjtu.edu.cn/profile/settings</a> 创建你的 API Token</p>
+                <p>请进入 <a href="https://oc.sjtu.edu.cn/profile/settings" target="_blank">https://oc.sjtu.edu.cn/profile/settings</a> 创建你的 API Token</p>
                 <Form.Item name="save_path" label="下载保存目录" required rules={[{ validator: savePathValidator }]}>
                     <Input placeholder="请输入文件下载保存目录" />
                 </Form.Item>

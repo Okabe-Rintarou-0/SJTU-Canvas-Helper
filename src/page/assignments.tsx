@@ -117,6 +117,7 @@ export default function AssignmentsPage() {
             <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} />
             <Checkbox disabled={operating} onChange={handleSetOnlyShowUnfinished} defaultChecked>只显示未完成</Checkbox>
             <Table style={{ width: "100%" }}
+                loading={operating}
                 columns={columns}
                 dataSource={assignments}
                 pagination={false}
