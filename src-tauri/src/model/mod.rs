@@ -20,6 +20,10 @@ pub struct File {
     pub url: String,
     pub size: u64,
     pub locked: bool,
+    #[serde(default)]
+    pub mime_class: String,
+    #[serde(default, rename = "content-type")]
+    pub content_type: String,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -128,6 +132,8 @@ pub struct Attachment {
     pub locked: bool,
     #[serde(default)]
     pub mime_class: String,
+    #[serde(default, rename = "content-type")]
+    pub content_type: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

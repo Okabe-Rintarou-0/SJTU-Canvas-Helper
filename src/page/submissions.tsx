@@ -1,15 +1,17 @@
 import { Button, Select, Space, Table, Tag } from "antd";
 import BasicLayout from "../components/layout";
 import useMessage from "antd/es/message/useMessage";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Assignment, Attachment, Course, File, FileDownloadTask, Submission, User } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import { formatDate } from "../lib/utils";
 import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
+import PreviewModal from "../components/preview_modal";
 
 export default function SubmissionsPage() {
     const [messageApi, contextHolder] = useMessage();
+    const [previewFile, setPreviewFile] = useState<File | undefined>(undefined);
     const [operating, setOperating] = useState<boolean>(false);
     const [loading, setLoading] = useState<boolean>(false);
     const [courses, setCourses] = useState<Course[]>([]);
@@ -20,11 +22,55 @@ export default function SubmissionsPage() {
     const [downloadTasks, setDownloadTasks] = useState<FileDownloadTask[]>([]);
     const [selectedAssignment, setSelectedAssignment] = useState<Assignment | undefined>(undefined);
     const [selectedAttachments, setSelectedAttachments] = useState<Attachment[]>([]);
+    const [_, setQuickPreview] = useState<boolean>(false);
+    const [hoveredFile, setHoveredFile] = useState<File | undefined>(undefined);
     const usersMap = new Map<number, User>(users.map(user => ([user.id, user])));
+
+    const hoveredFileRef = useRef<File | undefined>(undefined);
+    const previewFileRef = useRef<File | undefined>(undefined);
 
     useEffect(() => {
         initCourses();
+        document.body.addEventListener("keydown", handleKeyDownEvent, true);
+        document.body.addEventListener("keyup", handleKeyUpEvent, true);
+
+        return () => {
+            document.body.removeEventListener("keydown", handleKeyDownEvent, true);
+            document.body.removeEventListener("keyup", handleKeyUpEvent, true);
+        }
     }, []);
+
+    useEffect(() => {
+        previewFileRef.current = previewFile;
+    }, [previewFile]);
+
+    useEffect(() => {
+        hoveredFileRef.current = hoveredFile;
+    }, [hoveredFile]);
+
+    const handleKeyDownEvent = (ev: KeyboardEvent) => {
+        if (ev.key === " " && !ev.repeat) {
+            ev.stopPropagation();
+            ev.preventDefault();
+            if (hoveredFileRef.current && !previewFileRef.current) {
+                setPreviewFile(hoveredFileRef.current);
+                setQuickPreview(true);
+            }
+        }
+    }
+
+    const handleKeyUpEvent = (ev: KeyboardEvent) => {
+        if (ev.key === " ") {
+            ev.stopPropagation();
+            ev.preventDefault();
+            setQuickPreview(quickPreview => {
+                if (quickPreview) {
+                    setPreviewFile(undefined);
+                }
+                return false;
+            });
+        }
+    }
 
     const columns = [{
         title: '学生',
@@ -39,6 +85,16 @@ export default function SubmissionsPage() {
         title: '文件',
         dataIndex: 'display_name',
         key: 'display_name',
+        render: (name: string, attachment: Attachment) => <a
+            onMouseEnter={() => {
+                setHoveredFile(attachmentToFile(attachment));
+            }}
+            onMouseLeave={() => {
+                setHoveredFile(undefined);
+            }}
+        >
+            {name}
+        </a>
     }, {
         title: '状态',
         dataIndex: 'late',
@@ -49,11 +105,16 @@ export default function SubmissionsPage() {
         dataIndex: 'operation',
         key: 'operation',
         render: (_: any, attachment: Attachment) => (
-            attachment.url ?
-                <a onClick={e => {
+            <Space>
+                {attachment.url && <a onClick={e => {
                     e.preventDefault();
                     handleDownloadAttachment(attachment);
-                }}>下载</a> : '未开放下载'
+                }}>下载</a>}
+                <a onClick={e => {
+                    e.preventDefault();
+                    setPreviewFile(attachmentToFile(attachment));
+                }}>预览</a>
+            </Space>
         ),
     }];
 
@@ -123,8 +184,8 @@ export default function SubmissionsPage() {
         }
     }
 
-    const handleDownloadAttachment = async (attachment: Attachment) => {
-        let file = {
+    const attachmentToFile = (attachment: Attachment) => {
+        return {
             id: attachment.id,
             uuid: attachment.uuid,
             url: attachment.url,
@@ -133,8 +194,12 @@ export default function SubmissionsPage() {
             locked: attachment.locked,
             filename: attachment.filename,
             size: attachment.size,
+            mime_class: attachment.mime_class,
         } as File;
+    }
 
+    const handleDownloadAttachment = async (attachment: Attachment) => {
+        let file = attachmentToFile(attachment);
         if (!downloadTasks.find(task => task.file.uuid === file.uuid)) {
             setDownloadTasks(tasks => [...tasks, {
                 key: file.uuid,
@@ -197,8 +262,13 @@ export default function SubmissionsPage() {
         value: assignment.name,
     }));
 
+    const handleCancelPreview = () => {
+        setPreviewFile(undefined);
+    }
+
     return <BasicLayout>
         {contextHolder}
+        {previewFile && <PreviewModal open files={[previewFile]} handleCancelPreview={handleCancelPreview} />}
         <Space direction="vertical" style={{ width: "100%", overflow: "scroll" }} size={"large"}>
             <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} />
             <Space>

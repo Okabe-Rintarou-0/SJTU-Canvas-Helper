@@ -1,12 +1,13 @@
 import { Button, Checkbox, CheckboxProps, Select, Space, Table, Tooltip } from "antd";
 import BasicLayout from "../components/layout";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Course, File, FileDownloadTask, Folder } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import useMessage from "antd/es/message/useMessage";
 import { InfoCircleOutlined } from '@ant-design/icons';
 import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
+import PreviewModal from "../components/preview_modal";
 
 export default function FilesPage() {
     const ALL_FILES = "全部文件";
@@ -14,6 +15,7 @@ export default function FilesPage() {
     const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [files, setFiles] = useState<File[]>([]);
+    const [previewFile, setPreviewFile] = useState<File | undefined>(undefined);
     const [folders, setFolders] = useState<Folder[]>([]);
     const [downloadableOnly, setDownloadableOnly] = useState<boolean>(true);
     const [downloadTasks, setDownloadTasks] = useState<FileDownloadTask[]>([]);
@@ -21,26 +23,91 @@ export default function FilesPage() {
     const [operating, setOperating] = useState<boolean>(false);
     const [loading, setLoading] = useState<boolean>(false);
     const [currentFolder, setCurrentFolder] = useState<string>(ALL_FILES);
+    const [_, setQuickPreview] = useState<boolean>(false);
+    const [hoveredFile, setHoveredFile] = useState<File | undefined>(undefined);
+
+    const hoveredFileRef = useRef<File | undefined>(undefined);
+    const previewFileRef = useRef<File | undefined>(undefined);
+
     useEffect(() => {
         initCourses();
+        document.body.addEventListener("keydown", handleKeyDownEvent, true);
+        document.body.addEventListener("keyup", handleKeyUpEvent, true);
+
+        return () => {
+            document.body.removeEventListener("keydown", handleKeyDownEvent, true);
+            document.body.removeEventListener("keyup", handleKeyUpEvent, true);
+        }
     }, []);
+
+    useEffect(() => {
+        previewFileRef.current = previewFile;
+    }, [previewFile]);
+
+    useEffect(() => {
+        hoveredFileRef.current = hoveredFile;
+    }, [hoveredFile]);
+
+    const handleKeyDownEvent = (ev: KeyboardEvent) => {
+        if (ev.key === " " && !ev.repeat) {
+            ev.stopPropagation();
+            ev.preventDefault();
+            if (hoveredFileRef.current && !previewFileRef.current) {
+                setHoveredFile(undefined);
+                setPreviewFile(hoveredFileRef.current);
+                setQuickPreview(true);
+            }
+        }
+    }
+
+    const handleKeyUpEvent = (ev: KeyboardEvent) => {
+        if (ev.key === " ") {
+            ev.stopPropagation();
+            ev.preventDefault();
+            setQuickPreview(quickPreview => {
+                if (quickPreview) {
+                    setPreviewFile(undefined);
+                }
+                return false;
+            });
+        }
+    }
 
     const fileColumns = [
         {
             title: '文件名',
             dataIndex: 'display_name',
             key: 'display_name',
+            render: (name: string, file: File) => <a
+                onMouseEnter={() => {
+                    if (!previewFile) {
+                        setHoveredFile(file);
+                    }
+                }}
+                onMouseLeave={() => {
+                    if (!previewFile) {
+                        setHoveredFile(undefined);
+                    }
+                }}
+            >
+                {name}
+            </a>
         },
         {
             title: '操作',
             dataIndex: 'operation',
             key: 'operation',
             render: (_: any, file: File) => (
-                file.url ?
-                    <a onClick={e => {
+                <Space>
+                    {file.url && <a onClick={e => {
                         e.preventDefault();
                         handleDownloadFile(file);
-                    }}>下载</a> : '未开放下载'
+                    }}>下载</a>}
+                    <a onClick={e => {
+                        e.preventDefault();
+                        setPreviewFile(file);
+                    }}>预览</a>
+                </Space>
             ),
         }
     ];
@@ -168,8 +235,13 @@ export default function FilesPage() {
         value: folder.full_name
     }))];
 
+    const handleCancelPreview = () => {
+        setPreviewFile(undefined);
+    }
+
     return <BasicLayout>
         {contextHolder}
+        {previewFile && <PreviewModal open files={[previewFile]} handleCancelPreview={handleCancelPreview} />}
         <Space direction="vertical" style={{ width: "100%" }} size={"large"}>
             <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} />
             <Space>

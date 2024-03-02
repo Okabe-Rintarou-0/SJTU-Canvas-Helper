@@ -1,31 +1,33 @@
 export interface Course {
-    id: number,
-    uuid: string,
-    name: string,
-    course_code: string,
-    enrollments: Enrollment[],
+    id: number;
+    uuid: string;
+    name: string;
+    course_code: string;
+    enrollments: Enrollment[];
 }
 
 export type EnrollmentRole = "TaEnrollment" | "StudentEnrollment";
 
 export interface Enrollment {
-    type: string,
-    role: EnrollmentRole,
-    role_id: number,
-    user_id: number,
-    enrollment_state: string,
+    type: string;
+    role: EnrollmentRole;
+    role_id: number;
+    user_id: number;
+    enrollment_state: string;
 }
 
 export interface File {
-    key: string,
-    id: number,
-    uuid: string,
-    folder_id: number,
-    url: string,
-    display_name: string,
-    locked: boolean,
-    filename: string,
-    size: number,
+    key: string;
+    id: number;
+    uuid: string;
+    folder_id: number;
+    url: string;
+    display_name: string;
+    locked: boolean;
+    filename: string;
+    mime_class: string;
+    "content-type": string;
+    size: number;
 }
 
 export interface Folder {
@@ -42,7 +44,7 @@ export interface Folder {
 
 export interface User {
     id: number;
-    key: number,
+    key: number;
     name: string;
     created_at: string;
     sortable_name: string;
@@ -53,7 +55,7 @@ export interface User {
 
 export interface Assignment {
     id: number;
-    key: number,
+    key: number;
     description: string;
     due_at?: string;
     unlock_at?: string;
@@ -64,34 +66,34 @@ export interface Assignment {
     html_url: string;
     allowed_extensions?: string[];
     published: boolean;
-    has_submitted_submissions: boolean,
-    submission?: Submission,
+    has_submitted_submissions: boolean;
+    submission?: Submission;
 }
 
 export type WorkflowState = "submitted" | "unsubmitted" | "graded";
 
 export interface Submission {
     id: number;
-    key: number,
+    key: number;
     submitted_at?: string;
     assignment_id: number;
     user_id: number;
     late: boolean;
     attachments: Attachment[];
-    workflow_state: WorkflowState,
+    workflow_state: WorkflowState;
 }
 
 export interface Attachment {
-    user?: string,
+    user?: string;
     submitted_at?: string;
     id: number;
-    key: number,
-    late: boolean,
+    key: number;
+    late: boolean;
     uuid: string;
     folder_id: number;
     display_name: string;
     filename: string;
-    content_type: string;
+    "content-type": string;
     url: string;
     size: number;
     locked: boolean;
@@ -100,25 +102,25 @@ export interface Attachment {
 }
 
 export interface FileDownloadTask {
-    key: string,
+    key: string;
     file: File
-    progress: number,
-    state: FileDownloadState,
+    progress: number;
+    state: FileDownloadState;
 }
 
 export type FileDownloadState = "downloading" | "succeed" | "fail";
 
 export interface AppConfig {
-    token: string,
-    save_path: string,
+    token: string;
+    save_path: string;
 }
 
 export interface ExportUsersConfig {
-    save_name: string,
+    save_name: string;
 }
 
 export interface ProgressPayload {
-    uuid: string,
-    downloaded: number,
-    total: number,
+    uuid: string;
+    downloaded: number;
+    total: number;
 }
