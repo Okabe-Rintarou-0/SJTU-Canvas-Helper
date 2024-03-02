@@ -3,6 +3,10 @@ import { Modal } from "antd";
 import { File } from "../lib/model";
 import { Md5 } from 'ts-md5';
 
+// fix https://github.com/wojtekmaj/react-pdf/issues/991
+import { pdfjs } from "react-pdf";
+pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.js`
+
 export default function PreviewModal({ open, files, handleCancelPreview }: {
     open: boolean,
     files: File[],
