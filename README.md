@@ -10,6 +10,10 @@ SJTU Canvas 小帮手，基于 [Tauri](https://tauri.app/) 开发。
 </div>
 
 ## Main Features
++ 预览（类似 quick look）
+
+https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/assets/58595459/7b0f7852-45ea-4207-b13b-ff9397a7c5a1
+
 + 下载课程文件
 
 ![](download_course_files.png)
