@@ -23,7 +23,6 @@ export default function FilesPage() {
     const [operating, setOperating] = useState<boolean>(false);
     const [loading, setLoading] = useState<boolean>(false);
     const [currentFolder, setCurrentFolder] = useState<string>(ALL_FILES);
-    const [_, setQuickPreview] = useState<boolean>(false);
     const [hoveredFile, setHoveredFile] = useState<File | undefined>(undefined);
 
     const hoveredFileRef = useRef<File | undefined>(undefined);
@@ -32,11 +31,8 @@ export default function FilesPage() {
     useEffect(() => {
         initCourses();
         document.body.addEventListener("keydown", handleKeyDownEvent, true);
-        document.body.addEventListener("keyup", handleKeyUpEvent, true);
-
         return () => {
             document.body.removeEventListener("keydown", handleKeyDownEvent, true);
-            document.body.removeEventListener("keyup", handleKeyUpEvent, true);
         }
     }, []);
 
@@ -55,21 +51,9 @@ export default function FilesPage() {
             if (hoveredFileRef.current && !previewFileRef.current) {
                 setHoveredFile(undefined);
                 setPreviewFile(hoveredFileRef.current);
-                setQuickPreview(true);
+            } else if (previewFileRef.current) {
+                setPreviewFile(undefined);
             }
-        }
-    }
-
-    const handleKeyUpEvent = (ev: KeyboardEvent) => {
-        if (ev.key === " ") {
-            ev.stopPropagation();
-            ev.preventDefault();
-            setQuickPreview(quickPreview => {
-                if (quickPreview) {
-                    setPreviewFile(undefined);
-                }
-                return false;
-            });
         }
     }
 

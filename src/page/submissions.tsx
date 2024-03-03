@@ -22,7 +22,6 @@ export default function SubmissionsPage() {
     const [downloadTasks, setDownloadTasks] = useState<FileDownloadTask[]>([]);
     const [selectedAssignment, setSelectedAssignment] = useState<Assignment | undefined>(undefined);
     const [selectedAttachments, setSelectedAttachments] = useState<Attachment[]>([]);
-    const [_, setQuickPreview] = useState<boolean>(false);
     const [hoveredFile, setHoveredFile] = useState<File | undefined>(undefined);
     const usersMap = new Map<number, User>(users.map(user => ([user.id, user])));
 
@@ -32,11 +31,8 @@ export default function SubmissionsPage() {
     useEffect(() => {
         initCourses();
         document.body.addEventListener("keydown", handleKeyDownEvent, true);
-        document.body.addEventListener("keyup", handleKeyUpEvent, true);
-
         return () => {
             document.body.removeEventListener("keydown", handleKeyDownEvent, true);
-            document.body.removeEventListener("keyup", handleKeyUpEvent, true);
         }
     }, []);
 
@@ -53,22 +49,11 @@ export default function SubmissionsPage() {
             ev.stopPropagation();
             ev.preventDefault();
             if (hoveredFileRef.current && !previewFileRef.current) {
+                setHoveredFile(undefined);
                 setPreviewFile(hoveredFileRef.current);
-                setQuickPreview(true);
+            } else if (previewFileRef.current) {
+                setPreviewFile(undefined);
             }
-        }
-    }
-
-    const handleKeyUpEvent = (ev: KeyboardEvent) => {
-        if (ev.key === " ") {
-            ev.stopPropagation();
-            ev.preventDefault();
-            setQuickPreview(quickPreview => {
-                if (quickPreview) {
-                    setPreviewFile(undefined);
-                }
-                return false;
-            });
         }
     }
 
