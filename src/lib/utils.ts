@@ -33,3 +33,27 @@ export function base64ToFile(base64: string, filename: string) {
     let file = new File([blob], filename);
     return file;
 }
+
+const fileExtensions: Record<string, string> = {
+    bmp: "image/bmp",
+    csv: "text/csv",
+    doc: "doc",
+    docx: "doc",
+    gif: "image/gif",
+    jpg: "image/jpg",
+    jpeg: "image/jpeg",
+    pptx: "ppt",
+    pdf: "application/pdf",
+    png: "image/png",
+    tiff: "image/tiff",
+    mp4: "video/mp4",
+};
+
+export function getFileType(filename: string): string {
+    const extension = filename.split('.').pop()?.toLowerCase();
+    if (extension && fileExtensions[extension]) {
+        return fileExtensions[extension];
+    } else {
+        return extension ?? "";
+    }
+}

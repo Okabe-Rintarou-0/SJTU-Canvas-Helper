@@ -1,17 +1,21 @@
-import { DocRendererProps } from "@cyntler/react-doc-viewer";
-import { Tree, TreeDataNode } from "antd";
-import JSZip, { loadAsync } from "jszip"
+import DocViewer, { DocRendererProps, IDocument } from "@cyntler/react-doc-viewer";
+import { Space, Tree, TreeDataNode, TreeProps } from "antd";
+import JSZip, { loadAsync, JSZipObject } from "jszip"
 import { useEffect, useState } from "react";
 import { DownOutlined } from '@ant-design/icons';
 import useMessage from "antd/es/message/useMessage";
+import { getFileType } from "../lib/utils";
+import { BasicRenderers } from "./preview_modal";
 
-export function ZipRenderer({
+export default function ZipRenderer({
     mainState: { currentDocument },
 }: DocRendererProps) {
     if (!currentDocument) return null;
     const [messageApi, contextHolder] = useMessage();
     const [treeData, setTreeData] = useState<TreeDataNode | undefined>(undefined);
-    const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
+    // const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
+    const [selectedDoc, setSelectedDoc] = useState<IDocument | undefined>(undefined);
+    const [fileMap, setFileMap] = useState<Map<string, JSZipObject> | undefined>(undefined);
 
     useEffect(() => { parseZip(); }, []);
 
@@ -21,8 +25,12 @@ export function ZipRenderer({
             key: '',
             children: []
         } as TreeDataNode;
-        let expandedKeys = [""];
-        zip.forEach(function (relativePath) {
+        // let expandedKeys = [""];
+        let fileMap = new Map<string, JSZipObject>();
+        zip.forEach(function (relativePath, file) {
+            if (!file.dir) {
+                fileMap.set(relativePath, file);
+            }
             let pathArray = relativePath.split('/');
             let currentNode: TreeDataNode | undefined = treeData;
             let currentDir = "";
@@ -30,10 +38,10 @@ export function ZipRenderer({
                 if (pathPart === "") {
                     return;
                 }
-                currentDir += "/" + pathPart;
+                currentDir += currentDir.length > 0 ? "/" + pathPart : pathPart;
                 let child = currentNode?.children?.find(data => data.title === pathPart);
                 if (!child) {
-                    expandedKeys.push(currentDir);
+                    // expandedKeys.push(currentDir);
                     child = {
                         title: pathPart,
                         key: currentDir,
@@ -44,7 +52,8 @@ export function ZipRenderer({
                 currentNode = child;
             });
         });
-        setExpandedKeys(expandedKeys);
+        // setExpandedKeys(expandedKeys);
+        setFileMap(fileMap);
         return treeData;
     }
 
@@ -60,15 +69,43 @@ export function ZipRenderer({
         }
     }
 
+    const onSelect: TreeProps['onSelect'] = async (_, info) => {
+        let path = info.node.key as string;
+        let file = fileMap?.get(path);
+        if (file) {
+            let blob = await file.async("blob");
+            let doc = {
+                uri: URL.createObjectURL(blob),
+                fileName: file.name,
+                fileType: getFileType(file.name),
+            } as IDocument;
+            setSelectedDoc(doc);
+        }
+    };
+
     return <>
         {contextHolder}
-        <Tree
-            showLine
-            switcherIcon={<DownOutlined />}
-            expandedKeys={expandedKeys}
-            // onSelect={onSelect}
-            treeData={treeData?.children}
-        />
+        <Space align="start" size={"large"}>
+            <Tree
+                showLine
+                switcherIcon={<DownOutlined />}
+                onSelect={onSelect}
+                treeData={treeData?.children}
+            />
+            {selectedDoc && <DocViewer
+                style={{ position: "sticky" }}
+                key={selectedDoc.uri}
+                config={{
+                    header: {
+                        disableHeader: true,
+                        disableFileName: true,
+                        retainURLParams: true
+                    }
+                }}
+                pluginRenderers={BasicRenderers}
+                documents={[selectedDoc]}
+            />}
+        </Space>
     </>
 }
 
