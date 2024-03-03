@@ -15,7 +15,7 @@ export function sleep(time: number) {
     return new Promise((resolve) => setTimeout(resolve, time));
 }
 
-export function base64ToArrayBuffer(base64: string) {
+export function base64ToBuffer(base64: string) {
     let binaryString = atob(base64);
     let length = binaryString.length;
     let bytes = new Uint8Array(length);
@@ -24,14 +24,7 @@ export function base64ToArrayBuffer(base64: string) {
         bytes[i] = binaryString.charCodeAt(i);
     }
 
-    return bytes.buffer;
-}
-
-export function base64ToFile(base64: string, filename: string) {
-    let binaryString = atob(base64);
-    let blob = new Blob([binaryString]);
-    let file = new File([blob], filename);
-    return file;
+    return bytes;
 }
 
 const fileExtensions: Record<string, string> = {
@@ -57,4 +50,16 @@ export function getFileType(filename: string): string {
     } else {
         return extension ?? "";
     }
+}
+
+export function dataURLtoFile(dataurl: string, filename: string) {
+    var arr = dataurl.split(','),
+        mime = arr[0].match(/:(.*?);/)?.[1],
+        bstr = atob(arr[arr.length - 1]),
+        n = bstr.length,
+        u8arr = new Uint8Array(n);
+    while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new File([u8arr], filename, { type: mime });
 }

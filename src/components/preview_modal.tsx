@@ -10,9 +10,10 @@ import CodeRenderer from "./code_renderer";
 import DocxRenderer from "./docx_renderer";
 import ImageRenderer from "./img_renderer";
 import { getFileType } from "../lib/utils";
+import MarkdownRenderer from "./markdown_renderer";
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.js`;
 
-export const BasicRenderers = [BMPRenderer, JPGRenderer, PDFRenderer, PNGRenderer, TIFFRenderer, CSVRenderer, GIFRenderer, VideoRenderer, MSDocRenderer, CodeRenderer, DocxRenderer, ImageRenderer]
+export const BasicRenderers = [BMPRenderer, JPGRenderer, PDFRenderer, PNGRenderer, TIFFRenderer, CSVRenderer, GIFRenderer, VideoRenderer, MSDocRenderer, CodeRenderer, DocxRenderer, ImageRenderer, MarkdownRenderer]
 
 export default function PreviewModal({ open, files, handleCancelPreview }: {
     open: boolean,
