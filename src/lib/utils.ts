@@ -14,3 +14,22 @@ export function formatDate(inputDate: string): string {
 export function sleep(time: number) {
     return new Promise((resolve) => setTimeout(resolve, time));
 }
+
+export function base64ToArrayBuffer(base64: string) {
+    let binaryString = atob(base64);
+    let length = binaryString.length;
+    let bytes = new Uint8Array(length);
+
+    for (let i = 0; i < length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    return bytes.buffer;
+}
+
+export function base64ToFile(base64: string, filename: string) {
+    let binaryString = atob(base64);
+    let blob = new Blob([binaryString]);
+    let file = new File([blob], filename);
+    return file;
+}

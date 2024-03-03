@@ -87,10 +87,14 @@ export default function SubmissionsPage() {
         key: 'display_name',
         render: (name: string, attachment: Attachment) => <a
             onMouseEnter={() => {
-                setHoveredFile(attachmentToFile(attachment));
+                if (!previewFile) {
+                    setHoveredFile(attachmentToFile(attachment));
+                }
             }}
             onMouseLeave={() => {
-                setHoveredFile(undefined);
+                if (!previewFile) {
+                    setHoveredFile(undefined);
+                }
             }}
         >
             {name}
