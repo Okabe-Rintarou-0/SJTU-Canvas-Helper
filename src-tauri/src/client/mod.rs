@@ -2,6 +2,7 @@ use std::{fs, io::Write, path::Path};
 
 use reqwest::Response;
 use serde::de::DeserializeOwned;
+use serde_json::Value;
 
 use crate::{
     error::Result,
@@ -93,8 +94,27 @@ impl Client {
             .await?
             .error_for_status()?;
 
-        let files = serde_json::from_slice::<Vec<T>>(&res.bytes().await?)?;
-        Ok(files)
+        let files: Vec<Value> = serde_json::from_slice(&res.bytes().await?)?;
+        let filtered_files: Vec<T> = if std::any::type_name::<T>() == std::any::type_name::<Course>() {
+            files
+                .into_iter()
+                .filter_map(|file| {
+                    if file.get("uuid").is_none() {
+                        None
+                    } else {
+                        Some(serde_json::from_value(file).unwrap())
+                    }
+                })
+                .collect()
+        } else {
+            files
+                .into_iter()
+                .map(|file| serde_json::from_value(file).unwrap())
+                .collect()
+        };
+
+
+        Ok(filtered_files)
     }
 
     pub async fn list_items<T: DeserializeOwned>(&self, url: &str, token: &str) -> Result<Vec<T>> {
