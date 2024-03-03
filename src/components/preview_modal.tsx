@@ -8,11 +8,11 @@ import { pdfjs } from "react-pdf";
 import ZipRenderer from "./zip_renderer";
 import CodeRenderer from "./code_renderer";
 import DocxRenderer from "./docx_renderer";
-import SvgRenderer from "./svg_renderer";
+import ImageRenderer from "./img_renderer";
 import { getFileType } from "../lib/utils";
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.js`;
 
-export const BasicRenderers = [BMPRenderer, JPGRenderer, PDFRenderer, PNGRenderer, TIFFRenderer, CSVRenderer, GIFRenderer, VideoRenderer, MSDocRenderer, CodeRenderer, DocxRenderer, SvgRenderer]
+export const BasicRenderers = [BMPRenderer, JPGRenderer, PDFRenderer, PNGRenderer, TIFFRenderer, CSVRenderer, GIFRenderer, VideoRenderer, MSDocRenderer, CodeRenderer, DocxRenderer, ImageRenderer]
 
 export default function PreviewModal({ open, files, handleCancelPreview }: {
     open: boolean,

@@ -47,6 +47,7 @@ const fileExtensions: Record<string, string> = {
     png: "image/png",
     tiff: "image/tiff",
     mp4: "video/mp4",
+    gitignore: "txt",
 };
 
 export function getFileType(filename: string): string {
