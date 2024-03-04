@@ -59,6 +59,8 @@ pub struct AppConfig {
     pub token: String,
     #[serde(default)]
     pub save_path: String,
+    #[serde(default)]
+    pub serve_as_plaintext: String,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -111,7 +113,7 @@ pub struct Assignment {
 pub enum WorkflowState {
     Submitted,
     Unsubmitted,
-    Graded
+    Graded,
 }
 
 impl Default for WorkflowState {

@@ -80,7 +80,7 @@ export default function ZipRenderer({
             let doc = {
                 uri: URL.createObjectURL(file),
                 fileName: file.name,
-                fileType: getFileType(file.name),
+                fileType: await getFileType(file.name),
             } as IDocument;
             setSelectedDoc(doc);
         }

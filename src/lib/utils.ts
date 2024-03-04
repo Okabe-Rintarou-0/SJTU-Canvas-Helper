@@ -1,4 +1,5 @@
 import { decode } from "js-base64";
+import { getConfig } from "./store";
 
 export function formatDate(inputDate: string): string {
     if (!inputDate) {
@@ -29,29 +30,23 @@ export function base64ToBuffer(base64: string) {
     return bytes;
 }
 
-const fileExtensions: Record<string, string> = {
-    bmp: "image/bmp",
-    csv: "text/csv",
-    doc: "doc",
+const aliasMap: Record<string, string> = {
     docx: "doc",
-    gif: "image/gif",
-    jpg: "image/jpg",
-    jpeg: "image/jpeg",
     pptx: "ppt",
-    pdf: "application/pdf",
-    png: "image/png",
-    tiff: "image/tiff",
-    mp4: "video/mp4",
+    cjs: "js",
     gitignore: "txt",
 };
 
-export function getFileType(filename: string): string {
-    const extension = filename.split('.').pop()?.toLowerCase();
-    if (extension && fileExtensions[extension]) {
-        return fileExtensions[extension];
-    } else {
-        return extension ?? "";
+export async function getFileType(filename: string) {
+    const extension = filename.split('.').pop()?.toLowerCase() ?? "";
+    let serveAsPlaintext = (await getConfig()).serve_as_plaintext.split(',');
+    if (extension && aliasMap[extension]) {
+        return aliasMap[extension];
+    } else if (serveAsPlaintext.find(supportedExt => supportedExt.trim() === extension)) {
+        // serve as txt
+        return "txt";
     }
+    return extension;
 }
 
 export function getBase64Data(raw: string) {

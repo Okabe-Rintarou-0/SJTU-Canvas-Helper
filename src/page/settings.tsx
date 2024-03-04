@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { AppConfig } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import useMessage from "antd/es/message/useMessage";
+import { getConfig, saveConfig } from "../lib/store";
 
 const { Password } = Input;
 
@@ -16,13 +17,13 @@ export default function SettingsPage() {
     }, []);
 
     const initConfig = async () => {
-        let config = await invoke("get_config") as AppConfig;
-        form.setFieldsValue(config)
+        let config = await getConfig();
+        form.setFieldsValue(config);
     }
 
     const handleSaveConfig = async (config: AppConfig) => {
         try {
-            await invoke("save_config", { config });
+            await saveConfig(config);
             messageApi.success("保存成功！");
         } catch (e) {
             messageApi.error(e as string);
@@ -54,6 +55,9 @@ export default function SettingsPage() {
                 <p>请进入 <a href="https://oc.sjtu.edu.cn/profile/settings" target="_blank">https://oc.sjtu.edu.cn/profile/settings</a> 创建你的 API Token</p>
                 <Form.Item name="save_path" label="下载保存目录" required rules={[{ validator: savePathValidator }]}>
                     <Input placeholder="请输入文件下载保存目录" />
+                </Form.Item>
+                <Form.Item name="serve_as_plaintext" label="以纯文本显示的文件拓展名">
+                    <Input placeholder="请输入文件拓展名，以英文逗号隔开" />
                 </Form.Item>
                 <Form.Item>
                     <Button type="primary" htmlType="submit">
