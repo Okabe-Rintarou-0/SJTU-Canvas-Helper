@@ -3,13 +3,27 @@ use serde::{Deserialize, Serialize};
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Course {
     pub id: i64,
+
+    #[serde(default)]
     pub uuid: String,
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub course_code: String,
     #[serde(default)]
     pub enrollments: Vec<Enrollment>,
+    #[serde(default)]
+    pub access_restricted_by_date: Option<bool>,
 }
-
+impl Course {
+    pub fn is_access_restricted(&self) -> bool {
+        if let Some(restricted) = self.access_restricted_by_date {
+            restricted
+        } else {
+            false
+        }
+    }
+}
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct File {
     pub id: i64,
