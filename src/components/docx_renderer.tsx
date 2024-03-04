@@ -1,15 +1,16 @@
 import { DocRendererProps } from "@cyntler/react-doc-viewer";
 import { renderAsync } from "docx-preview"
 import { useEffect, useRef } from "react";
+import { decodeBase64DataAsBinary } from "../lib/utils";
 
 export default function DocxRenderer({
     mainState: { currentDocument },
 }: DocRendererProps) {
     if (!currentDocument) return null;
+    
     const containerRef = useRef<HTMLDivElement>(null);
+    const data = decodeBase64DataAsBinary(currentDocument.fileData as string);
 
-    const base64 = (currentDocument.fileData as string).split(',')[1];
-    const data = atob(base64);
     useEffect(() => {
         if (containerRef.current) {
             renderAsync(data, containerRef.current);

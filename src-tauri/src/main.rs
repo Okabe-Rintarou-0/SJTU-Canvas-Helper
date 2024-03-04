@@ -1,7 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::{fs, path::Path};
+use std::{fs, io::Write, path::Path};
 
 use client::Client;
 use error::Result;
@@ -117,6 +117,14 @@ impl App {
         self.client
             .list_folders(course_id, &self.config.read().await.token)
             .await
+    }
+
+    async fn save_file_content(&self, content: &str, file_name: &str) -> Result<()> {
+        let guard = self.config.read().await;
+        let path = Path::new(&guard.save_path).join(file_name);
+        let mut file = fs::File::create(path.to_str().unwrap())?;
+        file.write_all(content.as_bytes())?;
+        Ok(())
     }
 
     async fn download_file<F: Fn(ProgressPayload) + Send>(
@@ -263,6 +271,11 @@ async fn download_file<R: Runtime>(window: Window<R>, file: File) -> Result<()> 
 }
 
 #[tauri::command]
+async fn save_file_content(content: String, file_name: String) -> Result<()> {
+    APP.save_file_content(&content, &file_name).await
+}
+
+#[tauri::command]
 async fn save_config(config: AppConfig) -> Result<()> {
     tracing::info!("Receive config: {:?}", config);
     fs::write(&APP.config_path, serde_json::to_vec(&config).unwrap())?;
@@ -285,6 +298,7 @@ fn main() {
             list_folders,
             get_config,
             save_config,
+            save_file_content,
             delete_file,
             download_file,
             check_path,

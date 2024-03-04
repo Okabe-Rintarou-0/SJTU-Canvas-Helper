@@ -1,11 +1,10 @@
 import DocViewer, { DocRendererProps, IDocument } from "@cyntler/react-doc-viewer";
 import { Space, Tree, TreeDataNode, TreeProps } from "antd";
-// import JSZip, { loadAsync, JSZipObject } from "jszip"
 import { useEffect, useState } from "react";
 import { DownOutlined } from '@ant-design/icons';
 import useMessage from "antd/es/message/useMessage";
 import { dataURLtoFile, getFileType } from "../lib/utils";
-import { BasicRenderers } from "./preview_modal";
+import { BasicRenderers } from "./renderers";
 
 import { Archive } from 'libarchive.js'
 
@@ -24,63 +23,11 @@ export default function ZipRenderer({
     if (!currentDocument) return null;
     const [messageApi, contextHolder] = useMessage();
     const [treeData, setTreeData] = useState<TreeDataNode | undefined>(undefined);
-    // const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
-    // const [fileMap, setFileMap] = useState<Map<string, JSZipObject> | undefined>(undefined);
     const [fileMap, setFileMap] = useState<Map<string, File> | undefined>(undefined);
     const [selectedDoc, setSelectedDoc] = useState<IDocument | undefined>(undefined);
 
 
     useEffect(() => { parse(); }, []);
-
-    // const parseZipStructure = (zip: JSZip) => {
-    //     let treeData = {
-    //         title: '',
-    //         key: '',
-    //         children: []
-    //     } as TreeDataNode;
-    //     // let expandedKeys = [""];
-    //     let fileMap = new Map<string, JSZipObject>();
-    //     zip.forEach(function (relativePath, file) {
-    //         if (!file.dir) {
-    //             fileMap.set(relativePath, file);
-    //         }
-    //         let pathArray = relativePath.split('/');
-    //         let currentNode: TreeDataNode | undefined = treeData;
-    //         let currentDir = "";
-    //         pathArray.forEach(function (pathPart) {
-    //             if (pathPart === "") {
-    //                 return;
-    //             }
-    //             currentDir += currentDir.length > 0 ? "/" + pathPart : pathPart;
-    //             let child = currentNode?.children?.find(data => data.title === pathPart);
-    //             if (!child) {
-    //                 // expandedKeys.push(currentDir);
-    //                 child = {
-    //                     title: pathPart,
-    //                     key: currentDir,
-    //                     children: []
-    //                 } as TreeDataNode;
-    //                 currentNode?.children?.push(child);
-    //             }
-    //             currentNode = child;
-    //         });
-    //     });
-    //     // setExpandedKeys(expandedKeys);
-    //     setFileMap(fileMap);
-    //     return treeData;
-    // }
-
-    // const parseZip = async () => {
-    //     try {
-    //         let base64Content = (currentDocument.fileData as string).split(',')[1];
-    //         let binaryData = atob(base64Content);
-    //         let zip = await loadAsync(binaryData);
-    //         setTreeData(parseZipStructure(zip))
-    //     } catch (e) {
-    //         console.log(e as string);
-    //         messageApi.error(e as string);
-    //     }
-    // }
 
     const parseArchiveStructure = (root: any, currentDir: string, fileMap: Map<string, File>) => {
         let pathParts = currentDir.split("/");
@@ -156,7 +103,7 @@ export default function ZipRenderer({
                         disableHeader: true,
                         disableFileName: true,
                         retainURLParams: true
-                    }
+                    },
                 }}
                 pluginRenderers={BasicRenderers}
                 documents={[selectedDoc]}

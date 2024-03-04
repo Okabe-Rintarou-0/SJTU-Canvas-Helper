@@ -1,18 +1,17 @@
 import { DocRendererProps } from "@cyntler/react-doc-viewer";
-import { decode } from "js-base64"
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import "../css/markdown.css"
 import { dracula } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import { Card } from "antd";
+import { decodeBase64Data } from "../lib/utils";
 
 export default function MarkdownRenderer({
     mainState: { currentDocument },
 }: DocRendererProps) {
     if (!currentDocument) return null;
-    const base64 = (currentDocument.fileData as string).split(',')[1];
-    const data = decode(base64);
+    const data = decodeBase64Data(currentDocument.fileData as string);
 
     return <Card className="markdown-container">
         <Markdown remarkPlugins={[remarkGfm]}

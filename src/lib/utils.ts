@@ -1,3 +1,5 @@
+import { decode } from "js-base64";
+
 export function formatDate(inputDate: string): string {
     if (!inputDate) {
         return "";
@@ -50,6 +52,35 @@ export function getFileType(filename: string): string {
     } else {
         return extension ?? "";
     }
+}
+
+export function getBase64Data(raw: string) {
+    if (raw.startsWith("data:") && raw.indexOf(",") !== -1) {
+        return raw.split(',')[1];
+    }
+    return raw;
+}
+
+export function decodeBase64DataAsBinary(raw: string) {
+    let base64 = getBase64Data(raw);
+    let data;
+    try {
+        data = atob(base64);
+    } catch (_) {
+        data = raw;
+    }
+    return data;
+}
+
+export function decodeBase64Data(raw: string) {
+    let base64 = getBase64Data(raw);
+    let data;
+    try {
+        data = decode(base64);
+    } catch (_) {
+        data = raw;
+    }
+    return data;
 }
 
 export function dataURLtoFile(dataurl: string, filename: string) {

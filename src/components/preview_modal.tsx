@@ -1,4 +1,4 @@
-import DocViewer, { BMPRenderer, CSVRenderer, GIFRenderer, JPGRenderer, PDFRenderer, PNGRenderer, TIFFRenderer, VideoRenderer, MSDocRenderer } from "@cyntler/react-doc-viewer";
+import DocViewer from "@cyntler/react-doc-viewer";
 import { Modal } from "antd";
 import { File } from "../lib/model";
 import { Md5 } from 'ts-md5';
@@ -6,14 +6,9 @@ import { Md5 } from 'ts-md5';
 // fix https://github.com/wojtekmaj/react-pdf/issues/991
 import { pdfjs } from "react-pdf";
 import ZipRenderer from "./zip_renderer";
-import CodeRenderer from "./code_renderer";
-import DocxRenderer from "./docx_renderer";
-import ImageRenderer from "./img_renderer";
 import { getFileType } from "../lib/utils";
-import MarkdownRenderer from "./markdown_renderer";
+import { BasicRenderers } from "./renderers";
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.js`;
-
-export const BasicRenderers = [BMPRenderer, JPGRenderer, PDFRenderer, PNGRenderer, TIFFRenderer, CSVRenderer, GIFRenderer, VideoRenderer, MSDocRenderer, CodeRenderer, DocxRenderer, ImageRenderer, MarkdownRenderer]
 
 export default function PreviewModal({ open, files, handleCancelPreview }: {
     open: boolean,
@@ -41,7 +36,7 @@ export default function PreviewModal({ open, files, handleCancelPreview }: {
                 header: {
                     disableFileName: true,
                     retainURLParams: true
-                }
+                },
             }}
             pluginRenderers={[...BasicRenderers, ZipRenderer]}
             documents={docs}

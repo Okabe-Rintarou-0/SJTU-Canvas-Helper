@@ -93,8 +93,8 @@ impl Client {
             .await?
             .error_for_status()?;
 
-        let files = serde_json::from_slice::<Vec<T>>(&res.bytes().await?)?;
-        Ok(files)
+        let items = serde_json::from_slice::<Vec<T>>(&res.bytes().await?)?;
+        Ok(items)
     }
 
     pub async fn list_items<T: DeserializeOwned>(&self, url: &str, token: &str) -> Result<Vec<T>> {

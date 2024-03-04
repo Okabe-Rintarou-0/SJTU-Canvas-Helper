@@ -1,4 +1,5 @@
 import { DocRendererProps } from "@cyntler/react-doc-viewer";
+import { getBase64Data } from "../lib/utils";
 
 const prefixMap: Record<string, string> = {
     svg: "data:image/svg+xml;base64,",
@@ -10,7 +11,7 @@ export default function ImageRenderer({
 }: DocRendererProps) {
     if (!currentDocument) return null;
 
-    const base64 = prefixMap[currentDocument.fileType ?? ""] + (currentDocument.fileData as string).split(',')[1];
+    const base64 = prefixMap[currentDocument.fileType ?? ""] + getBase64Data(currentDocument.fileData as string);
     return <img src={base64} />
 }
 
