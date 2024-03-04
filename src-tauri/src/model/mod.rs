@@ -127,6 +127,8 @@ pub struct Submission {
     pub id: i64,
     #[serde(default)]
     pub submitted_at: Option<String>,
+    #[serde(default)]
+    pub grade: Option<String>,
     pub assignment_id: i64,
     pub user_id: i64,
     pub late: bool,

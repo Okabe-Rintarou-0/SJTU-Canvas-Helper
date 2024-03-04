@@ -77,6 +77,24 @@ impl App {
             .await
     }
 
+    async fn update_grade(
+        &self,
+        course_id: i32,
+        assignment_id: i32,
+        student_id: i32,
+        grade: &str,
+    ) -> Result<()> {
+        self.client
+            .update_grade(
+                course_id,
+                assignment_id,
+                student_id,
+                grade,
+                &self.config.read().await.token,
+            )
+            .await
+    }
+
     async fn list_ta_courses(&self) -> Result<Vec<Course>> {
         self.client
             .list_ta_courses(&self.config.read().await.token)
@@ -283,6 +301,17 @@ async fn save_config(config: AppConfig) -> Result<()> {
     Ok(())
 }
 
+#[tauri::command]
+async fn update_grade(
+    course_id: i32,
+    assignment_id: i32,
+    student_id: i32,
+    grade: String,
+) -> Result<()> {
+    APP.update_grade(course_id, assignment_id, student_id, &grade)
+        .await
+}
+
 fn main() {
     tracing_subscriber::fmt::init();
     tauri::Builder::default()
@@ -303,6 +332,7 @@ fn main() {
             download_file,
             check_path,
             export_users,
+            update_grade,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

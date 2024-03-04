@@ -75,6 +75,7 @@ export type WorkflowState = "submitted" | "unsubmitted" | "graded";
 export interface Submission {
     id: number;
     key: number;
+    grade: string | null;
     submitted_at?: string;
     assignment_id: number;
     user_id: number;
@@ -83,9 +84,16 @@ export interface Submission {
     workflow_state: WorkflowState;
 }
 
+export interface GradeStatistic {
+    grades: number[];
+    total: number;
+}
+
 export interface Attachment {
     user?: string;
+    user_id: number;
     submitted_at?: string;
+    grade: string | null;
     id: number;
     key: number;
     late: boolean;

@@ -1,7 +1,7 @@
 use std::{fs, io::Write, path::Path};
 
 use reqwest::Response;
-use serde::de::DeserializeOwned;
+use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{
     error::Result,
@@ -21,10 +21,10 @@ impl Client {
         }
     }
 
-    async fn get_request(
+    async fn get_request<T: Serialize + ?Sized>(
         &self,
         url: &str,
-        query: Option<&Vec<(String, String)>>,
+        query: Option<&T>,
         token: &str,
     ) -> Result<Response> {
         let mut req = self
@@ -40,6 +40,48 @@ impl Client {
         Ok(res)
     }
 
+    pub async fn post_form<T: Serialize + ?Sized, Q: Serialize + ?Sized>(
+        &self,
+        url: &str,
+        query: Option<&Q>,
+        form: &T,
+        token: &str,
+    ) -> Result<Response> {
+        let mut request = self
+            .cli
+            .post(url)
+            .header("Authorization".to_owned(), format!("Bearer {}", token))
+            .form(form);
+        if let Some(query) = query {
+            request = request.query(query);
+        }
+        let response = request.send().await?;
+        Ok(response)
+    }
+
+    pub async fn update_grade(
+        &self,
+        course_id: i32,
+        assignment_id: i32,
+        student_id: i32,
+        grade: &str,
+        token: &str,
+    ) -> Result<()> {
+        let url = format!(
+            "{}/api/v1/courses/{}/assignments/{}/submissions/update_grades",
+            BASE_URL, course_id, assignment_id
+        );
+        self.post_form(
+            &url,
+            None::<&str>,
+            &[(format!("grade_data[{}][posted_grade]", student_id), grade)],
+            token,
+        )
+        .await?
+        .error_for_status()?;
+        Ok(())
+    }
+
     pub async fn download_file<F: Fn(ProgressPayload) + Send>(
         &self,
         file: &File,
@@ -48,7 +90,7 @@ impl Client {
         progress_handler: F,
     ) -> Result<()> {
         let mut response = self
-            .get_request(&file.url, None, token)
+            .get_request(&file.url, None::<&str>, token)
             .await?
             .error_for_status()?;
 
@@ -85,8 +127,8 @@ impl Client {
             .get_request(
                 url,
                 Some(&vec![
-                    ("page".to_owned(), page.to_string()),
-                    ("per_page".to_owned(), "100".to_owned()),
+                    ("page", page.to_string()),
+                    ("per_page", "100".to_owned()),
                 ]),
                 token,
             )
@@ -155,7 +197,7 @@ impl Client {
         let all_courses = self.list_items(&url, token).await?;
         let filtered_courses: Vec<Course> = all_courses
             .into_iter()
-            .filter(|course:&Course| !course.is_access_restricted())
+            .filter(|course: &Course| !course.is_access_restricted())
             .collect();
 
         Ok(filtered_courses)

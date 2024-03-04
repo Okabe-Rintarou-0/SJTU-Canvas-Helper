@@ -1,13 +1,15 @@
-import { Button, Select, Space, Table, Tag } from "antd";
+import { Button, Input, Select, Space, Table, Tag } from "antd";
 import BasicLayout from "../components/layout";
 import useMessage from "antd/es/message/useMessage";
 import { useEffect, useRef, useState } from "react";
-import { Assignment, Attachment, Course, File, FileDownloadTask, Submission, User } from "../lib/model";
+import { Assignment, Attachment, Course, File, FileDownloadTask, GradeStatistic, Submission, User } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import { formatDate } from "../lib/utils";
 import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
 import PreviewModal from "../components/preview_modal";
+import GradeStatisticChart from "../components/grade_statistic";
+
 
 export default function SubmissionsPage() {
     const [messageApi, contextHolder] = useMessage();
@@ -24,6 +26,7 @@ export default function SubmissionsPage() {
     const [selectedAttachments, setSelectedAttachments] = useState<Attachment[]>([]);
     const [hoveredFile, setHoveredFile] = useState<File | undefined>(undefined);
     const usersMap = new Map<number, User>(users.map(user => ([user.id, user])));
+    const [statistic, setStatistic] = useState<GradeStatistic | undefined>(undefined);
 
     const hoveredFileRef = useRef<File | undefined>(undefined);
     const previewFileRef = useRef<File | undefined>(undefined);
@@ -57,15 +60,77 @@ export default function SubmissionsPage() {
         }
     }
 
+    const validateGrade = (grade: string) => {
+        if (grade.length === 0) {
+            return true;
+        }
+        let maxGrade = selectedAssignment?.points_possible;
+        let gradeNumber;
+        try {
+            gradeNumber = Number.parseFloat(grade);
+        } catch (_) {
+            return false;
+        }
+        return 0 <= gradeNumber && (!maxGrade || gradeNumber <= maxGrade);
+    }
+
+    const gatherGrades = (attachments: Attachment[]): [number[], number] => {
+        let grades = []
+        let visitSet = new Set<number>();
+        let userId;
+        for (let attachment of attachments) {
+            userId = attachment.user_id;
+            if (!visitSet.has(userId)) {
+                visitSet.add(userId);
+                if (attachment.grade) {
+                    grades.push(Number.parseFloat(attachment.grade));
+                }
+            }
+        }
+        let total = visitSet.size;
+        return [grades, total];
+    }
+
+    const updateGradeStatistic = (attachments: Attachment[]) => {
+        let [grades, total] = gatherGrades(attachments);
+        let statistic = { grades, total } as GradeStatistic;
+        setStatistic(statistic);
+    }
+
+    const handleGrade = async (grade: string, attachment: Attachment) => {
+        if (!validateGrade(grade)) {
+            messageApi.error("请输入正确格式的评分（不超过上限的正数或空字符串）！🙅🙅🙅");
+            return;
+        }
+        try {
+            await invoke("update_grade", {
+                courseId: selectedCourseId,
+                assignmentId: selectedAssignment?.id,
+                studentId: attachment.user_id,
+                grade
+            });
+            attachments.filter(thisAttachment => thisAttachment.user_id === attachment.user_id)
+                .map(attachment => attachment.grade = grade);
+            setAttachments([...attachments]);
+            updateGradeStatistic(attachments);
+            messageApi.success("打分成功！🎉", 0.5);
+        } catch (e) {
+            console.log(e as string);
+            messageApi.error(e as string);
+        }
+    }
+
     const columns = [{
         title: '学生',
         dataIndex: 'user',
         key: 'user',
     }, {
-        title: '提交时间',
-        dataIndex: 'submitted_at',
-        key: 'submitted_at',
-        render: formatDate,
+        title: '分数',
+        dataIndex: 'grade',
+        key: 'grade',
+        render: (grade: string | null, attachment: Attachment) => <Input defaultValue={grade ?? ""}
+            placeholder="输入成绩并按回车以打分"
+            onPressEnter={(ev) => handleGrade(ev.currentTarget.value, attachment)} />
     }, {
         title: '文件',
         dataIndex: 'display_name',
@@ -84,6 +149,11 @@ export default function SubmissionsPage() {
         >
             {name}
         </a>
+    }, {
+        title: '提交时间',
+        dataIndex: 'submitted_at',
+        key: 'submitted_at',
+        render: formatDate,
     }, {
         title: '状态',
         dataIndex: 'late',
@@ -138,7 +208,7 @@ export default function SubmissionsPage() {
     }
 
     const handleGetSubmissions = async (courseId: number, assignmentId: number) => {
-        if (courseId === -1) {
+        if (courseId === -1 || assignmentId === -1) {
             return;
         }
         setOperating(true);
@@ -150,13 +220,16 @@ export default function SubmissionsPage() {
                 let thisAttachments = submission.attachments;
                 for (let attachment of thisAttachments) {
                     attachment.user = usersMap.get(submission.user_id)?.name;
+                    attachment.user_id = submission.user_id;
                     attachment.submitted_at = submission.submitted_at;
+                    attachment.grade = submission.grade;
                     attachment.key = attachment.id;
                     attachment.late = submission.late;
                 }
                 attachments.push(...thisAttachments);
             }
             setAttachments(attachments);
+            updateGradeStatistic(attachments);
         } catch (e) {
             messageApi.error(e as string);
         }
@@ -206,6 +279,7 @@ export default function SubmissionsPage() {
         if (selectedCourse) {
             setAttachments([]);
             setSelectedAttachments([]);
+            setStatistic(undefined);
             setSelectedAssignment(undefined);
             setSelectedCourseId(selectedCourse.id);
             handleGetUsers(selectedCourse.id);
@@ -216,6 +290,7 @@ export default function SubmissionsPage() {
     const handleAssignmentSelect = (selected: string) => {
         let assignment = assignments.find(assignment => assignment.name === selected);
         setSelectedAssignment(assignment);
+        setStatistic(undefined);
         setAttachments([]);
         setSelectedAttachments([]);
         if (assignment) {
@@ -271,6 +346,11 @@ export default function SubmissionsPage() {
                     options={assignmentOptions}
                 />
             </Space>
+            {
+                selectedAssignment?.points_possible &&
+                <span>满分：<b>{selectedAssignment.points_possible}</b>分</span>
+            }
+            {statistic && <GradeStatisticChart statistic={statistic} />}
             <Table style={{ width: "100%" }}
                 columns={columns}
                 loading={loading}
