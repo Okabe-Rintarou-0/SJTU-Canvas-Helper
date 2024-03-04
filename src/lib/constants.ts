@@ -1,33 +1,5 @@
-export const CODE_LIKE_EXTENSIONS = [
-    "html", "xml", "xhtml",
-    "css",
-    "js", "jsx",
-    "json",
-    "ts", "tsx",
-    "md",
-    "yaml", "yml",
-    "sql",
-    "py",
-    "java",
-    "c", "cpp",
-    "cs",
-    "rb",
-    "php",
-    "pl",
-    "sh", "bash",
-    "swift",
-    "go",
-    "rs",
-    "kt",
-    "dart",
-    "lua",
-    "groovy",
-    "ps1",
-    "scala",
-    "r",
-    "m",
-    "matlab",
-    "hs",
-    "fs", "fsx",
-    "txt",
-];
+// Please see: https://github.com/highlightjs/highlight.js/blob/main/SUPPORTED_LANGUAGES.md
+// Exclusion: 'excel', 'xls', 'xlsx', 
+// 'svg'
+// 'markdown', 'md', 'mkdown', 'mkd'
+export const CODE_LIKE_EXTENSIONS = ['1c', '4d', 'sap-abap', 'abap', 'abnf', 'accesslog', 'ada', 'apex', 'arduino', 'ino', 'armasm', 'arm', 'avrasm', 'actionscript', 'as', 'alan', 'i', 'ln', 'angelscript', 'asc', 'apache', 'apacheconf', 'applescript', 'osascript', 'arcade', 'asciidoc', 'adoc', 'aspectj', 'autohotkey', 'autoit', 'awk', 'mawk', 'nawk', 'gawk', 'ballerina', 'bal', 'bash', 'sh', 'zsh', 'basic', 'bbcode', 'blade', 'bnf', 'bqn', 'brainfuck', 'bf', 'csharp', 'cs', 'c', 'h', 'cpp', 'hpp', 'cc', 'hh', 'c++', 'h++', 'cxx', 'hxx', 'cal', 'c3', 'cos', 'cls', 'candid', 'did', 'cmake', 'cmake.in', 'cobol', 'standard-cobol', 'codeowners', 'coq', 'csp', 'css', 'capnproto', 'capnp', 'chaos', 'kaos', 'chapel', 'chpl', 'cisco', 'clojure', 'clj', 'coffeescript', 'coffee', 'cson', 'iced', 'cpc', 'crmsh', 'crm', 'pcmk', 'crystal', 'cr', 'curl', 'cypher', 'd', 'dafny', 'dart', 'dpr', 'dfm', 'pas', 'pascal', 'diff', 'patch', 'django', 'jinja', 'dns', 'zone', 'bind', 'dockerfile', 'docker', 'dos', 'bat', 'cmd', 'dsconfig', 'dts', 'dust', 'dst', 'dylan', 'ebnf', 'elixir', 'elm', 'erlang', 'erl', 'extempore', 'xtlang', 'xtm', 'fsharp', 'fs', 'fsx', 'fsi', 'fsscript', 'fix', 'flix', 'fortran', 'f90', 'f95', 'func', 'gcode', 'nc', 'gams', 'gms', 'gauss', 'gss', 'godot', 'gdscript', 'gherkin', 'hbs', 'glimmer', 'html.hbs', 'html.handlebars', 'htmlbars', 'gn', 'gni', 'go', 'golang', 'gf', 'golo', 'gololang', 'gradle', 'graphql', 'groovy', 'gsql', 'xml', 'html', 'xhtml', 'rss', 'atom', 'xjb', 'xsd', 'xsl', 'plist', 'http', 'https', 'haml', 'handlebars', 'hbs', 'html.hbs', 'html.handlebars', 'haskell', 'hs', 'haxe', 'hx', '[highlightjs-hlsl](https://github.com/highlightjs/highlightjs-hlsl)', 'hy', 'hylang', 'ini', 'toml', 'inform7', 'i7', 'irpf90', 'iptables', 'json', 'java', 'jsp', 'javascript', 'js', 'jsx', 'jolie', 'iol', 'ol', 'julia', 'jl', 'julia-repl', 'kotlin', 'kt', 'tex', 'leaf', 'lean', 'lasso', 'ls', 'lassoscript', 'less', 'ldif', 'lisp', 'livecodeserver', 'livescript', 'ls', 'lookml', 'lua', 'luau', 'macaulay2', 'makefile', 'mk', 'mak', 'make', 'mathematica', 'mma', 'wl', 'matlab', 'maxima', 'mel', 'mercury', 'mips', 'mipsasm', 'mint', 'mirc', 'mrc', 'mizar', 'mkb', 'mlir', 'mojolicious', 'monkey', 'moonscript', 'moon', 'motoko', 'mo', 'n1ql', 'nsis', 'never', 'nginx', 'nginxconf', 'nim', 'nimrod', 'nix', 'oak', 'ocl', 'ocaml', 'ml', 'objectivec', 'mm', 'objc', 'obj-c', 'obj-c++', 'objective-c++', 'glsl', 'openscad', 'scad', 'ruleslanguage', 'oxygene', 'pf', 'pf.conf', 'php', 'papyrus', 'psc', 'parser3', 'perl', 'pl', 'pm', 'pine', 'pinescript', 'plaintext', 'txt', 'text', 'pony', 'pgsql', 'postgres', 'postgresql', 'powershell', 'ps', 'ps1', 'processing', 'prolog', 'properties', 'proto', 'protobuf', 'puppet', 'pp', 'python', 'py', 'gyp', 'profile', 'python-repl', 'pycon', 'qsharp', 'k', 'kdb', 'qml', 'r', 'cshtml', 'razor', 'razor-cshtml', 'reasonml', 're', 'redbol', 'rebol', 'red', 'red-system', 'rib', 'rsl', 'rescript', 'res', 'risc', 'riscript', 'riscv', 'riscvasm', 'graph', 'instances', 'robot', 'rf', 'rpm-specfile', 'rpm', 'spec', 'rpm-spec', 'specfile', 'ruby', 'rb', 'gemspec', 'podspec', 'thor', 'irb', 'rust', 'rs', 'rvt', 'rvt-script', 'SAS', 'sas', 'scss', 'sql', 'p21', 'step', 'stp', 'scala', 'scheme', 'scilab', 'sci', 'sfz', 'shexc', 'shell', 'console', 'smali', 'smalltalk', 'st', 'sml', 'ml', 'solidity', 'sol', 'spl', 'stan', 'stanfuncs', 'stata', 'iecst', 'scl', 'stl', 'structured-text', 'stylus', 'styl', 'subunit', 'supercollider', 'sc', 'svelte', 'swift', 'tcl', 'tk', 'terraform', 'tf', 'hcl', 'tap', 'thrift', 'toit', 'tp', 'tsql', 'twig', 'craftcms', 'typescript', 'ts', 'tsx', 'mts', 'cts', 'unicorn-rails-log', 'vbnet', 'vb', 'vba', 'vbscript', 'vbs', 'vhdl', 'vala', 'verilog', 'v', 'vim', 'wgsl', 'xsharp', 'xs', 'prg', 'axapta', 'x++', 'x86asm', 'x86asmatt', 'xl', 'tao', 'xquery', 'xpath', 'xq', 'xqm', 'yml', 'yaml', 'zenscript', 'zs', 'zephir', 'zep', 'zig']

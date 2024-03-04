@@ -113,6 +113,7 @@ export type FileDownloadState = "downloading" | "succeed" | "fail";
 export interface AppConfig {
     token: string;
     save_path: string;
+    serve_as_plaintext: string;
 }
 
 export interface ExportUsersConfig {
