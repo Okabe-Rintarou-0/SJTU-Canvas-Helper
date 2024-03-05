@@ -5,7 +5,6 @@ import { Md5 } from 'ts-md5';
 
 // fix https://github.com/wojtekmaj/react-pdf/issues/991
 import { pdfjs } from "react-pdf";
-import ZipRenderer from "./zip_renderer";
 import { getFileType } from "../lib/utils";
 import { BasicRenderers } from "./renderers";
 import { useEffect, useState } from "react";
@@ -50,7 +49,7 @@ export default function PreviewModal({ open, files, handleCancelPreview }: {
                     retainURLParams: true
                 },
             }}
-            pluginRenderers={[...BasicRenderers, ZipRenderer]}
+            pluginRenderers={BasicRenderers}
             documents={docs}
         />
     </Modal>

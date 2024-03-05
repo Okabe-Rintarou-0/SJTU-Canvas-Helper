@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { DownOutlined } from '@ant-design/icons';
 import useMessage from "antd/es/message/useMessage";
 import { dataURLtoFile, getFileType } from "../lib/utils";
-import { BasicRenderers } from "./renderers";
+import { ArchiveSupportedRenderers } from "./renderers";
 
 import { Archive } from 'libarchive.js'
 
@@ -17,7 +17,7 @@ Archive.init({
     workerUrl: archiveWorkerUrl,
 });
 
-export default function ZipRenderer({
+export default function ArchiveRenderer({
     mainState: { currentDocument },
 }: DocRendererProps) {
     if (!currentDocument) return null;
@@ -105,12 +105,12 @@ export default function ZipRenderer({
                         retainURLParams: true
                     },
                 }}
-                pluginRenderers={BasicRenderers}
+                pluginRenderers={ArchiveSupportedRenderers}
                 documents={[selectedDoc]}
             />}
         </Space>
     </>
 }
 
-ZipRenderer.fileTypes = ["zip", "rar", "tar", "7z"];
-ZipRenderer.weight = 1;
+ArchiveRenderer.fileTypes = ["zip", "rar", "tar", "7z"];
+ArchiveRenderer.weight = 1;

@@ -2,7 +2,7 @@ import { DocRendererProps } from "@cyntler/react-doc-viewer";
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import "../css/markdown.css"
+import styles from "../css/markdown.module.css"
 import { dracula } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import { Card } from "antd";
 import { decodeBase64Data } from "../lib/utils";
@@ -13,9 +13,9 @@ export default function MarkdownRenderer({
     if (!currentDocument) return null;
     const data = decodeBase64Data(currentDocument.fileData as string);
 
-    return <Card className="markdown-container">
+    return <Card className={styles.markdown_container}>
         <Markdown remarkPlugins={[remarkGfm]}
-            className="markdown"
+            className={styles.markdown}
             components={{
                 code({ node, inline, className, children, ...props }: any) {
                     const match = /language-(\w+)/.exec(className || '');

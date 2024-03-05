@@ -1,0 +1,19 @@
+.xlsx_table {
+    border-collapse: collapse;
+    background-color: white;
+    overflow: hidden;
+    border-radius: 10px;
+}
+
+.xlsx_table th,
+.xlsx_table td {
+    font-family: 'Motnserrat', sans-serif;
+    text-align: left;
+    font-size: 12px;
+    padding: 10px;
+}
+
+.xlsx_table th {
+    background-color: #7691ab;
+    color: white;
+}
