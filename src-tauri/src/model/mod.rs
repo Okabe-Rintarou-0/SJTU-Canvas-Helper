@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -84,6 +86,27 @@ pub struct User {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Colors {
+    pub custom_colors: HashMap<String, String>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CalendarEvent {
+    pub title: String,
+    pub workflow_state: String,
+    pub id: String,
+    #[serde(rename = "type")]
+    pub type_field: String,
+    pub assignment: Assignment,
+    pub html_url: String,
+    pub context_code: String,
+    pub end_at: String,
+    pub start_at: String,
+    pub url: String,
+    pub important_dates: bool,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Assignment {
     pub id: i64,
     #[serde(default)]
@@ -98,6 +121,8 @@ pub struct Assignment {
     pub points_possible: Option<f64>,
     pub course_id: i64,
     pub name: String,
+    #[serde(default)]
+    pub needs_grading_count: Option<i32>,
     pub html_url: String,
     #[serde(default)]
     pub allowed_extensions: Vec<String>,

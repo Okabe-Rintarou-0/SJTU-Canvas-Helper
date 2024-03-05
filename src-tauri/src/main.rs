@@ -5,7 +5,10 @@ use std::{fs, io::Write, path::Path};
 
 use client::Client;
 use error::Result;
-use model::{AppConfig, Assignment, Course, File, Folder, ProgressPayload, Submission, User};
+use model::{
+    AppConfig, Assignment, CalendarEvent, Colors, Course, File, Folder, ProgressPayload,
+    Submission, User,
+};
 use tauri::{api::path::download_dir, Runtime, Window};
 use tokio::sync::RwLock;
 use xlsxwriter::Workbook;
@@ -166,6 +169,28 @@ impl App {
         Ok(())
     }
 
+    async fn get_colors(&self) -> Result<Colors> {
+        self.client
+            .get_colors(&self.config.read().await.token)
+            .await
+    }
+
+    async fn list_calendar_events(
+        &self,
+        context_codes: &[String],
+        start_date: &str,
+        end_date: &str,
+    ) -> Result<Vec<CalendarEvent>> {
+        self.client
+            .list_calendar_events(
+                &self.config.read().await.token,
+                context_codes,
+                start_date,
+                end_date,
+            )
+            .await
+    }
+
     async fn save_config(&self, config: AppConfig) {
         *self.config.write().await = config;
     }
@@ -294,6 +319,21 @@ async fn save_file_content(content: String, file_name: String) -> Result<()> {
 }
 
 #[tauri::command]
+async fn list_calendar_events(
+    context_codes: Vec<String>,
+    start_date: String,
+    end_date: String,
+) -> Result<Vec<CalendarEvent>> {
+    APP.list_calendar_events(&context_codes, &start_date, &end_date)
+        .await
+}
+
+#[tauri::command]
+async fn get_colors() -> Result<Colors> {
+    APP.get_colors().await
+}
+
+#[tauri::command]
 async fn save_config(config: AppConfig) -> Result<()> {
     tracing::info!("Receive config: {:?}", config);
     fs::write(&APP.config_path, serde_json::to_vec(&config).unwrap())?;
@@ -325,6 +365,8 @@ fn main() {
             list_course_assignment_submissions,
             list_folder_files,
             list_folders,
+            list_calendar_events,
+            get_colors,
             get_config,
             save_config,
             save_file_content,
@@ -336,4 +378,29 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{error::Result, App};
+
+    #[tokio::test]
+    async fn test_get_calendar_events() -> Result<()> {
+        tracing_subscriber::fmt::init();
+        let app = App::new();
+        let colors = app.get_colors().await?;
+        tracing::info!("{:?}", colors);
+
+        let mut context_codes = vec![];
+        for (course_code, _) in colors.custom_colors {
+            context_codes.push(course_code);
+        }
+        let start_date = "2024-02-25T16:00:00.000Z";
+        let end_date = "2024-03-31T16:00:00.000Z";
+        let events = app
+            .list_calendar_events(&context_codes, start_date, end_date)
+            .await?;
+        tracing::info!("{:?}", events);
+        Ok(())
+    }
 }

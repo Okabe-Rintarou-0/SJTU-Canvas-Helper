@@ -5,7 +5,9 @@ use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{
     error::Result,
-    model::{Assignment, Course, File, Folder, ProgressPayload, Submission, User},
+    model::{
+        Assignment, CalendarEvent, Colors, Course, File, Folder, ProgressPayload, Submission, User,
+    },
 };
 const BASE_URL: &str = "https://oc.sjtu.edu.cn";
 const CHUNK_SIZE: u64 = 512 * 1024;
@@ -38,6 +40,20 @@ impl Client {
 
         let res = req.send().await?;
         Ok(res)
+    }
+
+    async fn get_json<T: Serialize + ?Sized, D: DeserializeOwned>(
+        &self,
+        url: &str,
+        query: Option<&T>,
+        token: &str,
+    ) -> Result<D> {
+        let response = self
+            .get_request(url, query, token)
+            .await?
+            .error_for_status()?;
+        let json = serde_json::from_slice(&response.bytes().await?)?;
+        Ok(json)
     }
 
     pub async fn post_form<T: Serialize + ?Sized, Q: Serialize + ?Sized>(
@@ -123,8 +139,8 @@ impl Client {
         token: &str,
         page: u64,
     ) -> Result<Vec<T>> {
-        let res = self
-            .get_request(
+        let items = self
+            .get_json(
                 url,
                 Some(&vec![
                     ("page", page.to_string()),
@@ -132,10 +148,7 @@ impl Client {
                 ]),
                 token,
             )
-            .await?
-            .error_for_status()?;
-
-        let items = serde_json::from_slice::<Vec<T>>(&res.bytes().await?)?;
+            .await?;
         Ok(items)
     }
 
@@ -166,6 +179,31 @@ impl Client {
 
     pub async fn list_folders(&self, course_id: i32, token: &str) -> Result<Vec<Folder>> {
         let url = format!("{}/api/v1/courses/{}/folders", BASE_URL, course_id);
+        self.list_items(&url, token).await
+    }
+
+    pub async fn get_colors(&self, token: &str) -> Result<Colors> {
+        let url = format!("{}/api/v1/users/self/colors", BASE_URL);
+        let colors = self.get_json(&url, None::<&str>, token).await?;
+        Ok(colors)
+    }
+
+    pub async fn list_calendar_events(
+        &self,
+        token: &str,
+        context_codes: &[String],
+        start_date: &str,
+        end_date: &str,
+    ) -> Result<Vec<CalendarEvent>> {
+        let context_codes = context_codes
+            .into_iter()
+            .map(|context_code| format!("context_codes[]={}", context_code))
+            .reduce(|c1, c2| format!("{}&{}", c1, c2))
+            .unwrap_or_default();
+        let url = format!(
+            "{}/api/v1/calendar_events?type=assignment&{}&start_date={}&end_date={}",
+            BASE_URL, context_codes, start_date, end_date
+        );
         self.list_items(&url, token).await
     }
 

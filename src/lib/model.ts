@@ -53,9 +53,28 @@ export interface User {
     email: string;
 }
 
+export interface Colors {
+    custom_colors: { [key: string]: string };
+}
+
+export interface CalendarEvent {
+    title: string;
+    workflow_state: string;
+    id: string;
+    type_field: string;
+    assignment: Assignment;
+    html_url: string;
+    end_at: string;
+    start_at: string;
+    context_code: string;
+    url: string;
+    important_dates: boolean;
+}
+
 export interface Assignment {
     id: number;
     key: number;
+    needs_grading_count: number | null,
     description: string;
     due_at?: string;
     unlock_at?: string;

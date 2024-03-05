@@ -120,6 +120,9 @@ export default function SubmissionsPage() {
         }
     }
 
+    console.log(selectedAssignment?.needs_grading_count)
+    const readonlyGrade = selectedAssignment?.needs_grading_count === null;
+
     const columns = [{
         title: '学生',
         dataIndex: 'user',
@@ -128,7 +131,7 @@ export default function SubmissionsPage() {
         title: '分数',
         dataIndex: 'grade',
         key: 'grade',
-        render: (grade: string | null, attachment: Attachment) => <Input defaultValue={grade ?? ""}
+        render: (grade: string | null, attachment: Attachment) => <Input disabled={readonlyGrade} defaultValue={grade ?? ""}
             placeholder="输入成绩并按回车以打分"
             onPressEnter={(ev) => handleGrade(ev.currentTarget.value, attachment)} />
     }, {

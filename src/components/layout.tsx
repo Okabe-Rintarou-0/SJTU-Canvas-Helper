@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileOutlined, SettingOutlined, UserOutlined, FormOutlined, CloudDownloadOutlined } from '@ant-design/icons';
+import { FileOutlined, SettingOutlined, UserOutlined, FormOutlined, CalendarOutlined, CloudDownloadOutlined } from '@ant-design/icons';
 import { Layout, Menu, theme } from 'antd';
 import { Link, useLocation } from 'react-router-dom';
 
@@ -14,6 +14,10 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
         key: 'assignments',
         icon: <FormOutlined />,
         label: <Link to={'/assignments'}>查看作业</Link>,
+    }, {
+        key: 'calendar',
+        icon: <CalendarOutlined />,
+        label: <Link to={'/calendar'}>日历</Link>,
     }, {
         key: 'users',
         icon: <UserOutlined />,

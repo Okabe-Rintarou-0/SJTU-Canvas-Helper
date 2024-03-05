@@ -4,6 +4,7 @@ import SettingsPage from "../page/settings";
 import UsersPage from "../page/users";
 import AssignmentsPage from "../page/assignments";
 import SubmissionsPage from "../page/submissions";
+import CalendarPage from "../page/calendar";
 
 export default function AppRouter() {
     return <BrowserRouter>
@@ -12,6 +13,7 @@ export default function AppRouter() {
             <Route path="/files" element={<FilesPage />} />
             <Route path="/assignments" element={<AssignmentsPage />} />
             <Route path="/submissions" element={<SubmissionsPage />} />
+            <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/users" element={<UsersPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to={"/"} />} />

@@ -1,5 +1,6 @@
 import { decode } from "js-base64";
 import { getConfig } from "./store";
+import { Dayjs } from "dayjs"
 
 export function formatDate(inputDate: string): string {
     if (!inputDate) {
@@ -88,4 +89,12 @@ export function dataURLtoFile(dataurl: string, filename: string) {
         u8arr[n] = bstr.charCodeAt(n);
     }
     return new File([u8arr], filename, { type: mime });
+}
+
+export function firstDayOfMonth(date: Dayjs) {
+    return date.startOf('month').toISOString();
+}
+
+export function lastDayOfMonth(date: Dayjs) {
+    return date.endOf('month').toISOString();
 }
