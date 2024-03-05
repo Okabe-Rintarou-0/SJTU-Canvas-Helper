@@ -1,9 +1,8 @@
 import { DocRendererProps } from "@cyntler/react-doc-viewer";
 import { read, WorkBook, WorkSheet, utils } from 'xlsx'
 import { getBase64Data } from "../lib/utils";
-import { Space, Tabs, TabsProps } from "antd";
+import { Space, Table, Tabs, TabsProps } from "antd";
 import { useEffect, useState } from "react";
-import xlsx from "../css/xlsx.module.css"
 import useMessage from "antd/es/message/useMessage";
 
 interface XlsxData {
@@ -75,16 +74,11 @@ export default function XlsxRenderer({
         {contextHolder}
         {workBook && <Tabs onChange={handleChangeTab} items={tabs} defaultActiveKey={currentSheet}></Tabs>}
         {currentData &&
-            <table className={xlsx.xlsx_table}>
-                <thead><tr key={"header"}>{currentData.header.map(hdr => <th>{hdr}</th>)}</tr></thead>
-                <tbody>
-                    {currentData.rows.map((row, i) => (
-                        <tr key={i}>
-                            {currentData.header.map(hdr => <td>{row[hdr]}</td>)}
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
+            <Table columns={currentData.header.map(header => ({
+                key: header,
+                title: header,
+                dataIndex: header
+            }))} dataSource={currentData.rows} />
         }
     </Space>
 }

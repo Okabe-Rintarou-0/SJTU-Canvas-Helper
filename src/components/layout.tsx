@@ -21,7 +21,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
     }, {
         key: 'submissions',
         icon: <CloudDownloadOutlined />,
-        label: <Link to={'/submissions'}>学生作业批量下载</Link>,
+        label: <Link to={'/submissions'}>作业批改</Link>,
     }, {
         key: 'settings',
         icon: <SettingOutlined />,
