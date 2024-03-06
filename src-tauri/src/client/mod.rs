@@ -1,4 +1,4 @@
-use std::{fs, io::Write, path::Path};
+use std::{cmp::min, fs, io::Write, path::Path};
 
 use reqwest::Response;
 use serde::{de::DeserializeOwned, Serialize};
@@ -188,7 +188,7 @@ impl Client {
         Ok(colors)
     }
 
-    pub async fn list_calendar_events(
+    pub async fn list_calendar_events_inner(
         &self,
         token: &str,
         context_codes: &[String],
@@ -205,6 +205,36 @@ impl Client {
             BASE_URL, context_codes, start_date, end_date
         );
         self.list_items(&url, token).await
+    }
+
+    pub async fn list_calendar_events(
+        &self,
+        token: &str,
+        context_codes: &[String],
+        start_date: &str,
+        end_date: &str,
+    ) -> Result<Vec<CalendarEvent>> {
+        const BATCH_SIZE: usize = 10;
+        let n_codes = context_codes.len();
+        let n_batches = if n_codes % BATCH_SIZE == 0 {
+            n_codes / BATCH_SIZE
+        } else {
+            n_codes / BATCH_SIZE + 1
+        };
+
+        let mut start;
+        let mut end;
+        let mut all_events = vec![];
+        for batch_idx in 0..n_batches {
+            start = batch_idx * BATCH_SIZE;
+            end = min(start + BATCH_SIZE, n_codes);
+            let context_codes_batch = &context_codes[start..end];
+            let events = self
+                .list_calendar_events_inner(token, context_codes_batch, start_date, end_date)
+                .await?;
+            all_events.extend(events);
+        }
+        Ok(all_events)
     }
 
     pub async fn list_course_users(&self, course_id: i32, token: &str) -> Result<Vec<User>> {

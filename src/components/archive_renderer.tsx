@@ -30,7 +30,7 @@ export default function ArchiveRenderer({
     if (!currentDocument) return null;
     const [messageApi, contextHolder] = useMessage();
     const [treeData, setTreeData] = useState<TreeDataNode | undefined>(undefined);
-    const [fileMap, setFileMap] = useState<Map<string, File> | undefined>(undefined);
+    const [fileMap, setFileMap] = useState<Map<string, File | null> | undefined>(undefined);
     const [selectedDoc, setSelectedDoc] = useState<IDocument | undefined>(undefined);
 
 
@@ -50,7 +50,7 @@ export default function ArchiveRenderer({
             key: "",
             children: []
         } as TreeDataNode;
-        const fileMap = new Map<string, File>();
+        const fileMap = new Map<string, File | null>();
         let currentDir = "";
         let queue: [any, TreeDataNode][] = [[root, treeData]];
         while (queue.length > 0) {
@@ -72,6 +72,7 @@ export default function ArchiveRenderer({
                     try {
                         fileMap.set(thisPath, await entry.extract());
                     } catch (e) {
+                        fileMap.set(thisPath, null);
                         messageApi.error(`文件${thisPath}解压失败！🙅🙅🙅`)
                     }
                 } else {
@@ -110,7 +111,7 @@ export default function ArchiveRenderer({
                 fileType: await getFileType(file.name),
             } as IDocument;
             setSelectedDoc(doc);
-        } else if (!info.node.children?.length) {
+        } else if (file === null) {
             messageApi.warning(`当前文件${path}解压失败，无法预览！😩😩😩`);
         }
     };

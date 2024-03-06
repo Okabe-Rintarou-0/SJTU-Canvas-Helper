@@ -67,6 +67,7 @@ export interface CalendarEvent {
     end_at: string;
     start_at: string;
     context_code: string;
+    context_name: string;
     url: string;
     important_dates: boolean;
 }

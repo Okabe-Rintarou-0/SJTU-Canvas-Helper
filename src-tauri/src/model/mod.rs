@@ -100,6 +100,7 @@ pub struct CalendarEvent {
     pub assignment: Assignment,
     pub html_url: String,
     pub context_code: String,
+    pub context_name: String,
     pub end_at: String,
     pub start_at: String,
     pub url: String,
