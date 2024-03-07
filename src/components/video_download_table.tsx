@@ -1,22 +1,24 @@
-import { Button, Progress, Space, Table, message } from "antd";
-import { File, DownloadState, FileDownloadTask, ProgressPayload } from "../lib/model";
+import { Button, Progress, Space, Table } from "antd";
+import { DownloadState, VideoDownloadTask, ProgressPayload } from "../lib/model";
 import { appWindow } from "@tauri-apps/api/window";
 import React, { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api";
 import { sleep } from "../lib/utils";
+import { message } from "antd/lib";
 
-export default function FileDownloadTable({
+export default function VideoDownloadTable({
     tasks,
     handleRemoveTask,
 }: {
-    tasks: FileDownloadTask[],
-    handleRemoveTask?: (task: FileDownloadTask) => void,
+    tasks: VideoDownloadTask[],
+    handleRemoveTask?: (task: VideoDownloadTask) => void,
 }) {
-    const [currentTasks, setCurrentTasks] = useState<FileDownloadTask[]>([]);
+    const [currentTasks, setCurrentTasks] = useState<VideoDownloadTask[]>([]);
     const taskSet = new Set<string>(currentTasks.map(task => task.key));
 
     useEffect(() => {
-        appWindow.listen<ProgressPayload>("download://progress", ({ payload }) => {
+        appWindow.listen<ProgressPayload>("video_download://progress", ({ payload }) => {
+            console.log(payload);
             updateTaskProgress(payload.uuid, payload.downloaded / payload.total * 100);
         });
     }, []);
@@ -26,36 +28,39 @@ export default function FileDownloadTable({
         for (let task of tasks) {
             if (!taskSet.has(task.key)) {
                 taskSet.add(task.key);
-                handleDownloadFile(task.file);
+                handleDownloadVideo(task);
             }
         }
     }, [tasks]);
 
-    const handleDownloadFile = async (file: File) => {
-        updateTaskProgress(file.uuid, 0);
+    const handleDownloadVideo = async (task: VideoDownloadTask) => {
+        let video = task.video;
+        let uuid = video.id + "";
+        updateTaskProgress(uuid, 0);
 
         let retries = 0;
         let maxRetries = 3;
         while (retries < maxRetries) {
             try {
-                await invoke("download_file", { file });
-                updateTaskProgress(file.uuid, 100);
+                await invoke("download_video", { video, saveName: task.video.name });
+                updateTaskProgress(uuid, 100);
                 // messageApi.success("下载成功！", 0.5);
                 break;
             } catch (e) {
-                updateTaskProgress(file.uuid, undefined, e as string);
+                message.error(e as string);
+                updateTaskProgress(uuid, undefined, e as string);
                 retries += 1;
             }
             await sleep(1000);
         }
     }
 
-    const handleRetryTask = (task: FileDownloadTask) => {
+    const handleRetryTask = (task: VideoDownloadTask) => {
         if (task.progress < 100 && task.state !== 'fail') {
             message.warning("任务正在下载中，请勿重试☹️");
             return;
         }
-        handleDownloadFile(task.file);
+        handleDownloadVideo(task);
     }
 
     const handleRemoveTasks = () => {
@@ -66,15 +71,15 @@ export default function FileDownloadTable({
         setSelectedTasks([]);
     }
 
-    const [selectedTasks, setSelectedTasks] = useState<FileDownloadTask[]>([]);
+    const [selectedTasks, setSelectedTasks] = useState<VideoDownloadTask[]>([]);
 
-    const handleSelect = (_: React.Key[], selectedTasks: FileDownloadTask[]) => {
+    const handleSelect = (_: React.Key[], selectedTasks: VideoDownloadTask[]) => {
         setSelectedTasks(selectedTasks);
     }
 
-    const updateTaskProgress = (uuid: string, progress?: number, error?: string) => {
+    const updateTaskProgress = (id: string, progress?: number, error?: string) => {
         setCurrentTasks(tasks => {
-            let task = tasks.find(task => task.file.uuid === uuid);
+            let task = tasks.find(task => task.key === id);
             let state: DownloadState = error ? "fail" : progress === 100 ? "succeed" : "downloading";
             if (task) {
                 if (progress) {
@@ -88,22 +93,22 @@ export default function FileDownloadTable({
 
     const columns = [
         {
-            title: '文件名',
+            title: '视频',
             dataIndex: 'file',
             key: 'file',
-            render: (_: any, task: FileDownloadTask) => task.file.display_name
+            render: (_: any, task: VideoDownloadTask) => task.video.name
         },
         {
             title: '进度条',
             dataIndex: 'progress',
-            render: (_: any, task: FileDownloadTask) => <Progress percent={task.progress}
+            render: (_: any, task: VideoDownloadTask) => <Progress percent={task.progress}
                 status={task.state === "fail" ? "exception" : task.state === "downloading" ? "active" : "success"} />
         },
         {
             title: '操作',
             dataIndex: 'operation',
             key: 'operation',
-            render: (_: any, task: FileDownloadTask) => (
+            render: (_: any, task: VideoDownloadTask) => (
                 <Space size="middle">
                     {/* <a onClick={e => {
                         e.preventDefault();

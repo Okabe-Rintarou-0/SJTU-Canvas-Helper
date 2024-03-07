@@ -75,7 +75,7 @@ export interface CalendarEvent {
 export interface Assignment {
     id: number;
     key: number;
-    needs_grading_count: number | null,
+    needs_grading_count: number | null;
     description: string;
     due_at?: string;
     unlock_at?: string;
@@ -131,17 +131,26 @@ export interface Attachment {
 
 export interface FileDownloadTask {
     key: string;
-    file: File
+    file: File;
     progress: number;
-    state: FileDownloadState;
+    state: DownloadState;
 }
 
-export type FileDownloadState = "downloading" | "succeed" | "fail";
+export interface VideoDownloadTask {
+    key: string;
+    video: VideoPlayInfo;
+    progress: number;
+    state: DownloadState;
+}
+
+export type DownloadState = "downloading" | "succeed" | "fail";
 
 export interface AppConfig {
     token: string;
     save_path: string;
     serve_as_plaintext: string;
+    ja_auth_cookie: string;
+    video_cookies: string;
 }
 
 export interface ExportUsersConfig {
@@ -153,3 +162,120 @@ export interface ProgressPayload {
     downloaded: number;
     total: number;
 }
+
+export interface Payload {
+    sig: string;
+    ts: number;
+}
+
+export interface LoginMessage {
+    error: number;
+    payload: Payload;
+    type: string;
+}
+
+export interface Subject {
+    subjectId: number;
+    csplId: number;
+    subjectName: string;
+    classroomId: number;
+    classroomName: string;
+    userId: number;
+    userName: string;
+    courTimes: number;
+    subjImgUrl: string;
+    teclId: number;
+    teclName: string;
+    termTime: number;
+    beginYear: number;
+    endYear: number;
+}
+
+export interface VideoCourse {
+    videPlayCount: number;
+    videCommentAverage: number;
+    videPalyTime: number;
+    videPalyTimes: number;
+    videImgUrl: string;
+    subjName: string;
+    subjId: number;
+    courId: number;
+    responseVoList: Video[];
+    courTimes: number;
+    subjImgUrl: string;
+    teclId: number;
+    teclName: string;
+    indexCount: number;
+    csplId: number;
+    tetiBeginYear: number;
+    tetiEndYear: number;
+    tetiTerm: number;
+}
+
+export interface Video {
+    id: number;
+    userName: string;
+    userId: number;
+    videName: string;
+    videPlayCount: number;
+    videCommentAverage: number;
+    videPalyTime: number;
+    videPalyTimes: number;
+    videSource: number;
+    subjId: number;
+    courId: number;
+    courBeginTime: number;
+    courEndTime: number;
+    courTimes: number;
+    indexCount: number;
+    csplId: number;
+    videId: number;
+}
+
+export interface VideoPlayInfo {
+    name: string;
+    key: number;
+    id: number;
+    index: number;
+    videPlayTime: number;
+    clientIpType: number;
+    rtmpUrlHdv: string;
+    cdviChannelNum: number;
+    cdviViewNum: number;
+}
+
+export interface VideoInfo {
+    id: number;
+    courId: number;
+    videSource: number;
+    smseId: number;
+    videVodId: number;
+    cminId: number;
+    deviPuid: string;
+    videRecordChannelNum: number;
+    videBeginTime: string;
+    videEndTime: string;
+    videPlayTime: number;
+    videName: string;
+    videPlayCount: number;
+    videCommentCount: number;
+    videCommentAverage: number;
+    courTimes: number;
+    courName: string;
+    organizationName: string;
+    subjId: number;
+    clroId: number;
+    clroName: string;
+    userId: number;
+    userName: string;
+    subjName: string;
+    teclName: string;
+    teclId: number;
+    rtmpUrlHdv: string;
+    userAvatar: string;
+    loginUserId: number;
+    videBeginTimeMs: number;
+    videEndTimeMs: number;
+    videoPlayResponseVoList: VideoPlayInfo[];
+}
+

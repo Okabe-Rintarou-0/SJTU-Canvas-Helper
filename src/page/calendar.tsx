@@ -54,7 +54,6 @@ export default function CalendarPage() {
         try {
             let events = await handleGetCalendarEvents(contextCodes, now, afterAWeek);
             setHintEvents(events);
-            console.log(contextCodes, events);
         } catch (e) {
             messageApi.error(e as string)
         }

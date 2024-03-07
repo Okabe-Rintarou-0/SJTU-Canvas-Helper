@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Course {
     pub id: i64,
-
     #[serde(default)]
     pub uuid: String,
     #[serde(default)]
@@ -63,6 +62,12 @@ pub struct AppConfig {
     pub save_path: String,
     #[serde(default)]
     pub serve_as_plaintext: String,
+    #[serde(default)]
+    pub ja_auth_cookie: String,
+    #[serde(default)]
+    pub video_cookies: String,
+    #[serde(default)]
+    pub oauth_consumer_key: String,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -200,4 +205,142 @@ pub struct Enrollment {
     pub role_id: i64,
     pub user_id: i64,
     pub enrollment_state: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ItemPage<T>
+where
+    T: Serialize + DeserializeOwned,
+{
+    pub page: PageInfo,
+    #[serde(deserialize_with = "Vec::<T>::deserialize")]
+    pub list: Vec<T>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageInfo {
+    pub page_index: i64,
+    pub page_size: i64,
+    pub page_count: i64,
+    pub page_first: i64,
+    pub page_last: i64,
+    pub page_next: i64,
+    pub page_prev: i64,
+    pub page_show_begin: i64,
+    pub page_show_end: i64,
+    pub page_show_count: i64,
+    pub row_count: i64,
+    pub row_begin: i64,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Subject {
+    pub subject_id: i64,
+    pub cspl_id: i64,
+    pub subject_name: String,
+    pub classroom_id: i64,
+    pub classroom_name: String,
+    pub user_id: i64,
+    pub user_name: String,
+    pub cour_times: i64,
+    pub subj_img_url: String,
+    pub tecl_id: i64,
+    pub tecl_name: String,
+    pub term_time: i64,
+    pub begin_year: i64,
+    pub end_year: i64,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoCourse {
+    pub vide_play_count: i64,
+    pub vide_comment_average: f64,
+    pub vide_paly_time: i64,
+    pub vide_paly_times: i64,
+    pub vide_img_url: String,
+    pub subj_name: String,
+    pub subj_id: i64,
+    pub cour_id: i64,
+    pub response_vo_list: Vec<Video>,
+    pub cour_times: i64,
+    pub subj_img_url: String,
+    pub tecl_id: i64,
+    pub tecl_name: String,
+    pub index_count: i64,
+    pub cspl_id: i64,
+    pub teti_begin_year: i64,
+    pub teti_end_year: i64,
+    pub teti_term: i64,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Video {
+    pub id: i64,
+    pub user_name: String,
+    pub user_id: i64,
+    pub vide_name: String,
+    pub vide_play_count: i64,
+    pub vide_comment_average: f64,
+    pub vide_paly_time: i64,
+    pub vide_paly_times: i64,
+    pub vide_source: i64,
+    pub subj_id: i64,
+    pub cour_id: i64,
+    pub cour_begin_time: i64,
+    pub cour_end_time: i64,
+    pub cour_times: i64,
+    pub index_count: i64,
+    pub cspl_id: i64,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoInfo {
+    pub id: i64,
+    pub cour_id: i64,
+    pub vide_source: i64,
+    pub smse_id: i64,
+    pub vide_vod_id: i64,
+    pub cmin_id: i64,
+    pub devi_puid: String,
+    pub vide_record_channel_num: i64,
+    pub vide_begin_time: String,
+    pub vide_end_time: String,
+    pub vide_play_time: i64,
+    pub vide_name: String,
+    pub vide_play_count: i64,
+    pub vide_comment_count: i64,
+    pub vide_comment_average: f64,
+    pub cour_times: i64,
+    pub cour_name: String,
+    pub organization_name: String,
+    pub subj_id: i64,
+    pub clro_id: i64,
+    pub clro_name: String,
+    pub user_id: i64,
+    pub user_name: String,
+    pub subj_name: String,
+    pub tecl_name: String,
+    pub tecl_id: i64,
+    pub rtmp_url_hdv: String,
+    pub user_avatar: String,
+    pub login_user_id: i64,
+    pub vide_begin_time_ms: i64,
+    pub vide_end_time_ms: i64,
+    pub video_play_response_vo_list: Vec<VideoPlayInfo>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoPlayInfo {
+    pub id: i64,
+    pub vide_play_time: i64,
+    pub client_ip_type: i64,
+    pub rtmp_url_hdv: String,
+    pub cdvi_channel_num: i64,
+    pub cdvi_view_num: i64,
 }

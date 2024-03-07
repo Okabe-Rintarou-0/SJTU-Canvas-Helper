@@ -120,7 +120,6 @@ export default function SubmissionsPage() {
         }
     }
 
-    console.log(selectedAssignment?.needs_grading_count)
     const readonlyGrade = selectedAssignment?.needs_grading_count === null;
 
     const columns = [{

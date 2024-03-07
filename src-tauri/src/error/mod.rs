@@ -12,6 +12,12 @@ pub enum ClientError {
     IO(#[from] io::Error),
     #[error("Excel error: {0}")]
     Excel(#[from] xlsxwriter::XlsxError),
+    #[error("Base64 decode error: {0}")]
+    Base64Decode(#[from] base64::DecodeError),
+    #[error("To string error: {0}")]
+    ToStrError(#[from] reqwest::header::ToStrError),
+    #[error("Login error")]
+    LoginError,
 }
 
 impl serde::Serialize for ClientError {

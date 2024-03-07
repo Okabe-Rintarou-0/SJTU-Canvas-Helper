@@ -4,10 +4,10 @@
 use std::{fs, io::Write, path::Path};
 
 use client::Client;
-use error::Result;
+use error::{ClientError, Result};
 use model::{
-    AppConfig, Assignment, CalendarEvent, Colors, Course, File, Folder, ProgressPayload,
-    Submission, User,
+    AppConfig, Assignment, CalendarEvent, Colors, Course, File, Folder, ProgressPayload, Subject,
+    Submission, User, VideoCourse, VideoInfo, VideoPlayInfo,
 };
 use tauri::{api::path::download_dir, Runtime, Window};
 use tokio::sync::RwLock;
@@ -48,6 +48,20 @@ impl App {
             client: Client::new(),
             config: RwLock::new(config),
         }
+    }
+
+    pub async fn init(&self) -> Result<()> {
+        let mut config = self.get_config().await;
+        let cookies = &config.video_cookies;
+        if !cookies.is_empty() {
+            tracing::info!("Detected saved cookies: {}", cookies);
+            self.client.init_cookie(cookies);
+            if let Ok(Some(consumer_key)) = self.client.get_oauth_consumer_key().await {
+                config.oauth_consumer_key = consumer_key;
+                self.save_config(config).await?;
+            }
+        }
+        Ok(())
     }
 
     fn read_config_from_file(config_path: &str) -> Result<AppConfig> {
@@ -169,6 +183,13 @@ impl App {
         Ok(())
     }
 
+    async fn delete_file_with_name(&self, name: &str) -> Result<()> {
+        let save_path = &self.config.read().await.save_path;
+        let path = Path::new(save_path).join(name);
+        fs::remove_file(path)?;
+        Ok(())
+    }
+
     async fn get_colors(&self) -> Result<Colors> {
         self.client
             .get_colors(&self.config.read().await.token)
@@ -191,8 +212,10 @@ impl App {
             .await
     }
 
-    async fn save_config(&self, config: AppConfig) {
+    async fn save_config(&self, config: AppConfig) -> Result<()> {
+        fs::write(&APP.config_path, serde_json::to_vec(&config).unwrap())?;
         *self.config.write().await = config;
+        Ok(())
     }
 
     fn check_path(path: &str) -> bool {
@@ -233,6 +256,62 @@ impl App {
         }
         workbook.close()?;
         Ok(())
+    }
+}
+
+// Apis for course video
+impl App {
+    async fn get_uuid(&self) -> Result<Option<String>> {
+        self.client.get_uuid().await
+    }
+
+    async fn express_login(&self, uuid: &str) -> Result<Option<String>> {
+        self.client.express_login(uuid).await
+    }
+
+    async fn get_cookie(&self) -> String {
+        format!("JAAuthCookie={}", self.config.read().await.ja_auth_cookie)
+    }
+
+    async fn login_video_website(&self) -> Result<()> {
+        let cookie = self.get_cookie().await;
+        if let Some(cookies) = self.client.login_video_website(&cookie).await? {
+            let mut config = self.get_config().await;
+            config.video_cookies = cookies;
+            if let Ok(Some(consumer_key)) = self.client.get_oauth_consumer_key().await {
+                config.oauth_consumer_key = consumer_key;
+            }
+            self.save_config(config).await?;
+            Ok(())
+        } else {
+            Err(ClientError::LoginError)
+        }
+    }
+
+    async fn get_subjects(&self) -> Result<Vec<Subject>> {
+        self.client.get_subjects().await
+    }
+
+    async fn get_video_info(&self, video_id: i64) -> Result<VideoInfo> {
+        let consumer_key = &self.config.read().await.oauth_consumer_key;
+        self.client.get_video_info(video_id, consumer_key).await
+    }
+
+    async fn download_video<F: Fn(ProgressPayload) + Send>(
+        &self,
+        video: &VideoPlayInfo,
+        save_name: &str,
+        progress_handler: F,
+    ) -> Result<()> {
+        let guard = self.config.read().await;
+        let save_path = Path::new(&guard.save_path).join(save_name);
+        self.client
+            .download_video(video, save_path.to_str().unwrap(), progress_handler)
+            .await
+    }
+
+    async fn get_video_course(&self, subject_id: i64, tecl_id: i64) -> Result<Option<VideoCourse>> {
+        self.client.get_video_course(subject_id, tecl_id).await
     }
 }
 
@@ -306,6 +385,11 @@ async fn delete_file(file: File) -> Result<()> {
 }
 
 #[tauri::command]
+async fn delete_file_with_name(name: String) -> Result<()> {
+    APP.delete_file_with_name(&name).await
+}
+
+#[tauri::command]
 async fn download_file<R: Runtime>(window: Window<R>, file: File) -> Result<()> {
     APP.download_file(&file, &|progress| {
         let _ = window.emit("download://progress", progress);
@@ -336,9 +420,7 @@ async fn get_colors() -> Result<Colors> {
 #[tauri::command]
 async fn save_config(config: AppConfig) -> Result<()> {
     tracing::info!("Receive config: {:?}", config);
-    fs::write(&APP.config_path, serde_json::to_vec(&config).unwrap())?;
-    APP.save_config(config).await;
-    Ok(())
+    APP.save_config(config).await
 }
 
 #[tauri::command]
@@ -352,7 +434,52 @@ async fn update_grade(
         .await
 }
 
-fn main() {
+// Apis for course video
+#[tauri::command]
+async fn get_uuid() -> Result<Option<String>> {
+    APP.get_uuid().await
+}
+
+#[tauri::command]
+async fn express_login(uuid: String) -> Result<Option<String>> {
+    APP.express_login(&uuid).await
+}
+
+#[tauri::command]
+async fn login_video_website() -> Result<()> {
+    APP.login_video_website().await
+}
+
+#[tauri::command]
+async fn get_subjects() -> Result<Vec<Subject>> {
+    APP.get_subjects().await
+}
+
+#[tauri::command]
+async fn get_video_course(subject_id: i64, tecl_id: i64) -> Result<Option<VideoCourse>> {
+    APP.get_video_course(subject_id, tecl_id).await
+}
+
+#[tauri::command]
+async fn get_video_info(video_id: i64) -> Result<VideoInfo> {
+    APP.get_video_info(video_id).await
+}
+
+#[tauri::command]
+async fn download_video<R: Runtime>(
+    window: Window<R>,
+    video: VideoPlayInfo,
+    save_name: String,
+) -> Result<()> {
+    APP.download_video(&video, &save_name, |progress| {
+        let _ = window.emit("video_download://progress", progress);
+    })
+    .await
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    APP.init().await?;
     tracing_subscriber::fmt::init();
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -371,13 +498,23 @@ fn main() {
             save_config,
             save_file_content,
             delete_file,
+            delete_file_with_name,
             download_file,
             check_path,
             export_users,
             update_grade,
+            // Apis for course video
+            get_uuid,
+            express_login,
+            get_subjects,
+            get_video_course,
+            get_video_info,
+            download_video,
+            login_video_website,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+    Ok(())
 }
 
 #[cfg(test)]
@@ -401,6 +538,32 @@ mod test {
             .list_calendar_events(&context_codes, start_date, end_date)
             .await?;
         tracing::info!("{:?}", events);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_video_apis() -> Result<()> {
+        tracing_subscriber::fmt::init();
+        let app = App::new();
+        app.init().await?;
+        app.login_video_website().await?;
+        let subjects = app.get_subjects().await?;
+        tracing::info!("{:?}", subjects);
+        let subject = &subjects[0];
+        let course = app
+            .get_video_course(subject.subject_id, subject.tecl_id)
+            .await?
+            .unwrap();
+        tracing::info!("{:?}", course);
+        let video = app.get_video_info(course.response_vo_list[0].id).await?;
+        tracing::info!("video = {:?}", video);
+
+        app.download_video(
+            &video.video_play_response_vo_list[0],
+            "download.mp4",
+            |_| {},
+        )
+        .await?;
         Ok(())
     }
 }

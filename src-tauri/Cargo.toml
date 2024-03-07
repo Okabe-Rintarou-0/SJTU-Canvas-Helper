@@ -14,13 +14,16 @@ tauri-build = { version = "1", features = [] }
 tauri = { version = "1", features = ["shell-open", "devtools"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-reqwest = "0.11.24"
+reqwest = { version = "0.11.24", features = ["cookies"] }
 thiserror = "1.0.57"
 tokio = { version = "1.35.1", features = ["full"] }
 lazy_static = "1.4.0"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 xlsxwriter = "0.6.0"
+select = "0.6.0"
+md-5 = "0.10.6"
+base64 = "0.22.0"
 
 [features]
 # This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!!

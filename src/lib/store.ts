@@ -3,8 +3,8 @@ import { AppConfig } from "./model";
 
 let CONFIG: AppConfig | null = null;
 
-export async function getConfig() {
-    if (!CONFIG) {
+export async function getConfig(revalidate = false) {
+    if (!CONFIG || revalidate) {
         CONFIG = await invoke("get_config") as AppConfig;
     }
     return CONFIG;
