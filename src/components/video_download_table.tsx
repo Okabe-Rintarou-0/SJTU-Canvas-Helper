@@ -25,12 +25,14 @@ export default function VideoDownloadTable({
             if (taskSet.current.has(uuid)) {
                 updateTaskProgress(uuid, progress);
             } else {
-                messageApi.info("检测到未完成的任务🍻");
-                let name = DOWNLOAD_TASK_MAP.get(uuid) ?? "未知";
-                let video = { name } as VideoPlayInfo;
+                let object = DOWNLOAD_TASK_MAP.get(uuid);
+                if (!object) {
+                    return;
+                }
+                let video = object as VideoPlayInfo;
                 let task = { key: uuid, progress, video, state: "downloading" } as VideoDownloadTask;
                 taskSet.current.add(uuid);
-                setCurrentTasks([...currentTasks, task]);
+                setCurrentTasks(currentTasks => [...currentTasks, task]);
             }
         });
         return () => {
@@ -39,13 +41,15 @@ export default function VideoDownloadTable({
     }, []);
 
     useEffect(() => {
+        let targetTasks = [...currentTasks];
         for (let task of tasks) {
             if (!taskSet.current.has(task.key)) {
                 taskSet.current.add(task.key);
+                targetTasks.push(task);
                 handleDownloadVideo(task);
             }
         }
-        setCurrentTasks(tasks);
+        setCurrentTasks(targetTasks);
     }, [tasks]);
 
     const handleDownloadVideo = async (task: VideoDownloadTask) => {
@@ -57,7 +61,7 @@ export default function VideoDownloadTable({
         let maxRetries = 3;
         while (retries < maxRetries) {
             try {
-                DOWNLOAD_TASK_MAP.set(uuid, video.name);
+                DOWNLOAD_TASK_MAP.set(uuid, video);
                 await invoke("download_video", { video, saveName: task.video.name });
                 updateTaskProgress(uuid, 100);
                 DOWNLOAD_TASK_MAP.delete(uuid);
