@@ -1,11 +1,12 @@
 import DocViewer, { DocRendererProps, IDocument } from "@cyntler/react-doc-viewer";
-import { Space, Tree, TreeDataNode, TreeProps } from "antd";
+import { Button, Space, Tree, TreeDataNode, TreeProps } from "antd";
 import { useEffect, useState } from "react";
 import { DownOutlined } from '@ant-design/icons';
 import useMessage from "antd/es/message/useMessage";
 import { dataURLtoFile, getFileType } from "../lib/utils";
 import { ArchiveSupportedRenderers } from "./renderers";
 import { Archive } from 'libarchive.js';
+import { invoke } from "@tauri-apps/api";
 
 interface BlackListEntry {
     name: string,
@@ -28,6 +29,7 @@ export default function ArchiveRenderer({
     mainState: { currentDocument },
 }: DocRendererProps) {
     if (!currentDocument) return null;
+    const [selectedPath, setSelectedPath] = useState<string>("");
     const [messageApi, contextHolder] = useMessage();
     const [treeData, setTreeData] = useState<TreeDataNode | undefined>(undefined);
     const [fileMap, setFileMap] = useState<Map<string, File | null> | undefined>(undefined);
@@ -85,8 +87,6 @@ export default function ArchiveRenderer({
         return treeData;
     }
 
-
-
     const parse = async () => {
         try {
             let base64Content = currentDocument.fileData as string;
@@ -111,22 +111,46 @@ export default function ArchiveRenderer({
                 fileType: await getFileType(file.name),
             } as IDocument;
             setSelectedDoc(doc);
-        } else if (file === null) {
-            messageApi.warning(`当前文件${path}解压失败，无法预览！😩😩😩`);
+            setSelectedPath(path);
+        } else {
+            setSelectedDoc(undefined);
+            if (file === null) {
+                messageApi.warning(`当前文件${path}解压失败，无法预览！😩😩😩`);
+            }
         }
     };
+
+    const handleDownloadSubFile = async () => {
+        if (selectedDoc) {
+            let file = fileMap?.get(selectedPath);
+            if (!file) {
+                return;
+            }
+            try {
+                let buffer = await file.arrayBuffer();
+                let content = Array.from<number>(new Uint8Array(buffer));
+                let fileName = selectedDoc.fileName ?? "downloaded";
+                await invoke("save_file_content", { content, fileName });
+                messageApi.success("下载成功🎉！");
+            } catch (e) {
+                messageApi.error(`下载失败😩：${e}`);
+            }
+        }
+    }
 
     return <>
         {contextHolder}
         <Space align="start" size={"large"}>
-            <Tree
-                showLine
-                switcherIcon={<DownOutlined />}
-                onSelect={onSelect}
-                treeData={treeData?.children}
-            />
+            <Space direction="vertical">
+                {selectedDoc && <Button onClick={handleDownloadSubFile}>下载</Button>}
+                <Tree
+                    showLine
+                    switcherIcon={<DownOutlined />}
+                    onSelect={onSelect}
+                    treeData={treeData?.children}
+                />
+            </Space>
             {selectedDoc && <DocViewer
-                style={{ position: "sticky" }}
                 key={selectedDoc.uri}
                 config={{
                     header: {

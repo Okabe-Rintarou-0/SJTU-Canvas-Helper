@@ -154,11 +154,11 @@ impl App {
             .await
     }
 
-    async fn save_file_content(&self, content: &str, file_name: &str) -> Result<()> {
+    async fn save_file_content(&self, content: &[u8], file_name: &str) -> Result<()> {
         let guard = self.config.read().await;
         let path = Path::new(&guard.save_path).join(file_name);
         let mut file = fs::File::create(path.to_str().unwrap())?;
-        file.write_all(content.as_bytes())?;
+        file.write_all(content)?;
         Ok(())
     }
 
@@ -398,7 +398,7 @@ async fn download_file<R: Runtime>(window: Window<R>, file: File) -> Result<()> 
 }
 
 #[tauri::command]
-async fn save_file_content(content: String, file_name: String) -> Result<()> {
+async fn save_file_content(content: Vec<u8>, file_name: String) -> Result<()> {
     APP.save_file_content(&content, &file_name).await
 }
 

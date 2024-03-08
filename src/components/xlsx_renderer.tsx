@@ -28,6 +28,7 @@ export default function XlsxRenderer({
             if (sheets.length > 0) {
                 let currentSheet = workBook.SheetNames[0];
                 handleSetSheet(workBook, currentSheet);
+                console.log("handled")
             }
         } catch (e) {
             messageApi.error(e as string);
@@ -54,7 +55,10 @@ export default function XlsxRenderer({
         }
         const columnCount = utils.decode_range(ref).e.c + 1
         for (let i = 0; i < columnCount; ++i) {
-            header[i] = ws[`${utils.encode_col(i)}1`].v;
+            let cell = `${utils.encode_col(i)}1`;
+            if (cell in ws) {
+                header.push(ws[cell].v);
+            }
         }
         return header
     }
