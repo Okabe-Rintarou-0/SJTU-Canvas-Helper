@@ -32,11 +32,14 @@ export default function ArchiveRenderer({
     const [selectedPath, setSelectedPath] = useState<string>("");
     const [messageApi, contextHolder] = useMessage();
     const [treeData, setTreeData] = useState<TreeDataNode | undefined>(undefined);
-    const [fileMap, setFileMap] = useState<Map<string, File | null> | undefined>(undefined);
+    const [fileMap, setFileMap] = useState<Map<string, any> | undefined>(undefined);
     const [selectedDoc, setSelectedDoc] = useState<IDocument | undefined>(undefined);
 
 
-    useEffect(() => { parse(); }, []);
+    useEffect(() => {
+        parse();
+
+    }, []);
 
     const checkIsBanned = (fileName: string, isDir: boolean) => {
         if (BLACK_LIST.find(banned => banned.name === fileName && banned.dir === isDir)) {
@@ -72,7 +75,7 @@ export default function ArchiveRenderer({
                 }
                 if (!isDir) {
                     try {
-                        fileMap.set(thisPath, await entry.extract());
+                        fileMap.set(thisPath, entry);
                     } catch (e) {
                         fileMap.set(thisPath, null);
                         messageApi.error(`文件${thisPath}解压失败！🙅🙅🙅`)
@@ -103,8 +106,9 @@ export default function ArchiveRenderer({
 
     const onSelect: TreeProps['onSelect'] = async (_, info) => {
         let path = info.node.key as string;
-        let file = fileMap?.get(path);
-        if (file) {
+        let fileReader = fileMap?.get(path);
+        if (fileReader) {
+            let file = await fileReader.extract();
             let doc = {
                 uri: URL.createObjectURL(file),
                 fileName: file.name,
@@ -114,7 +118,7 @@ export default function ArchiveRenderer({
             setSelectedPath(path);
         } else {
             setSelectedDoc(undefined);
-            if (file === null) {
+            if (fileReader === null) {
                 messageApi.warning(`当前文件${path}解压失败，无法预览！😩😩😩`);
             }
         }
@@ -122,11 +126,12 @@ export default function ArchiveRenderer({
 
     const handleDownloadSubFile = async () => {
         if (selectedDoc) {
-            let file = fileMap?.get(selectedPath);
-            if (!file) {
+            let fileReader = fileMap?.get(selectedPath);
+            if (!fileReader) {
                 return;
             }
             try {
+                let file = await fileReader.extract();
                 let buffer = await file.arrayBuffer();
                 let content = Array.from<number>(new Uint8Array(buffer));
                 let fileName = selectedDoc.fileName ?? "downloaded";

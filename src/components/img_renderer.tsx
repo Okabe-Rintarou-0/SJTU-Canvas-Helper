@@ -3,7 +3,9 @@ import { getBase64Data } from "../lib/utils";
 
 const prefixMap: Record<string, string> = {
     svg: "data:image/svg+xml;base64,",
-    ico: "data:image/x-icon;base64,"
+    ico: "data:image/x-icon;base64,",
+    webp: "data:image/webp;base64,",
+    avif: "data:image/avif;base64,",
 }
 
 export default function ImageRenderer({
@@ -15,5 +17,5 @@ export default function ImageRenderer({
     return <img src={base64} />
 }
 
-ImageRenderer.fileTypes = ["svg", "ico"];
+ImageRenderer.fileTypes = ["svg", "ico", "avif", "webp"];
 ImageRenderer.weight = 1;
