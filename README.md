@@ -24,6 +24,12 @@ https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/assets/58595459/7f05cabc-
 
 **支持预览主流压缩文件（7z, zip, rar...）**
 ![](./images/preview_zip.png)
+
+## 下载课程录屏
+![](./images/qrcode.png)
+
+![](./images/download_video.png)
+
 ## 查看作业评分分布
   
 ![](./images/distributions.png)
