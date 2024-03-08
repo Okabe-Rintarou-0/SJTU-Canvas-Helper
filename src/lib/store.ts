@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api";
 import { AppConfig } from "./model";
 
 let CONFIG: AppConfig | null = null;
+export const DOWNLOAD_TASK_MAP = new Map<string, string>();
 
 export async function getConfig(revalidate = false) {
     if (!CONFIG || revalidate) {

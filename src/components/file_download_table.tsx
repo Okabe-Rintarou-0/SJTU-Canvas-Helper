@@ -16,9 +16,12 @@ export default function FileDownloadTable({
     const taskSet = new Set<string>(currentTasks.map(task => task.key));
 
     useEffect(() => {
-        appWindow.listen<ProgressPayload>("download://progress", ({ payload }) => {
-            updateTaskProgress(payload.uuid, payload.downloaded / payload.total * 100);
+        let unlisten = appWindow.listen<ProgressPayload>("download://progress", ({ payload }) => {
+            updateTaskProgress(payload.uuid, Math.ceil(payload.downloaded / payload.total * 100));
         });
+        return () => {
+            unlisten.then(f => f());
+        }
     }, []);
 
     useEffect(() => {
@@ -78,7 +81,7 @@ export default function FileDownloadTable({
             let state: DownloadState = error ? "fail" : progress === 100 ? "succeed" : "downloading";
             if (task) {
                 if (progress) {
-                    task.progress = Math.ceil(progress);
+                    task.progress = progress;
                 }
                 task.state = state;
             }

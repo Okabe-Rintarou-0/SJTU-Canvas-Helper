@@ -155,8 +155,8 @@ impl App {
     }
 
     async fn save_file_content(&self, content: &[u8], file_name: &str) -> Result<()> {
-        let guard = self.config.read().await;
-        let path = Path::new(&guard.save_path).join(file_name);
+        let save_dir = self.config.read().await.save_path.clone();
+        let path = Path::new(&save_dir).join(file_name);
         let mut file = fs::File::create(path.to_str().unwrap())?;
         file.write_all(content)?;
         Ok(())
@@ -303,8 +303,8 @@ impl App {
         save_name: &str,
         progress_handler: F,
     ) -> Result<()> {
-        let guard = self.config.read().await;
-        let save_path = Path::new(&guard.save_path).join(save_name);
+        let save_dir = self.config.read().await.save_path.clone();
+        let save_path = Path::new(&save_dir).join(save_name);
         self.client
             .download_video(video, save_path.to_str().unwrap(), progress_handler)
             .await
