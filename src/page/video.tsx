@@ -87,7 +87,7 @@ export default function VideoPage() {
             let config = await getConfig();
             config.ja_auth_cookie = JAAuthCookie;
             await saveConfig(config);
-            let success = await loginAndCheck();
+            let success = await loginAndCheck(true);
             if (success) {
                 messageApi.success("扫码登录成功🎉！", 1);
             }
@@ -118,14 +118,14 @@ export default function VideoPage() {
         loginAndCheck();
     }, []);
 
-    const loginAndCheck = async () => {
+    const loginAndCheck = async (retry = false) => {
         let config = await getConfig(true);
         let success = await handleLoginWebsite() && await handleGetSubjects();
         if (!success) {
             config.ja_auth_cookie = ""
             await saveConfig(config);
             getLoginWsURL();
-        } else {
+        } else if (!retry) {
             messageApi.success("检测到登录会话，登录成功🎉！");
         }
         setNotLogin(!success);
@@ -232,12 +232,14 @@ export default function VideoPage() {
         }
     ];
 
+    const shouldShowAlert = loaded && notLogin && qrcode;
+
     return <BasicLayout>
         {contextHolder}
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
             {
-                loaded && notLogin && <Alert type="warning" showIcon message={"检测到您未登录🙅！您需要登录以继续使用该功能😁"} description={
-                    qrcode && <QRCode style={{ width: "100%" }} value={qrcode} />
+                shouldShowAlert && <Alert type="warning" showIcon message={"检测到您未登录🙅！您需要登录以继续使用该功能😁"} description={
+                    <QRCode style={{ width: "100%" }} value={qrcode} />
                 } />
             }
             {!notLogin && <>

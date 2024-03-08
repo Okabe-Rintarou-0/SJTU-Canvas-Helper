@@ -1,19 +1,17 @@
 import { Button, Input, Select, Space, Table, Tag } from "antd";
 import BasicLayout from "../components/layout";
 import useMessage from "antd/es/message/useMessage";
-import { useEffect, useRef, useState } from "react";
-import { Assignment, Attachment, Course, File, FileDownloadTask, GradeStatistic, Submission, User } from "../lib/model";
+import { useEffect, useState } from "react";
+import { Assignment, Attachment, Course, FileDownloadTask, GradeStatistic, Submission, User } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
-import { formatDate } from "../lib/utils";
+import { attachmentToFile, formatDate } from "../lib/utils";
 import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
-import PreviewModal from "../components/preview_modal";
 import GradeStatisticChart from "../components/grade_statistic";
-
+import { usePreview } from "../lib/hooks";
 
 export default function SubmissionsPage() {
     const [messageApi, contextHolder] = useMessage();
-    const [previewFile, setPreviewFile] = useState<File | undefined>(undefined);
     const [operating, setOperating] = useState<boolean>(false);
     const [loading, setLoading] = useState<boolean>(false);
     const [courses, setCourses] = useState<Course[]>([]);
@@ -24,41 +22,14 @@ export default function SubmissionsPage() {
     const [downloadTasks, setDownloadTasks] = useState<FileDownloadTask[]>([]);
     const [selectedAssignment, setSelectedAssignment] = useState<Assignment | undefined>(undefined);
     const [selectedAttachments, setSelectedAttachments] = useState<Attachment[]>([]);
-    const [hoveredFile, setHoveredFile] = useState<File | undefined>(undefined);
     const usersMap = new Map<number, User>(users.map(user => ([user.id, user])));
     const [statistic, setStatistic] = useState<GradeStatistic | undefined>(undefined);
 
-    const hoveredFileRef = useRef<File | undefined>(undefined);
-    const previewFileRef = useRef<File | undefined>(undefined);
+    const { previewer, onHoverFile, onLeaveFile, setPreviewFile } = usePreview();
 
     useEffect(() => {
         initCourses();
-        document.body.addEventListener("keydown", handleKeyDownEvent, true);
-        return () => {
-            document.body.removeEventListener("keydown", handleKeyDownEvent, true);
-        }
     }, []);
-
-    useEffect(() => {
-        previewFileRef.current = previewFile;
-    }, [previewFile]);
-
-    useEffect(() => {
-        hoveredFileRef.current = hoveredFile;
-    }, [hoveredFile]);
-
-    const handleKeyDownEvent = (ev: KeyboardEvent) => {
-        if (ev.key === " " && !ev.repeat) {
-            ev.stopPropagation();
-            ev.preventDefault();
-            if (hoveredFileRef.current && !previewFileRef.current) {
-                setHoveredFile(undefined);
-                setPreviewFile(hoveredFileRef.current);
-            } else if (previewFileRef.current) {
-                setPreviewFile(undefined);
-            }
-        }
-    }
 
     const validateGrade = (grade: string) => {
         if (grade.length === 0) {
@@ -138,16 +109,8 @@ export default function SubmissionsPage() {
         dataIndex: 'display_name',
         key: 'display_name',
         render: (name: string, attachment: Attachment) => <a
-            onMouseEnter={() => {
-                if (!previewFile) {
-                    setHoveredFile(attachmentToFile(attachment));
-                }
-            }}
-            onMouseLeave={() => {
-                if (!previewFile) {
-                    setHoveredFile(undefined);
-                }
-            }}
+            onMouseEnter={() => onHoverFile(attachmentToFile(attachment))}
+            onMouseLeave={onLeaveFile}
         >
             {name}
         </a>
@@ -248,20 +211,6 @@ export default function SubmissionsPage() {
         }
     }
 
-    const attachmentToFile = (attachment: Attachment) => {
-        return {
-            id: attachment.id,
-            uuid: attachment.uuid,
-            url: attachment.url,
-            display_name: attachment.user + "_" + attachment.display_name,
-            folder_id: attachment.folder_id,
-            locked: attachment.locked,
-            filename: attachment.filename,
-            size: attachment.size,
-            mime_class: attachment.mime_class,
-        } as File;
-    }
-
     const handleDownloadAttachment = async (attachment: Attachment) => {
         let file = attachmentToFile(attachment);
         if (!downloadTasks.find(task => task.file.uuid === file.uuid)) {
@@ -328,13 +277,9 @@ export default function SubmissionsPage() {
         value: assignment.name,
     }));
 
-    const handleCancelPreview = () => {
-        setPreviewFile(undefined);
-    }
-
     return <BasicLayout>
         {contextHolder}
-        {previewFile && <PreviewModal open files={[previewFile]} handleCancelPreview={handleCancelPreview} />}
+        {previewer}
         <Space direction="vertical" style={{ width: "100%", overflow: "scroll" }} size={"large"}>
             <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} />
             <Space>

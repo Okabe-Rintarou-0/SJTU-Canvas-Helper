@@ -1,13 +1,13 @@
 import { Button, Checkbox, CheckboxProps, Select, Space, Table, Tooltip } from "antd";
 import BasicLayout from "../components/layout";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Course, File, FileDownloadTask, Folder } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import useMessage from "antd/es/message/useMessage";
 import { InfoCircleOutlined } from '@ant-design/icons';
 import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
-import PreviewModal from "../components/preview_modal";
+import { usePreview } from "../lib/hooks";
 
 export default function FilesPage() {
     const ALL_FILES = "全部文件";
@@ -15,7 +15,6 @@ export default function FilesPage() {
     const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [files, setFiles] = useState<File[]>([]);
-    const [previewFile, setPreviewFile] = useState<File | undefined>(undefined);
     const [folders, setFolders] = useState<Folder[]>([]);
     const [downloadableOnly, setDownloadableOnly] = useState<boolean>(true);
     const [downloadTasks, setDownloadTasks] = useState<FileDownloadTask[]>([]);
@@ -23,39 +22,12 @@ export default function FilesPage() {
     const [operating, setOperating] = useState<boolean>(false);
     const [loading, setLoading] = useState<boolean>(false);
     const [currentFolder, setCurrentFolder] = useState<string>(ALL_FILES);
-    const [hoveredFile, setHoveredFile] = useState<File | undefined>(undefined);
 
-    const hoveredFileRef = useRef<File | undefined>(undefined);
-    const previewFileRef = useRef<File | undefined>(undefined);
+    const { previewer, onHoverFile, onLeaveFile, setPreviewFile } = usePreview();
 
     useEffect(() => {
         initCourses();
-        document.body.addEventListener("keydown", handleKeyDownEvent, true);
-        return () => {
-            document.body.removeEventListener("keydown", handleKeyDownEvent, true);
-        }
     }, []);
-
-    useEffect(() => {
-        previewFileRef.current = previewFile;
-    }, [previewFile]);
-
-    useEffect(() => {
-        hoveredFileRef.current = hoveredFile;
-    }, [hoveredFile]);
-
-    const handleKeyDownEvent = (ev: KeyboardEvent) => {
-        if (ev.key === " " && !ev.repeat) {
-            ev.stopPropagation();
-            ev.preventDefault();
-            if (hoveredFileRef.current && !previewFileRef.current) {
-                setHoveredFile(undefined);
-                setPreviewFile(hoveredFileRef.current);
-            } else if (previewFileRef.current) {
-                setPreviewFile(undefined);
-            }
-        }
-    }
 
     const fileColumns = [
         {
@@ -63,16 +35,8 @@ export default function FilesPage() {
             dataIndex: 'display_name',
             key: 'display_name',
             render: (name: string, file: File) => <a
-                onMouseEnter={() => {
-                    if (!previewFile) {
-                        setHoveredFile(file);
-                    }
-                }}
-                onMouseLeave={() => {
-                    if (!previewFile) {
-                        setHoveredFile(undefined);
-                    }
-                }}
+                onMouseEnter={() => onHoverFile(file)}
+                onMouseLeave={onLeaveFile}
             >
                 {name}
             </a>
@@ -219,13 +183,9 @@ export default function FilesPage() {
         value: folder.full_name
     }))];
 
-    const handleCancelPreview = () => {
-        setPreviewFile(undefined);
-    }
-
     return <BasicLayout>
         {contextHolder}
-        {previewFile && <PreviewModal open files={[previewFile]} handleCancelPreview={handleCancelPreview} />}
+        {previewer}
         <Space direction="vertical" style={{ width: "100%" }} size={"large"}>
             <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} />
             <Space>

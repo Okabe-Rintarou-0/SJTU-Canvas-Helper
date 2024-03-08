@@ -1,6 +1,7 @@
 import { decode } from "js-base64";
 import { getConfig } from "./store";
 import { Dayjs } from "dayjs"
+import { Attachment, File as FileModel } from "./model";
 
 export function formatDate(inputDate: string): string {
     if (!inputDate) {
@@ -97,4 +98,19 @@ export function firstDayOfMonth(date: Dayjs) {
 
 export function lastDayOfMonth(date: Dayjs) {
     return date.endOf('month').toISOString();
+}
+
+export function attachmentToFile(attachment: Attachment) {
+    const prefix = attachment.user ? attachment.user + "_" : "";
+    return {
+        id: attachment.id,
+        uuid: attachment.uuid,
+        url: attachment.url,
+        display_name: prefix + attachment.display_name,
+        folder_id: attachment.folder_id,
+        locked: attachment.locked,
+        filename: attachment.filename,
+        size: attachment.size,
+        mime_class: attachment.mime_class,
+    } as FileModel;
 }

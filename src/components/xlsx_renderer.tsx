@@ -28,7 +28,6 @@ export default function XlsxRenderer({
             if (sheets.length > 0) {
                 let currentSheet = workBook.SheetNames[0];
                 handleSetSheet(workBook, currentSheet);
-                console.log("handled")
             }
         } catch (e) {
             messageApi.error(e as string);
