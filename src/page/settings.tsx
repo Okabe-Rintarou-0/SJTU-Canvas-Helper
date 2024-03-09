@@ -1,4 +1,4 @@
-import { Button, Form, Input, Space } from "antd";
+import { Button, Form, Input, InputNumber, Space } from "antd";
 import BasicLayout from "../components/layout";
 import { useEffect } from "react";
 import { AppConfig } from "../lib/model";
@@ -23,7 +23,6 @@ export default function SettingsPage() {
 
     const handleSaveConfig = async (config: AppConfig) => {
         try {
-            config.proxy_port = Number.parseInt(config.proxy_port as string);
             await saveConfig(config);
             messageApi.success("保存成功！");
         } catch (e) {
@@ -36,11 +35,9 @@ export default function SettingsPage() {
         return valid ? Promise.resolve() : Promise.reject(new Error("保存路径无效！请检查目录是否存在！"));
     }
 
-    const proxyPortValidator = async (_: any, port: string) => {
+    const proxyPortValidator = async (_: any, port: number) => {
         // 0---65535
-        const portNumber = Number.parseInt(port, 10);
-        const isAllNumber = port.match(/\d+/)?.[0] === port;
-        const valid = isAllNumber && 0 <= portNumber && portNumber <= 65535;
+        const valid = 0 <= port && port <= 65535;
         return valid ? Promise.resolve() : Promise.reject(new Error("端口必须是 0 - 65535 之间的数字"));
     }
 
@@ -66,7 +63,7 @@ export default function SettingsPage() {
                     <Input placeholder="请输入文件下载保存目录" />
                 </Form.Item>
                 <Form.Item name="proxy_port" label="反向代理本地端口" rules={[{ validator: proxyPortValidator }]}>
-                    <Input placeholder="请输入反向代理本地端口" />
+                    <InputNumber placeholder="请输入反向代理本地端口" />
                 </Form.Item>
                 <Form.Item name="serve_as_plaintext" label="以纯文本显示的文件拓展名">
                     <Input placeholder="请输入文件拓展名，以英文逗号隔开" />

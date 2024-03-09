@@ -151,7 +151,7 @@ export interface AppConfig {
     serve_as_plaintext: string;
     ja_auth_cookie: string;
     video_cookies: string;
-    proxy_port: number | string;
+    proxy_port: number;
 }
 
 export interface ExportUsersConfig {
