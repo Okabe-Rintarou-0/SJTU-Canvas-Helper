@@ -24,6 +24,8 @@ xlsxwriter = "0.6.0"
 select = "0.6.0"
 md-5 = "0.10.6"
 base64 = "0.22.0"
+warp = "0.3.6"
+warp-reverse-proxy = "1.0.0"
 
 [features]
 # This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!!

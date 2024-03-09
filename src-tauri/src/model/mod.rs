@@ -68,6 +68,12 @@ pub struct AppConfig {
     pub video_cookies: String,
     #[serde(default)]
     pub oauth_consumer_key: String,
+    #[serde(default = "default_proxy_port")]
+    pub proxy_port: u16,
+}
+
+fn default_proxy_port() -> u16 {
+    3030
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

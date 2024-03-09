@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useWebSocket, { ReadyState } from "react-use-websocket";
 import BasicLayout from "../components/layout";
 import QRCode from "react-qr-code";
@@ -35,7 +35,9 @@ export default function VideoPage() {
     const [wsURL, setWsURL] = useState<string>("");
     const [notLogin, setNotLogin] = useState<boolean>(true);
     const [loaded, setLoaded] = useState<boolean>(false);
+    const [playURL, setPlayURL] = useState<string>("");
     const { sendMessage, lastMessage, readyState } = useWebSocket(wsURL, undefined, wsURL.length > 0);
+    const firstPlay = useRef<boolean>(true);
 
     useEffect(() => {
         if (readyState == ReadyState.OPEN) {
@@ -116,6 +118,11 @@ export default function VideoPage() {
 
     useEffect(() => {
         loginAndCheck();
+        return () => {
+            if (!firstPlay.current) {
+                invoke("stop_proxy");
+            }
+        }
     }, []);
 
     const loginAndCheck = async (retry = false) => {
@@ -137,6 +144,7 @@ export default function VideoPage() {
         setOperating(true);
         setVideos([]);
         setSelectedVideo(undefined);
+        setPlayURL("");
         setPlays([]);
         let subject = subjects.find(subject => subject.subjectId === selected);
         if (subject) {
@@ -211,6 +219,34 @@ export default function VideoPage() {
         }
     }
 
+    const handlePlay = async (play: VideoPlayInfo) => {
+        if (firstPlay.current) {
+            messageApi.open({
+                key: 'proxy_preparing',
+                type: 'loading',
+                content: '正在启动反向代理🚀...',
+                duration: 0,
+            });
+            let succeed;
+            try {
+                succeed = await invoke("prepare_proxy") as boolean;
+            } catch (e) {
+                messageApi.error(`反向代理启动失败🥹: ${e}`);
+            }
+            if (succeed) {
+                messageApi.destroy('proxy_preparing');
+                messageApi.success("反向代理启动成功🎉！", 0.5);
+            } else {
+                messageApi.error("反向代理启动超时🥹！");
+                invoke("stop_proxy");
+            }
+            firstPlay.current = false;
+        }
+        let config = await getConfig();
+        let playURL = play.rtmpUrlHdv.replace("https://live.sjtu.edu.cn", `http://localhost:${config.proxy_port}`);
+        setPlayURL(playURL);
+    }
+
     const columns = [
         {
             title: '视频名',
@@ -227,13 +263,16 @@ export default function VideoPage() {
                         e.preventDefault();
                         handleDownloadVideo(play);
                     }}>下载</a>
+                    <a onClick={e => {
+                        e.preventDefault();
+                        handlePlay(play);
+                    }}>播放</a>
                 </Space>
             ),
         }
     ];
 
     const shouldShowAlert = loaded && notLogin && qrcode;
-
     return <BasicLayout>
         {contextHolder}
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
@@ -270,6 +309,7 @@ export default function VideoPage() {
                     />
                 </Space>
                 <Table style={{ width: "100%" }} columns={columns} dataSource={plays} pagination={false} />
+                {playURL && <video key={playURL} controls width={"100%"} autoPlay={false} src={playURL} />}
                 <VideoDownloadTable tasks={downloadTasks} handleRemoveTask={handleRemoveTask} />
             </>}
         </Space>

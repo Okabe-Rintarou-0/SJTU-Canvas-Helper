@@ -1,16 +1,17 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::{fs, io::Write, path::Path};
-
 use client::Client;
 use error::{ClientError, Result};
 use model::{
     AppConfig, Assignment, CalendarEvent, Colors, Course, File, Folder, ProgressPayload, Subject,
     Submission, User, VideoCourse, VideoInfo, VideoPlayInfo,
 };
+use std::{fs, io::Write, path::Path, sync::Arc, time::Duration};
 use tauri::{api::path::download_dir, Runtime, Window};
-use tokio::sync::RwLock;
+use tokio::{sync::RwLock, task::JoinHandle};
+use warp::{hyper::Response, Filter};
+use warp_reverse_proxy::reverse_proxy_filter;
 use xlsxwriter::Workbook;
 mod client;
 mod error;
@@ -24,9 +25,10 @@ lazy_static! {
 }
 
 struct App {
-    client: Client,
+    client: Arc<Client>,
     config_path: String,
     config: RwLock<AppConfig>,
+    handle: RwLock<Option<JoinHandle<()>>>,
 }
 
 impl App {
@@ -45,8 +47,9 @@ impl App {
 
         Self {
             config_path,
-            client: Client::new(),
+            client: Arc::new(Client::new()),
             config: RwLock::new(config),
+            handle: Default::default(),
         }
     }
 
@@ -62,6 +65,53 @@ impl App {
             }
         }
         Ok(())
+    }
+
+    async fn wait_proxy_ready(&self, proxy_port: u16) -> Result<bool> {
+        let url = format!("http://localhost:{}/ready", proxy_port);
+        let timeout_cnt = 10;
+        let mut cnt = 0;
+        loop {
+            let response = reqwest::get(&url).await?;
+            if response.status() == 200 {
+                break Ok(true);
+            }
+            cnt += 1;
+            if cnt >= timeout_cnt {
+                break Ok(false);
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    }
+
+    async fn prepare_proxy(&self) -> Result<bool> {
+        if self.handle.read().await.is_some() {
+            return Ok(true);
+        }
+        let proxy_port = self.config.read().await.proxy_port;
+        let proxy = warp::get()
+            .and(warp::path!("vod" / ..))
+            .and(reverse_proxy_filter(
+                "".to_string(),
+                "https://live.sjtu.edu.cn/".to_string(),
+            ));
+
+        let ready_check = warp::path!("ready").map(|| Response::builder().body(""));
+
+        let handle =
+            tokio::spawn(warp::serve(proxy.or(ready_check)).run(([127, 0, 0, 1], proxy_port)));
+        *self.handle.write().await = Some(handle);
+
+        self.wait_proxy_ready(proxy_port).await
+    }
+
+    async fn stop_proxy(&self) {
+        let mut handle = self.handle.write().await;
+        if let Some(handle) = handle.as_ref() {
+            tracing::info!("stop proxy");
+            handle.abort();
+        }
+        *handle = None;
     }
 
     fn read_config_from_file(config_path: &str) -> Result<AppConfig> {
@@ -466,6 +516,16 @@ async fn get_video_info(video_id: i64) -> Result<VideoInfo> {
 }
 
 #[tauri::command]
+async fn prepare_proxy() -> Result<bool> {
+    APP.prepare_proxy().await
+}
+
+#[tauri::command]
+async fn stop_proxy() {
+    APP.stop_proxy().await
+}
+
+#[tauri::command]
 async fn download_video<R: Runtime>(
     window: Window<R>,
     video: VideoPlayInfo,
@@ -479,8 +539,8 @@ async fn download_video<R: Runtime>(
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    APP.init().await?;
     tracing_subscriber::fmt::init();
+    APP.init().await?;
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             list_courses,
@@ -511,6 +571,8 @@ async fn main() -> Result<()> {
             get_video_info,
             download_video,
             login_video_website,
+            prepare_proxy,
+            stop_proxy,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -527,7 +589,6 @@ mod test {
         let app = App::new();
         let colors = app.get_colors().await?;
         tracing::info!("{:?}", colors);
-
         let mut context_codes = vec![];
         for (course_code, _) in colors.custom_colors {
             context_codes.push(course_code);
