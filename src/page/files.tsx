@@ -1,4 +1,4 @@
-import { Button, Checkbox, CheckboxProps, Select, Space, Table, Tooltip } from "antd";
+import { Button, Checkbox, CheckboxProps, Input, Select, Space, Table, Tooltip } from "antd";
 import BasicLayout from "../components/layout";
 import { useEffect, useState } from "react";
 import { Course, File, FileDownloadTask, Folder } from "../lib/model";
@@ -22,6 +22,7 @@ export default function FilesPage() {
     const [operating, setOperating] = useState<boolean>(false);
     const [loading, setLoading] = useState<boolean>(false);
     const [currentFolder, setCurrentFolder] = useState<string>(ALL_FILES);
+    const [keyword, setKeyword] = useState<string>("");
 
     const { previewer, onHoverFile, onLeaveFile, setPreviewFile } = usePreview();
 
@@ -183,6 +184,12 @@ export default function FilesPage() {
         value: folder.full_name
     }))];
 
+    const shouldShow = (file: File) => {
+        let notContainsKeyword = file.display_name.indexOf(keyword) === -1;
+        let notDownloadable = downloadableOnly && !file.url;
+        return !notContainsKeyword && !notDownloadable;
+    }
+
     return <BasicLayout>
         {contextHolder}
         {previewer}
@@ -202,12 +209,15 @@ export default function FilesPage() {
                     <InfoCircleOutlined />
                 </Tooltip>
             </Space>
-            <Checkbox disabled={operating} onChange={handleSetShowAllFiles} defaultChecked>只显示可下载文件</Checkbox>
+            <Space>
+                <Checkbox disabled={operating} onChange={handleSetShowAllFiles} defaultChecked>只显示可下载文件</Checkbox>
+                <Input.Search placeholder="输入文件关键词" onSearch={setKeyword} />
+            </Space>
             <Table style={{ width: "100%" }}
                 columns={fileColumns}
                 loading={loading}
                 pagination={false}
-                dataSource={downloadableOnly ? files.filter(file => file.url) : files}
+                dataSource={files.filter(file => shouldShow(file))}
                 rowSelection={{ onChange: handleFileSelect, selectedRowKeys: selectedFiles.map(file => file.key) }}
             />
             <Button disabled={operating} onClick={handleDownloadSelectedFiles}>下载</Button>

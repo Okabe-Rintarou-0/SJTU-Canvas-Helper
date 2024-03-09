@@ -24,6 +24,7 @@ export default function SubmissionsPage() {
     const [selectedAttachments, setSelectedAttachments] = useState<Attachment[]>([]);
     const usersMap = new Map<number, User>(users.map(user => ([user.id, user])));
     const [statistic, setStatistic] = useState<GradeStatistic | undefined>(undefined);
+    const [keyword, setKeyword] = useState<string>("");
 
     const { previewer, onHoverFile, onLeaveFile, setPreviewFile } = usePreview();
 
@@ -277,6 +278,10 @@ export default function SubmissionsPage() {
         value: assignment.name,
     }));
 
+    const shouldShow = (attachment: Attachment) => {
+        return attachment.user && attachment.user.indexOf(keyword) !== -1;
+    }
+
     return <BasicLayout>
         {contextHolder}
         {previewer}
@@ -298,10 +303,11 @@ export default function SubmissionsPage() {
                 <span>满分：<b>{selectedAssignment.points_possible}</b>分</span>
             }
             {statistic && <GradeStatisticChart statistic={statistic} />}
+            <Input.Search placeholder="输入文件关键词" onSearch={setKeyword} />
             <Table style={{ width: "100%" }}
                 columns={columns}
                 loading={loading}
-                dataSource={attachments}
+                dataSource={attachments.filter(attachment => shouldShow(attachment))}
                 pagination={false}
                 rowSelection={{ onChange: handleAttachmentSelect, selectedRowKeys: selectedAttachments.map(attachment => attachment.key) }}
             />
