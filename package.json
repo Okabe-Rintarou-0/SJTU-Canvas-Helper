@@ -12,6 +12,7 @@
   "dependencies": {
     "@cyntler/react-doc-viewer": "^1.14.1",
     "@tauri-apps/api": "^1",
+    "@tauri-apps/plugin-updater": "^2.0.0-beta.2",
     "@types/react-highlight": "^0.12.8",
     "@types/react-syntax-highlighter": "^15.5.11",
     "antd": "^5.14.2",
