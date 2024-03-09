@@ -1,11 +1,18 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { FileOutlined, SettingOutlined, UserOutlined, VideoCameraOutlined, FormOutlined, CalendarOutlined, CloudDownloadOutlined } from '@ant-design/icons';
 import { Layout, Menu, theme } from 'antd';
 import { Link, useLocation } from 'react-router-dom';
+import { getVersion } from "@tauri-apps/api/app";
 
 const { Content, Footer, Sider } = Layout;
 
 export default function BasicLayout({ children }: React.PropsWithChildren) {
+    const [version, setVersion] = useState<string>("");
+
+    useEffect(() => {
+        getVersion().then(version => setVersion(version));
+    }, []);
+
     const items = [{
         key: 'files',
         icon: <FileOutlined />,
@@ -61,6 +68,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
                 </div>
             </Content>
             <Footer style={{ textAlign: 'center' }}>
+                当前版本：{version} <br />
                 SJTU Canvas Helper ©{new Date().getFullYear()} Created by <a target="_blank" href='https://github.com/Okabe-Rintarou-0'>Okabe</a>
             </Footer>
         </Layout>
