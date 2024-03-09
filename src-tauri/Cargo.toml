@@ -11,7 +11,7 @@ edition = "2021"
 tauri-build = { version = "1", features = [] }
 
 [dependencies]
-tauri = { version = "1", features = ["shell-open", "devtools"] }
+tauri = { version = "1", features = [ "updater", "process-relaunch", "shell-open", "devtools"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.11.24", features = ["cookies"] }
@@ -26,10 +26,6 @@ md-5 = "0.10.6"
 base64 = "0.22.0"
 warp = "0.3.6"
 warp-reverse-proxy = "1.0.0"
-
-# you can add the dependencies on the `[dependencies]` section if you do not target mobile
-[target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
-tauri-plugin-updater = "2.0.0-beta"
 
 [features]
 # This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!!
