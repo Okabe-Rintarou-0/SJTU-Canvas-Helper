@@ -10,11 +10,12 @@ SJTU Canvas 小帮手，基于 [Tauri](https://tauri.app/) 开发。
 </div>
 
 ## Main Features
-+ [x] 文件下载
++ [x] 文件下载/预览
++ [x] DDL 日历 
 + [x] 人员名单导出
 + [x] 查看作业
-+ [x] 学生提交作业批量下载
-+ [x] 视频下载
++ [x] 批改作业
++ [x] 视频下载/播放
 
 ### 预览
 
