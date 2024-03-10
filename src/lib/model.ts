@@ -4,6 +4,7 @@ export interface Course {
     name: string;
     course_code: string;
     enrollments: Enrollment[];
+    teachers: Teacher[];
 }
 
 export type EnrollmentRole = "TaEnrollment" | "StudentEnrollment";
@@ -278,5 +279,13 @@ export interface VideoInfo {
     videBeginTimeMs: number;
     videEndTimeMs: number;
     videoPlayResponseVoList: VideoPlayInfo[];
+}
+
+export interface Teacher {
+    id: number;
+    anonymous_id: string;
+    display_name: string;
+    avatar_image_url: string;
+    html_url: string;
 }
 

@@ -50,13 +50,12 @@ export default function UsersPage() {
         }
     }
 
-    const handleCourseSelect = async (selected: string) => {
-        let selectedCourse = courses.find(course => course.name === selected);
-        if (selectedCourse) {
+    const handleCourseSelect = async (courseId: number) => {
+        if (courses.find(course => course.id === courseId)) {
             // setSelectedCourseId(selectedCourse.id);
             setSelectedUsers([]);
             setUsers([]);
-            handleGetUsers(selectedCourse.id);
+            handleGetUsers(courseId);
         }
     }
 

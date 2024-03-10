@@ -109,14 +109,13 @@ export default function FilesPage() {
         setOperating(false);
     }
 
-    const handleCourseSelect = async (selected: string) => {
-        let selectedCourse = courses.find(course => course.name === selected);
-        if (selectedCourse) {
-            setSelectedCourseId(selectedCourse.id);
+    const handleCourseSelect = async (courseId: number) => {
+        if (courses.find(course => course.id === courseId)) {
+            setSelectedCourseId(courseId);
             setSelectedFiles([]);
             setFiles([]);
-            handleGetFiles(selectedCourse.id);
-            handleGetFolders(selectedCourse.id);
+            handleGetFiles(courseId);
+            handleGetFolders(courseId);
             setCurrentFolder(ALL_FILES);
         }
     }

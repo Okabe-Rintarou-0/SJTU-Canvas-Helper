@@ -226,27 +226,26 @@ export default function SubmissionsPage() {
         }
     }
 
-    const handleCourseSelect = async (selected: string) => {
-        let selectedCourse = courses.find(course => course.name === selected);
-        if (selectedCourse) {
+    const handleCourseSelect = async (courseId: number) => {
+        if (courses.find(course => course.id === courseId)) {
             setAttachments([]);
             setSelectedAttachments([]);
             setStatistic(undefined);
             setSelectedAssignment(undefined);
-            setSelectedCourseId(selectedCourse.id);
-            handleGetUsers(selectedCourse.id);
-            handleGetAssignments(selectedCourse.id);
+            setSelectedCourseId(courseId);
+            handleGetUsers(courseId);
+            handleGetAssignments(courseId);
         }
     }
 
-    const handleAssignmentSelect = (selected: string) => {
-        let assignment = assignments.find(assignment => assignment.name === selected);
-        setSelectedAssignment(assignment);
+    const handleAssignmentSelect = (assignmentId: number) => {
         setStatistic(undefined);
         setAttachments([]);
         setSelectedAttachments([]);
+        let assignment = assignments.find(assignment => assignment.id === assignmentId);
         if (assignment) {
-            handleGetSubmissions(selectedCourseId, assignment.id);
+            setSelectedAssignment(assignment);
+            handleGetSubmissions(selectedCourseId, assignmentId);
         }
     }
 
@@ -275,7 +274,7 @@ export default function SubmissionsPage() {
 
     const assignmentOptions = assignments.map(assignment => ({
         label: assignment.name,
-        value: assignment.name,
+        value: assignment.id,
     }));
 
     const shouldShow = (attachment: Attachment) => {
@@ -293,8 +292,8 @@ export default function SubmissionsPage() {
                     style={{ width: 300 }}
                     disabled={operating}
                     onChange={handleAssignmentSelect}
-                    value={selectedAssignment?.name}
-                    defaultValue={selectedAssignment?.name}
+                    value={selectedAssignment?.id}
+                    defaultValue={selectedAssignment?.id}
                     options={assignmentOptions}
                 />
             </Space>

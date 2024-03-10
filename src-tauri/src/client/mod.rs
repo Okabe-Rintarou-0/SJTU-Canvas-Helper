@@ -298,13 +298,12 @@ impl Client {
     }
 
     pub async fn list_courses(&self, token: &str) -> Result<Vec<Course>> {
-        let url = format!("{}/api/v1/courses", BASE_URL);
+        let url = format!("{}/api/v1/courses?include[]=teachers", BASE_URL);
         let all_courses = self.list_items(&url, token).await?;
         let filtered_courses: Vec<Course> = all_courses
             .into_iter()
             .filter(|course: &Course| !course.is_access_restricted())
             .collect();
-
         Ok(filtered_courses)
     }
 

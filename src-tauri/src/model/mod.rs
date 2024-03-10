@@ -15,7 +15,19 @@ pub struct Course {
     pub enrollments: Vec<Enrollment>,
     #[serde(default)]
     pub access_restricted_by_date: Option<bool>,
+    #[serde(default)]
+    pub teachers: Vec<Teacher>,
 }
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Teacher {
+    pub id: i64,
+    pub anonymous_id: String,
+    pub display_name: String,
+    pub avatar_image_url: String,
+    pub html_url: String,
+}
+
 impl Course {
     pub fn is_access_restricted(&self) -> bool {
         if let Some(restricted) = self.access_restricted_by_date {
@@ -25,6 +37,7 @@ impl Course {
         }
     }
 }
+
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct File {
     pub id: i64,

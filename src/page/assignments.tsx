@@ -188,11 +188,11 @@ export default function AssignmentsPage() {
         ),
     }];
 
-    const handleCourseSelect = async (selected: string) => {
-        let selectedCourse = courses.find(course => course.name === selected);
+    const handleCourseSelect = async (courseId: number) => {
+        let selectedCourse = courses.find(course => course.id === courseId);
         if (selectedCourse) {
-            setSelectedCourseId(selectedCourse.id);
-            handleGetAssignments(selectedCourse.id, onlyShowUnfinished);
+            setSelectedCourseId(courseId);
+            handleGetAssignments(courseId, onlyShowUnfinished);
         }
     }
 
