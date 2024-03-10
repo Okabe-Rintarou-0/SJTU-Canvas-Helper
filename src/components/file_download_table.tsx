@@ -108,10 +108,10 @@ export default function FileDownloadTable({
             key: 'operation',
             render: (_: any, task: FileDownloadTask) => (
                 <Space size="middle">
-                    {/* <a onClick={e => {
+                    <a onClick={e => {
                         e.preventDefault();
                         handleRemoveTask?.(task);
-                    }}>删除</a> */}
+                    }}>删除</a>
                     <a onClick={e => {
                         e.preventDefault();
                         handleRetryTask(task);

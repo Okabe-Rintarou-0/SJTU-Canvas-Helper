@@ -13,7 +13,7 @@ export default function MarkdownRenderer({
     if (!currentDocument) return null;
     const data = decodeBase64Data(currentDocument.fileData as string);
 
-    return <Card className={styles.markdown_container}>
+    return <Card className={styles.markdownContainer}>
         <Markdown remarkPlugins={[remarkGfm]}
             className={styles.markdown}
             components={{

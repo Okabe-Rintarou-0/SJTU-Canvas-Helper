@@ -1,11 +1,10 @@
 import { Button, Progress, Space, Table } from "antd";
-import { DownloadState, VideoDownloadTask, ProgressPayload, VideoPlayInfo } from "../lib/model";
+import { DownloadState, VideoDownloadTask, ProgressPayload } from "../lib/model";
 import { appWindow } from "@tauri-apps/api/window";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api";
 import { sleep } from "../lib/utils";
-import { DOWNLOAD_TASK_MAP } from "../lib/store";
-import useMessage from "antd/es/message/useMessage";
+import { message } from "antd/lib";
 
 export default function VideoDownloadTable({
     tasks,
@@ -15,25 +14,11 @@ export default function VideoDownloadTable({
     handleRemoveTask?: (task: VideoDownloadTask) => void,
 }) {
     const [currentTasks, setCurrentTasks] = useState<VideoDownloadTask[]>([]);
-    const [messageApi, contextHolder] = useMessage();
-    const taskSet = useRef<Set<string>>(new Set<string>());
+    const taskSet = new Set<string>(currentTasks.map(task => task.key));
 
     useEffect(() => {
         let unlisten = appWindow.listen<ProgressPayload>("video_download://progress", ({ payload }) => {
-            let progress = Math.ceil(payload.downloaded / payload.total * 100);
-            let uuid = payload.uuid;
-            if (taskSet.current.has(uuid)) {
-                updateTaskProgress(uuid, progress);
-            } else {
-                let object = DOWNLOAD_TASK_MAP.get(uuid);
-                if (!object) {
-                    return;
-                }
-                let video = object as VideoPlayInfo;
-                let task = { key: uuid, progress, video, state: "downloading" } as VideoDownloadTask;
-                taskSet.current.add(uuid);
-                setCurrentTasks(currentTasks => [...currentTasks, task]);
-            }
+            updateTaskProgress(payload.uuid, payload.downloaded / payload.total * 100);
         });
         return () => {
             unlisten.then(f => f());
@@ -41,15 +26,13 @@ export default function VideoDownloadTable({
     }, []);
 
     useEffect(() => {
-        let targetTasks = [...currentTasks];
+        setCurrentTasks(tasks);
         for (let task of tasks) {
-            if (!taskSet.current.has(task.key)) {
-                taskSet.current.add(task.key);
-                targetTasks.push(task);
+            if (!taskSet.has(task.key)) {
+                taskSet.add(task.key);
                 handleDownloadVideo(task);
             }
         }
-        setCurrentTasks(targetTasks);
     }, [tasks]);
 
     const handleDownloadVideo = async (task: VideoDownloadTask) => {
@@ -61,14 +44,12 @@ export default function VideoDownloadTable({
         let maxRetries = 3;
         while (retries < maxRetries) {
             try {
-                DOWNLOAD_TASK_MAP.set(uuid, video);
                 await invoke("download_video", { video, saveName: task.video.name });
                 updateTaskProgress(uuid, 100);
-                DOWNLOAD_TASK_MAP.delete(uuid);
                 // messageApi.success("下载成功！", 0.5);
                 break;
             } catch (e) {
-                messageApi.error(e as string);
+                message.error(e as string);
                 updateTaskProgress(uuid, undefined, e as string);
                 retries += 1;
             }
@@ -78,7 +59,7 @@ export default function VideoDownloadTable({
 
     const handleRetryTask = (task: VideoDownloadTask) => {
         if (task.progress < 100 && task.state !== 'fail') {
-            messageApi.warning("任务正在下载中，请勿重试☹️");
+            message.warning("任务正在下载中，请勿重试☹️");
             return;
         }
         handleDownloadVideo(task);
@@ -86,7 +67,7 @@ export default function VideoDownloadTable({
 
     const handleRemoveTasks = () => {
         for (let task of selectedTasks) {
-            taskSet.current.delete(task.key);
+            taskSet.delete(task.key);
             handleRemoveTask?.(task);
         }
         setSelectedTasks([]);
@@ -104,7 +85,7 @@ export default function VideoDownloadTable({
             let state: DownloadState = error ? "fail" : progress === 100 ? "succeed" : "downloading";
             if (task) {
                 if (progress) {
-                    task.progress = progress;
+                    task.progress = Math.ceil(progress);
                 }
                 task.state = state;
             }
@@ -131,10 +112,10 @@ export default function VideoDownloadTable({
             key: 'operation',
             render: (_: any, task: VideoDownloadTask) => (
                 <Space size="middle">
-                    {/* <a onClick={e => {
+                    <a onClick={e => {
                         e.preventDefault();
                         handleRemoveTask?.(task);
-                    }}>删除</a> */}
+                    }}>删除</a>
                     <a onClick={e => {
                         e.preventDefault();
                         handleRetryTask(task);
@@ -144,7 +125,6 @@ export default function VideoDownloadTable({
         }
     ];
     return <>
-        {contextHolder}
         <Table style={{ width: "100%" }} columns={columns} dataSource={currentTasks} pagination={false}
             rowSelection={{
                 onChange: handleSelect,
