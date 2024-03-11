@@ -16,12 +16,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            target: aarch64-apple-darwin
+          # - os: macos-latest
+            # target: aarch64-apple-darwin
           - os: macos-latest
             target: x86_64-apple-darwin
           - os: ubuntu-20.04
-          - os: windows-latest
+          # - os: windows-latest
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -58,9 +58,12 @@ jobs:
           TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
         with:
           includeUpdaterJson: true
-          tagName: app-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version
+          tagName: test_app-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version
           releaseName: "App v__VERSION__"
           releaseBody: "See the assets to download this version and install."
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.target && format('--target {0}', matrix.target) }}
+      
+      - name: Check directory
+        run: ls
