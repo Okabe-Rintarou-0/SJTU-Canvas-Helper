@@ -5,7 +5,7 @@ import dayjs, { Dayjs } from "dayjs";
 import { firstDayOfMonth, lastDayOfMonth } from "../lib/utils";
 import { invoke } from "@tauri-apps/api";
 import useMessage from "antd/es/message/useMessage";
-import { CalendarEvent, Colors } from "../lib/model";
+import { CalendarEvent, Colors, Course } from "../lib/model";
 
 export default function CalendarPage() {
     const [currentDate, setCurrentDate] = useState<Dayjs>(dayjs());
@@ -34,14 +34,10 @@ export default function CalendarPage() {
     }
 
     const init = async () => {
-        let colors = await getColors() as Colors;
-        let contextCodes = [];
-        for (let courseCode in colors.custom_colors) {
-            if (courseCode.startsWith("user")) {
-                continue;
-            }
-            contextCodes.push(courseCode);
-        }
+        const colors = await getColors() as Colors;
+        const courses = await invoke("list_courses") as Course[];
+        const courses_id = Array.from(courses, (course) => `course_${course.id}`);
+        const contextCodes = courses_id.filter((course_id) => Object.keys(colors.custom_colors).includes(course_id));
         setColors(colors);
         setContextCodes(contextCodes);
         getHints(contextCodes);
