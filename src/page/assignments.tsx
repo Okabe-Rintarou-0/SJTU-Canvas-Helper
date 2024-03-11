@@ -102,7 +102,7 @@ export default function AssignmentsPage() {
                 // no need to submit
                 tags.push(<Tag>无需提交</Tag>);
             }
-            else if (submission.workflow_state === "submitted") {
+            else if (submission.submitted_at) {
                 tags.push(submission.late ? <Tag color="red">迟交</Tag> : <Tag color="green">已提交</Tag>);
             }
             else {
