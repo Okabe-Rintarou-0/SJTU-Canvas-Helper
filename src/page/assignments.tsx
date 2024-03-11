@@ -49,6 +49,8 @@ export default function AssignmentsPage() {
     const initCourses = async () => {
         try {
             let courses = await invoke("list_courses") as Course[];
+            // sort by term id, latest first
+            courses.sort((a, b) => b.term.id - a.term.id);
             setCourses(courses);
         } catch (e) {
             messageApi.error(e as string);
@@ -93,16 +95,18 @@ export default function AssignmentsPage() {
         render: (submission: Submission, assignment: Assignment) => {
             let tags = [];
             let dued = dayjs(assignment.due_at).isBefore(dayjs());
-            if (dued) {
+            let locked = dayjs(assignment.lock_at).isBefore(dayjs());
+            if (dued || locked) {
                 tags.push(<Tag color="orange">已截止</Tag>);
             } else {
                 tags.push(<Tag color="blue">进行中</Tag>);
             }
-            if (!submission) {
+            if (!submission ||
+                assignment.submission_types.includes("none") || assignment.submission_types.includes("not_graded")) {
                 // no need to submit
                 tags.push(<Tag>无需提交</Tag>);
             }
-            else if (submission.workflow_state === "submitted") {
+            else if (submission.submitted_at) {
                 tags.push(submission.late ? <Tag color="red">迟交</Tag> : <Tag color="green">已提交</Tag>);
             }
             else {

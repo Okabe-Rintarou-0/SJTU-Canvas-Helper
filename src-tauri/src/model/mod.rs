@@ -161,6 +161,7 @@ pub struct Assignment {
     #[serde(default)]
     pub needs_grading_count: Option<i32>,
     pub html_url: String,
+    pub submission_types: Vec<String>,
     #[serde(default)]
     pub allowed_extensions: Vec<String>,
     pub has_submitted_submissions: bool,
