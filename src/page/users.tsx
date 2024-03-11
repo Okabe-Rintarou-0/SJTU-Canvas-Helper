@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Course, ExportUsersConfig, User } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import CourseSelect from "../components/course_select";
+import dayjs from "dayjs";
 
 export default function UsersPage() {
     const [messageApi, contextHolder] = useMessage();
@@ -44,6 +45,11 @@ export default function UsersPage() {
     const initCourses = async () => {
         try {
             let courses = await invoke("list_courses") as Course[];
+            courses = courses.filter(course => {
+                const courseEnd = dayjs(course.term.end_at);
+                const now = dayjs();
+                return now.isBefore(courseEnd);
+            });
             setCourses(courses);
         } catch (e) {
             messageApi.error(e as string);

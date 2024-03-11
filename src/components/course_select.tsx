@@ -7,27 +7,17 @@ export default function CourseSelect({ courses, disabled, onChange }: {
     disabled?: boolean,
     onChange?: (courseId: number) => void,
 }) {
-    const fixDuplicateCourses = (courses: Course[]) => {
-        let courseMap = new Map<string, Course[]>();
-        for (let course of courses) {
-            let courseName = course.name;
-            let courseList = courseMap.get(courseName);
-            if (!courseList) {
-                courseList = [];
-                courseMap.set(courseName, courseList);
-            }
-            courseList.push(course);
-        }
-        for (let [, courses] of courseMap) {
-            if (courses.length > 1) {
-                for (let course of courses) {
-                    course.name += `(${course.teachers[0].display_name})`;
-                }
-            }
-        }
+    const formatCourses = (courses: Course[]) => {
+        const formatted: Course[] = [];
+        courses.map(course => {
+            const term = course.term.name.replace("Spring", "春").replace("Fall", "秋");
+            formatted.push({
+                ...course,
+                name: `${course.name}(${term}, ${course.teachers[0].display_name})`
+            });
+        });
+        return formatted;
     }
-
-    fixDuplicateCourses(courses);
 
     const courseLabel = (course: Course) => {
         return course.enrollments.find(enrollment => enrollment.role === "TaEnrollment") ?
@@ -35,13 +25,15 @@ export default function CourseSelect({ courses, disabled, onChange }: {
             course.name
     }
 
+    let formattedCourses = formatCourses(courses);
+
     return <Space>
         <span>选择课程：</span>
         <Select
-            style={{ width: 300 }}
+            style={{ width: 350 }}
             disabled={disabled}
             onChange={onChange}
-            options={courses.map(course => ({
+            options={formattedCourses.map(course => ({
                 label: courseLabel(course),
                 value: course.id
             }))}

@@ -197,7 +197,7 @@ export default function FilesPage() {
             <Space>
                 <span>选择目录：</span>
                 <Select
-                    style={{ width: 300 }}
+                    style={{ width: 350 }}
                     disabled={operating}
                     onChange={handleFolderSelect}
                     value={currentFolder}

@@ -289,7 +289,7 @@ export default function SubmissionsPage() {
             <Space>
                 <span>选择作业：</span>
                 <Select
-                    style={{ width: 300 }}
+                    style={{ width: 350 }}
                     disabled={operating}
                     onChange={handleAssignmentSelect}
                     value={selectedAssignment?.id}

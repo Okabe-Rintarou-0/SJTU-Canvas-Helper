@@ -407,7 +407,7 @@ export default function VideoPage() {
                     <span>选择课程：</span>
                     <Select
                         disabled={operating}
-                        style={{ width: 300 }}
+                        style={{ width: 350 }}
                         onChange={handleSelectSubject}
                         options={subjects.map(subject => ({
                             label: subject.subjectName,
@@ -419,7 +419,7 @@ export default function VideoPage() {
                     <span>选择视频：</span>
                     <Select
                         disabled={operating}
-                        style={{ width: 300 }}
+                        style={{ width: 350 }}
                         value={selectedVideo?.id}
                         defaultValue={selectedVideo?.id}
                         onChange={handleSelectVideo}

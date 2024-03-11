@@ -298,7 +298,10 @@ impl Client {
     }
 
     pub async fn list_courses(&self, token: &str) -> Result<Vec<Course>> {
-        let url = format!("{}/api/v1/courses?include[]=teachers", BASE_URL);
+        let url = format!(
+            "{}/api/v1/courses?include[]=teachers&include[]=term",
+            BASE_URL
+        );
         let all_courses = self.list_items(&url, token).await?;
         let filtered_courses: Vec<Course> = all_courses
             .into_iter()
@@ -308,7 +311,10 @@ impl Client {
     }
 
     pub async fn list_ta_courses(&self, token: &str) -> Result<Vec<Course>> {
-        let url = format!("{}/api/v1/courses?enrollment_type=ta", BASE_URL);
+        let url = format!(
+            "{}/api/v1/courses?include[]=teachers&include[]=term&enrollment_type=ta",
+            BASE_URL
+        );
         self.list_items(&url, token).await
     }
 

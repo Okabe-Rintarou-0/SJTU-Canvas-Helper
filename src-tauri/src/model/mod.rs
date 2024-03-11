@@ -17,6 +17,8 @@ pub struct Course {
     pub access_restricted_by_date: Option<bool>,
     #[serde(default)]
     pub teachers: Vec<Teacher>,
+    #[serde(default)]
+    pub term: Term,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -26,6 +28,16 @@ pub struct Teacher {
     pub display_name: String,
     pub avatar_image_url: String,
     pub html_url: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Term {
+    pub id: i64,
+    pub name: String,
+    pub start_at: Option<String>,
+    pub end_at: String,
+    pub created_at: String,
+    pub workflow_state: String,
 }
 
 impl Course {

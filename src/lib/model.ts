@@ -5,6 +5,16 @@ export interface Course {
     course_code: string;
     enrollments: Enrollment[];
     teachers: Teacher[];
+    term: Term;
+}
+
+interface Term {
+    id: number;
+    name: string;
+    start_at?: string | null;
+    end_at: string;
+    created_at: string;
+    workflow_state: string;
 }
 
 export type EnrollmentRole = "TaEnrollment" | "StudentEnrollment";
