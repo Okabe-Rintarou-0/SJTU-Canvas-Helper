@@ -62,8 +62,8 @@ jobs:
           tagName: test_app-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version
           releaseName: "App v__VERSION__"
           releaseBody: "See the assets to download this version and install."
-          releaseDraft: true
-          prerelease: false
+          releaseDraft: false
+          prerelease: true
           args: ${{ matrix.target && format('--target {0}', matrix.target) }}
 
       - name: Check latest.json
