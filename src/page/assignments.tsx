@@ -49,6 +49,8 @@ export default function AssignmentsPage() {
     const initCourses = async () => {
         try {
             let courses = await invoke("list_courses") as Course[];
+            // sort by term id, latest first
+            courses.sort((a, b) => b.term.id - a.term.id);
             setCourses(courses);
         } catch (e) {
             messageApi.error(e as string);
