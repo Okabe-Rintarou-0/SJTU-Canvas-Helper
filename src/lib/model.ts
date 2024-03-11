@@ -95,6 +95,7 @@ export interface Assignment {
     course_id: number;
     name: string;
     html_url: string;
+    submission_types: string[];
     allowed_extensions?: string[];
     published: boolean;
     has_submitted_submissions: boolean;

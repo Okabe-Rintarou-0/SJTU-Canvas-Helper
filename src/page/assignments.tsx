@@ -99,7 +99,8 @@ export default function AssignmentsPage() {
             } else {
                 tags.push(<Tag color="blue">进行中</Tag>);
             }
-            if (!submission) {
+            if (!submission ||
+                assignment.submission_types.includes("none") || assignment.submission_types.includes("not_graded")) {
                 // no need to submit
                 tags.push(<Tag>无需提交</Tag>);
             }
