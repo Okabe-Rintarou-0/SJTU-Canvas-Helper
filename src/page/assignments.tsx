@@ -93,7 +93,8 @@ export default function AssignmentsPage() {
         render: (submission: Submission, assignment: Assignment) => {
             let tags = [];
             let dued = dayjs(assignment.due_at).isBefore(dayjs());
-            if (dued) {
+            let locked = dayjs(assignment.lock_at).isBefore(dayjs());
+            if (dued || locked) {
                 tags.push(<Tag color="orange">已截止</Tag>);
             } else {
                 tags.push(<Tag color="blue">进行中</Tag>);
