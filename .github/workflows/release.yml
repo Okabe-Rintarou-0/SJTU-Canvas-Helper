@@ -69,10 +69,10 @@ jobs:
       - name: Check latest.json
         run: cat latest.json
 
-      # - uses: robinraju/release-downloader@v1.9
-      #   with:
-      #     preRelease: true
-      #     fileName: latest.json
+      - uses: robinraju/release-downloader@v1.9
+        with:
+          preRelease: true
+          fileName: latest.json
 
-      # - name: Check directory
-      #   run: cat latest.json
+      - name: Check directory
+        run: cat latest.json
