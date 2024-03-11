@@ -55,3 +55,28 @@ https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/assets/58595459/7f05cabc-
 ## 学生提交作业批量下载
 
 ![](./images/submissions.png)
+
+## 致谢
+
+感谢以下用户为本仓库做出的贡献：
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/creeper12356" style="display:inline-block;width:80px">
+        <img src="https://github.com/creeper12356.png" width="64px;" alt="creeper12356"/><br/>
+        <sub><b>creeper12356</b></sub>
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/pangbo13" style="display:inline-block;width:80px">
+        <img src="https://github.com/pangbo13.png" width="64px;" alt="pangbo13"/><br/>
+        <sub><b>pangbo13</b></sub>
+      </a>
+    </td>
+  </tr>
+</table>
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Okabe-Rintarou-0/SJTU-Canvas-Helper&type=Date)](https://star-history.com/#Okabe-Rintarou-0/SJTU-Canvas-Helper&Date)
