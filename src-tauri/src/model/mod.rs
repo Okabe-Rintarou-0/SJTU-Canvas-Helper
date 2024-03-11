@@ -218,6 +218,7 @@ pub struct Attachment {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[allow(clippy::enum_variant_names)]
 pub enum EnrollmentRole {
     StudentEnrollment,
     TaEnrollment,
