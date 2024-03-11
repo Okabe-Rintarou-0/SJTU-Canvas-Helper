@@ -66,13 +66,7 @@ jobs:
           prerelease: false
           args: ${{ matrix.target && format('--target {0}', matrix.target) }}
 
-      - name: Check latest.json
-        run: cat latest.json
-
-      - uses: robinraju/release-downloader@v1.9
+      - name: update release
+        uses: softprops/action-gh-release@v2
         with:
-          fileName: latest.json
-          tag: ${{ github.ref_name }}
-
-      - name: Check directory
-        run: cat latest.json
+          files: latest.json
