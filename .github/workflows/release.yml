@@ -18,7 +18,7 @@ jobs:
       matrix:
         include:
           # - os: macos-latest
-            # target: aarch64-apple-darwin
+          # target: aarch64-apple-darwin
           - os: macos-latest
             target: x86_64-apple-darwin
           - os: ubuntu-20.04
@@ -32,14 +32,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-      
+
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
+          workspaces: "./src-tauri -> target"
       - if: matrix.target
         run: rustup target add ${{ matrix.target }}
 
@@ -62,9 +62,17 @@ jobs:
           tagName: test_app-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version
           releaseName: "App v__VERSION__"
           releaseBody: "See the assets to download this version and install."
-          releaseDraft: true
-          prerelease: false
+          releaseDraft: false
+          prerelease: true
           args: ${{ matrix.target && format('--target {0}', matrix.target) }}
-      
-      - name: Check directory
-        run: ls
+
+      - name: Check latest.json
+        run: cat latest.json
+
+      # - uses: robinraju/release-downloader@v1.9
+      #   with:
+      #     preRelease: true
+      #     fileName: latest.json
+
+      # - name: Check directory
+      #   run: cat latest.json
