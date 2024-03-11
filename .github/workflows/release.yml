@@ -62,8 +62,8 @@ jobs:
           tagName: test_app-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version
           releaseName: "App v__VERSION__"
           releaseBody: "See the assets to download this version and install."
-          releaseDraft: false
-          prerelease: true
+          releaseDraft: true
+          prerelease: false
           args: ${{ matrix.target && format('--target {0}', matrix.target) }}
 
       - name: Check latest.json
@@ -71,8 +71,8 @@ jobs:
 
       - uses: robinraju/release-downloader@v1.9
         with:
-          preRelease: true
           fileName: latest.json
+          tag: ${{ github.ref_name }}
 
       - name: Check directory
         run: cat latest.json
