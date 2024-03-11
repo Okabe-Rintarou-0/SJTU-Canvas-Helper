@@ -9,6 +9,27 @@ SJTU Canvas 小帮手，基于 [Tauri](https://tauri.app/) 开发。
   <img align="center" src="https://img.shields.io/github/downloads/Okabe-Rintarou-0/SJTU-Canvas-Helper/total" />
 </div>
 
+## 致谢
+
+感谢以下用户为本仓库做出的贡献：
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/creeper12356" style="display:inline-block;width:80px">
+        <img src="https://github.com/creeper12356.png" width="64px;" alt="creeper12356"/><br/>
+        <sub><b>creeper12356</b></sub>
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/pangbo13" style="display:inline-block;width:80px">
+        <img src="https://github.com/pangbo13.png" width="64px;" alt="pangbo13"/><br/>
+        <sub><b>pangbo13</b></sub>
+      </a>
+    </td>
+  </tr>
+</table>
+
 ## Main Features
 + [x] 文件下载/预览
 + [x] DDL 日历 
@@ -55,27 +76,6 @@ https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/assets/58595459/7f05cabc-
 ## 学生提交作业批量下载
 
 ![](./images/submissions.png)
-
-## 致谢
-
-感谢以下用户为本仓库做出的贡献：
-
-<table>
-  <tr>
-    <td align="center">
-      <a href="https://github.com/creeper12356" style="display:inline-block;width:80px">
-        <img src="https://github.com/creeper12356.png" width="64px;" alt="creeper12356"/><br/>
-        <sub><b>creeper12356</b></sub>
-      </a>
-    </td>
-    <td align="center">
-      <a href="https://github.com/pangbo13" style="display:inline-block;width:80px">
-        <img src="https://github.com/pangbo13.png" width="64px;" alt="pangbo13"/><br/>
-        <sub><b>pangbo13</b></sub>
-      </a>
-    </td>
-  </tr>
-</table>
 
 ## Star History
 
