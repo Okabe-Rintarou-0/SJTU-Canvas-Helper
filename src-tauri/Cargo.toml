@@ -1,8 +1,8 @@
 [package]
-name = "canvas"
-version = "0.0.0"
-description = "A Tauri App"
-authors = ["you"]
+name = "SJTU Canvas Helper"
+version = "1.1.10"
+description = "SJTU Canvas Helper"
+authors = ["Okabe"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -11,7 +11,12 @@ edition = "2021"
 tauri-build = { version = "1", features = [] }
 
 [dependencies]
-tauri = { version = "1", features = [ "updater", "process-relaunch", "shell-open", "devtools"] }
+tauri = { version = "1", features = [
+    "updater",
+    "process-relaunch",
+    "shell-open",
+    "devtools",
+] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.11.24", features = ["cookies"] }
