@@ -17,7 +17,7 @@ interface Term {
     workflow_state: string;
 }
 
-export type EnrollmentRole = "TaEnrollment" | "StudentEnrollment";
+export type EnrollmentRole = "TaEnrollment" | "StudentEnrollment" | "TeacherEnrollment" | "DesignerEnrollment" | "ObserverEnrollment";
 
 export interface Enrollment {
     type: string;

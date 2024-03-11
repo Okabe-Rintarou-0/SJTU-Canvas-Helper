@@ -220,6 +220,9 @@ pub struct Attachment {
 pub enum EnrollmentRole {
     StudentEnrollment,
     TaEnrollment,
+    TeacherEnrollment,
+    ObserverEnrollment,
+    DesignerEnrollment,
 }
 
 impl Default for EnrollmentRole {
