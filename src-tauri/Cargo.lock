@@ -273,28 +273,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "canvas"
-version = "0.0.0"
-dependencies = [
- "base64 0.22.0",
- "lazy_static",
- "md-5",
- "reqwest",
- "select",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "warp",
- "warp-reverse-proxy",
- "xlsxwriter",
-]
-
-[[package]]
 name = "cargo_toml"
 version = "0.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3063,6 +3041,28 @@ name = "siphasher"
 version = "0.3.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "38b58827f4464d87d377d175e90bf58eb00fd8716ff0a62f80356b5e61555d0d"
+
+[[package]]
+name = "sjtu_canvas_helper"
+version = "1.1.10"
+dependencies = [
+ "base64 0.22.0",
+ "lazy_static",
+ "md-5",
+ "reqwest",
+ "select",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "warp",
+ "warp-reverse-proxy",
+ "xlsxwriter",
+]
 
 [[package]]
 name = "slab"

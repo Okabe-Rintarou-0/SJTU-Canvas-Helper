@@ -1,5 +1,5 @@
 [package]
-name = "SJTU Canvas Helper"
+name = "sjtu_canvas_helper"
 version = "1.1.10"
 description = "SJTU Canvas Helper"
 authors = ["Okabe"]
