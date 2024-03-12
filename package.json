@@ -23,6 +23,7 @@
     "js-base64": "^3.7.7",
     "jszip": "^3.10.1",
     "libarchive.js": "^2.0.2",
+    "pdf-merger-js": "^5.1.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-highlight": "^0.15.0",

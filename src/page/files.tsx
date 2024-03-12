@@ -1,4 +1,4 @@
-import { Button, Checkbox, CheckboxProps, Input, Select, Space, Table, Tooltip } from "antd";
+import { Button, Checkbox, CheckboxProps, Divider, Input, Select, Space, Table, Tooltip } from "antd";
 import BasicLayout from "../components/layout";
 import { useEffect, useState } from "react";
 import { Course, File, FileDownloadTask, Folder } from "../lib/model";
@@ -7,7 +7,7 @@ import useMessage from "antd/es/message/useMessage";
 import { InfoCircleOutlined } from '@ant-design/icons';
 import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
-import { usePreview } from "../lib/hooks";
+import { useMerger, usePreview } from "../lib/hooks";
 
 export default function FilesPage() {
     const ALL_FILES = "全部文件";
@@ -23,8 +23,8 @@ export default function FilesPage() {
     const [loading, setLoading] = useState<boolean>(false);
     const [currentFolder, setCurrentFolder] = useState<string>(ALL_FILES);
     const [keyword, setKeyword] = useState<string>("");
-
     const { previewer, onHoverFile, onLeaveFile, setPreviewFile } = usePreview();
+    const { merger, mergePDFs } = useMerger({ setPreviewFile, onHoverFile, onLeaveFile });
 
     useEffect(() => {
         initCourses();
@@ -178,6 +178,10 @@ export default function FilesPage() {
         }
     }
 
+    const handleMergePDFs = () => {
+        mergePDFs(selectedFiles);
+    }
+
     const folderOptions = [{ label: ALL_FILES, value: ALL_FILES }, ...folders.map(folder => ({
         label: folder.full_name,
         value: folder.full_name
@@ -219,7 +223,13 @@ export default function FilesPage() {
                 dataSource={files.filter(file => shouldShow(file))}
                 rowSelection={{ onChange: handleFileSelect, selectedRowKeys: selectedFiles.map(file => file.key) }}
             />
-            <Button disabled={operating} onClick={handleDownloadSelectedFiles}>下载</Button>
+            <Space>
+                <Button disabled={operating} onClick={handleDownloadSelectedFiles}>下载</Button>
+                <Button disabled={operating} onClick={handleMergePDFs}>合并 PDF</Button>
+            </Space>
+            <Divider orientation="left">PDF 合并</Divider>
+            {merger}
+            <Divider orientation="left">文件下载</Divider>
             <FileDownloadTable tasks={downloadTasks} handleRemoveTask={handleRemoveTask} />
         </Space>
     </BasicLayout>
