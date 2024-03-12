@@ -143,6 +143,7 @@ export function useMerger({ setPreviewFile, onHoverFile, onLeaveFile }: {
         let fileName = result.display_name;
         try {
             await invoke("save_file_content", { content, fileName });
+            message.success(`下载成功🎉！`);
         } catch (e) {
             message.error(`下载失败😩：${e}`);
         }
