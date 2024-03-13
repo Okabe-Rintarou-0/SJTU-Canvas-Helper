@@ -302,7 +302,7 @@ export default function SubmissionsPage() {
                 <span>满分：<b>{selectedAssignment.points_possible}</b>分</span>
             }
             {statistic && <GradeStatisticChart statistic={statistic} />}
-            <Input.Search placeholder="输入文件关键词" onSearch={setKeyword} />
+            <Input.Search placeholder="输入学生姓名关键词" onSearch={setKeyword} />
             <Table style={{ width: "100%" }}
                 columns={columns}
                 loading={loading}
