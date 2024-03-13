@@ -1,6 +1,8 @@
 # SJTU Canvas Helper
 
-SJTU Canvas 小帮手，基于 [Tauri](https://tauri.app/) 开发。
+![](./images/logo.png)
+
+SJTU Canvas 小帮手，帮助您更便捷地使用交大 Canvas。基于 [Tauri](https://tauri.app/) 开发。
 
 <div align="center">
   <img align="center" src="https://img.shields.io/badge/rust-1.75-blue" alt="">
@@ -38,6 +40,7 @@ SJTU Canvas 小帮手，基于 [Tauri](https://tauri.app/) 开发。
 + [x] 查看作业
 + [x] 批改作业
 + [x] 视频下载/播放
++ [x] 自动更新 
 
 ### 预览
 
