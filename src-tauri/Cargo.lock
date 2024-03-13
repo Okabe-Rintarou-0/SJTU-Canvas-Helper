@@ -3049,6 +3049,7 @@ dependencies = [
  "base64 0.22.0",
  "lazy_static",
  "md-5",
+ "regex",
  "reqwest",
  "select",
  "serde",

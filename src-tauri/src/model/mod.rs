@@ -95,6 +95,8 @@ pub struct AppConfig {
     pub oauth_consumer_key: String,
     #[serde(default = "default_proxy_port")]
     pub proxy_port: u16,
+    #[serde(default)]
+    pub jbox_login_info: JBoxLoginInfo,
 }
 
 fn default_proxy_port() -> u16 {
@@ -104,7 +106,7 @@ fn default_proxy_port() -> u16 {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProgressPayload {
     pub uuid: String,
-    pub downloaded: u64,
+    pub processed: u64,
     pub total: u64,
 }
 
@@ -379,4 +381,129 @@ pub struct VideoPlayInfo {
     pub rtmp_url_hdv: String,
     pub cdvi_channel_num: i64,
     pub cdvi_view_num: i64,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JboxLoginResult {
+    #[serde(default)]
+    pub user_id: i64,
+    #[serde(default)]
+    pub user_token: String,
+    #[serde(default)]
+    pub expires_in: i64,
+    #[serde(default)]
+    pub is_new_user: bool,
+    #[serde(default)]
+    pub status: i32,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersonalSpaceInfo {
+    #[serde(default)]
+    pub library_id: String,
+    #[serde(default)]
+    pub space_id: String,
+    #[serde(default)]
+    pub access_token: String,
+    #[serde(default)]
+    pub expires_in: i64,
+    #[serde(default)]
+    pub status: i64,
+    #[serde(default)]
+    pub message: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct JBoxLoginInfo {
+    #[serde(default)]
+    pub library_id: String,
+    #[serde(default)]
+    pub space_id: String,
+    #[serde(default)]
+    pub access_token: String,
+}
+
+impl From<PersonalSpaceInfo> for JBoxLoginInfo {
+    fn from(p: PersonalSpaceInfo) -> Self {
+        JBoxLoginInfo {
+            library_id: p.library_id,
+            space_id: p.space_id,
+            access_token: p.access_token,
+        }
+    }
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Headers {
+    #[serde(rename = "x-amz-date")]
+    pub x_amz_date: String,
+    #[serde(rename = "x-amz-content-sha256")]
+    pub x_amz_content_sha256: String,
+    pub authorization: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartChunkUploadPart {
+    pub headers: Headers,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartChunkUploadContext {
+    pub confirm_key: String,
+    pub domain: String,
+    pub path: String,
+    pub upload_id: String,
+    pub parts: HashMap<String, StartChunkUploadPart>,
+    pub expiration: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct JBoxErrorMessage {
+    #[serde(default)]
+    pub code: String,
+    #[serde(default)]
+    pub status: i64,
+    #[serde(default)]
+    pub message: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfirmChunkUploadResult {
+    #[serde(default)]
+    pub path: Vec<String>,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub type_: String,
+    #[serde(default)]
+    pub creation_time: String,
+    #[serde(default)]
+    pub modification_time: String,
+    #[serde(default)]
+    pub content_type: String,
+    #[serde(default)]
+    pub size: String,
+    #[serde(default)]
+    pub e_tag: String,
+    #[serde(default)]
+    pub crc64: String,
+    #[serde(default)]
+    pub is_overwrittened: bool,
+    #[serde(default)]
+    pub virus_audit_status: i64,
+    #[serde(default)]
+    pub sensitive_word_audit_status: i64,
+    #[serde(default)]
+    pub preview_by_doc: bool,
+    #[serde(default)]
+    pub preview_by_ci: bool,
+    #[serde(default)]
+    pub preview_as_icon: bool,
+    #[serde(default)]
+    pub file_type: String,
 }

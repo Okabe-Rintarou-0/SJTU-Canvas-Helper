@@ -17,7 +17,7 @@ export default function FileDownloadTable({
 
     useEffect(() => {
         let unlisten = appWindow.listen<ProgressPayload>("download://progress", ({ payload }) => {
-            updateTaskProgress(payload.uuid, Math.ceil(payload.downloaded / payload.total * 100));
+            updateTaskProgress(payload.uuid, Math.ceil(payload.processed / payload.total * 100));
         });
         return () => {
             unlisten.then(f => f());

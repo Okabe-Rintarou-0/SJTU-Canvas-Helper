@@ -18,6 +18,8 @@ pub enum ClientError {
     ToStrError(#[from] reqwest::header::ToStrError),
     #[error("Login error")]
     LoginError,
+    #[error("JBox error: {0}")]
+    JBoxError(String),
 }
 
 impl serde::Serialize for ClientError {

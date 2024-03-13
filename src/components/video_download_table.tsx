@@ -18,7 +18,7 @@ export default function VideoDownloadTable({
 
     useEffect(() => {
         let unlisten = appWindow.listen<ProgressPayload>("video_download://progress", ({ payload }) => {
-            updateTaskProgress(payload.uuid, payload.downloaded / payload.total * 100);
+            updateTaskProgress(payload.uuid, payload.processed / payload.total * 100);
         });
         return () => {
             unlisten.then(f => f());

@@ -365,6 +365,32 @@ impl App {
     }
 }
 
+impl App {
+    // Apis for jbox
+    async fn login_jbox(&self) -> Result<()> {
+        let cookie = self.get_cookie().await;
+        let user_token = self.client.login_jbox(&cookie).await?;
+        let info = self.client.get_user_space_info(&user_token).await?.into();
+        let mut config = self.get_config().await;
+        config.jbox_login_info = info;
+        self.save_config(config).await?;
+        Ok(())
+    }
+
+    async fn upload_file<F: Fn(ProgressPayload) + Send>(
+        &self,
+        file: &File,
+        save_dir: &str,
+        progress_handler: F,
+    ) -> Result<()> {
+        let config = self.get_config().await;
+        let info = config.jbox_login_info;
+        self.client
+            .upload_file(file, save_dir, &info, progress_handler)
+            .await
+    }
+}
+
 #[tauri::command]
 async fn list_courses() -> Result<Vec<Course>> {
     APP.list_courses().await
@@ -537,6 +563,20 @@ async fn download_video<R: Runtime>(
     .await
 }
 
+// Apis for jbox
+#[tauri::command]
+async fn login_jbox() -> Result<()> {
+    APP.login_jbox().await
+}
+
+#[tauri::command]
+async fn upload_file<R: Runtime>(window: Window<R>, file: File, save_dir: String) -> Result<()> {
+    APP.upload_file(&file, &save_dir, |progress| {
+        let _ = window.emit("file_upload://progress", progress);
+    })
+    .await
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
@@ -573,6 +613,9 @@ async fn main() -> Result<()> {
             login_video_website,
             prepare_proxy,
             stop_proxy,
+            // Apis for jbox
+            login_jbox,
+            upload_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -581,7 +624,7 @@ async fn main() -> Result<()> {
 
 #[cfg(test)]
 mod test {
-    use crate::{error::Result, App};
+    use crate::{error::Result, model::File, App};
 
     #[tokio::test]
     async fn test_get_calendar_events() -> Result<()> {
@@ -625,6 +668,30 @@ mod test {
             |_| {},
         )
         .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_jbox_apis() -> Result<()> {
+        tracing_subscriber::fmt::init();
+        let app = App::new();
+        app.init().await?;
+        app.login_jbox().await?;
+        let info = app.get_config().await.jbox_login_info.clone();
+        app.client
+            .create_jbox_directory("/test/nested", &info)
+            .await?;
+        let file = File {
+            uuid: "9zzeL52Uf5w1wE90GstDBCo21AJMrvQlFg5m86lz".to_owned(),
+            url: "https://oc.sjtu.edu.cn/files/8525695/download?download_frd=1".to_owned(),
+            display_name: "L2-- 大数据处理的基础设施.pdf".to_owned(),
+            ..Default::default()
+        };
+        app.client
+            .upload_file(&file, "/test", &info, |payload| {
+                tracing::info!("Processed: {}/{}", payload.processed, payload.total);
+            })
+            .await?;
         Ok(())
     }
 }

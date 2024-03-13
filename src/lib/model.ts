@@ -172,7 +172,7 @@ export interface ExportUsersConfig {
 
 export interface ProgressPayload {
     uuid: string;
-    downloaded: number;
+    processed: number;
     total: number;
 }
 
