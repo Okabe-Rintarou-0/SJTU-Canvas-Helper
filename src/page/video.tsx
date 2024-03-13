@@ -1,29 +1,17 @@
 import { invoke } from "@tauri-apps/api";
 import { useEffect, useRef, useState } from "react";
-import useWebSocket, { ReadyState } from "react-use-websocket";
 import BasicLayout from "../components/layout";
-import QRCode from "react-qr-code";
 import { SwapOutlined } from '@ant-design/icons';
-import { LoginMessage, Video, Subject, VideoCourse, VideoInfo, VideoPlayInfo, VideoDownloadTask } from "../lib/model";
+import { Video, Subject, VideoCourse, VideoInfo, VideoPlayInfo, VideoDownloadTask } from "../lib/model";
 import useMessage from "antd/es/message/useMessage";
 import { getConfig, saveConfig } from "../lib/store";
-import { Alert, Button, Checkbox, Select, Space, Table } from "antd";
+import { Button, Checkbox, Select, Space, Table } from "antd";
 import VideoDownloadTable from "../components/video_download_table";
 import videoStyles from "../css/video_player.module.css";
-
-const UPDATE_QRCODE_MESSAGE = "{ \"type\": \"UPDATE_QR_CODE\" }";
-const SEND_INTERVAL = 1000 * 50;
-const QRCODE_BASE_URL = "https://jaccount.sjtu.edu.cn/jaccount/confirmscancode";
-const WEBSOCKET_BASE_URL = "wss://jaccount.sjtu.edu.cn/jaccount/sub";
+import { LoginAlert } from "../components/login_alert";
+import { useQRCode } from "../lib/hooks";
 
 export default function VideoPage() {
-    const getLoginWsURL = async () => {
-        let uuid = await invoke("get_uuid") as string | null;
-        if (uuid) {
-            setUuid(uuid);
-            setWsURL(`${WEBSOCKET_BASE_URL}/${uuid}`);
-        }
-    }
     const [downloadTasks, setDownloadTasks] = useState<VideoDownloadTask[]>([]);
     const [operating, setOperating] = useState<boolean>(false);
     const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -32,9 +20,6 @@ export default function VideoPage() {
     const [plays, setPlays] = useState<VideoPlayInfo[]>([]);
     const [selectedVideo, setSelectedVideo] = useState<Video | undefined>(undefined);
     const [videos, setVideos] = useState<Video[]>([]);
-    const [qrcode, setQrcode] = useState<string>("");
-    const [uuid, setUuid] = useState<string>("");
-    const [wsURL, setWsURL] = useState<string>("");
     const [notLogin, setNotLogin] = useState<boolean>(true);
     const [loaded, setLoaded] = useState<boolean>(false);
     const [playURLs, setPlayURLs] = useState<string[]>([]);
@@ -44,26 +29,12 @@ export default function VideoPage() {
     const [subVideoSize, setSubVideoSize] = useState<number>(25);
     const mainVideoRef = useRef<HTMLVideoElement>(null);
     const subVideoRef = useRef<HTMLVideoElement>(null);
-    const { sendMessage, lastMessage, readyState } = useWebSocket(wsURL, undefined, wsURL.length > 0);
     const firstPlay = useRef<boolean>(true);
 
-    useEffect(() => {
-        if (readyState == ReadyState.OPEN) {
-            sendMessage(UPDATE_QRCODE_MESSAGE);
-            let handle = setInterval(() => {
-                sendMessage(UPDATE_QRCODE_MESSAGE);
-            }, SEND_INTERVAL);
-            return () => {
-                clearInterval(handle);
-            }
-        }
-    }, [readyState]);
-
-    const handleUpdateQrcode = (loginMessage: LoginMessage) => {
-        let payload = loginMessage.payload;
-        let qrcode = `${QRCODE_BASE_URL}?uuid=${uuid}&ts=${payload.ts}&sig=${payload.sig}`;
-        setQrcode(qrcode);
+    const onScanSuccess = () => {
+        loginAndCheck(true);
     }
+    const { qrcode, showQRCode, refreshQRCode } = useQRCode({ onScanSuccess });
 
     const handleGetSubjects = async () => {
         try {
@@ -87,43 +58,6 @@ export default function VideoPage() {
         }
     }
 
-    const handleScanSuccess = async () => {
-        try {
-            let JAAuthCookie = await invoke("express_login", { uuid }) as string | null;
-            if (!JAAuthCookie) {
-                return;
-            }
-            console.log("读取到 JAAuthCookie: ", JAAuthCookie);
-            let config = await getConfig();
-            config.ja_auth_cookie = JAAuthCookie;
-            await saveConfig(config);
-            let success = await loginAndCheck(true);
-            if (success) {
-                messageApi.success("扫码登录成功🎉！", 1);
-            }
-        } catch (e) {
-            messageApi.error(`登录失败🥹：${e}`);
-        }
-    }
-
-    useEffect(() => {
-        if (lastMessage) {
-            try {
-                let loginMessage = JSON.parse(lastMessage.data) as LoginMessage;
-                switch (loginMessage.type.toUpperCase()) {
-                    case "UPDATE_QR_CODE":
-                        handleUpdateQrcode(loginMessage);
-                        break;
-                    case "LOGIN":
-                        handleScanSuccess();
-                        break;
-                }
-            } catch (e) {
-                console.log(e);
-            }
-        }
-    }, [lastMessage]);
-
     useEffect(() => {
         loginAndCheck();
         return () => {
@@ -139,9 +73,11 @@ export default function VideoPage() {
         if (!success) {
             config.ja_auth_cookie = ""
             await saveConfig(config);
-            getLoginWsURL();
+            showQRCode();
         } else if (!retry) {
             messageApi.success("检测到登录会话，登录成功🎉！");
+        } else {
+            messageApi.success("登录成功🎉！");
         }
         setNotLogin(!success);
         setLoaded(true);
@@ -397,11 +333,7 @@ export default function VideoPage() {
     return <BasicLayout>
         {contextHolder}
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
-            {
-                shouldShowAlert && <Alert type="warning" showIcon message={"检测到您未登录🙅！您需要登录以继续使用该功能😁"} description={
-                    <QRCode style={{ width: "100%" }} value={qrcode} />
-                } />
-            }
+            {shouldShowAlert && <LoginAlert qrcode={qrcode} refreshQRCode={refreshQRCode} />}
             {!notLogin && <>
                 <Space>
                     <span>选择课程：</span>

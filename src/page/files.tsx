@@ -1,4 +1,4 @@
-import { Button, Checkbox, CheckboxProps, Divider, Input, Select, Space, Table, Tooltip } from "antd";
+import { Button, Checkbox, CheckboxProps, Divider, Input, Select, Space, Table, Tooltip, message } from "antd";
 import BasicLayout from "../components/layout";
 import { useEffect, useState } from "react";
 import { Course, File, FileDownloadTask, Folder } from "../lib/model";
@@ -7,7 +7,7 @@ import useMessage from "antd/es/message/useMessage";
 import { InfoCircleOutlined } from '@ant-design/icons';
 import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
-import { useMerger, usePreview } from "../lib/hooks";
+import { useLoginModal, useMerger, usePreview } from "../lib/hooks";
 
 export default function FilesPage() {
     const ALL_FILES = "全部文件";
@@ -25,6 +25,24 @@ export default function FilesPage() {
     const [keyword, setKeyword] = useState<string>("");
     const { previewer, onHoverFile, onLeaveFile, setPreviewFile } = usePreview();
     const { merger, mergePDFs } = useMerger({ setPreviewFile, onHoverFile, onLeaveFile });
+
+    const handleLoginJbox = async () => {
+        try {
+            await invoke("login_jbox");
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    const onLogin = async () => {
+        if (await handleLoginJbox()) {
+            message.success('登录成功🎉！');
+            closeModal();
+        }
+    }
+
+    const { modal, showModal, closeModal } = useLoginModal({ onLogin });
 
     useEffect(() => {
         initCourses();
@@ -52,6 +70,10 @@ export default function FilesPage() {
                         e.preventDefault();
                         handleDownloadFile(file);
                     }}>下载</a>}
+                    {file.url && <a onClick={e => {
+                        e.preventDefault();
+                        handleUploadFile(file);
+                    }}>上传云盘</a>}
                     <a onClick={e => {
                         e.preventDefault();
                         setPreviewFile(file);
@@ -164,6 +186,42 @@ export default function FilesPage() {
         }
     }
 
+    const handleUploadFile = async (file: File) => {
+        let folder = folders.find(folder => folder.id === file.folder_id);
+        let folderName = (folder?.full_name ?? "/").replace("course files", "");
+        let course = courses.find(course => course.id === selectedCourseId)!;
+        const saveDir = course.name + folderName;
+        const savePath = saveDir + "/" + file.display_name;
+        const infoKey = `uploading_${savePath}`;
+        let retries = 0;
+        let maxRetries = 1;
+        let error: any;
+        let logined = false;
+        messageApi.open({
+            key: infoKey,
+            type: 'loading',
+            content: `正在上传至交大云盘🚀（文件路径：${savePath}）...`,
+            duration: 0,
+        });
+        while (retries <= maxRetries) {
+            try {
+                await invoke("upload_file", { file, saveDir });
+                messageApi.destroy(infoKey);
+                messageApi.success('上传文件成功🎉！');
+                break;
+            } catch (e) {
+                error = e;
+                retries += 1;
+                logined = await handleLoginJbox();
+            }
+        }
+        if (!logined && error) {
+            messageApi.destroy(infoKey);
+            messageApi.error(`上传文件出错🥹：${error}`);
+            showModal();
+        }
+    }
+
     const handleSetShowAllFiles: CheckboxProps['onChange'] = (e) => {
         setDownloadableOnly(e.target.checked);
     }
@@ -193,9 +251,12 @@ export default function FilesPage() {
         return !notContainsKeyword && !notDownloadable;
     }
 
+    const noSelectedPDFs = selectedFiles.filter(file => file.mime_class.indexOf("pdf") !== -1).length < 2;
+
     return <BasicLayout>
         {contextHolder}
         {previewer}
+        {modal}
         <Space direction="vertical" style={{ width: "100%" }} size={"large"}>
             <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} />
             <Space>
@@ -225,7 +286,8 @@ export default function FilesPage() {
             />
             <Space>
                 <Button disabled={operating} onClick={handleDownloadSelectedFiles}>下载</Button>
-                <Button disabled={operating} onClick={handleMergePDFs}>合并 PDF</Button>
+                {/* <Button disabled={true} onClick={() => { }}>上传云盘</Button> */}
+                <Button disabled={operating || noSelectedPDFs} onClick={handleMergePDFs}>合并 PDF</Button>
             </Space>
             <Divider orientation="left">PDF 合并</Divider>
             {merger}
