@@ -32,6 +32,7 @@ SJTU Canvas 小帮手，基于 [Tauri](https://tauri.app/) 开发。
 
 ## Main Features
 + [x] 文件下载/预览
++ [x] 一键上传[交大云盘（新）](https://pan.sjtu.edu.cn/)
 + [x] DDL 日历 
 + [x] 人员名单导出
 + [x] 查看作业
@@ -47,36 +48,42 @@ https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/assets/58595459/7f05cabc-
 **支持预览主流压缩文件（7z, zip, rar...）**
 ![](./images/preview_zip.png)
 
-## 下载课程录屏
+### 一键上传交大云盘
+
+![](./images/jbox1.png)
+
+![](./images/jbox2.png)
+
+### 下载课程录屏
 ![](./images/qrcode.png)
 
 ![](./images/download_video.png)
 
-## 查看作业评分分布
+### 查看作业评分分布
   
 ![](./images/distributions.png)
   
-## 作业评分
+### 作业评分
   
 输入合法的分数，然后按下回车；如果想撤回分数，则清空输入框，再次按下回车。
 ![](./images/grade.png)
 
-## 下载课程文件
+### 下载课程文件
   
 ![](./images/download_course_files.png)
   
-## 查看作业
+### 查看作业
   
 ![](./images/assignments.png)
 
-## 导出课程人员名单
+### 导出课程人员名单
   
 ![](./images/export_users.png)
   
-## 学生提交作业批量下载
+### 学生提交作业批量下载
 
 ![](./images/submissions.png)
 
-## Star History
+### Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=Okabe-Rintarou-0/SJTU-Canvas-Helper&type=Date)](https://star-history.com/#Okabe-Rintarou-0/SJTU-Canvas-Helper&Date)
