@@ -16,6 +16,8 @@ export default function CourseSelect({ courses, disabled, onChange }: {
                 name: `${course.name}(${term}, ${course.teachers[0].display_name})`
             });
         });
+        // sort by term id, latest first
+        formatted.sort((a, b) => b.term.id - a.term.id);
         return formatted;
     }
 
