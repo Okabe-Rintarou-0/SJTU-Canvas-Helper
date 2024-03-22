@@ -1,6 +1,6 @@
 import { Dispatch, SetStateAction, useEffect, useRef, useState } from "react";
 import PreviewModal from "../components/preview_modal";
-import { File, LoginMessage } from "./model";
+import {Entry, File, isFile, LoginMessage} from "./model";
 import PDFMerger from 'pdf-merger-js/browser';
 import { Button, Progress, Space, message } from "antd";
 import dayjs from "dayjs";
@@ -15,36 +15,37 @@ const QRCODE_BASE_URL = "https://jaccount.sjtu.edu.cn/jaccount/confirmscancode";
 const WEBSOCKET_BASE_URL = "wss://jaccount.sjtu.edu.cn/jaccount/sub";
 
 export function usePreview() {
-    const [previewFile, setPreviewFile] = useState<File | undefined>(undefined);
-    const [hoveredFile, setHoveredFile] = useState<File | undefined>(undefined);
-    const previewer = <Previewer previewFile={previewFile}
-        setPreviewFile={setPreviewFile}
-        hoveredFile={hoveredFile}
-        setHoveredFile={setHoveredFile}
+    const [previewEntry, setPreviewEntry] = useState<Entry | undefined>(undefined);
+    const [hoveredEntry, setHoveredEntry] = useState<Entry | undefined>(undefined);
+    const previewer = <Previewer previewEntry={previewEntry}
+        setPreviewEntry={setPreviewEntry}
+        hoveredEntry={hoveredEntry}
+        setHoveredEntry={setHoveredEntry}
     />
-    const onHoverFile = (file: File) => {
-        if (!previewFile) {
-            setHoveredFile(file);
+    const onHoverEntry = (entry : Entry) => {
+        if (!previewEntry) {
+            setHoveredEntry(entry);
         }
     }
-    const onLeaveFile = () => {
-        if (!previewFile) {
-            setHoveredFile(undefined);
+    const onLeaveEntry = () => {
+        if (!previewEntry) {
+            setHoveredEntry(undefined);
         }
     }
-    return { previewer, onHoverFile, onLeaveFile, setPreviewFile }
+    return { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry }
 }
 
-type FileType = File | undefined;
+// type FileType = File | undefined;
+type EntryType = Entry | undefined;
 
-function Previewer({ previewFile, setPreviewFile, hoveredFile, setHoveredFile }: {
-    previewFile: FileType,
-    setPreviewFile: Dispatch<SetStateAction<FileType>>,
-    hoveredFile: FileType,
-    setHoveredFile: Dispatch<SetStateAction<FileType>>
+function Previewer({ previewEntry, setPreviewEntry, hoveredEntry, setHoveredEntry }: {
+    previewEntry: EntryType,
+    setPreviewEntry: Dispatch<SetStateAction<EntryType>>,
+    hoveredEntry: EntryType,
+    setHoveredEntry: Dispatch<SetStateAction<EntryType>>
 }) {
-    const hoveredFileRef = useRef<File | undefined>(undefined);
-    const previewFileRef = useRef<File | undefined>(undefined);
+    const hoveredEntryRef = useRef<EntryType>(undefined);
+    const previewEntryRef = useRef<EntryType>(undefined);
 
     useEffect(() => {
         document.body.addEventListener("keydown", handleKeyDownEvent, true);
@@ -54,41 +55,44 @@ function Previewer({ previewFile, setPreviewFile, hoveredFile, setHoveredFile }:
     }, []);
 
     useEffect(() => {
-        previewFileRef.current = previewFile;
-    }, [previewFile]);
+        previewEntryRef.current = previewEntry;
+    }, [previewEntry]);
 
     useEffect(() => {
-        hoveredFileRef.current = hoveredFile;
-    }, [hoveredFile]);
+        hoveredEntryRef.current = hoveredEntry;
+    }, [hoveredEntry]);
 
     const handleKeyDownEvent = (ev: KeyboardEvent) => {
         if (ev.key === " " && !ev.repeat) {
             ev.stopPropagation();
             ev.preventDefault();
-            if (hoveredFileRef.current && !previewFileRef.current) {
-                setHoveredFile(undefined);
-                setPreviewFile(hoveredFileRef.current);
-            } else if (previewFileRef.current) {
-                setPreviewFile(undefined);
+            if (hoveredEntryRef.current && !previewEntryRef.current) {
+                setHoveredEntry(undefined);
+                setPreviewEntry(hoveredEntryRef.current);
+            } else if (previewEntryRef.current) {
+                setPreviewEntry(undefined);
             }
         }
     }
 
     const handleCancelPreview = () => {
-        setPreviewFile(undefined);
+        setPreviewEntry(undefined);
     }
 
-    const shouldOpen = previewFile !== undefined;
+    const shouldOpen = previewEntry !== undefined;
 
     return <>
-        {previewFile && <PreviewModal open={shouldOpen} files={[previewFile]} handleCancelPreview={handleCancelPreview} />}
+        {
+            previewEntry &&
+            isFile(previewEntry) &&
+            <PreviewModal open={shouldOpen} files={[previewEntry as File]} handleCancelPreview={handleCancelPreview} />}
     </>
 }
 
-export function useMerger({ setPreviewFile, onHoverFile, onLeaveFile }: {
-    setPreviewFile: Dispatch<SetStateAction<FileType>>,
-    onHoverFile: (file: File) => void,
-    onLeaveFile: () => void,
+export function useMerger({ setPreviewEntry, onHoverEntry, onLeaveEntry }: {
+    setPreviewEntry: Dispatch<SetStateAction<EntryType>>,
+    onHoverEntry: (entry: Entry) => void,
+    onLeaveEntry: () => void,
 }) {
     const [merging, setMerging] = useState<boolean>(false);
     const [pdfs, setPdfs] = useState<File[]>([]);
@@ -160,8 +164,8 @@ export function useMerger({ setPreviewFile, onHoverFile, onLeaveFile }: {
     const merger = <Space direction="vertical" style={{ width: "100%" }}>
         {progress}
         {result && <Space>
-            <a onMouseEnter={() => onHoverFile(result)} onMouseLeave={onLeaveFile}>{result.display_name}</a>
-            <Button onClick={() => setPreviewFile(result)}>预览</Button>
+            <a onMouseEnter={() => onHoverEntry(result)} onMouseLeave={onLeaveEntry}>{result.display_name}</a>
+            <Button onClick={() => setPreviewEntry(result)}>预览</Button>
             <Button onClick={handleDownloadResult}>下载</Button>
         </Space>}
     </Space>

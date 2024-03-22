@@ -204,6 +204,12 @@ impl App {
             .await
     }
 
+    async fn list_folder_folders(&self, folder_id: i32) -> Result<Vec<Folder>> {
+        self.client
+            .list_folder_folders(folder_id, &self.config.read().await.token)
+            .await
+    }
+
     async fn save_file_content(&self, content: &[u8], file_name: &str) -> Result<()> {
         let save_dir = self.config.read().await.save_path.clone();
         let path = Path::new(&save_dir).join(file_name);
@@ -240,6 +246,11 @@ impl App {
         Ok(())
     }
 
+    async fn get_folder_by_id(&self, folder_id: i32) -> Result<Folder> {
+        self.client
+            .get_folder_by_id(folder_id, &self.config.read().await.token)
+            .await
+    }
     async fn get_colors(&self) -> Result<Colors> {
         self.client
             .get_colors(&self.config.read().await.token)
@@ -441,6 +452,9 @@ async fn list_folders(course_id: i32) -> Result<Vec<Folder>> {
 }
 
 #[tauri::command]
+async fn list_folder_folders(folder_id: i32) -> Result<Vec<Folder>> { APP.list_folder_folders(folder_id).await }
+
+#[tauri::command]
 async fn get_config() -> AppConfig {
     APP.get_config().await
 }
@@ -487,6 +501,9 @@ async fn list_calendar_events(
     APP.list_calendar_events(&context_codes, &start_date, &end_date)
         .await
 }
+
+#[tauri::command]
+async fn get_folder_by_id(folder_id: i32) -> Result<Folder> {APP.get_folder_by_id(folder_id).await }
 
 #[tauri::command]
 async fn get_colors() -> Result<Colors> {
@@ -592,7 +609,9 @@ async fn main() -> Result<()> {
             list_course_assignment_submissions,
             list_folder_files,
             list_folders,
+            list_folder_folders,
             list_calendar_events,
+            get_folder_by_id,
             get_colors,
             get_config,
             save_config,
