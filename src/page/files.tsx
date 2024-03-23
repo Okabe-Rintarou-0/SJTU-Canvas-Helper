@@ -399,7 +399,7 @@ export default function FilesPage() {
                     根目录
                 </Button>
             </Space>
-            <span>当前目录：{currentFolderFullName}</span>
+            {currentFolderFullName && <span>当前目录：{currentFolderFullName}</span>}
             <Table style={{ width: "100%" }}
                 columns={fileColumns}
                 loading={loading}
