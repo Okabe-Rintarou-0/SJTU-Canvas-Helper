@@ -37,6 +37,7 @@ const aliasMap: Record<string, string> = {
     pptx: "ppt",
     cjs: "js",
     gitignore: "txt",
+    mp4: "video/mp4"
 };
 
 export async function getFileType(filename: string) {

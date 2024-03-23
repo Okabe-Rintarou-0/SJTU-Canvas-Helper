@@ -55,11 +55,11 @@ export interface Folder {
 }
 
 export type Entry = File | Folder;
-export function isFile(entry : Entry) {
+export function isFile(entry: Entry) {
     return 'display_name' in entry;
 }
 export function entryName(entry: Entry) {
-    if(isFile((entry))) {
+    if (isFile((entry))) {
         return (entry as File).display_name;
     }
     else {

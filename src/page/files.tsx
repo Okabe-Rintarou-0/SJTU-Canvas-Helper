@@ -1,13 +1,15 @@
 import { Button, Checkbox, CheckboxProps, Divider, Input, Space, Table, message } from "antd";
 import BasicLayout from "../components/layout";
 import { useEffect, useState } from "react";
-import {Course, Entry, entryName, File, FileDownloadTask, Folder, isFile} from "../lib/model";
+import { Course, Entry, entryName, File, FileDownloadTask, Folder, isFile } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import useMessage from "antd/es/message/useMessage";
 import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
 import { useLoginModal, useMerger, usePreview } from "../lib/hooks";
-import {FolderOutlined, FileOutlined, UpOutlined, HomeOutlined} from "@ant-design/icons"
+import { PiMicrosoftExcelLogoFill, PiMicrosoftPowerpointLogoFill, PiMicrosoftWordLogoFill } from "react-icons/pi";
+import { FaRegFilePdf, FaImage, FaFileCsv, FaRegFileArchive, FaRegFileVideo, FaRegFileAudio } from "react-icons/fa";
+import { FolderOutlined, FileOutlined, HomeOutlined, LeftOutlined } from "@ant-design/icons"
 
 export default function FilesPage() {
     const MAIN_FOLDER = 'course files';
@@ -22,8 +24,8 @@ export default function FilesPage() {
     const [operating, setOperating] = useState<boolean>(false);
     const [loading, setLoading] = useState<boolean>(false);
     const [currentFolderId, setCurrentFolderId] = useState(0);
-    const [currentFolderFullName , setCurrentFolderFullName] = useState('');
-    const [parentFolderId, setParentFolderId] = useState<number|null|undefined>(null);
+    const [currentFolderFullName, setCurrentFolderFullName] = useState<string | undefined>('');
+    const [parentFolderId, setParentFolderId] = useState<number | undefined | null>(null);
     const [keyword, setKeyword] = useState<string>("");
     const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry } = usePreview();
     const { merger, mergePDFs } = useMerger({ setPreviewEntry, onHoverEntry, onLeaveEntry });
@@ -49,40 +51,82 @@ export default function FilesPage() {
     useEffect(() => {
         initCourses();
     }, []);
+
     useEffect(() => {
         handleGetFolderFiles(currentFolderId);
         handleGetFolderFolders(currentFolderId);
     }, [currentFolderId]);
+
+    const getFileIcon = (file: File) => {
+        const name = file.display_name;
+        const mime_class = file.mime_class;
+        if (name.endsWith(".pdf")) {
+            return <FaRegFilePdf style={{ fontSize: '22px' }} />
+        }
+        if (name.endsWith(".doc") || name.endsWith(".docx")) {
+            return <PiMicrosoftWordLogoFill style={{ fontSize: '24px' }} />
+        }
+        if (name.endsWith(".ppt") || name.endsWith(".pptx")) {
+            return <PiMicrosoftPowerpointLogoFill style={{ fontSize: '24px' }} />
+        }
+        if (name.endsWith(".csv")) {
+            return <FaFileCsv style={{ fontSize: '22px' }} />
+        }
+        if (name.endsWith(".xls") || name.endsWith(".xlsx")) {
+            return <PiMicrosoftExcelLogoFill style={{ fontSize: '24px' }} />
+        }
+        if (name.endsWith(".ppt") || name.endsWith(".pptx")) {
+            return <PiMicrosoftPowerpointLogoFill style={{ fontSize: '24px' }} />
+        }
+        if (name.endsWith(".flv") || name.endsWith(".mp4") || name.endsWith(".mov") || name.endsWith(".m4v") || name.endsWith(".avi")) {
+            return <FaRegFileVideo style={{ fontSize: '22px' }} />
+        }
+        if (name.endsWith(".mp3") || name.endsWith(".wav")) {
+            return <FaRegFileAudio style={{ fontSize: '22px' }} />
+        }
+        if (name.endsWith(".7z") || name.endsWith(".rar") || name.endsWith(".tar") || name.endsWith(".zip")) {
+            return <FaRegFileArchive style={{ fontSize: '22px' }} />
+        }
+        if (mime_class.startsWith("image")) {
+            return <FaImage style={{ fontSize: '22px' }} />
+        }
+        return <FileOutlined style={{ fontSize: '21px' }} />
+    }
 
     const fileColumns = [
         {
             title: '文件',
             key: 'name',
             render: (entry: Entry) => {
-                if(isFile(entry)) {
+                if (isFile(entry)) {
+                    const file = entry as File;
+                    const displayName = file.display_name;
                     return (
                         <Space>
-                            <FileOutlined />
+                            {getFileIcon(file)}
                             <a
-                                onMouseEnter={() => onHoverEntry(entry) }
+                                target="_blank"
+                                href={`https://oc.sjtu.edu.cn/courses/65860/files?preview=${file.id}`}
+                                onMouseEnter={() => onHoverEntry(entry)}
                                 onMouseLeave={onLeaveEntry}
-                           >
-                                {(entry as File).display_name}
+                            >
+                                {displayName}
                             </a>
                         </Space>);
                 }
                 else {
+                    const folder = entry as Folder;
                     return (
                         <Space>
-                            <FolderOutlined />
+                            <FolderOutlined style={{ fontSize: '22px' }} />
                             <a
-                                onMouseEnter={() => onHoverEntry(entry) }
+                                onMouseEnter={() => onHoverEntry(entry)}
                                 onMouseLeave={onLeaveEntry}
                                 onClick={async () => {
-                                    await handleFolderOpen((entry as Folder).id);
+                                    await handleFolderOpen(folder.id);
                                 }}
                             >
-                                {(entry as Folder).name}
+                                {folder.name}
                             </a>
                         </Space>
                     )
@@ -93,7 +137,7 @@ export default function FilesPage() {
             title: '操作',
             key: 'operation',
             render: (entry: Entry) => {
-                if(isFile(entry)) {
+                if (isFile(entry)) {
                     const file = entry as File;
                     return (
                         isFile(file) && <Space>
@@ -113,7 +157,7 @@ export default function FilesPage() {
                     );
                 }
                 else {
-                    return <></> ;
+                    return <></>;
                 }
             },
         }
@@ -139,54 +183,28 @@ export default function FilesPage() {
         try {
             let courseFolders = await invoke("list_folders", { courseId }) as Folder[];
             mainFolderId = courseFolders.find(folder => folder.name === MAIN_FOLDER)?.id;
-        }  catch(_) {
+        } catch (_) {
             mainFolderId = undefined;
         }
         setOperating(false);
         setLoading(false);
         return mainFolderId;
     };
-    const getParentFolderId = async (folderId: number): Promise<number | null | undefined> => {
+
+    const getParentFolder = async (folderId: number): Promise<Folder | undefined> => {
         setOperating(true);
         setLoading(true);
-        let parentFolderId;
+        let parentFolder = undefined;
         try {
             let folder = await invoke("get_folder_by_id", { folderId }) as Folder;
-            parentFolderId = folder.parent_folder_id;
-        } catch(_) {
-            parentFolderId = null;
-        }
-        setOperating(false);
-        setLoading(false);
-        return parentFolderId;
-    }
-    const getFullName = async (folderId:number): Promise<string> => {
-        setOperating(true);
-        setLoading(true);
-        let fullName;
-        try {
-            let folder = await invoke("get_folder_by_id", { folderId }) as Folder;
-            fullName = folder.full_name;
+            parentFolder = folder;
         } catch (_) {
-            fullName = '';
+            parentFolder = undefined;
         }
         setOperating(false);
         setLoading(false);
-        return fullName;
+        return parentFolder;
     }
-    // const handleGetFiles = async (courseId: number) => {
-    //     setOperating(true);
-    //     setLoading(true);
-    //     try {
-    //         let files = await invoke("list_course_files", { courseId }) as File[];
-    //         files.map(file => file.key = file.uuid);
-    //         setFiles(files);
-    //     } catch (_) {
-    //         setFiles([]);
-    //     }
-    //     setOperating(false);
-    //     setLoading(false);
-    // }
 
     const handleGetFolderFiles = async (folderId: number) => {
         setOperating(true);
@@ -201,18 +219,6 @@ export default function FilesPage() {
         setOperating(false);
         setLoading(false);
     }
-
-    // const handleGetFolders = async (courseId: number) => {
-    //     setOperating(true);
-    //     try {
-    //         let folders = await invoke("list_folders", { courseId }) as Folder[];
-    //         folders.map(folder => folder.key = folder.id.toString());
-    //         setFolders(folders);
-    //     } catch (e) {
-    //         setFolders([]);
-    //     }
-    //     setOperating(false);
-    // }
 
     const handleGetFolderFolders = async (folderId: number) => {
         setOperating(true);
@@ -233,9 +239,10 @@ export default function FilesPage() {
             setSelectedCourseId(courseId);
             setSelectedEntries([]);
             setFiles([]);
+            setFolders([]);
             let courseMainFolderId = await getCourseMainFolderId(courseId);
-            if(courseMainFolderId !== undefined) {
-                await handleGetFolderFolders(courseMainFolderId);
+            if (courseMainFolderId !== undefined) {
+                await handleGetFolderFolders(courseMainFolderId)
                 await handleGetFolderFiles(courseMainFolderId);
                 setCurrentFolderId(courseMainFolderId);
                 setCurrentFolderFullName(MAIN_FOLDER);
@@ -248,9 +255,11 @@ export default function FilesPage() {
     const handleFolderOpen = async (folderId: number) => {
         setSelectedEntries([]);
         setFiles([]);
+        setFolders([]);
         setCurrentFolderId(folderId);
-        setCurrentFolderFullName(await getFullName(folderId));
-        setParentFolderId(await getParentFolderId(folderId));
+        const parentFolder = await getParentFolder(folderId);
+        setCurrentFolderFullName(parentFolder?.full_name);
+        setParentFolderId(parentFolder?.parent_folder_id);
     }
 
     const handleRemoveTask = async (taskToRemove: FileDownloadTask) => {
@@ -325,7 +334,7 @@ export default function FilesPage() {
 
     const handleDownloadSelectedFiles = () => {
         for (let selectedEntry of selectedEntries) {
-            if(isFile(selectedEntry)) {
+            if (isFile(selectedEntry)) {
                 handleDownloadFile(selectedEntry as File);
             }
         }
@@ -335,10 +344,26 @@ export default function FilesPage() {
         mergePDFs(selectedEntries.filter(isFile) as File[]);
     }
 
-    // const folderOptions = [{ label: ALL_FILES, value: ALL_FILES }, ...folders.map(folder => ({
-    //     label: folder.full_name,
-    //     value: folder.full_name
-    // }))];
+    const backToParentDir = async () => {
+        setFiles([]);
+        setFolders([]);
+        const currentFolderId = parentFolderId as number;
+        setCurrentFolderId(currentFolderId);
+        const parentFolder = await getParentFolder(currentFolderId);
+        setCurrentFolderFullName(parentFolder?.full_name);
+        setParentFolderId(parentFolder?.parent_folder_id);
+    }
+
+    const backToRootDir = async () => {
+        let courseMainFolderId = await getCourseMainFolderId(selectedCourseId);
+        if (typeof courseMainFolderId === 'number') {
+            setFiles([]);
+            setFolders([]);
+            setCurrentFolderId(courseMainFolderId);
+            setCurrentFolderFullName(MAIN_FOLDER);
+            setParentFolderId(null);
+        }
+    }
 
     const shouldShow = (entry: Entry) => {
         let containsKeyword = entryName(entry).indexOf(keyword) !== -1;
@@ -360,43 +385,36 @@ export default function FilesPage() {
             </Space>
             <Space>
                 <Button
-                    title='上级目录'
+                    icon={<LeftOutlined />}
                     disabled={typeof parentFolderId != 'number'}
-                    onClick={async () => {
-                        setCurrentFolderId(parentFolderId as number);
-                        setCurrentFolderFullName(await getFullName(parentFolderId as number));
-                        setParentFolderId(await getParentFolderId(parentFolderId as number));
-                    }}
+                    onClick={backToParentDir}
                 >
-                    <UpOutlined />
+                    上级目录
                 </Button>
                 <Button
-                    title='根目录'
-                    disabled={typeof selectedCourseId === undefined}
-                    onClick={async () => {
-                        let courseMainFolderId = await getCourseMainFolderId(selectedCourseId);
-                        if(typeof courseMainFolderId === 'number') {
-                            setCurrentFolderId(courseMainFolderId);
-                            setCurrentFolderFullName(MAIN_FOLDER);
-                            setParentFolderId(null);
-                        }
-                    }}
+                    icon={<HomeOutlined />}
+                    disabled={selectedCourseId === -1 || !parentFolderId}
+                    onClick={backToRootDir}
                 >
-                    <HomeOutlined />
+                    根目录
                 </Button>
-                <a>{currentFolderFullName}</a>
             </Space>
-
+            <span>当前目录：{currentFolderFullName}</span>
             <Table style={{ width: "100%" }}
                 columns={fileColumns}
                 loading={loading}
                 pagination={false}
-                dataSource={[ ...folders as Entry[],...files as Entry[]].filter(shouldShow)}
-                rowSelection={{ onChange: handleEntrySelect, selectedRowKeys: selectedEntries.map(entry => entry.key) }}
+                dataSource={[...folders as Entry[], ...files as Entry[]].filter(shouldShow)}
+                rowSelection={{
+                    onChange: handleEntrySelect,
+                    selectedRowKeys: selectedEntries.map(entry => entry.key),
+                    getCheckboxProps: (entry: Entry) => ({
+                        disabled: !isFile(entry)
+                    }),
+                }}
             />
             <Space>
                 <Button disabled={operating} onClick={handleDownloadSelectedFiles}>下载</Button>
-                {/* <Button disabled={true} onClick={() => { }}>上传云盘</Button> */}
                 <Button disabled={operating || noSelectedPDFs} onClick={handleMergePDFs}>合并 PDF</Button>
             </Space>
             <Divider orientation="left">PDF 合并</Divider>
