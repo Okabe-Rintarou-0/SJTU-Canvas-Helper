@@ -42,6 +42,7 @@ export interface File {
 }
 
 export interface Folder {
+    key: string;
     id: number;
     name: string;
     full_name: string;
@@ -51,6 +52,19 @@ export interface Folder {
     files_url: string;
     files_count: number;
     folders_count: number;
+}
+
+export type Entry = File | Folder;
+export function isFile(entry : Entry) {
+    return 'display_name' in entry;
+}
+export function entryName(entry: Entry) {
+    if(isFile((entry))) {
+        return (entry as File).display_name;
+    }
+    else {
+        return (entry as Folder).name;
+    }
 }
 
 export interface User {

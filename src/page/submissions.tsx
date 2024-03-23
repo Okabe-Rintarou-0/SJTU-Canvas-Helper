@@ -26,7 +26,7 @@ export default function SubmissionsPage() {
     const [statistic, setStatistic] = useState<GradeStatistic | undefined>(undefined);
     const [keyword, setKeyword] = useState<string>("");
 
-    const { previewer, onHoverFile, onLeaveFile, setPreviewFile } = usePreview();
+    const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry } = usePreview();
 
     useEffect(() => {
         initCourses();
@@ -110,8 +110,8 @@ export default function SubmissionsPage() {
         dataIndex: 'display_name',
         key: 'display_name',
         render: (name: string, attachment: Attachment) => <a
-            onMouseEnter={() => onHoverFile(attachmentToFile(attachment))}
-            onMouseLeave={onLeaveFile}
+            onMouseEnter={() => onHoverEntry(attachmentToFile(attachment))}
+            onMouseLeave={onLeaveEntry}
         >
             {name}
         </a>
@@ -137,7 +137,7 @@ export default function SubmissionsPage() {
                 }}>下载</a>}
                 <a onClick={e => {
                     e.preventDefault();
-                    setPreviewFile(attachmentToFile(attachment));
+                    setPreviewEntry(attachmentToFile(attachment));
                 }}>预览</a>
             </Space>
         ),

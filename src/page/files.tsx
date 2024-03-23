@@ -1,19 +1,19 @@
-import { Button, Checkbox, CheckboxProps, Divider, Input, Select, Space, Table, Tooltip, message } from "antd";
+import { Button, Checkbox, CheckboxProps, Divider, Input, Space, Table, message } from "antd";
 import BasicLayout from "../components/layout";
 import { useEffect, useState } from "react";
-import { Course, File, FileDownloadTask, Folder } from "../lib/model";
+import {Course, Entry, entryName, File, FileDownloadTask, Folder, isFile} from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import useMessage from "antd/es/message/useMessage";
-import { InfoCircleOutlined } from '@ant-design/icons';
 import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
 import { useLoginModal, useMerger, usePreview } from "../lib/hooks";
+import {FolderOutlined, FileOutlined, UpOutlined, HomeOutlined} from "@ant-design/icons"
 
 export default function FilesPage() {
-    const ALL_FILES = "全部文件";
+    const MAIN_FOLDER = 'course files';
     const [courses, setCourses] = useState<Course[]>([]);
     const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
-    const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+    const [selectedEntries, setSelectedEntries] = useState<Entry[]>([]);
     const [files, setFiles] = useState<File[]>([]);
     const [folders, setFolders] = useState<Folder[]>([]);
     const [downloadableOnly, setDownloadableOnly] = useState<boolean>(true);
@@ -21,10 +21,12 @@ export default function FilesPage() {
     const [messageApi, contextHolder] = useMessage();
     const [operating, setOperating] = useState<boolean>(false);
     const [loading, setLoading] = useState<boolean>(false);
-    const [currentFolder, setCurrentFolder] = useState<string>(ALL_FILES);
+    const [currentFolderId, setCurrentFolderId] = useState(0);
+    const [currentFolderFullName , setCurrentFolderFullName] = useState('');
+    const [parentFolderId, setParentFolderId] = useState<number|null|undefined>(null);
     const [keyword, setKeyword] = useState<string>("");
-    const { previewer, onHoverFile, onLeaveFile, setPreviewFile } = usePreview();
-    const { merger, mergePDFs } = useMerger({ setPreviewFile, onHoverFile, onLeaveFile });
+    const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry } = usePreview();
+    const { merger, mergePDFs } = useMerger({ setPreviewEntry, onHoverEntry, onLeaveEntry });
 
     const handleLoginJbox = async () => {
         try {
@@ -47,39 +49,73 @@ export default function FilesPage() {
     useEffect(() => {
         initCourses();
     }, []);
+    useEffect(() => {
+        handleGetFolderFiles(currentFolderId);
+        handleGetFolderFolders(currentFolderId);
+    }, [currentFolderId]);
 
     const fileColumns = [
         {
-            title: '文件名',
-            dataIndex: 'display_name',
-            key: 'display_name',
-            render: (name: string, file: File) => <a
-                onMouseEnter={() => onHoverFile(file)}
-                onMouseLeave={onLeaveFile}
-            >
-                {name}
-            </a>
+            title: '文件',
+            key: 'name',
+            render: (entry: Entry) => {
+                if(isFile(entry)) {
+                    return (
+                        <Space>
+                            <FileOutlined />
+                            <a
+                                onMouseEnter={() => onHoverEntry(entry) }
+                                onMouseLeave={onLeaveEntry}
+                           >
+                                {(entry as File).display_name}
+                            </a>
+                        </Space>);
+                }
+                else {
+                    return (
+                        <Space>
+                            <FolderOutlined />
+                            <a
+                                onMouseEnter={() => onHoverEntry(entry) }
+                                onMouseLeave={onLeaveEntry}
+                                onClick={async () => {
+                                    await handleFolderOpen((entry as Folder).id);
+                                }}
+                            >
+                                {(entry as Folder).name}
+                            </a>
+                        </Space>
+                    )
+                }
+            },
         },
         {
             title: '操作',
-            dataIndex: 'operation',
             key: 'operation',
-            render: (_: any, file: File) => (
-                <Space>
-                    {file.url && <a onClick={e => {
-                        e.preventDefault();
-                        handleDownloadFile(file);
-                    }}>下载</a>}
-                    {file.url && <a onClick={e => {
-                        e.preventDefault();
-                        handleUploadFile(file);
-                    }}>上传云盘</a>}
-                    <a onClick={e => {
-                        e.preventDefault();
-                        setPreviewFile(file);
-                    }}>预览</a>
-                </Space>
-            ),
+            render: (entry: Entry) => {
+                if(isFile(entry)) {
+                    const file = entry as File;
+                    return (
+                        isFile(file) && <Space>
+                            {file.url && <a onClick={e => {
+                                e.preventDefault();
+                                handleDownloadFile(file);
+                            }}>下载</a>}
+                            {file.url && <a onClick={e => {
+                                e.preventDefault();
+                                handleUploadFile(file);
+                            }}>上传云盘</a>}
+                            <a onClick={e => {
+                                e.preventDefault();
+                                setPreviewEntry(file);
+                            }}>预览</a>
+                        </Space>
+                    );
+                }
+                else {
+                    return <></> ;
+                }
+            },
         }
     ];
 
@@ -92,19 +128,65 @@ export default function FilesPage() {
         }
     }
 
-    const handleGetFiles = async (courseId: number) => {
+    /**
+     * 获取课程的主文件夹(course files) id
+     * @param courseId
+     */
+    const getCourseMainFolderId = async (courseId: number) => {
         setOperating(true);
         setLoading(true);
+        let mainFolderId;
         try {
-            let files = await invoke("list_course_files", { courseId }) as File[];
-            files.map(file => file.key = file.uuid);
-            setFiles(files);
-        } catch (_) {
-            setFiles([]);
+            let courseFolders = await invoke("list_folders", { courseId }) as Folder[];
+            mainFolderId = courseFolders.find(folder => folder.name === MAIN_FOLDER)?.id;
+        }  catch(_) {
+            mainFolderId = undefined;
         }
         setOperating(false);
         setLoading(false);
+        return mainFolderId;
+    };
+    const getParentFolderId = async (folderId: number): Promise<number | null | undefined> => {
+        setOperating(true);
+        setLoading(true);
+        let parentFolderId;
+        try {
+            let folder = await invoke("get_folder_by_id", { folderId }) as Folder;
+            parentFolderId = folder.parent_folder_id;
+        } catch(_) {
+            parentFolderId = null;
+        }
+        setOperating(false);
+        setLoading(false);
+        return parentFolderId;
     }
+    const getFullName = async (folderId:number): Promise<string> => {
+        setOperating(true);
+        setLoading(true);
+        let fullName;
+        try {
+            let folder = await invoke("get_folder_by_id", { folderId }) as Folder;
+            fullName = folder.full_name;
+        } catch (_) {
+            fullName = '';
+        }
+        setOperating(false);
+        setLoading(false);
+        return fullName;
+    }
+    // const handleGetFiles = async (courseId: number) => {
+    //     setOperating(true);
+    //     setLoading(true);
+    //     try {
+    //         let files = await invoke("list_course_files", { courseId }) as File[];
+    //         files.map(file => file.key = file.uuid);
+    //         setFiles(files);
+    //     } catch (_) {
+    //         setFiles([]);
+    //     }
+    //     setOperating(false);
+    //     setLoading(false);
+    // }
 
     const handleGetFolderFiles = async (folderId: number) => {
         setOperating(true);
@@ -120,44 +202,55 @@ export default function FilesPage() {
         setLoading(false);
     }
 
-    const handleGetFolders = async (courseId: number) => {
+    // const handleGetFolders = async (courseId: number) => {
+    //     setOperating(true);
+    //     try {
+    //         let folders = await invoke("list_folders", { courseId }) as Folder[];
+    //         folders.map(folder => folder.key = folder.id.toString());
+    //         setFolders(folders);
+    //     } catch (e) {
+    //         setFolders([]);
+    //     }
+    //     setOperating(false);
+    // }
+
+    const handleGetFolderFolders = async (folderId: number) => {
         setOperating(true);
+        setLoading(true);
         try {
-            let folders = await invoke("list_folders", { courseId }) as Folder[];
+            let folders = await invoke("list_folder_folders", { folderId }) as Folder[];
+            folders.map(folder => folder.key = folder.id.toString());
             setFolders(folders);
         } catch (e) {
             setFolders([]);
         }
         setOperating(false);
+        setLoading(false);
     }
 
     const handleCourseSelect = async (courseId: number) => {
         if (courses.find(course => course.id === courseId)) {
             setSelectedCourseId(courseId);
-            setSelectedFiles([]);
+            setSelectedEntries([]);
             setFiles([]);
-            handleGetFiles(courseId);
-            handleGetFolders(courseId);
-            setCurrentFolder(ALL_FILES);
+            let courseMainFolderId = await getCourseMainFolderId(courseId);
+            if(courseMainFolderId !== undefined) {
+                await handleGetFolderFolders(courseMainFolderId);
+                await handleGetFolderFiles(courseMainFolderId);
+                setCurrentFolderId(courseMainFolderId);
+                setCurrentFolderFullName(MAIN_FOLDER);
+                setParentFolderId(null);
+                setOperating(false);
+            }
         }
     }
 
-    const handleFolderSelect = async (selected: string) => {
-        if (selected === currentFolder) {
-            return;
-        }
-        setSelectedFiles([]);
+    const handleFolderOpen = async (folderId: number) => {
+        setSelectedEntries([]);
         setFiles([]);
-        setCurrentFolder(selected);
-        if (selected == ALL_FILES) {
-            handleGetFiles(selectedCourseId);
-            return;
-        }
-
-        let selectedFolder = folders.find(folder => folder.full_name === selected);
-        if (selectedFolder) {
-            handleGetFolderFiles(selectedFolder.id);
-        }
+        setCurrentFolderId(folderId);
+        setCurrentFolderFullName(await getFullName(folderId));
+        setParentFolderId(await getParentFolderId(folderId));
     }
 
     const handleRemoveTask = async (taskToRemove: FileDownloadTask) => {
@@ -226,32 +319,34 @@ export default function FilesPage() {
         setDownloadableOnly(e.target.checked);
     }
 
-    const handleFileSelect = (_: React.Key[], selectedFiles: File[]) => {
-        setSelectedFiles(selectedFiles);
+    const handleEntrySelect = (_: React.Key[], selectedEntries: Entry[]) => {
+        setSelectedEntries(selectedEntries);
     }
 
     const handleDownloadSelectedFiles = () => {
-        for (let selectedFile of selectedFiles) {
-            handleDownloadFile(selectedFile);
+        for (let selectedEntry of selectedEntries) {
+            if(isFile(selectedEntry)) {
+                handleDownloadFile(selectedEntry as File);
+            }
         }
     }
 
     const handleMergePDFs = () => {
-        mergePDFs(selectedFiles);
+        mergePDFs(selectedEntries.filter(isFile) as File[]);
     }
 
-    const folderOptions = [{ label: ALL_FILES, value: ALL_FILES }, ...folders.map(folder => ({
-        label: folder.full_name,
-        value: folder.full_name
-    }))];
+    // const folderOptions = [{ label: ALL_FILES, value: ALL_FILES }, ...folders.map(folder => ({
+    //     label: folder.full_name,
+    //     value: folder.full_name
+    // }))];
 
-    const shouldShow = (file: File) => {
-        let notContainsKeyword = file.display_name.indexOf(keyword) === -1;
-        let notDownloadable = downloadableOnly && !file.url;
-        return !notContainsKeyword && !notDownloadable;
+    const shouldShow = (entry: Entry) => {
+        let containsKeyword = entryName(entry).indexOf(keyword) !== -1;
+        let downloadable = !isFile(entry) || !downloadableOnly || (entry as File).url;
+        return containsKeyword && downloadable;
     }
 
-    const noSelectedPDFs = selectedFiles.filter(file => file.mime_class.indexOf("pdf") !== -1).length < 2;
+    const noSelectedPDFs = (selectedEntries.filter(isFile) as File[]).filter(file => file.mime_class.indexOf("pdf") !== -1).length < 2;
 
     return <BasicLayout>
         {contextHolder}
@@ -260,29 +355,44 @@ export default function FilesPage() {
         <Space direction="vertical" style={{ width: "100%" }} size={"large"}>
             <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} />
             <Space>
-                <span>选择目录：</span>
-                <Select
-                    style={{ width: 350 }}
-                    disabled={operating}
-                    onChange={handleFolderSelect}
-                    value={currentFolder}
-                    defaultValue={currentFolder}
-                    options={folderOptions}
-                />
-                <Tooltip placement="top" title={"course files 为默认的根目录名"}>
-                    <InfoCircleOutlined />
-                </Tooltip>
-            </Space>
-            <Space>
                 <Checkbox disabled={operating} onChange={handleSetShowAllFiles} defaultChecked>只显示可下载文件</Checkbox>
                 <Input.Search placeholder="输入文件关键词" onSearch={setKeyword} />
             </Space>
+            <Space>
+                <Button
+                    title='上级目录'
+                    disabled={typeof parentFolderId != 'number'}
+                    onClick={async () => {
+                        setCurrentFolderId(parentFolderId as number);
+                        setCurrentFolderFullName(await getFullName(parentFolderId as number));
+                        setParentFolderId(await getParentFolderId(parentFolderId as number));
+                    }}
+                >
+                    <UpOutlined />
+                </Button>
+                <Button
+                    title='根目录'
+                    disabled={typeof selectedCourseId === undefined}
+                    onClick={async () => {
+                        let courseMainFolderId = await getCourseMainFolderId(selectedCourseId);
+                        if(typeof courseMainFolderId === 'number') {
+                            setCurrentFolderId(courseMainFolderId);
+                            setCurrentFolderFullName(MAIN_FOLDER);
+                            setParentFolderId(null);
+                        }
+                    }}
+                >
+                    <HomeOutlined />
+                </Button>
+                <a>{currentFolderFullName}</a>
+            </Space>
+
             <Table style={{ width: "100%" }}
                 columns={fileColumns}
                 loading={loading}
                 pagination={false}
-                dataSource={files.filter(file => shouldShow(file))}
-                rowSelection={{ onChange: handleFileSelect, selectedRowKeys: selectedFiles.map(file => file.key) }}
+                dataSource={[ ...folders as Entry[],...files as Entry[]].filter(shouldShow)}
+                rowSelection={{ onChange: handleEntrySelect, selectedRowKeys: selectedEntries.map(entry => entry.key) }}
             />
             <Space>
                 <Button disabled={operating} onClick={handleDownloadSelectedFiles}>下载</Button>

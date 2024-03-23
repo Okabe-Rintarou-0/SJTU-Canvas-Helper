@@ -227,9 +227,27 @@ impl Client {
         self.list_items(&url, token).await
     }
 
+    // TODO: 将接口改为list_course_folders
     pub async fn list_folders(&self, course_id: i32, token: &str) -> Result<Vec<Folder>> {
         let url = format!("{}/api/v1/courses/{}/folders", BASE_URL, course_id);
         self.list_items(&url, token).await
+    }
+
+    pub async fn list_folder_folders(&self, folder_id: i32, token: &str) -> Result<Vec<Folder>> {
+        let url = format!("{}/api/v1/folders/{}/folders", BASE_URL, folder_id);
+        self.list_items(&url, token).await
+    }
+
+    pub async fn get_folder_by_id(&self, folder_id: i32, token: &str) -> Result<Folder> {
+        let url = format!("{}/api/v1/folders/{}",BASE_URL, folder_id);
+        let folder = self
+            .get_json_with_token(
+                &url,
+                None::<&str>,
+                token,
+            )
+            .await?;
+        Ok(folder)
     }
 
     pub async fn get_colors(&self, token: &str) -> Result<Colors> {

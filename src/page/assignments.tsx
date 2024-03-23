@@ -16,7 +16,7 @@ export default function AssignmentsPage() {
     const [courses, setCourses] = useState<Course[]>([]);
     const [assignments, setAssignments] = useState<Assignment[]>([]);
     const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
-    const { previewer, onHoverFile, onLeaveFile, setPreviewFile } = usePreview();
+    const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry } = usePreview();
     const [linksMap, setLinksMap] = useState<Record<number, Attachment[]>>({});
 
     useEffect(() => {
@@ -129,8 +129,8 @@ export default function AssignmentsPage() {
         dataIndex: 'display_name',
         key: 'display_name',
         render: (name: string, attachment: Attachment) => <a
-            onMouseEnter={() => onHoverFile(attachmentToFile(attachment))}
-            onMouseLeave={onLeaveFile}
+            onMouseEnter={() => onHoverEntry(attachmentToFile(attachment))}
+            onMouseLeave={onLeaveEntry}
         >
             {name}
         </a>
@@ -146,7 +146,7 @@ export default function AssignmentsPage() {
                 }}>下载</a>}
                 <a onClick={e => {
                     e.preventDefault();
-                    setPreviewFile(attachmentToFile(attachment));
+                    setPreviewEntry(attachmentToFile(attachment));
                 }}>预览</a>
             </Space>
         ),
@@ -157,8 +157,8 @@ export default function AssignmentsPage() {
         dataIndex: 'display_name',
         key: 'display_name',
         render: (name: string, attachment: Attachment) => <a
-            onMouseEnter={() => onHoverFile(attachmentToFile(attachment))}
-            onMouseLeave={onLeaveFile}
+            onMouseEnter={() => onHoverEntry(attachmentToFile(attachment))}
+            onMouseLeave={onLeaveEntry}
         >
             {name}
         </a>
@@ -184,7 +184,7 @@ export default function AssignmentsPage() {
                 }}>下载</a>}
                 <a onClick={e => {
                     e.preventDefault();
-                    setPreviewFile(attachmentToFile(attachment));
+                    setPreviewEntry(attachmentToFile(attachment));
                 }}>预览</a>
             </Space>
         ),
