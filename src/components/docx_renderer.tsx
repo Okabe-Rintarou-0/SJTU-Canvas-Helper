@@ -20,5 +20,5 @@ export default function DocxRenderer({
     return <div ref={containerRef} style={{ width: "100%" }} />
 }
 
-DocxRenderer.fileTypes = ["doc"];
+DocxRenderer.fileTypes = ["docx"];
 DocxRenderer.weight = 1;

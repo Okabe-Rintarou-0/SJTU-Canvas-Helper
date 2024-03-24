@@ -33,7 +33,6 @@ export function base64ToBuffer(base64: string) {
 }
 
 const aliasMap: Record<string, string> = {
-    docx: "doc",
     pptx: "ppt",
     cjs: "js",
     gitignore: "txt",
