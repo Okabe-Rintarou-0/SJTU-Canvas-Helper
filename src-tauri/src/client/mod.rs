@@ -125,6 +125,25 @@ impl Client {
         Ok(response)
     }
 
+    pub async fn put_form_with_token<T: Serialize + ?Sized, Q: Serialize + ?Sized>(
+        &self,
+        url: &str,
+        query: Option<&Q>,
+        form: &T,
+        token: &str,
+    ) -> Result<Response> {
+        let mut request = self
+            .cli
+            .put(url)
+            .header("Authorization".to_owned(), format!("Bearer {}", token))
+            .form(form);
+        if let Some(query) = query {
+            request = request.query(query);
+        }
+        let response = request.send().await?;
+        Ok(response)
+    }
+
     pub async fn update_grade(
         &self,
         course_id: i32,
@@ -141,6 +160,39 @@ impl Client {
             &url,
             None::<&str>,
             &[(format!("grade_data[{}][posted_grade]", student_id), grade)],
+            token,
+        )
+        .await?
+        .error_for_status()?;
+        Ok(())
+    }
+
+    pub async fn modify_assignment_ddl(
+        &self,
+        course_id: i32,
+        assignment_id: i32,
+        due_at: Option<&str>,
+        lock_at: Option<&str>,
+        token: &str,
+    ) -> Result<()> {
+        let url = format!(
+            "{}/api/v1/courses/{}/assignments/{}",
+            BASE_URL, course_id, assignment_id
+        );
+        tracing::info!(
+            "form: {:?}",
+            [
+                ("assignment[due_at]", due_at),
+                ("assignment[lock_at]", lock_at),
+            ]
+        );
+        self.put_form_with_token(
+            &url,
+            None::<&str>,
+            &[
+                ("assignment[due_at]", due_at.unwrap_or_default()),
+                ("assignment[lock_at]", lock_at.unwrap_or_default()),
+            ],
             token,
         )
         .await?
@@ -239,14 +291,8 @@ impl Client {
     }
 
     pub async fn get_folder_by_id(&self, folder_id: i32, token: &str) -> Result<Folder> {
-        let url = format!("{}/api/v1/folders/{}",BASE_URL, folder_id);
-        let folder = self
-            .get_json_with_token(
-                &url,
-                None::<&str>,
-                token,
-            )
-            .await?;
+        let url = format!("{}/api/v1/folders/{}", BASE_URL, folder_id);
+        let folder = self.get_json_with_token(&url, None::<&str>, token).await?;
         Ok(folder)
     }
 

@@ -162,6 +162,24 @@ impl App {
             .await
     }
 
+    async fn modify_assignment_ddl(
+        &self,
+        course_id: i32,
+        assignment_id: i32,
+        due_at: Option<&str>,
+        lock_at: Option<&str>,
+    ) -> Result<()> {
+        self.client
+            .modify_assignment_ddl(
+                course_id,
+                assignment_id,
+                due_at,
+                lock_at,
+                &self.config.read().await.token,
+            )
+            .await
+    }
+
     async fn list_ta_courses(&self) -> Result<Vec<Course>> {
         self.client
             .list_ta_courses(&self.config.read().await.token)
@@ -452,7 +470,9 @@ async fn list_folders(course_id: i32) -> Result<Vec<Folder>> {
 }
 
 #[tauri::command]
-async fn list_folder_folders(folder_id: i32) -> Result<Vec<Folder>> { APP.list_folder_folders(folder_id).await }
+async fn list_folder_folders(folder_id: i32) -> Result<Vec<Folder>> {
+    APP.list_folder_folders(folder_id).await
+}
 
 #[tauri::command]
 async fn get_config() -> AppConfig {
@@ -503,7 +523,9 @@ async fn list_calendar_events(
 }
 
 #[tauri::command]
-async fn get_folder_by_id(folder_id: i32) -> Result<Folder> {APP.get_folder_by_id(folder_id).await }
+async fn get_folder_by_id(folder_id: i32) -> Result<Folder> {
+    APP.get_folder_by_id(folder_id).await
+}
 
 #[tauri::command]
 async fn get_colors() -> Result<Colors> {
@@ -525,6 +547,22 @@ async fn update_grade(
 ) -> Result<()> {
     APP.update_grade(course_id, assignment_id, student_id, &grade)
         .await
+}
+
+#[tauri::command]
+async fn modify_assignment_ddl(
+    course_id: i32,
+    assignment_id: i32,
+    due_at: Option<String>,
+    lock_at: Option<String>,
+) -> Result<()> {
+    APP.modify_assignment_ddl(
+        course_id,
+        assignment_id,
+        due_at.as_deref(),
+        lock_at.as_deref(),
+    )
+    .await
 }
 
 // Apis for course video
@@ -622,6 +660,7 @@ async fn main() -> Result<()> {
             check_path,
             export_users,
             update_grade,
+            modify_assignment_ddl,
             // Apis for course video
             get_uuid,
             express_login,

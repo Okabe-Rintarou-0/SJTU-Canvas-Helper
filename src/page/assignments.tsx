@@ -1,4 +1,4 @@
-import { Checkbox, CheckboxProps, Divider, Space, Table, Tag } from "antd";
+import { Button, Checkbox, CheckboxProps, Divider, Space, Table, Tag } from "antd";
 import BasicLayout from "../components/layout";
 import useMessage from "antd/es/message/useMessage";
 import { useEffect, useState } from "react";
@@ -8,6 +8,7 @@ import { attachmentToFile, formatDate } from "../lib/utils";
 import CourseSelect from "../components/course_select";
 import { usePreview } from "../lib/hooks";
 import dayjs from "dayjs";
+import ModifyDDLModal from "../components/modify_ddl_modal";
 
 export default function AssignmentsPage() {
     const [messageApi, contextHolder] = useMessage();
@@ -18,6 +19,8 @@ export default function AssignmentsPage() {
     const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
     const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry } = usePreview();
     const [linksMap, setLinksMap] = useState<Record<number, Attachment[]>>({});
+    const [showModifyDDLModal, setShowModifyDDLModal] = useState<boolean>(false);
+    const [assignmentToModify, setAssignmentToModify] = useState<Assignment | undefined>(undefined);
 
     useEffect(() => {
         initCourses();
@@ -32,7 +35,7 @@ export default function AssignmentsPage() {
             let linksMap = {};
             let assignments = await invoke("list_course_assignments", { courseId }) as Assignment[];
             assignments.map(assignment => assignment.key = assignment.id);
-            if (onlyShowUnfinished) {
+            if (!isTA(courseId) && onlyShowUnfinished) {
                 assignments = assignments.filter(assignment => assignment.submission?.workflow_state === "unsubmitted")
             }
             for (let assignment of assignments) {
@@ -55,64 +58,83 @@ export default function AssignmentsPage() {
         }
     }
 
-    const columns = [{
-        title: '作业名',
-        dataIndex: 'name',
-        key: 'name',
-        render: (_: any, assignment: Assignment) => <a href={assignment.html_url} target="_blank">{assignment.name}</a>
-    }, {
-        title: '开始时间',
-        dataIndex: 'unlock_at',
-        key: 'unlock_at',
-        render: formatDate,
-    }, {
-        title: '截止时间',
-        dataIndex: 'due_at',
-        key: 'due_at',
-        render: formatDate,
-    }, {
-        title: '结束时间',
-        dataIndex: 'lock_at',
-        key: 'lock_at',
-        render: formatDate,
-    }, {
-        title: '得分',
-        dataIndex: 'points_possible',
-        key: 'points_possible',
-        render: (points_possible: number | undefined, assignment: Assignment) => {
-            let grade = assignment.submission?.grade ?? 0;
-            if (points_possible) {
-                return `${grade}/${points_possible}`;
+    const getColumns = () => {
+        const columns = [{
+            title: '作业名',
+            dataIndex: 'name',
+            key: 'name',
+            render: (_: any, assignment: Assignment) => <a href={assignment.html_url} target="_blank">{assignment.name}</a>
+        }, {
+            title: '开始时间',
+            dataIndex: 'unlock_at',
+            key: 'unlock_at',
+            render: formatDate,
+        }, {
+            title: '截止时间',
+            dataIndex: 'due_at',
+            key: 'due_at',
+            render: formatDate,
+        }, {
+            title: '结束时间',
+            dataIndex: 'lock_at',
+            key: 'lock_at',
+            render: formatDate,
+        }, {
+            title: '得分',
+            dataIndex: 'points_possible',
+            key: 'points_possible',
+            render: (points_possible: number | undefined, assignment: Assignment) => {
+                let grade = assignment.submission?.grade ?? 0;
+                if (points_possible) {
+                    return `${grade}/${points_possible}`;
+                }
+                return grade;
             }
-            return grade;
+        }, {
+            title: '状态',
+            dataIndex: 'submission',
+            key: 'submission',
+            render: (submission: Submission, assignment: Assignment) => {
+                let tags = [];
+                let dued = dayjs(assignment.due_at).isBefore(dayjs());
+                let locked = dayjs(assignment.lock_at).isBefore(dayjs());
+                if (dued || locked) {
+                    tags.push(<Tag color="orange">已截止</Tag>);
+                } else {
+                    tags.push(<Tag color="blue">进行中</Tag>);
+                }
+                if (!submission ||
+                    assignment.submission_types.includes("none") || assignment.submission_types.includes("not_graded")) {
+                    // no need to submit
+                    tags.push(<Tag>无需提交</Tag>);
+                }
+                else if (submission.submitted_at) {
+                    tags.push(submission.late ? <Tag color="red">迟交</Tag> : <Tag color="green">已提交</Tag>);
+                }
+                else {
+                    tags.push(<Tag color="red">未提交</Tag>);
+                }
+                return <Space size={"small"}>{tags}</Space>
+            }
+        }];
+        if (isTA(selectedCourseId)) {
+            columns.push({
+                title: '操作',
+                key: 'action',
+                dataIndex: 'action',
+                render: (_: any, assignment: Assignment) => <Button onClick={() => {
+                    setShowModifyDDLModal(true);
+                    setAssignmentToModify(assignment);
+                }}>修改日期</Button>,
+            })
         }
-    }, {
-        title: '状态',
-        dataIndex: 'submission',
-        key: 'submission',
-        render: (submission: Submission, assignment: Assignment) => {
-            let tags = [];
-            let dued = dayjs(assignment.due_at).isBefore(dayjs());
-            let locked = dayjs(assignment.lock_at).isBefore(dayjs());
-            if (dued || locked) {
-                tags.push(<Tag color="orange">已截止</Tag>);
-            } else {
-                tags.push(<Tag color="blue">进行中</Tag>);
-            }
-            if (!submission ||
-                assignment.submission_types.includes("none") || assignment.submission_types.includes("not_graded")) {
-                // no need to submit
-                tags.push(<Tag>无需提交</Tag>);
-            }
-            else if (submission.submitted_at) {
-                tags.push(submission.late ? <Tag color="red">迟交</Tag> : <Tag color="green">已提交</Tag>);
-            }
-            else {
-                tags.push(<Tag color="red">未提交</Tag>);
-            }
-            return <Space size={"small"}>{tags}</Space>
-        }
-    }];
+        return columns;
+    }
+
+    const isTA = (courseId: number) => {
+        const course = courses.find(course => course.id === courseId);
+        return course !== undefined && course.enrollments.find(enrollment => enrollment.role == "TaEnrollment") !== undefined;
+    }
 
     const handleDownloadAttachment = async (attachment: Attachment) => {
         let file = attachmentToFile(attachment);
@@ -227,12 +249,19 @@ export default function AssignmentsPage() {
     return <BasicLayout>
         {contextHolder}
         {previewer}
+        {assignmentToModify && <ModifyDDLModal open={showModifyDDLModal} assignment={assignmentToModify}
+            handleCancel={() => setShowModifyDDLModal(false)}
+            onSuccess={() => {
+                setShowModifyDDLModal(false);
+                handleGetAssignments(selectedCourseId, onlyShowUnfinished);
+            }}
+            courseId={selectedCourseId} />}
         <Space direction="vertical" style={{ width: "100%", overflow: "scroll" }} size={"large"}>
             <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} />
-            <Checkbox disabled={operating} onChange={handleSetOnlyShowUnfinished} defaultChecked>只显示未完成</Checkbox>
+            {!isTA(selectedCourseId) && <Checkbox disabled={operating} onChange={handleSetOnlyShowUnfinished} defaultChecked>只显示未完成</Checkbox>}
             <Table style={{ width: "100%" }}
                 loading={operating}
-                columns={columns}
+                columns={getColumns()}
                 dataSource={assignments}
                 pagination={false}
                 expandable={{

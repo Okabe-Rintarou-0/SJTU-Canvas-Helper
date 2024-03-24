@@ -102,7 +102,7 @@ export interface Assignment {
     key: number;
     needs_grading_count: number | null;
     description: string;
-    due_at?: string;
+    due_at?: string | null;
     unlock_at?: string;
     lock_at?: string;
     points_possible?: number;
