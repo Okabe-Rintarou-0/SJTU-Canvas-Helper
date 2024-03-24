@@ -109,7 +109,8 @@ export default function SubmissionsPage() {
         title: '文件',
         dataIndex: 'display_name',
         key: 'display_name',
-        render: (name: string, attachment: Attachment) => <a
+        render: (name: string, attachment: Attachment) => <a href={`https://oc.sjtu.edu.cn/courses/${selectedCourseId}/gradebook/speed_grader?assignment_id=${selectedAssignment?.id}&student_id=${attachment.user_id}`}
+            target="_blank"
             onMouseEnter={() => onHoverEntry(attachmentToFile(attachment))}
             onMouseLeave={onLeaveEntry}
         >

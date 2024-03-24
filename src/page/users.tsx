@@ -6,6 +6,7 @@ import { Course, ExportUsersConfig, User } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import CourseSelect from "../components/course_select";
 import dayjs from "dayjs";
+import { formatDate } from "../lib/utils";
 
 export default function UsersPage() {
     const [messageApi, contextHolder] = useMessage();
@@ -40,6 +41,7 @@ export default function UsersPage() {
         title: column,
         dataIndex: column,
         key: column,
+        render: column === 'created_at' ? formatDate : undefined,
     }));
 
     const initCourses = async () => {
