@@ -3,6 +3,7 @@
 ![](./images/logo.png)
 
 SJTU Canvas 小帮手，帮助您更便捷地使用交大 Canvas。基于 [Tauri](https://tauri.app/) 开发。
+参与讨论：[水源社区](https://shuiyuan.sjtu.edu.cn/t/topic/245275/86)。
 
 <div align="center">
   <img align="center" src="https://img.shields.io/badge/rust-1.75-blue" alt="">
@@ -18,6 +19,10 @@ SJTU Canvas 小帮手，帮助您更便捷地使用交大 Canvas。基于 [Tauri
 如果您使用的是 Windows 系统，建议下载 `.msi` 安装包，以支持自动更新功能。
 
 ![](./images/installation.png)
+
+在您安装完毕后，请前往设置页面填写您的 `Canvas Token` 以及您的文件下载保存目录。
+
+![](./images/settings.png)
 
 ## 致谢
 
@@ -50,50 +55,33 @@ SJTU Canvas 小帮手，帮助您更便捷地使用交大 Canvas。基于 [Tauri
 + [x] 视频下载/播放
 + [x] 自动更新 
 
-### 预览
+### 文件下载/预览
 
 类似 macOS quick look，按下空格打开预览，再次按下空格关闭预览。
 
 https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/assets/58595459/7f05cabc-7bf9-4f58-91ea-f3efed151733
 
 **支持预览主流压缩文件（7z, zip, rar...）**
-![](./images/preview_zip.png)
 
-### 一键上传交大云盘
+![](./images/file.png)
 
-![](./images/jbox1.png)
+### 文件一键上传交大云盘
 
-![](./images/jbox2.png)
+![](./images/jbox.png)
 
-### 下载课程录屏
-![](./images/qrcode.png)
+### 课程录屏播放/下载
 
-![](./images/download_video.png)
+![](./images/video.png)
 
-### 查看作业评分分布
-  
-![](./images/distributions.png)
-  
-### 作业评分
+### 查看课程作业
+
+![](./images/assignment.png)
+
+### 学生提交作业查看/批改/修改 DDL
   
 输入合法的分数，然后按下回车；如果想撤回分数，则清空输入框，再次按下回车。
-![](./images/grade.png)
 
-### 下载课程文件
-  
-![](./images/download_course_files.png)
-  
-### 查看作业
-  
-![](./images/assignments.png)
-
-### 导出课程人员名单
-  
-![](./images/export_users.png)
-  
-### 学生提交作业批量下载
-
-![](./images/submissions.png)
+![](./images/submission.png)
 
 ### Star History
 
