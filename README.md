@@ -11,6 +11,14 @@ SJTU Canvas 小帮手，帮助您更便捷地使用交大 Canvas。基于 [Tauri
   <img align="center" src="https://img.shields.io/github/downloads/Okabe-Rintarou-0/SJTU-Canvas-Helper/total" />
 </div>
 
+## 安装指南
+
+您只需要前往 [Release](https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases) 正确安装一次即可，后续如果主版本更新，您可以自动拉取更新，无需重复下载安装。
+
+如果您使用的是 Windows 系统，建议下载 `.msi` 安装包，以支持自动更新功能。
+
+![](./images/installation.png)
+
 ## 致谢
 
 感谢以下用户为本仓库做出的贡献：
