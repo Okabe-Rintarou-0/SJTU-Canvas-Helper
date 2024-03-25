@@ -171,6 +171,54 @@ pub struct Assignment {
     #[serde(default)]
     pub submissions_download_url: String,
     pub submission: Option<Submission>,
+    #[serde(default)]
+    pub overrides: Vec<AssignmentOverride>,
+    #[serde(default)]
+    pub all_dates: Vec<AssignmentDate>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AssignmentDate {
+    #[serde(default)]
+    pub id: i64,
+    #[serde(default)]
+    pub base: bool,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub due_at: Option<String>,
+    #[serde(default)]
+    pub unlock_at: Option<String>,
+    #[serde(default)]
+    pub lock_at: Option<String>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AssignmentOverride {
+    pub id: i64,
+    pub assignment_id: i64,
+    #[serde(default)]
+    pub quiz_id: i64,
+    #[serde(default)]
+    pub context_module_id: i64,
+    #[serde(default)]
+    pub student_ids: Vec<i64>,
+    #[serde(default)]
+    pub group_id: i64,
+    #[serde(default)]
+    pub course_section_id: i64,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub due_at: Option<String>,
+    #[serde(default)]
+    pub all_day: bool,
+    #[serde(default)]
+    pub all_day_date: String,
+    #[serde(default)]
+    pub unlock_at: Option<String>,
+    #[serde(default)]
+    pub lock_at: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

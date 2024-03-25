@@ -17,6 +17,7 @@ use std::{
     collections::HashMap,
     fs,
     io::Write,
+    ops::Deref,
     path::Path,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -179,19 +180,92 @@ impl Client {
             "{}/api/v1/courses/{}/assignments/{}",
             BASE_URL, course_id, assignment_id
         );
-        tracing::info!(
-            "form: {:?}",
-            [
-                ("assignment[due_at]", due_at),
-                ("assignment[lock_at]", lock_at),
-            ]
-        );
         self.put_form_with_token(
             &url,
             None::<&str>,
             &[
                 ("assignment[due_at]", due_at.unwrap_or_default()),
                 ("assignment[lock_at]", lock_at.unwrap_or_default()),
+            ],
+            token,
+        )
+        .await?
+        .error_for_status()?;
+        Ok(())
+    }
+
+    pub async fn modify_assignment_ddl_override(
+        &self,
+        course_id: i32,
+        assignment_id: i32,
+        override_id: i32,
+        due_at: Option<&str>,
+        lock_at: Option<&str>,
+        token: &str,
+    ) -> Result<()> {
+        let url = format!(
+            "{}/api/v1/courses/{}/assignments/{}/overrides/{}",
+            BASE_URL, course_id, assignment_id, override_id
+        );
+        self.put_form_with_token(
+            &url,
+            None::<&str>,
+            &[
+                ("assignment_override[due_at]", due_at.unwrap_or_default()),
+                ("assignment_override[lock_at]", lock_at.unwrap_or_default()),
+            ],
+            token,
+        )
+        .await?
+        .error_for_status()?;
+        Ok(())
+    }
+
+    pub async fn delete_assignment_ddl_override(
+        &self,
+        course_id: i32,
+        assignment_id: i32,
+        override_id: i32,
+        token: &str,
+    ) -> Result<()> {
+        let url = format!(
+            "{}/api/v1/courses/{}/assignments/{}/overrides/{}",
+            BASE_URL, course_id, assignment_id, override_id
+        );
+        self.cli
+            .delete(url)
+            .header("Authorization", format!("Bearer {}", token))
+            .send()
+            .await?
+            .error_for_status()?;
+        Ok(())
+    }
+
+    pub async fn add_assignment_ddl_override(
+        &self,
+        course_id: i32,
+        assignment_id: i32,
+        student_id: i32,
+        title: &str,
+        due_at: Option<&str>,
+        lock_at: Option<&str>,
+        token: &str,
+    ) -> Result<()> {
+        let url = format!(
+            "{}/api/v1/courses/{}/assignments/{}/overrides",
+            BASE_URL, course_id, assignment_id
+        );
+        self.post_form_with_token(
+            &url,
+            None::<&str>,
+            &[
+                (
+                    "assignment_override[student_ids][]",
+                    student_id.to_string().deref(),
+                ),
+                ("assignment_override[title]", title),
+                ("assignment_override[due_at]", due_at.unwrap_or_default()),
+                ("assignment_override[lock_at]", lock_at.unwrap_or_default()),
             ],
             token,
         )
@@ -401,7 +475,7 @@ impl Client {
         token: &str,
     ) -> Result<Vec<Assignment>> {
         let url = format!(
-            "{}/api/v1/courses/{}/assignments?include[]=submission",
+            "{}/api/v1/courses/{}/assignments?include[]=submission&include[]=overrides&include[]=all_dates",
             BASE_URL, course_id
         );
         self.list_items(&url, token).await

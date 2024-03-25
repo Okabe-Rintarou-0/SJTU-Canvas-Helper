@@ -2,7 +2,7 @@ import { Button, Checkbox, CheckboxProps, Divider, Space, Table, Tag } from "ant
 import BasicLayout from "../components/layout";
 import useMessage from "antd/es/message/useMessage";
 import { useEffect, useState } from "react";
-import { Assignment, Attachment, Course, Submission } from "../lib/model";
+import { Assignment, AssignmentDate, Attachment, Course, Submission } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import { attachmentToFile, formatDate } from "../lib/utils";
 import CourseSelect from "../components/course_select";
@@ -58,6 +58,8 @@ export default function AssignmentsPage() {
         }
     }
 
+    const getBaseDate = (dates: AssignmentDate[]) => dates.find(date => date.base);
+
     const getColumns = () => {
         const columns = [{
             title: '作业名',
@@ -73,12 +75,12 @@ export default function AssignmentsPage() {
             title: '截止时间',
             dataIndex: 'due_at',
             key: 'due_at',
-            render: formatDate,
+            render: (_: any, assignment: Assignment) => formatDate(getBaseDate(assignment.all_dates)?.due_at),
         }, {
             title: '结束时间',
             dataIndex: 'lock_at',
             key: 'lock_at',
-            render: formatDate,
+            render: (_: any, assignment: Assignment) => formatDate(getBaseDate(assignment.all_dates)?.lock_at),
         }, {
             title: '得分',
             dataIndex: 'points_possible',
@@ -95,9 +97,10 @@ export default function AssignmentsPage() {
             dataIndex: 'submission',
             key: 'submission',
             render: (submission: Submission, assignment: Assignment) => {
-                let tags = [];
-                let dued = dayjs(assignment.due_at).isBefore(dayjs());
-                let locked = dayjs(assignment.lock_at).isBefore(dayjs());
+                const tags = [];
+                const baseDate = getBaseDate(assignment.all_dates);
+                const dued = dayjs(baseDate?.due_at).isBefore(dayjs());
+                const locked = dayjs(baseDate?.lock_at).isBefore(dayjs());
                 if (dued || locked) {
                     tags.push(<Tag color="orange">已截止</Tag>);
                 } else {
@@ -251,6 +254,7 @@ export default function AssignmentsPage() {
         {previewer}
         {assignmentToModify && <ModifyDDLModal open={showModifyDDLModal} assignment={assignmentToModify}
             handleCancel={() => setShowModifyDDLModal(false)}
+            onRefresh={() => handleGetAssignments(selectedCourseId, onlyShowUnfinished)}
             onSuccess={() => {
                 setShowModifyDDLModal(false);
                 handleGetAssignments(selectedCourseId, onlyShowUnfinished);

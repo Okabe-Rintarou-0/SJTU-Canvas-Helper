@@ -3,7 +3,7 @@ import { getConfig } from "./store";
 import { Dayjs } from "dayjs"
 import { Attachment, File as FileModel } from "./model";
 
-export function formatDate(inputDate: string): string {
+export function formatDate(inputDate: string | undefined | null): string {
     if (!inputDate) {
         return "";
     }

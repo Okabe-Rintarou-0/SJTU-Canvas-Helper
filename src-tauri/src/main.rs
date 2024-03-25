@@ -180,6 +180,64 @@ impl App {
             .await
     }
 
+    async fn modify_assignment_ddl_override(
+        &self,
+        course_id: i32,
+        assignment_id: i32,
+        override_id: i32,
+        due_at: Option<&str>,
+        lock_at: Option<&str>,
+    ) -> Result<()> {
+        self.client
+            .modify_assignment_ddl_override(
+                course_id,
+                assignment_id,
+                override_id,
+                due_at,
+                lock_at,
+                &self.config.read().await.token,
+            )
+            .await
+    }
+
+    async fn delete_assignment_ddl_override(
+        &self,
+        course_id: i32,
+        assignment_id: i32,
+        override_id: i32,
+    ) -> Result<()> {
+        self.client
+            .delete_assignment_ddl_override(
+                course_id,
+                assignment_id,
+                override_id,
+                &self.config.read().await.token,
+            )
+            .await
+    }
+
+    async fn add_assignment_ddl_override(
+        &self,
+        course_id: i32,
+        assignment_id: i32,
+        student_id: i32,
+        title: &str,
+        due_at: Option<&str>,
+        lock_at: Option<&str>,
+    ) -> Result<()> {
+        self.client
+            .add_assignment_ddl_override(
+                course_id,
+                assignment_id,
+                student_id,
+                title,
+                due_at,
+                lock_at,
+                &self.config.read().await.token,
+            )
+            .await
+    }
+
     async fn list_ta_courses(&self) -> Result<Vec<Course>> {
         self.client
             .list_ta_courses(&self.config.read().await.token)
@@ -565,6 +623,54 @@ async fn modify_assignment_ddl(
     .await
 }
 
+#[tauri::command]
+async fn modify_assignment_ddl_override(
+    course_id: i32,
+    assignment_id: i32,
+    override_id: i32,
+    due_at: Option<String>,
+    lock_at: Option<String>,
+) -> Result<()> {
+    APP.modify_assignment_ddl_override(
+        course_id,
+        assignment_id,
+        override_id,
+        due_at.as_deref(),
+        lock_at.as_deref(),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn delete_assignment_ddl_override(
+    course_id: i32,
+    assignment_id: i32,
+    override_id: i32,
+) -> Result<()> {
+    APP.delete_assignment_ddl_override(course_id, assignment_id, override_id)
+        .await
+}
+
+#[tauri::command]
+async fn add_assignment_ddl_override(
+    course_id: i32,
+    assignment_id: i32,
+    student_id: i32,
+    title: String,
+    due_at: Option<String>,
+    lock_at: Option<String>,
+) -> Result<()> {
+    APP.add_assignment_ddl_override(
+        course_id,
+        assignment_id,
+        student_id,
+        &title,
+        due_at.as_deref(),
+        lock_at.as_deref(),
+    )
+    .await
+}
+
 // Apis for course video
 #[tauri::command]
 async fn get_uuid() -> Result<Option<String>> {
@@ -661,6 +767,9 @@ async fn main() -> Result<()> {
             export_users,
             update_grade,
             modify_assignment_ddl,
+            modify_assignment_ddl_override,
+            add_assignment_ddl_override,
+            delete_assignment_ddl_override,
             // Apis for course video
             get_uuid,
             express_login,

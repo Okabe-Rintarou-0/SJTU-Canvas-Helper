@@ -114,6 +114,34 @@ export interface Assignment {
     published: boolean;
     has_submitted_submissions: boolean;
     submission?: Submission;
+    overrides: AssignmentOverride[];
+    all_dates: AssignmentDate[];
+}
+
+export interface AssignmentDate {
+    id: number;
+    base: boolean;
+    title: string;
+    due_at: string | null;
+    unlock_at: string | null;
+    lock_at: string | null;
+}
+
+export interface AssignmentOverride {
+    id: number;
+    pub_id: number;
+    assignment_id: number;
+    quiz_id: number;
+    context_module_id: number;
+    student_ids: number[];
+    group_id: number;
+    course_section_id: number;
+    title: string;
+    due_at: string | null;
+    all_day: boolean;
+    all_day_date: string;
+    unlock_at: string | null;
+    lock_at: string | null;
 }
 
 export type WorkflowState = "submitted" | "unsubmitted" | "graded";
