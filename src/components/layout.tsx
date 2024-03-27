@@ -55,7 +55,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
             <Menu theme="light" mode="inline" defaultSelectedKeys={selectedKeys} items={items} />
         </Sider>
         <Layout>
-            <Content style={{ margin: '24px 16px 0' }}>
+            <Content style={{ margin: '16px 16px 0' }}>
                 <div
                     style={{
                         padding: 24,

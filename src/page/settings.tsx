@@ -1,16 +1,43 @@
-import { Button, Form, Input, InputNumber, Space } from "antd";
+import { Button, Form, Image, Input, InputNumber, Space, Tour } from "antd";
 import BasicLayout from "../components/layout";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AppConfig } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import useMessage from "antd/es/message/useMessage";
 import { getConfig, saveConfig } from "../lib/store";
 
 const { Password } = Input;
+import type { InputRef, TourProps } from 'antd';
 
 export default function SettingsPage() {
     const [form] = Form.useForm<AppConfig>();
     const [messageApi, contextHolder] = useMessage();
+    const tokenRef = useRef<InputRef>(null);
+    const savePathRef = useRef<InputRef>(null);
+    const saveButtonRef = useRef(null);
+
+    const [openTour, setOpenTour] = useState<boolean>(false);
+
+    const steps: TourProps['steps'] = [
+        {
+            title: '填写您的 Canvas Token',
+            description: <div>
+                <p>请前往 <a href="https://oc.sjtu.edu.cn/profile/settings" target="_blank">https://oc.sjtu.edu.cn/profile/settings</a> 创建您的 API Token。</p>
+                <Image src="help.png" width={"100%"} />
+            </div>,
+            target: () => tokenRef.current?.input!,
+        },
+        {
+            title: '填写您的下载保存目录',
+            description: '请正确填写您的下载保存目录。',
+            target: () => savePathRef.current?.input!,
+        },
+        {
+            title: '保存',
+            description: '保存您的设置。',
+            target: () => saveButtonRef.current,
+        },
+    ];
 
     useEffect(() => {
         initConfig();
@@ -19,6 +46,9 @@ export default function SettingsPage() {
     const initConfig = async () => {
         let config = await getConfig();
         form.setFieldsValue(config);
+        if (config.token.length === 0) {
+            setOpenTour(true);
+        }
     }
 
     const handleSaveConfig = async (config: AppConfig) => {
@@ -56,11 +86,11 @@ export default function SettingsPage() {
                     required
                     style={{ margin: "0px" }}
                 >
-                    <Password placeholder="请输入 Canvas Token" />
+                    <Password ref={tokenRef} placeholder="请输入 Canvas Token" />
                 </Form.Item>
-                <p>请进入 <a href="https://oc.sjtu.edu.cn/profile/settings" target="_blank">https://oc.sjtu.edu.cn/profile/settings</a> 创建你的 API Token</p>
+                <p>请前往 <a href="https://oc.sjtu.edu.cn/profile/settings" target="_blank">https://oc.sjtu.edu.cn/profile/settings</a> 创建您的 API Token</p>
                 <Form.Item name="save_path" label="下载保存目录" required rules={[{ validator: savePathValidator }]}>
-                    <Input placeholder="请输入文件下载保存目录" />
+                    <Input ref={savePathRef} placeholder="请输入文件下载保存目录" />
                 </Form.Item>
                 <Form.Item name="proxy_port" label="反向代理本地端口" rules={[{ validator: proxyPortValidator }]}>
                     <InputNumber placeholder="请输入反向代理本地端口" />
@@ -69,11 +99,12 @@ export default function SettingsPage() {
                     <Input placeholder="请输入文件拓展名，以英文逗号隔开" />
                 </Form.Item>
                 <Form.Item>
-                    <Button type="primary" htmlType="submit">
+                    <Button ref={saveButtonRef} type="primary" htmlType="submit">
                         保存
                     </Button>
                 </Form.Item>
             </Form>
         </Space>
+        {openTour && <Tour open={openTour} onClose={() => setOpenTour(false)} steps={steps} />}
     </BasicLayout>
 }
