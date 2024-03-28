@@ -1,6 +1,6 @@
 [package]
 name = "sjtu_canvas_helper"
-version = "1.1.19"
+version = "1.1.20"
 description = "SJTU Canvas Helper"
 authors = ["Okabe"]
 edition = "2021"
@@ -11,7 +11,7 @@ edition = "2021"
 tauri-build = { version = "1", features = [] }
 
 [dependencies]
-tauri = { version = "1", features = [ "fs-write-file", "fs-read-file",
+tauri = { version = "1", features = [
     "updater",
     "process-relaunch",
     "shell-open",
