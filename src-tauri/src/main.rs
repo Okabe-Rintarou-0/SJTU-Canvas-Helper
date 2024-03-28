@@ -452,7 +452,6 @@ impl App {
         self.client.get_video_course(subject_id, tecl_id).await
     }
 
-    #[cfg(target_os = "macos")]
     async fn convert_pptx_to_pdf_macos(&self, file: &mut File) -> Result<Vec<u8>> {
         let config = self.config.read().await;
         let token = &config.token.clone();
