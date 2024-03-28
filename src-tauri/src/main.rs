@@ -7,9 +7,10 @@ use model::{
     AppConfig, Assignment, CalendarEvent, Colors, Course, File, Folder, ProgressPayload, Subject,
     Submission, User, VideoCourse, VideoInfo, VideoPlayInfo,
 };
-use std::{fs, io::Write, path::Path, sync::Arc, time::Duration};
+use std::{fs, io::Write, path::Path, process, sync::Arc, time::Duration};
 use tauri::{api::path::download_dir, Runtime, Window};
 use tokio::{sync::RwLock, task::JoinHandle};
+use uuid::Uuid;
 use warp::{hyper::Response, Filter};
 use warp_reverse_proxy::reverse_proxy_filter;
 use xlsxwriter::Workbook;
@@ -450,6 +451,45 @@ impl App {
     async fn get_video_course(&self, subject_id: i64, tecl_id: i64) -> Result<Option<VideoCourse>> {
         self.client.get_video_course(subject_id, tecl_id).await
     }
+
+    #[cfg(target_os = "macos")]
+    async fn convert_pptx_to_pdf_macos(&self, file: &mut File) -> Result<()> {
+        let config = self.config.read().await;
+        let token = &config.token.clone();
+        let save_dir = &config.save_path.clone();
+        let out_file_name = file.display_name.replace("pptx", "pdf");
+        let tmp_file_name = format!("tmp_{}.pptx", Uuid::new_v4());
+        let pptx_path = Path::new(save_dir).join(&tmp_file_name);
+        let pdf_path = Path::new(save_dir).join(&out_file_name);
+        file.display_name = tmp_file_name;
+        self.client
+            .download_file(file, token, save_dir, |_| {})
+            .await?;
+        // Reference https://github.com/jeongwhanchoi/convert-ppt-to-pdf
+        process::Command::new("osascript")
+            .arg("-e")
+            .arg(
+                r#"on run {input, output}
+                tell application "Microsoft PowerPoint" -- work on version 15.15 or newer
+                    launch
+                    set t to input as POSIX file as string 
+                    if t ends with ".ppt" or t ends with ".pptx" then
+                        set pdfPath to output as POSIX file as string
+                        open t
+                        save active presentation in pdfPath as save as PDF -- save in same folder
+                    end if
+                end tell
+                tell application "Microsoft PowerPoint" -- work on version 15.15 or newer
+                    quit
+                end tell
+            end run"#,
+            )
+            .arg(pptx_path.clone())
+            .arg(pdf_path)
+            .output()?;
+        fs::remove_file(pptx_path)?;
+        Ok(())
+    }
 }
 
 impl App {
@@ -568,6 +608,14 @@ async fn download_file<R: Runtime>(window: Window<R>, file: File) -> Result<()> 
 #[tauri::command]
 async fn save_file_content(content: Vec<u8>, file_name: String) -> Result<()> {
     APP.save_file_content(&content, &file_name).await
+}
+
+#[tauri::command]
+async fn convert_pptx_to_pdf(mut file: File) -> Result<()> {
+    if !cfg!(macos) {
+        APP.convert_pptx_to_pdf_macos(&mut file).await?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -770,6 +818,8 @@ async fn main() -> Result<()> {
             modify_assignment_ddl_override,
             add_assignment_ddl_override,
             delete_assignment_ddl_override,
+            // Utils
+            convert_pptx_to_pdf,
             // Apis for course video
             get_uuid,
             express_login,

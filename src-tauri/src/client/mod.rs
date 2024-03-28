@@ -241,6 +241,7 @@ impl Client {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn add_assignment_ddl_override(
         &self,
         course_id: i32,
