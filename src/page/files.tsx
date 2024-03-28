@@ -93,11 +93,6 @@ export default function FilesPage() {
         return <FileOutlined style={{ fontSize: '21px' }} />
     }
 
-    const handleConvertPptxToPdf = async (file: File) => {
-        const data = await invoke("convert_pptx_to_pdf", { file });
-        console.log(data);
-    }
-
     const fileColumns = [
         {
             title: '文件',
@@ -158,10 +153,6 @@ export default function FilesPage() {
                                 e.preventDefault();
                                 setPreviewEntry(file);
                             }}>预览</a>
-                            <a onClick={e => {
-                                e.preventDefault();
-                                handleConvertPptxToPdf(file);
-                            }}>转pdf</a>
                         </Space>
                     );
                 }

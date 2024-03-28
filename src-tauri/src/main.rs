@@ -615,7 +615,7 @@ async fn save_file_content(content: Vec<u8>, file_name: String) -> Result<()> {
 
 #[tauri::command]
 async fn convert_pptx_to_pdf(mut file: File) -> Result<Vec<u8>> {
-    if !cfg!(macos) {
+    if cfg!(target_os = "macos") {
         let content = APP.convert_pptx_to_pdf_macos(&mut file).await?;
         return Ok(content);
     }
