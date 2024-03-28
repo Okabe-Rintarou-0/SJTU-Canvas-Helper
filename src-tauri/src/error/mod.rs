@@ -20,6 +20,8 @@ pub enum ClientError {
     LoginError,
     #[error("JBox error: {0}")]
     JBoxError(String),
+    #[error("Functon unsupported")]
+    FunctionUnsupported,
 }
 
 impl serde::Serialize for ClientError {

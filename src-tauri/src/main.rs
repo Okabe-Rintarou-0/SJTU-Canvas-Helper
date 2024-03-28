@@ -453,7 +453,7 @@ impl App {
     }
 
     #[cfg(target_os = "macos")]
-    async fn convert_pptx_to_pdf_macos(&self, file: &mut File) -> Result<()> {
+    async fn convert_pptx_to_pdf_macos(&self, file: &mut File) -> Result<Vec<u8>> {
         let config = self.config.read().await;
         let token = &config.token.clone();
         let save_dir = &config.save_path.clone();
@@ -472,10 +472,11 @@ impl App {
                 r#"on run {input, output}
                 tell application "Microsoft PowerPoint" -- work on version 15.15 or newer
                     launch
-                    set t to input as POSIX file as string 
+                    set t to input as string
+                    set pptx to input as POSIX file
                     if t ends with ".ppt" or t ends with ".pptx" then
                         set pdfPath to output as POSIX file as string
-                        open t
+                        open pptx
                         save active presentation in pdfPath as save as PDF -- save in same folder
                     end if
                 end tell
@@ -484,11 +485,13 @@ impl App {
                 end tell
             end run"#,
             )
-            .arg(pptx_path.clone())
-            .arg(pdf_path)
+            .arg(&pptx_path)
+            .arg(&pdf_path)
             .output()?;
-        fs::remove_file(pptx_path)?;
-        Ok(())
+        fs::remove_file(&pptx_path)?;
+        let pdf_content = fs::read(&pdf_path)?;
+        fs::remove_file(&pdf_path)?;
+        Ok(pdf_content)
     }
 }
 
@@ -611,11 +614,11 @@ async fn save_file_content(content: Vec<u8>, file_name: String) -> Result<()> {
 }
 
 #[tauri::command]
-async fn convert_pptx_to_pdf(mut file: File) -> Result<()> {
+async fn convert_pptx_to_pdf(mut file: File) -> Result<Vec<u8>> {
     if !cfg!(macos) {
-        APP.convert_pptx_to_pdf_macos(&mut file).await?;
+        return Ok(APP.convert_pptx_to_pdf_macos(&mut file).await?);
     }
-    Ok(())
+    Err(ClientError::FunctionUnsupported)
 }
 
 #[tauri::command]

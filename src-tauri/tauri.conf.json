@@ -12,6 +12,10 @@
   "tauri": {
     "allowlist": {
       "all": false,
+      "fs": {
+        "writeFile": true,
+        "readFile": true
+      },
       "process": {
         "relaunch": true
       },

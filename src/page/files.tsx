@@ -93,8 +93,9 @@ export default function FilesPage() {
         return <FileOutlined style={{ fontSize: '21px' }} />
     }
 
-    const handleConvertPptxToPdf = (file: File) => {
-        invoke("convert_pptx_to_pdf", { file });
+    const handleConvertPptxToPdf = async (file: File) => {
+        const data = await invoke("convert_pptx_to_pdf", { file });
+        console.log(data);
     }
 
     const fileColumns = [
@@ -379,7 +380,8 @@ export default function FilesPage() {
         return containsKeyword && downloadable;
     }
 
-    const noSelectedPDFs = (selectedEntries.filter(isFile) as File[]).filter(file => file.mime_class.indexOf("pdf") !== -1).length < 2;
+    const noSelectedPDFs = (selectedEntries.filter(isFile) as File[])
+        .filter(file => file.display_name.endsWith(".pdf") || file.display_name.endsWith(".pptx")).length < 2;
 
     return <BasicLayout>
         {contextHolder}
@@ -423,7 +425,7 @@ export default function FilesPage() {
             />
             <Space>
                 <Button disabled={operating} onClick={handleDownloadSelectedFiles}>下载</Button>
-                <Button disabled={operating || noSelectedPDFs} onClick={handleMergePDFs}>合并 PDF</Button>
+                <Button disabled={operating || noSelectedPDFs} onClick={handleMergePDFs}>合并 PDF/PPTX</Button>
             </Space>
             <Divider orientation="left">PDF 合并</Divider>
             {merger}
