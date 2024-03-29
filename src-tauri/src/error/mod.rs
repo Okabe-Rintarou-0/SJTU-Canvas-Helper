@@ -21,6 +21,7 @@ pub enum ClientError {
     #[error("JBox error: {0}")]
     JBoxError(String),
     #[error("Functon unsupported")]
+    #[allow(dead_code)]
     FunctionUnsupported,
 }
 
