@@ -504,7 +504,7 @@ impl App {
             .output()?;
         Ok(())
     }
-    
+
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     fn convert_pptx_to_pdf_inner(&self, pptx_path: &PathBuf, pdf_path: &PathBuf) -> Result<()> {
         Err(ClientError::FunctionUnsupported)
@@ -651,7 +651,7 @@ async fn save_file_content(content: Vec<u8>, file_name: String) -> Result<()> {
 #[tauri::command]
 async fn convert_pptx_to_pdf(mut file: File) -> Result<Vec<u8>> {
     let content = APP.convert_pptx_to_pdf(&mut file).await?;
-        return Ok(content);
+    return Ok(content);
 }
 
 #[tauri::command]
