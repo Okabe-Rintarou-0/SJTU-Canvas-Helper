@@ -7,7 +7,14 @@ use model::{
     AppConfig, Assignment, CalendarEvent, Colors, Course, File, Folder, ProgressPayload, Subject,
     Submission, User, VideoCourse, VideoInfo, VideoPlayInfo,
 };
-use std::{fs, io::Write, path::Path, process, sync::Arc, time::Duration};
+use std::{
+    fs,
+    io::Write,
+    path::{Path, PathBuf},
+    process,
+    sync::Arc,
+    time::Duration,
+};
 use tauri::{api::path::download_dir, Runtime, Window};
 use tokio::{sync::RwLock, task::JoinHandle};
 use uuid::Uuid;
@@ -290,7 +297,14 @@ impl App {
     async fn save_file_content(&self, content: &[u8], file_name: &str) -> Result<()> {
         let save_dir = self.config.read().await.save_path.clone();
         let path = Path::new(&save_dir).join(file_name);
-        let mut file = fs::File::create(path.to_str().unwrap())?;
+        // create file if path not exists, else open it in append mode
+        let mut file = match fs::metadata(&path) {
+            Ok(_) => fs::OpenOptions::new()
+                .write(true)
+                .append(true)
+                .open(&path)?,
+            Err(_) => fs::File::create(&path)?,
+        };
         file.write_all(content)?;
         Ok(())
     }
@@ -452,7 +466,46 @@ impl App {
         self.client.get_video_course(subject_id, tecl_id).await
     }
 
-    async fn convert_pptx_to_pdf_macos(&self, file: &mut File) -> Result<Vec<u8>> {
+    #[cfg(target_os = "macos")]
+    fn convert_pptx_to_pdf_inner(&self, pptx_path: &PathBuf, pdf_path: &PathBuf) -> Result<()> {
+        // Reference https://github.com/jeongwhanchoi/convert-ppt-to-pdf
+        process::Command::new("osascript")
+            .arg("-e")
+            .arg(
+                r#"on run {input, output}
+            tell application "Microsoft PowerPoint" -- work on version 15.15 or newer
+                launch
+                set t to input as string
+                set pptx to input as POSIX file
+                if t ends with ".ppt" or t ends with ".pptx" then
+                    set pdfPath to output as POSIX file as string
+                    open pptx
+                    save active presentation in pdfPath as save as PDF -- save in same folder
+                end if
+            end tell
+            tell application "Microsoft PowerPoint" -- work on version 15.15 or newer
+                quit
+            end tell
+        end run"#,
+            )
+            .arg(&pptx_path)
+            .arg(&pdf_path)
+            .output()?;
+
+        Ok(())
+    }
+
+    #[cfg(target_os = "windows")]
+    fn convert_pptx_to_pdf_inner(&self, pptx_path: &PathBuf, pdf_path: &PathBuf) -> Result<()> {
+        process::Command::new("powershell.exe")
+            .arg("-Command")
+            .arg(format!(r#"$ppt_app = New-Object -ComObject PowerPoint.Application; $document = $ppt_app.Presentations.Open("{}"); $pdf_filename = "{}"; $opt= [Microsoft.Office.Interop.PowerPoint.PpSaveAsFileType]::ppSaveAsPDF; $document.SaveAs($pdf_filename, $opt); $document.Close(); $ppt_app.Quit();"#, 
+        pptx_path.to_str().unwrap(), pdf_path.to_str().unwrap()))
+            .output()?;
+        Ok(())
+    }
+
+    async fn convert_pptx_to_pdf(&self, file: &mut File) -> Result<Vec<u8>> {
         let config = self.config.read().await;
         let token = &config.token.clone();
         let save_dir = &config.save_path.clone();
@@ -464,29 +517,7 @@ impl App {
         self.client
             .download_file(file, token, save_dir, |_| {})
             .await?;
-        // Reference https://github.com/jeongwhanchoi/convert-ppt-to-pdf
-        process::Command::new("osascript")
-            .arg("-e")
-            .arg(
-                r#"on run {input, output}
-                tell application "Microsoft PowerPoint" -- work on version 15.15 or newer
-                    launch
-                    set t to input as string
-                    set pptx to input as POSIX file
-                    if t ends with ".ppt" or t ends with ".pptx" then
-                        set pdfPath to output as POSIX file as string
-                        open pptx
-                        save active presentation in pdfPath as save as PDF -- save in same folder
-                    end if
-                end tell
-                tell application "Microsoft PowerPoint" -- work on version 15.15 or newer
-                    quit
-                end tell
-            end run"#,
-            )
-            .arg(&pptx_path)
-            .arg(&pdf_path)
-            .output()?;
+        self.convert_pptx_to_pdf_inner(&pptx_path, &pdf_path)?;
         fs::remove_file(&pptx_path)?;
         let pdf_content = fs::read(&pdf_path)?;
         fs::remove_file(&pdf_path)?;
@@ -614,8 +645,8 @@ async fn save_file_content(content: Vec<u8>, file_name: String) -> Result<()> {
 
 #[tauri::command]
 async fn convert_pptx_to_pdf(mut file: File) -> Result<Vec<u8>> {
-    if cfg!(target_os = "macos") {
-        let content = APP.convert_pptx_to_pdf_macos(&mut file).await?;
+    if cfg!(target_os = "macos") || cfg!(target_os = "windows") {
+        let content = APP.convert_pptx_to_pdf(&mut file).await?;
         return Ok(content);
     }
     Err(ClientError::FunctionUnsupported)

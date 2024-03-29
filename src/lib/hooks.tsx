@@ -95,8 +95,9 @@ export function useMerger({ setPreviewEntry, onHoverEntry, onLeaveEntry }: {
     onLeaveEntry: () => void,
 }) {
     const [merging, setMerging] = useState<boolean>(false);
-    const [pdfs, setPdfs] = useState<File[]>([]);
+    const [downloading, setDownloading] = useState<boolean>(false);
     const [currentStep, setCurrentStep] = useState<number>(0);
+    const [totalSteps, setTotalSteps] = useState<number>(0);
     const [error, setError] = useState<boolean>(false);
     const [msg, setMsg] = useState<string>("当前无任务");
     const [result, setResult] = useState<File | undefined>(undefined);
@@ -122,9 +123,13 @@ export function useMerger({ setPreviewEntry, onHoverEntry, onLeaveEntry }: {
             message.warning("请等待当前合并任务执行完毕！");
             return;
         }
+        if (downloading) {
+            message.warning("请等待当前下载任务执行完毕！");
+            return;
+        }
+        setTotalSteps(files.length);
         setCurrentStep(0);
         setMerging(true);
-        setPdfs(files);
         for (let file of files) {
             try {
                 setMsg(`正在添加 "${file.display_name}" ...`);
@@ -154,7 +159,7 @@ export function useMerger({ setPreviewEntry, onHoverEntry, onLeaveEntry }: {
         setMerging(false);
     }
 
-    const progress = <MergeProgress pdfs={pdfs} currentStep={currentStep} error={error} msg={msg} />
+    const progress = <MergeProgress totalSteps={totalSteps} currentStep={currentStep} error={error} msg={msg} />
 
     const handleDownloadResult = async () => {
         if (!result || !resultBlob) {
@@ -164,13 +169,25 @@ export function useMerger({ setPreviewEntry, onHoverEntry, onLeaveEntry }: {
         let content = Array.from<number>(new Uint8Array(buffer));
         let fileName = result.display_name;
         try {
-            await message.open({
-                type: "loading",
-                content: "正在下载中...",
-                key: "save_file_content"
-            });
-            await invoke("save_file_content", { content, fileName });
-            message.destroy("save_file_content");
+            const chunkSize = 4 * 1024 * 1024;// 4MB
+            const length = content.length;
+            let chunkNumber = Math.round(length / chunkSize);
+            if (length % chunkSize !== 0) {
+                chunkNumber += 1;
+            }
+            setMsg("正在下载中...");
+            setDownloading(true);
+            setTotalSteps(chunkNumber);
+            setCurrentStep(0);
+            for (let i = 0; i < chunkNumber; i++) {
+                let start = chunkSize * i;
+                let end = start + chunkSize;
+                const chunk = content.slice(start, end);
+                await invoke("save_file_content", { content: chunk, fileName });
+                setCurrentStep(i + 1);
+            }
+            setMsg("下载成功🎉！");
+            setDownloading(false);
             message.success(`下载成功🎉！`);
         } catch (e) {
             message.error(`下载失败😩：${e}`);
@@ -192,14 +209,13 @@ export function useMerger({ setPreviewEntry, onHoverEntry, onLeaveEntry }: {
 }
 
 function MergeProgress({
-    pdfs, currentStep, error, msg
+    totalSteps, currentStep, error, msg
 }: {
-    pdfs: File[],
+    totalSteps: number,
     currentStep: number,
     error: boolean,
     msg: string,
 }) {
-    const totalSteps = pdfs.length;
     const percent = Math.ceil(currentStep / totalSteps * 100);
     const status = error ? "exception" : (percent !== 100 ? "active" : "success")
     return <Space direction="vertical" style={{ width: "100%" }}>
