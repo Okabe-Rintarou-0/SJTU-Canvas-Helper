@@ -46,7 +46,7 @@ SJTU Canvas 小帮手，帮助您更便捷地使用交大 Canvas。基于 [Tauri
 </table>
 
 ## Main Features
-+ [x] 文件下载 / 预览(免下载) / PDF 合并(免下载)
++ [x] 文件下载 / 预览(免下载) / PDF & PPTX 混合合并(免下载)
 + [x] 一键上传[交大云盘（新）](https://pan.sjtu.edu.cn/)
 + [x] DDL 日历 
 + [x] 人员名单导出
