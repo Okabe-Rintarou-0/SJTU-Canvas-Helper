@@ -1,6 +1,6 @@
 [package]
 name = "sjtu_canvas_helper"
-version = "1.1.21"
+version = "1.1.22"
 description = "SJTU Canvas Helper"
 authors = ["Okabe"]
 edition = "2021"
