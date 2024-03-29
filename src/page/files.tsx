@@ -418,7 +418,7 @@ export default function FilesPage() {
                 <Button disabled={operating} onClick={handleDownloadSelectedFiles}>下载</Button>
                 <Button disabled={operating || noSelectedPDFs} onClick={handleMergePDFs}>合并 PDF/PPTX</Button>
             </Space>
-            <Divider orientation="left">PDF 合并</Divider>
+            <Divider orientation="left">PDF/PPTX (混合)合并</Divider>
             {merger}
             <Divider orientation="left">文件下载</Divider>
             <FileDownloadTable tasks={downloadTasks} handleRemoveTask={handleRemoveTask} />
