@@ -24,6 +24,8 @@ SJTU Canvas 小帮手，帮助您更便捷地使用交大 Canvas。基于 [Tauri
 
 ![](./images/settings.png)
 
+MacOS 遇到打不开的问题，请看：[在 Mac 上安全地打开 App](https://support.apple.com/zh-cn/102445)。
+
 ## 致谢
 
 感谢以下用户为本仓库做出的贡献：
