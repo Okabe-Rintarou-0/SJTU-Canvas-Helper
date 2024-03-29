@@ -34,9 +34,13 @@ pub struct Teacher {
 pub struct Term {
     pub id: i64,
     pub name: String,
+    #[serde(default)]
     pub start_at: Option<String>,
-    pub end_at: String,
-    pub created_at: String,
+    #[serde(default)]
+    pub end_at: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
     pub workflow_state: String,
 }
 

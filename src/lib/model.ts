@@ -12,8 +12,8 @@ interface Term {
     id: number;
     name: string;
     start_at?: string | null;
-    end_at: string;
-    created_at: string;
+    end_at?: string | null;
+    created_at?: string | null;
     workflow_state: string;
 }
 
