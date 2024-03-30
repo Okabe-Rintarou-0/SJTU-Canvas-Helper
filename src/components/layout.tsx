@@ -51,10 +51,10 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
     } = theme.useToken();
 
     return <Layout style={{ minHeight: "100vh" }}>
-        <Sider theme="light">
+        <Sider theme="light" style={{position: 'fixed', height: '100%' }}>
             <Menu theme="light" mode="inline" defaultSelectedKeys={selectedKeys} items={items} />
         </Sider>
-        <Layout>
+        <Layout style={{ marginLeft: 200 }}>
             <Content style={{ margin: '16px 16px 0' }}>
                 <div
                     style={{
