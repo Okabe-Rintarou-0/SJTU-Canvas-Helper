@@ -15,7 +15,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tauri::{api::path::download_dir, Runtime, Window};
+use tauri::{api::path::config_dir, Runtime, Window};
 use tokio::{sync::RwLock, task::JoinHandle};
 use uuid::Uuid;
 use warp::{hyper::Response, Filter};
@@ -41,10 +41,12 @@ struct App {
 
 impl App {
     fn new() -> Self {
-        let config_dir = download_dir().unwrap();
+        let config_dir = config_dir().unwrap();
+        println!("config_dir: {:?}", config_dir);
         let config_path = format!(
-            "{}/{}",
+            "{}/{}/{}",
             config_dir.to_str().unwrap(),
+            "SJTU-Canvas-Helper",
             "sjtu_canvas_helper_config.json"
         );
 
