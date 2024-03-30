@@ -262,7 +262,7 @@ export default function AssignmentsPage() {
             courseId={selectedCourseId} />}
         <Space direction="vertical" style={{ width: "100%", overflow: "scroll" }} size={"large"}>
             <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} />
-            {!isTA(selectedCourseId) && assignments.length > 0 && <Checkbox disabled={operating} onChange={handleSetOnlyShowUnfinished} defaultChecked>只显示未完成</Checkbox>}
+            {!isTA(selectedCourseId) && <Checkbox disabled={operating} onChange={handleSetOnlyShowUnfinished} defaultChecked>只显示未完成</Checkbox>}
             <Table style={{ width: "100%" }}
                 loading={operating}
                 columns={getColumns()}
