@@ -48,6 +48,12 @@ sudo xattr -r -d com.apple.quarantine /Applications/SJTU\ Canvas\ Helper.app SJT
         <sub><b>pangbo13</b></sub>
       </a>
     </td>
+    <td align="center">
+      <a href="https://github.com/wytili" style="display:inline-block;width:80px">
+        <img src="https://github.com/wytili.png" width="64px;" alt="wytili"/><br/>
+        <sub><b>wytili</b></sub>
+      </a>
+    </td>
   </tr>
 </table>
 
