@@ -195,7 +195,7 @@ export function useMerger({ setPreviewEntry, onHoverEntry, onLeaveEntry }: {
     }
 
     const merger = <Space direction="vertical" style={{ width: "100%" }}>
-        <Space>自定义文件名（无需拓展名）：<Input onChange={(e) => setOutFileName(e.target.value)} placeholder="请输入自定义文件名" />
+        <Space>自定义文件名：<Input onChange={(e) => setOutFileName(e.target.value)} placeholder="请输入自定义文件名" addonAfter={".pdf"} />
         </Space>
         {progress}
         {result && <Space>
