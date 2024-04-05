@@ -1,7 +1,7 @@
 import { Button, Form, Image, Input, InputNumber, Space, Tour } from "antd";
 import BasicLayout from "../components/layout";
 import { useEffect, useRef, useState } from "react";
-import { AppConfig } from "../lib/model";
+import { AppConfig, User } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import useMessage from "antd/es/message/useMessage";
 import { getConfig, saveConfig } from "../lib/store";
@@ -60,6 +60,16 @@ export default function SettingsPage() {
         }
     }
 
+    const handleTestToken = async () => {
+        const token = form.getFieldValue("token")
+        try {
+            const me = await invoke("test_token", { token }) as User;
+            messageApi.success(`👋你好，${me.name}。欢迎使用 SJTU Canvas Helper👏`, 2);
+        } catch (e) {
+            messageApi.error(`Token 无效🥹！`);
+        }
+    }
+
     const savePathValidator = async (_: any, savePath: string) => {
         let valid = await invoke("check_path", { path: savePath });
         return valid ? Promise.resolve() : Promise.reject(new Error("保存路径无效！请检查目录是否存在！"));
@@ -84,11 +94,11 @@ export default function SettingsPage() {
                     name="token"
                     label="Token"
                     required
+                    extra={<p>请前往 <a href="https://oc.sjtu.edu.cn/profile/settings" target="_blank">https://oc.sjtu.edu.cn/profile/settings</a> 创建您的 API Token</p>}
                     style={{ margin: "0px" }}
                 >
                     <Password ref={tokenRef} placeholder="请输入 Canvas Token" />
                 </Form.Item>
-                <p>请前往 <a href="https://oc.sjtu.edu.cn/profile/settings" target="_blank">https://oc.sjtu.edu.cn/profile/settings</a> 创建您的 API Token</p>
                 <Form.Item name="save_path" label="下载保存目录" required rules={[{ validator: savePathValidator }]}>
                     <Input ref={savePathRef} placeholder="请输入文件下载保存目录" />
                 </Form.Item>
@@ -98,11 +108,18 @@ export default function SettingsPage() {
                 <Form.Item name="serve_as_plaintext" label="以纯文本显示的文件拓展名">
                     <Input placeholder="请输入文件拓展名，以英文逗号隔开" />
                 </Form.Item>
-                <Form.Item>
-                    <Button ref={saveButtonRef} type="primary" htmlType="submit">
-                        保存
-                    </Button>
-                </Form.Item>
+                <Space>
+                    <Form.Item>
+                        <Button ref={saveButtonRef} type="primary" htmlType="submit">
+                            保存
+                        </Button>
+                    </Form.Item>
+                    <Form.Item>
+                        <Button onClick={handleTestToken}>
+                            测试 Token
+                        </Button>
+                    </Form.Item>
+                </Space>
             </Form>
         </Space>
         {openTour && <Tour open={openTour} onClose={() => setOpenTour(false)} steps={steps} />}

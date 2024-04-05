@@ -265,6 +265,10 @@ impl App {
             .await
     }
 
+    async fn test_token(&self, token: &str) -> Result<User> {
+        self.client.get_me(token).await
+    }
+
     async fn list_course_files(&self, course_id: i32) -> Result<Vec<File>> {
         self.client
             .list_course_files(course_id, &self.config.read().await.token)
@@ -638,6 +642,11 @@ async fn list_folder_folders(folder_id: i32) -> Result<Vec<Folder>> {
 }
 
 #[tauri::command]
+async fn test_token(token: String) -> Result<User> {
+    APP.test_token(&token).await
+}
+
+#[tauri::command]
 async fn get_config() -> AppConfig {
     APP.get_config().await
 }
@@ -866,6 +875,7 @@ async fn main() -> Result<()> {
             list_folders,
             list_folder_folders,
             list_calendar_events,
+            test_token,
             get_folder_by_id,
             get_colors,
             get_config,

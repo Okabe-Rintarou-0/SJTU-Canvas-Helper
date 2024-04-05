@@ -462,6 +462,12 @@ impl Client {
         Ok(filtered_courses)
     }
 
+    pub async fn get_me(&self, token: &str) -> Result<User> {
+        let url = format!("{}/api/v1/users/self", BASE_URL);
+        let me = self.get_json_with_token(&url, None::<&str>, token).await?;
+        Ok(me)
+    }
+
     pub async fn list_ta_courses(&self, token: &str) -> Result<Vec<Course>> {
         let url = format!(
             "{}/api/v1/courses?include[]=teachers&include[]=term&enrollment_type=ta",
