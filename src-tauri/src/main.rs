@@ -15,10 +15,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tauri::{
-    api::path::{config_dir, download_dir},
-    Runtime, Window,
-};
+use tauri::{api::path::config_dir, Runtime, Window};
 use tokio::{sync::RwLock, task::JoinHandle};
 use uuid::Uuid;
 use warp::{hyper::Response, Filter};
@@ -58,9 +55,6 @@ impl App {
         );
         App::ensure_directory(&config_dir);
         let config_path = format!("{}/{}", config_dir, "sjtu_canvas_helper_config.json");
-        if let Err(err) = App::migrate_config(&config_path) {
-            tracing::error!("Error occurred when migrating old config: {:?}", err);
-        }
         let config = match App::read_config_from_file(&config_path) {
             Ok(config) => config,
             Err(_) => Default::default(),
@@ -384,20 +378,6 @@ impl App {
     async fn save_config(&self, config: AppConfig) -> Result<()> {
         fs::write(&APP.config_path, serde_json::to_vec(&config).unwrap())?;
         *self.config.write().await = config;
-        Ok(())
-    }
-
-    fn migrate_config(curr_config_path: &str) -> Result<()> {
-        let old_config_path = format!(
-            "{}/sjtu_canvas_helper_config.json",
-            download_dir().unwrap().to_str().unwrap()
-        );
-        let Ok(metadata) = fs::metadata(&old_config_path) else {
-            return Ok(());
-        };
-        if metadata.is_file() {
-            fs::copy(&old_config_path, curr_config_path)?;
-        }
         Ok(())
     }
 
