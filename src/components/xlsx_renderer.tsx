@@ -13,7 +13,7 @@ interface XlsxData {
 export default function XlsxRenderer({
     mainState: { currentDocument },
 }: DocRendererProps) {
-    if (!currentDocument) return null;
+    if (!currentDocument || !currentDocument.fileData) return null;
     const [currentData, setCurrentData] = useState<XlsxData | undefined>(undefined);
     const [workBook, setWorkBook] = useState<WorkBook | undefined>(undefined);
     const [currentSheet, setCurrentSheet] = useState<string>("");

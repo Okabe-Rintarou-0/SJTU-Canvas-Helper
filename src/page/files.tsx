@@ -27,7 +27,7 @@ export default function FilesPage() {
     const [currentFolderFullName, setCurrentFolderFullName] = useState<string | undefined>('');
     const [parentFolderId, setParentFolderId] = useState<number | undefined | null>(null);
     const [keyword, setKeyword] = useState<string>("");
-    const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry } = usePreview();
+    const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry, setEntries } = usePreview();
     const { merger, mergePDFs } = useMerger({ setPreviewEntry, onHoverEntry, onLeaveEntry });
 
     const handleLoginJbox = async () => {
@@ -51,6 +51,10 @@ export default function FilesPage() {
     useEffect(() => {
         initCourses();
     }, []);
+
+    useEffect(() => {
+        setEntries(files)
+    }, [files]);
 
     useEffect(() => {
         handleGetFolderFiles(currentFolderId);

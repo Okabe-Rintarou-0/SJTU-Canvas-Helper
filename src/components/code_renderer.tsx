@@ -6,7 +6,7 @@ import { decodeBase64Data } from "../lib/utils";
 export default function CodeRenderer({
     mainState: { currentDocument },
 }: DocRendererProps) {
-    if (!currentDocument) return null;
+    if (!currentDocument || currentDocument.fileData === undefined) return null;
     const data = decodeBase64Data(currentDocument.fileData as string);
 
     return <Highlight className={currentDocument.fileType} >{data}</Highlight>

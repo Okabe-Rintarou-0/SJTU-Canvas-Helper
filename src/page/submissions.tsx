@@ -26,11 +26,15 @@ export default function SubmissionsPage() {
     const [statistic, setStatistic] = useState<GradeStatistic | undefined>(undefined);
     const [keyword, setKeyword] = useState<string>("");
 
-    const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry } = usePreview();
+    const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry, setEntries } = usePreview();
 
     useEffect(() => {
         initCourses();
     }, []);
+
+    useEffect(() => {
+        setEntries(attachments.map(attachmentToFile));
+    }, [attachments]);
 
     const validateGrade = (grade: string) => {
         if (grade.length === 0) {

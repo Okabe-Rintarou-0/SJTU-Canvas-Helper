@@ -43,7 +43,7 @@ export default function ArchiveRenderer({
 
     const checkIsBanned = (fileName: string, isDir: boolean) => {
         if (BLACK_LIST.find(banned => banned.name === fileName && banned.dir === isDir)) {
-            messageApi.warning(`文件或目录"${fileName}"已被屏蔽`);
+            messageApi.warning(`文件或目录"${fileName}"已被屏蔽`, 2);
             return true;
         }
         return false;

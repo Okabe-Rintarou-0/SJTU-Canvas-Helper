@@ -10,16 +10,17 @@ import { BasicRenderers } from "./renderers";
 import { useEffect, useState } from "react";
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.js`;
 
-export default function PreviewModal({ open, files, handleCancelPreview }: {
+export default function PreviewModal({ open, files, handleCancelPreview, title }: {
     open: boolean,
     files: File[],
     handleCancelPreview?: () => void,
+    title?: string,
 }) {
     const [docs, setDocs] = useState<IDocument[]>([]);
 
     useEffect(() => {
         initDocs();
-    }, []);
+    }, [files]);
 
     const initDocs = async () => {
         let docs = [];
@@ -39,7 +40,7 @@ export default function PreviewModal({ open, files, handleCancelPreview }: {
 
     // compute md5 as key
     const key = Md5.hashStr(files.map(file => file.url).reduce((k1, k2) => k1 + k2));
-    return <Modal width={"90%"} styles={{ body: { height: "86vh" } }} style={{ top: "10px" }}
+    return <Modal title={title} width={"90%"} styles={{ body: { height: "84vh", marginTop: "0px" } }} style={{ top: "10px" }}
         open={open} footer={null} onCancel={handleCancelPreview}>
         <DocViewer
             key={key}

@@ -15,13 +15,17 @@ const QRCODE_BASE_URL = "https://jaccount.sjtu.edu.cn/jaccount/confirmscancode";
 const WEBSOCKET_BASE_URL = "wss://jaccount.sjtu.edu.cn/jaccount/sub";
 
 export function usePreview() {
+    const [entries, setEntries] = useState<Entry[]>([]);
     const [previewEntry, setPreviewEntry] = useState<Entry | undefined>(undefined);
     const [hoveredEntry, setHoveredEntry] = useState<Entry | undefined>(undefined);
+
     const previewer = <Previewer previewEntry={previewEntry}
         setPreviewEntry={setPreviewEntry}
         hoveredEntry={hoveredEntry}
         setHoveredEntry={setHoveredEntry}
+        entries={entries}
     />
+
     const onHoverEntry = (entry: Entry) => {
         if (!previewEntry) {
             setHoveredEntry(entry);
@@ -32,20 +36,46 @@ export function usePreview() {
             setHoveredEntry(undefined);
         }
     }
-    return { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry }
+    return { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry, setEntries }
 }
 
 // type FileType = File | undefined;
 type EntryType = Entry | undefined;
 
-function Previewer({ previewEntry, setPreviewEntry, hoveredEntry, setHoveredEntry }: {
+function Previewer({ previewEntry, setPreviewEntry, hoveredEntry, setHoveredEntry, entries }: {
     previewEntry: EntryType,
     setPreviewEntry: Dispatch<SetStateAction<EntryType>>,
     hoveredEntry: EntryType,
     setHoveredEntry: Dispatch<SetStateAction<EntryType>>
+    entries: Entry[],
 }) {
+    const entriesRef = useRef<Entry[]>([]);
     const hoveredEntryRef = useRef<EntryType>(undefined);
     const previewEntryRef = useRef<EntryType>(undefined);
+
+    const getNextEntry = (entry: Entry) => {
+        const entries = entriesRef.current;
+        const index = entries.findIndex(file => file.id === entry.id);
+        if (index === -1) {
+            return null;
+        }
+        if (index === entries.length - 1) {
+            return entries[0];
+        }
+        return entries[index + 1];
+    }
+
+    const getPrevEntry = (entry: Entry) => {
+        const entries = entriesRef.current;
+        const index = entries.findIndex(file => file.id === entry.id);
+        if (index === -1) {
+            return null;
+        }
+        if (index === 0) {
+            return entries[entries.length - 1];
+        }
+        return entries[index - 1];
+    }
 
     useEffect(() => {
         document.body.addEventListener("keydown", handleKeyDownEvent, true);
@@ -62,6 +92,10 @@ function Previewer({ previewEntry, setPreviewEntry, hoveredEntry, setHoveredEntr
         hoveredEntryRef.current = hoveredEntry;
     }, [hoveredEntry]);
 
+    useEffect(() => {
+        entriesRef.current = entries;
+    }, [entries]);
+
     const handleKeyDownEvent = (ev: KeyboardEvent) => {
         if (ev.key === " " && !ev.repeat) {
             ev.stopPropagation();
@@ -72,6 +106,29 @@ function Previewer({ previewEntry, setPreviewEntry, hoveredEntry, setHoveredEntr
             } else if (previewEntryRef.current) {
                 setPreviewEntry(undefined);
             }
+            return;
+        }
+        if (!previewEntryRef.current) {
+            return;
+        }
+
+        if (ev.key === "ArrowRight" && !ev.repeat) {
+            ev.stopPropagation();
+            ev.preventDefault();
+            const entry = getNextEntry(previewEntryRef.current);
+            if (entry) {
+                setHoveredEntry(undefined);
+                setPreviewEntry(entry);
+            }
+        }
+        if (ev.key === "ArrowLeft" && !ev.repeat) {
+            ev.stopPropagation();
+            ev.preventDefault();
+            const entry = getPrevEntry(previewEntryRef.current);
+            if (entry) {
+                setHoveredEntry(undefined);
+                setPreviewEntry(entry);
+            }
         }
     }
 
@@ -81,12 +138,12 @@ function Previewer({ previewEntry, setPreviewEntry, hoveredEntry, setHoveredEntr
 
     const shouldOpen = previewEntry !== undefined;
 
-    return <>
-        {
-            previewEntry &&
-            isFile(previewEntry) &&
-            <PreviewModal open={shouldOpen} files={[previewEntry as File]} handleCancelPreview={handleCancelPreview} />}
-    </>
+    return <>{previewEntry &&
+        isFile(previewEntry) &&
+        <PreviewModal open={shouldOpen} files={[previewEntry as File]}
+            title={(previewEntry as File).display_name}
+            handleCancelPreview={handleCancelPreview} />
+    }</>
 }
 
 export function useMerger({ setPreviewEntry, onHoverEntry, onLeaveEntry }: {

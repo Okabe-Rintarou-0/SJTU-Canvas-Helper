@@ -6,8 +6,8 @@ import { decodeBase64DataAsBinary } from "../lib/utils";
 export default function DocxRenderer({
     mainState: { currentDocument },
 }: DocRendererProps) {
-    if (!currentDocument) return null;
-    
+    if (!currentDocument || !currentDocument.fileData) return null;
+
     const containerRef = useRef<HTMLDivElement>(null);
     const data = decodeBase64DataAsBinary(currentDocument.fileData as string);
 
