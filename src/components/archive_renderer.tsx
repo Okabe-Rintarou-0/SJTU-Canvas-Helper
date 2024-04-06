@@ -28,7 +28,7 @@ Archive.init({
 export default function ArchiveRenderer({
     mainState: { currentDocument },
 }: DocRendererProps) {
-    if (!currentDocument) return null;
+    if (!currentDocument || !currentDocument.fileData) return null;
     const [selectedPath, setSelectedPath] = useState<string>("");
     const [messageApi, contextHolder] = useMessage();
     const [treeData, setTreeData] = useState<TreeDataNode | undefined>(undefined);
