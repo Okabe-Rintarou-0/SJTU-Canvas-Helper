@@ -95,6 +95,10 @@ https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/assets/58595459/7f05cabc-
 
 ![](./images/submission.png)
 
-### Star History
+## 开发指南
+
++ Tauri 使用的是 Chrome 内核，所以你可以把它当成一个浏览器来 debug。MacOS 可以按下 `⌘command + ⌥option + i` 查看控制台；Windows 则为 `ctrl + shift + i `。
+
+## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=Okabe-Rintarou-0/SJTU-Canvas-Helper&type=Date)](https://star-history.com/#Okabe-Rintarou-0/SJTU-Canvas-Helper&Date)
