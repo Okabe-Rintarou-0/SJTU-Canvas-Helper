@@ -145,26 +145,50 @@ impl Client {
         Ok(response)
     }
 
+    pub async fn delete_submission_comment(
+        &self,
+        course_id: i32,
+        assignment_id: i32,
+        student_id: i64,
+        comment_id: i64,
+        token: &str,
+    ) -> Result<()> {
+        let url = format!(
+            "{}/api/v1/courses/{}/assignments/{}/submissions/{}/comments/{}",
+            BASE_URL, course_id, assignment_id, student_id, comment_id
+        );
+        self.cli
+            .delete(url)
+            .header("Authorization", format!("Bearer {}", token))
+            .send()
+            .await?
+            .error_for_status()?;
+        Ok(())
+    }
+
     pub async fn update_grade(
         &self,
         course_id: i32,
         assignment_id: i32,
-        student_id: i32,
+        student_id: i64,
         grade: &str,
+        comment: Option<&str>,
         token: &str,
     ) -> Result<()> {
         let url = format!(
             "{}/api/v1/courses/{}/assignments/{}/submissions/update_grades",
             BASE_URL, course_id, assignment_id
         );
-        self.post_form_with_token(
-            &url,
-            None::<&str>,
-            &[(format!("grade_data[{}][posted_grade]", student_id), grade)],
-            token,
-        )
-        .await?
-        .error_for_status()?;
+        let form = match comment {
+            Some(comment) => vec![
+                (format!("grade_data[{}][posted_grade]", student_id), grade),
+                (format!("grade_data[{}][text_comment]", student_id), comment),
+            ],
+            None => vec![(format!("grade_data[{}][posted_grade]", student_id), grade)],
+        };
+        self.post_form_with_token(&url, None::<&str>, &form, token)
+            .await?
+            .error_for_status()?;
         Ok(())
     }
 
@@ -431,6 +455,21 @@ impl Client {
         self.list_items(&url, token).await
     }
 
+    pub async fn get_single_course_assignment_submission(
+        &self,
+        course_id: i32,
+        assignment_id: i32,
+        student_id: i64,
+        token: &str,
+    ) -> Result<Submission> {
+        let url = format!(
+            "{}/api/v1/courses/{}/assignments/{}/submissions/{}?include[]=submission_comments",
+            BASE_URL, course_id, assignment_id, student_id,
+        );
+        let submission = self.get_json_with_token(&url, None::<&str>, token).await?;
+        Ok(submission)
+    }
+
     pub async fn list_course_assignment_submissions(
         &self,
         course_id: i32,
@@ -438,7 +477,7 @@ impl Client {
         token: &str,
     ) -> Result<Vec<Submission>> {
         let url = format!(
-            "{}/api/v1/courses/{}/assignments/{}/submissions",
+            "{}/api/v1/courses/{}/assignments/{}/submissions?include[]=submission_comments",
             BASE_URL, course_id, assignment_id
         );
         self.list_items(&url, token).await

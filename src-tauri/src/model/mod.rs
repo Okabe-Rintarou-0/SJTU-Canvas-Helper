@@ -251,6 +251,8 @@ pub struct Submission {
     pub late: bool,
     #[serde(default)]
     pub attachments: Vec<Attachment>,
+    #[serde(default)]
+    pub submission_comments: Vec<SubmissionComment>,
     pub workflow_state: WorkflowState,
 }
 
@@ -558,4 +560,20 @@ pub struct ConfirmChunkUploadResult {
     pub preview_as_icon: bool,
     #[serde(default)]
     pub file_type: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SubmissionComment {
+    #[serde(default)]
+    pub id: i64,
+    #[serde(default)]
+    pub comment: String,
+    #[serde(default)]
+    pub author_id: i64,
+    #[serde(default)]
+    pub author_name: String,
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub avatar_path: String,
 }

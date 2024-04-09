@@ -1,7 +1,7 @@
-import { Button, Input, Select, Space, Table, Tag } from "antd";
+import { Avatar, Button, Divider, Input, List, Select, Space, Table, Tag } from "antd";
 import BasicLayout from "../components/layout";
 import useMessage from "antd/es/message/useMessage";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Assignment, Attachment, Course, FileDownloadTask, GradeStatistic, Submission, User } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import { attachmentToFile, formatDate } from "../lib/utils";
@@ -9,6 +9,7 @@ import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
 import GradeStatisticChart from "../components/grade_statistic";
 import { usePreview } from "../lib/hooks";
+import TextArea, { TextAreaRef } from "antd/es/input/TextArea";
 
 export default function SubmissionsPage() {
     const [messageApi, contextHolder] = useMessage();
@@ -16,6 +17,7 @@ export default function SubmissionsPage() {
     const [loading, setLoading] = useState<boolean>(false);
     const [courses, setCourses] = useState<Course[]>([]);
     const [users, setUsers] = useState<User[]>([]);
+    const [me, setMe] = useState<User | undefined>(undefined);
     const [attachments, setAttachments] = useState<Attachment[]>([]);
     const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
     const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -25,11 +27,24 @@ export default function SubmissionsPage() {
     const usersMap = new Map<number, User>(users.map(user => ([user.id, user])));
     const [statistic, setStatistic] = useState<GradeStatistic | undefined>(undefined);
     const [keyword, setKeyword] = useState<string>("");
+    const [attachmentToComment, setAttachmentToComment] = useState<number>(-1);
+    const [expandedRowKeys, setExpandedRowKeys] = useState<number[]>([]);
+    const commentInputRef = useRef<TextAreaRef>(null);
 
     const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry, setEntries } = usePreview();
 
+    const initMe = async () => {
+        try {
+            const me = await invoke("get_me") as User;
+            setMe(me);
+        } catch (e) {
+            console.log(e);
+        }
+    }
+
     useEffect(() => {
         initCourses();
+        initMe();
     }, []);
 
     useEffect(() => {
@@ -144,6 +159,11 @@ export default function SubmissionsPage() {
                     e.preventDefault();
                     setPreviewEntry(attachmentToFile(attachment));
                 }}>预览</a>
+                <a onClick={e => {
+                    e.preventDefault();
+                    setAttachmentToComment(attachment.id);
+                    setExpandedRowKeys(keys => [...keys, attachment.id])
+                }}>评论</a>
             </Space>
         ),
     }];
@@ -196,6 +216,7 @@ export default function SubmissionsPage() {
                     attachment.grade = submission.grade;
                     attachment.key = attachment.id;
                     attachment.late = submission.late;
+                    attachment.comments = submission.submission_comments;
                 }
                 attachments.push(...thisAttachments);
             }
@@ -286,6 +307,65 @@ export default function SubmissionsPage() {
         return attachment.user && attachment.user.indexOf(keyword) !== -1;
     }
 
+    const refreshSubmission = async (studentId: number) => {
+        const submission = await invoke("get_single_course_assignment_submission", {
+            courseId: selectedCourseId,
+            assignmentId: selectedAssignment?.id,
+            studentId,
+        }) as Submission;
+        attachments.filter(thisAttachment => thisAttachment.user_id === studentId)
+            .map(attachment => {
+                attachment.user = usersMap.get(submission.user_id)?.name;
+                attachment.user_id = submission.user_id;
+                attachment.submitted_at = submission.submitted_at;
+                attachment.grade = submission.grade;
+                attachment.key = attachment.id;
+                attachment.late = submission.late;
+                attachment.comments = submission.submission_comments;
+            });
+        setAttachments([...attachments]);
+    }
+
+    const handleCommentSubmission = async (attachment: Attachment) => {
+        const comment = commentInputRef.current?.resizableTextArea?.textArea.value;
+        if (!comment) {
+            messageApi.warning("评论不得为空！");
+            return;
+        }
+        try {
+            await invoke("update_grade", {
+                courseId: selectedCourseId,
+                assignmentId: selectedAssignment?.id,
+                studentId: attachment.user_id,
+                grade: attachment.grade ?? "",
+                comment
+            });
+            await messageApi.success("评论成功！🎉", 0.5);
+            await refreshSubmission(attachment.user_id);
+        } catch (e) {
+            console.log(e as string);
+            messageApi.error(e as string);
+        }
+    }
+
+    const handleDeleteComment = async (commentId: number, attachment: Attachment) => {
+        try {
+            await invoke("delete_submission_comment", {
+                courseId: selectedCourseId,
+                assignmentId: selectedAssignment?.id,
+                studentId: attachment.user_id,
+                commentId
+            });
+            await refreshSubmission(attachment.user_id);
+            messageApi.success("删除成功！🎉", 0.5);
+        } catch (e) {
+            console.log(e as string);
+            messageApi.error(e as string);
+        }
+    }
+
+    const showShowAttachments = attachments.filter(attachment => shouldShow(attachment));
+
     return <BasicLayout>
         {contextHolder}
         {previewer}
@@ -311,9 +391,50 @@ export default function SubmissionsPage() {
             <Table style={{ width: "100%" }}
                 columns={columns}
                 loading={loading}
-                dataSource={attachments.filter(attachment => shouldShow(attachment))}
+                dataSource={showShowAttachments}
                 pagination={false}
                 rowSelection={{ onChange: handleAttachmentSelect, selectedRowKeys: selectedAttachments.map(attachment => attachment.key) }}
+                expandable={{
+                    onExpand(expanded, record) {
+                        if (expanded) {
+                            setExpandedRowKeys([...expandedRowKeys, record.id]);
+                        } else {
+                            setExpandedRowKeys(expandedRowKeys.filter(key => key !== record.id));
+                        }
+                    },
+                    expandedRowKeys,
+                    rowExpandable: (attachment) => attachment.comments.length > 0 || attachmentToComment === attachment.id,
+                    expandedRowRender: (attachment) => {
+                        return <Space direction="vertical" style={{ width: "100%" }}>
+                            <Button onClick={() => refreshSubmission(attachment.user_id)}>刷新评论</Button>
+                            {attachment.comments.length > 0 && <>
+                                <Divider>历史评论</Divider>
+                                <List
+                                    itemLayout="horizontal"
+                                    dataSource={attachment.comments}
+                                    renderItem={(comment) => (
+                                        <List.Item actions={comment.author_id === me?.id ? [<a onClick={(e) => {
+                                            e.preventDefault();
+                                            handleDeleteComment(comment.id, attachment);
+                                        }}>删除</a>] : undefined}>
+                                            <List.Item.Meta
+                                                avatar={<Avatar src={"https://oc.sjtu.edu.cn" + comment.avatar_path} />}
+                                                title={comment.author_name}
+                                                description={comment.comment}
+                                            />
+                                        </List.Item>
+                                    )}
+                                />
+                            </>}
+                            {attachmentToComment === attachment.id &&
+                                <>
+                                    <Divider>发表评论</Divider>
+                                    <TextArea ref={commentInputRef} placeholder="请输入评论" />
+                                    <Button onClick={() => handleCommentSubmission(attachment)}>确认</Button>
+                                </>}
+                        </Space>
+                    }
+                }}
             />
             <Button disabled={operating} onClick={handleDownloadSelectedAttachments}>下载</Button>
             <FileDownloadTable tasks={downloadTasks} handleRemoveTask={handleRemoveTask} />

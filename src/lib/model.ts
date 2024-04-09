@@ -155,6 +155,7 @@ export interface Submission {
     user_id: number;
     late: boolean;
     attachments: Attachment[];
+    submission_comments: SubmissionComment[];
     workflow_state: WorkflowState;
 }
 
@@ -171,6 +172,7 @@ export interface Attachment {
     id: number;
     key: number;
     late: boolean;
+    comments: SubmissionComment[];
     uuid: string;
     folder_id: number;
     display_name: string;
@@ -342,3 +344,11 @@ export interface Teacher {
     html_url: string;
 }
 
+export interface SubmissionComment {
+    id: number;
+    comment: string;
+    author_id: number;
+    author_name: string;
+    created_at: string;
+    avatar_path: string;
+}

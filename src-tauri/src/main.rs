@@ -42,7 +42,7 @@ struct App {
 impl App {
     fn ensure_directory(config_dir: &str) {
         let metadata = fs::metadata(config_dir);
-        if let Err(_) = metadata {
+        if metadata.is_err() {
             fs::create_dir(config_dir).unwrap();
         }
     }
@@ -145,6 +145,22 @@ impl App {
             .await
     }
 
+    async fn get_single_course_assignment_submission(
+        &self,
+        course_id: i32,
+        assignment_id: i32,
+        student_id: i64,
+    ) -> Result<Submission> {
+        self.client
+            .get_single_course_assignment_submission(
+                course_id,
+                assignment_id,
+                student_id,
+                &self.config.read().await.token,
+            )
+            .await
+    }
+
     async fn list_course_assignment_submissions(
         &self,
         course_id: i32,
@@ -163,8 +179,9 @@ impl App {
         &self,
         course_id: i32,
         assignment_id: i32,
-        student_id: i32,
+        student_id: i64,
         grade: &str,
+        comment: Option<&str>,
     ) -> Result<()> {
         self.client
             .update_grade(
@@ -172,6 +189,25 @@ impl App {
                 assignment_id,
                 student_id,
                 grade,
+                comment,
+                &self.config.read().await.token,
+            )
+            .await
+    }
+
+    async fn delete_submission_comment(
+        &self,
+        course_id: i32,
+        assignment_id: i32,
+        student_id: i64,
+        comment_id: i64,
+    ) -> Result<()> {
+        self.client
+            .delete_submission_comment(
+                course_id,
+                assignment_id,
+                student_id,
+                comment_id,
                 &self.config.read().await.token,
             )
             .await
@@ -263,6 +299,10 @@ impl App {
         self.client.get_me(token).await
     }
 
+    async fn get_me(&self) -> Result<User> {
+        self.client.get_me(&self.config.read().await.token).await
+    }
+
     async fn list_course_files(&self, course_id: i32) -> Result<Vec<File>> {
         self.client
             .list_course_files(course_id, &self.config.read().await.token)
@@ -310,10 +350,7 @@ impl App {
         let path = Path::new(&save_dir).join(file_name);
         // create file if path not exists, else open it in append mode
         let mut file = match fs::metadata(&path) {
-            Ok(_) => fs::OpenOptions::new()
-                .write(true)
-                .append(true)
-                .open(&path)?,
+            Ok(_) => fs::OpenOptions::new().append(true).open(&path)?,
             Err(_) => fs::File::create(&path)?,
         };
         file.write_all(content)?;
@@ -499,8 +536,8 @@ impl App {
             end tell
         end run"#,
             )
-            .arg(&pptx_path)
-            .arg(&pdf_path)
+            .arg(pptx_path)
+            .arg(pdf_path)
             .output()?;
 
         Ok(())
@@ -582,6 +619,16 @@ async fn list_course_assignment_submissions(
 }
 
 #[tauri::command]
+async fn get_single_course_assignment_submission(
+    course_id: i32,
+    assignment_id: i32,
+    student_id: i64,
+) -> Result<Submission> {
+    APP.get_single_course_assignment_submission(course_id, assignment_id, student_id)
+        .await
+}
+
+#[tauri::command]
 async fn list_ta_courses() -> Result<Vec<Course>> {
     APP.list_ta_courses().await
 }
@@ -627,6 +674,11 @@ async fn test_token(token: String) -> Result<User> {
 }
 
 #[tauri::command]
+async fn get_me() -> Result<User> {
+    APP.get_me().await
+}
+
+#[tauri::command]
 async fn get_config() -> AppConfig {
     APP.get_config().await
 }
@@ -667,7 +719,7 @@ async fn save_file_content(content: Vec<u8>, file_name: String) -> Result<()> {
 #[tauri::command]
 async fn convert_pptx_to_pdf(mut file: File) -> Result<Vec<u8>> {
     let content = APP.convert_pptx_to_pdf(&mut file).await?;
-    return Ok(content);
+    Ok(content)
 }
 
 #[tauri::command]
@@ -700,10 +752,28 @@ async fn save_config(config: AppConfig) -> Result<()> {
 async fn update_grade(
     course_id: i32,
     assignment_id: i32,
-    student_id: i32,
+    student_id: i64,
     grade: String,
+    comment: Option<String>,
 ) -> Result<()> {
-    APP.update_grade(course_id, assignment_id, student_id, &grade)
+    APP.update_grade(
+        course_id,
+        assignment_id,
+        student_id,
+        &grade,
+        comment.as_deref(),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn delete_submission_comment(
+    course_id: i32,
+    assignment_id: i32,
+    student_id: i64,
+    comment_id: i64,
+) -> Result<()> {
+    APP.delete_submission_comment(course_id, assignment_id, student_id, comment_id)
         .await
 }
 
@@ -851,11 +921,13 @@ async fn main() -> Result<()> {
             list_course_students,
             list_course_assignments,
             list_course_assignment_submissions,
+            get_single_course_assignment_submission,
             list_folder_files,
             list_folders,
             list_folder_folders,
             list_calendar_events,
             test_token,
+            get_me,
             get_folder_by_id,
             get_colors,
             get_config,
@@ -867,6 +939,7 @@ async fn main() -> Result<()> {
             check_path,
             export_users,
             update_grade,
+            delete_submission_comment,
             modify_assignment_ddl,
             modify_assignment_ddl_override,
             add_assignment_ddl_override,
@@ -895,6 +968,32 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod test {
     use crate::{error::Result, model::File, App};
+
+    #[tokio::test]
+    async fn test_assignment_comment() -> Result<()> {
+        tracing_subscriber::fmt::init();
+        let app = App::new();
+        let course_id = 64174;
+        let assignment_id = 269933;
+        let student_id = 479048_i64;
+        app.update_grade(course_id, assignment_id, student_id, "", Some("test"))
+            .await?;
+        let submissions = app
+            .list_course_assignment_submissions(64174, 269933)
+            .await?;
+        let target: Vec<_> = submissions
+            .iter()
+            .filter(|submission| submission.user_id == student_id)
+            .collect();
+        let target = target[0];
+        tracing::info!("get submission: {:?}", target);
+        for comment in &target.submission_comments {
+            tracing::info!("remove comment with id: {}", comment.id);
+            app.delete_submission_comment(course_id, assignment_id, student_id, comment.id)
+                .await?;
+        }
+        Ok(())
+    }
 
     #[tokio::test]
     async fn test_get_calendar_events() -> Result<()> {
