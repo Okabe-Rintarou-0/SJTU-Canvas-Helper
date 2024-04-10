@@ -3,7 +3,7 @@
 ![](./images/logo.png)
 
 SJTU Canvas 小帮手，帮助您更便捷地使用交大 Canvas。基于 [Tauri](https://tauri.app/) 开发。
-参与讨论：[水源社区](https://shuiyuan.sjtu.edu.cn/t/topic/245275/86)。
+参与讨论：[水源社区](https://shuiyuan.sjtu.edu.cn/t/topic/245275)。
 
 <div align="center">
   <img align="center" src="https://img.shields.io/badge/rust-1.75-blue" alt="">
