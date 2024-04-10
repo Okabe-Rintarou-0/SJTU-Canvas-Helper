@@ -20,6 +20,8 @@ SJTU Canvas 小帮手，帮助您更便捷地使用交大 Canvas。基于 [Tauri
 
 ![](./images/installation.png)
 
+您还可以使用免安装便携版：SJTU.Canvas.Helper_v_x.x.x_x64_portable.zip(Windows 用户)。
+
 在您安装完毕后，请前往设置页面填写您的 `Canvas Token` 以及您的文件下载保存目录。
 
 ![](./images/settings.png)
