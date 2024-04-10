@@ -293,10 +293,8 @@ export default function FilesPage() {
     }
 
     const handleUploadFile = async (file: File) => {
-        let folder = folders.find(folder => folder.id === file.folder_id);
-        let folderName = (folder?.full_name ?? "/").replace("course files", "");
         let course = courses.find(course => course.id === selectedCourseId)!;
-        const saveDir = course.name + folderName;
+        const saveDir = course.name + currentFolderFullName?.replace("course files", "");
         const savePath = saveDir + "/" + file.display_name;
         const infoKey = `uploading_${savePath}`;
         let retries = 0;
