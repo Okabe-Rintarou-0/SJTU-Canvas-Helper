@@ -577,3 +577,48 @@ pub struct SubmissionComment {
     #[serde(default)]
     pub avatar_path: String,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
+pub enum SubmissionUploadResult {
+    Success(SubmissionUploadSuccessResponse),
+    Error(SubmissionUploadErrorResponse),
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SubmissionUploadSuccessResponse {
+    #[serde(default)]
+    pub upload_url: String,
+    #[serde(default)]
+    pub upload_params: SubmissionUploadParams,
+    #[serde(default)]
+    pub file_param: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SubmissionUploadParams {
+    #[serde(rename = "x-amz-credential")]
+    pub x_amz_credential: String,
+    #[serde(rename = "x-amz-algorithm")]
+    pub x_amz_algorithm: String,
+    #[serde(rename = "x-amz-date")]
+    pub x_amz_date: String,
+    #[serde(rename = "Filename")]
+    pub filename: String,
+    pub key: String,
+    pub acl: String,
+    #[serde(rename = "Policy")]
+    pub policy: String,
+    #[serde(rename = "x-amz-signature")]
+    pub x_amz_signature: String,
+    pub success_action_redirect: String,
+    #[serde(rename = "content-type")]
+    pub content_type: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SubmissionUploadErrorResponse {
+    pub status: String,
+    pub message: String,
+}

@@ -23,6 +23,8 @@ pub enum ClientError {
     #[error("Functon unsupported")]
     #[allow(dead_code)]
     FunctionUnsupported,
+    #[error("Submission upload error: {0}")]
+    SubmissionUpload(String),
 }
 
 impl serde::Serialize for ClientError {

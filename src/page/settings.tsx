@@ -5,9 +5,9 @@ import { AppConfig, User } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import useMessage from "antd/es/message/useMessage";
 import { getConfig, saveConfig } from "../lib/store";
-
 const { Password } = Input;
 import type { InputRef, TourProps } from 'antd';
+import { PathSelector } from "../components/path_selector";
 
 export default function SettingsPage() {
     const [form] = Form.useForm<AppConfig>();
@@ -100,7 +100,7 @@ export default function SettingsPage() {
                     <Password ref={tokenRef} placeholder="请输入 Canvas Token" />
                 </Form.Item>
                 <Form.Item name="save_path" label="下载保存目录" required rules={[{ validator: savePathValidator }]}>
-                    <Input ref={savePathRef} placeholder="请输入文件下载保存目录" />
+                    <PathSelector />
                 </Form.Item>
                 <Form.Item name="proxy_port" label="反向代理本地端口" rules={[{ validator: proxyPortValidator }]}>
                     <InputNumber placeholder="请输入反向代理本地端口" />

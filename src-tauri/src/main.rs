@@ -199,7 +199,7 @@ impl App {
         &self,
         course_id: i32,
         assignment_id: i32,
-        student_id: i64,
+        student_id: &str,
         comment_id: i64,
     ) -> Result<()> {
         self.client
@@ -327,6 +327,16 @@ impl App {
             .await
     }
 
+    async fn get_my_single_submission(
+        &self,
+        course_id: i32,
+        assignment_id: i32,
+    ) -> Result<Submission> {
+        self.client
+            .get_my_single_submission(course_id, assignment_id, &self.config.read().await.token)
+            .await
+    }
+
     async fn list_folder_files(&self, folder_id: i32) -> Result<Vec<File>> {
         self.client
             .list_folder_files(folder_id, &self.config.read().await.token)
@@ -426,6 +436,35 @@ impl App {
             }
         }
         false
+    }
+
+    pub async fn submit_assignment(
+        &self,
+        course_id: i32,
+        assignment_id: i32,
+        file_paths: &[String],
+        comment: Option<&str>,
+    ) -> Result<()> {
+        let token = self.config.read().await.token.clone();
+        self.client
+            .submit_assignment(course_id, assignment_id, file_paths, comment, &token)
+            .await?;
+        Ok(())
+    }
+
+    async fn upload_submission_file(
+        &self,
+        course_id: i32,
+        assignment_id: i32,
+        file_path: &str,
+        file_name: &str,
+    ) -> Result<File> {
+        let token = self.config.read().await.token.clone();
+        let file = self
+            .client
+            .upload_submission_file(course_id, assignment_id, file_path, file_name, &token)
+            .await?;
+        Ok(file)
     }
 
     async fn export_users(&self, users: &[User], save_name: &str) -> Result<()> {
@@ -749,6 +788,33 @@ async fn save_config(config: AppConfig) -> Result<()> {
 }
 
 #[tauri::command]
+async fn upload_submission_file(
+    course_id: i32,
+    assignment_id: i32,
+    file_path: String,
+    file_name: String,
+) -> Result<File> {
+    APP.upload_submission_file(course_id, assignment_id, &file_path, &file_name)
+        .await
+}
+
+#[tauri::command]
+async fn submit_assignment(
+    course_id: i32,
+    assignment_id: i32,
+    file_paths: Vec<String>,
+    comment: Option<String>,
+) -> Result<()> {
+    APP.submit_assignment(course_id, assignment_id, &file_paths, comment.as_deref())
+        .await
+}
+
+#[tauri::command]
+async fn get_my_single_submission(course_id: i32, assignment_id: i32) -> Result<Submission> {
+    APP.get_my_single_submission(course_id, assignment_id).await
+}
+
+#[tauri::command]
 async fn update_grade(
     course_id: i32,
     assignment_id: i32,
@@ -773,7 +839,22 @@ async fn delete_submission_comment(
     student_id: i64,
     comment_id: i64,
 ) -> Result<()> {
-    APP.delete_submission_comment(course_id, assignment_id, student_id, comment_id)
+    APP.delete_submission_comment(
+        course_id,
+        assignment_id,
+        &student_id.to_string(),
+        comment_id,
+    )
+    .await
+}
+
+#[tauri::command]
+async fn delete_my_submission_comment(
+    course_id: i32,
+    assignment_id: i32,
+    comment_id: i64,
+) -> Result<()> {
+    APP.delete_submission_comment(course_id, assignment_id, "self", comment_id)
         .await
 }
 
@@ -927,6 +1008,8 @@ async fn main() -> Result<()> {
             list_folder_folders,
             list_calendar_events,
             test_token,
+            upload_submission_file,
+            submit_assignment,
             get_me,
             get_folder_by_id,
             get_colors,
@@ -940,10 +1023,12 @@ async fn main() -> Result<()> {
             export_users,
             update_grade,
             delete_submission_comment,
+            delete_my_submission_comment,
             modify_assignment_ddl,
             modify_assignment_ddl_override,
             add_assignment_ddl_override,
             delete_assignment_ddl_override,
+            get_my_single_submission,
             // Utils
             convert_pptx_to_pdf,
             // Apis for course video
@@ -970,6 +1055,28 @@ mod test {
     use crate::{error::Result, model::File, App};
 
     #[tokio::test]
+    async fn test_upload_submission() -> Result<()> {
+        tracing_subscriber::fmt::init();
+        let app = App::new();
+        let course_id = 66425;
+        let assignment_id = 266657;
+        let file_path = "./src/tmp.pdf";
+        // let file_name = "main.pdf";
+        // let file = app
+        //     .upload_submission_file(course_id, assignment_id, file_path, file_name)
+        //     .await?;
+        // tracing::info!("Upload succeeded! {:?}", file);
+        app.submit_assignment(
+            course_id,
+            assignment_id,
+            &[file_path.to_owned(), file_path.to_owned()],
+            None,
+        )
+        .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_assignment_comment() -> Result<()> {
         tracing_subscriber::fmt::init();
         let app = App::new();
@@ -989,8 +1096,13 @@ mod test {
         tracing::info!("get submission: {:?}", target);
         for comment in &target.submission_comments {
             tracing::info!("remove comment with id: {}", comment.id);
-            app.delete_submission_comment(course_id, assignment_id, student_id, comment.id)
-                .await?;
+            app.delete_submission_comment(
+                course_id,
+                assignment_id,
+                &student_id.to_string(),
+                comment.id,
+            )
+            .await?;
         }
         Ok(())
     }

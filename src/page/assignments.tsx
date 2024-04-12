@@ -1,14 +1,15 @@
-import { Button, Checkbox, CheckboxProps, Divider, Space, Table, Tag } from "antd";
+import { Avatar, Button, Checkbox, CheckboxProps, Divider, List, Space, Table, Tag } from "antd";
 import BasicLayout from "../components/layout";
 import useMessage from "antd/es/message/useMessage";
 import { useEffect, useState } from "react";
-import { Assignment, AssignmentDate, Attachment, Course, Submission } from "../lib/model";
+import { Assignment, AssignmentDate, Attachment, Course, Submission, User } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import { attachmentToFile, formatDate } from "../lib/utils";
 import CourseSelect from "../components/course_select";
 import { usePreview } from "../lib/hooks";
 import dayjs from "dayjs";
 import ModifyDDLModal from "../components/modify_ddl_modal";
+import { SubmitModal } from "../components/submit_modal";
 
 export default function AssignmentsPage() {
     const [messageApi, contextHolder] = useMessage();
@@ -17,12 +18,25 @@ export default function AssignmentsPage() {
     const [courses, setCourses] = useState<Course[]>([]);
     const [assignments, setAssignments] = useState<Assignment[]>([]);
     const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
+    const [me, setMe] = useState<User | undefined>(undefined);
     const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry } = usePreview();
     const [linksMap, setLinksMap] = useState<Record<number, Attachment[]>>({});
     const [showModifyDDLModal, setShowModifyDDLModal] = useState<boolean>(false);
     const [assignmentToModify, setAssignmentToModify] = useState<Assignment | undefined>(undefined);
+    const [showModal, setShowModal] = useState<boolean>(false);
+    const [selectedAssignment, setSelectedAssignment] = useState<Assignment | undefined>(undefined);
+
+    const initMe = async () => {
+        try {
+            const me = await invoke("get_me") as User;
+            setMe(me);
+        } catch (e) {
+            console.log(e);
+        }
+    }
 
     useEffect(() => {
+        initMe();
         initCourses();
     }, []);
 
@@ -130,6 +144,27 @@ export default function AssignmentsPage() {
                     setAssignmentToModify(assignment);
                 }}>修改日期</Button>,
             })
+        } else {
+            columns.push({
+                title: "操作",
+                key: 'action',
+                dataIndex: 'action',
+                render: (_: any, assignment: Assignment) => {
+                    const now = dayjs();
+                    const lockAt = dayjs(assignment.lock_at);
+                    const dueAt = dayjs(assignment.due_at);
+                    if (!assignment.submission ||
+                        assignment.submission_types.includes("none") || assignment.submission_types.includes("not_graded") ||
+                        now.isAfter(lockAt) || now.isAfter(dueAt)) {
+                        return <p />;
+                    }
+                    return <a onClick={(e) => {
+                        e.preventDefault();
+                        setSelectedAssignment(assignment);
+                        setShowModal(true);
+                    }}>提交</a>
+                }
+            });
         }
         return columns;
     }
@@ -249,6 +284,33 @@ export default function AssignmentsPage() {
         assignment.description = document.body.innerHTML;
     }
 
+    const handleGetMySingleSubmission = async (courseId: number, assignmentId: number) => {
+        try {
+            let submission = await invoke("get_my_single_submission", { courseId, assignmentId }) as Submission;
+            let assignment = assignments.find(assignment => assignment.id === assignmentId)!;
+            assignment.submission = submission;
+            setAssignments([...assignments]);
+        } catch (e) {
+            console.log(e);
+            messageApi.error(`加载出错🥹：${e}`);
+        }
+    }
+
+    const handleDeleteComment = async (commentId: number, assignmentId: number) => {
+        try {
+            await invoke("delete_my_submission_comment", {
+                courseId: selectedCourseId,
+                assignmentId,
+                commentId
+            });
+            messageApi.success("删除成功！🎉", 0.5);
+            handleGetMySingleSubmission(selectedCourseId, assignmentId);
+        } catch (e) {
+            console.log(e as string);
+            messageApi.error(e as string);
+        }
+    }
+
     return <BasicLayout>
         {contextHolder}
         {previewer}
@@ -260,6 +322,13 @@ export default function AssignmentsPage() {
                 handleGetAssignments(selectedCourseId, onlyShowUnfinished);
             }}
             courseId={selectedCourseId} />}
+        {selectedAssignment && <SubmitModal open={showModal} allowed_extensions={selectedAssignment.allowed_extensions}
+            courseId={selectedCourseId} assignmentId={selectedAssignment.id} onCancel={() => setShowModal(false)} onSubmit={() => {
+                setShowModal(false);
+                setSelectedAssignment(undefined);
+                messageApi.success("提交成功🎉！");
+                handleGetMySingleSubmission(selectedCourseId, selectedAssignment.id);
+            }} />}
         <Space direction="vertical" style={{ width: "100%", overflow: "scroll" }} size={"large"}>
             <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} />
             {!isTA(selectedCourseId) && <Checkbox disabled={operating} onChange={handleSetOnlyShowUnfinished} defaultChecked>只显示未完成</Checkbox>}
@@ -269,6 +338,11 @@ export default function AssignmentsPage() {
                 dataSource={assignments}
                 pagination={false}
                 expandable={{
+                    onExpand: (expanded, assignment) => {
+                        if (expanded) {
+                            handleGetMySingleSubmission(selectedCourseId, assignment.id);
+                        }
+                    },
                     expandedRowRender: (assignment) => {
                         let attachments = undefined;
                         let submission = assignment.submission;
@@ -284,6 +358,23 @@ export default function AssignmentsPage() {
                             <div dangerouslySetInnerHTML={{ __html: assignment.description }} />
                             <Divider orientation="left">作业附件</Divider>
                             <Table columns={attachmentColumns} dataSource={linksMap[assignment.id]} pagination={false} />
+                            <Divider orientation="left">历史评论</Divider>
+                            <List
+                                itemLayout="horizontal"
+                                dataSource={assignment.submission?.submission_comments}
+                                renderItem={(comment) => (
+                                    <List.Item actions={comment.author_id === me?.id ? [<a onClick={(e) => {
+                                        e.preventDefault();
+                                        handleDeleteComment(comment.id, assignment.id);
+                                    }}>删除</a>] : undefined}>
+                                        <List.Item.Meta
+                                            avatar={<Avatar src={"https://oc.sjtu.edu.cn" + comment.avatar_path} />}
+                                            title={comment.author_name}
+                                            description={comment.comment}
+                                        />
+                                    </List.Item>
+                                )}
+                            />
                             <Divider orientation="left">我的提交</Divider>
                             <Table columns={submittedAttachmentColumns} dataSource={attachments} pagination={false} />
                         </Space>

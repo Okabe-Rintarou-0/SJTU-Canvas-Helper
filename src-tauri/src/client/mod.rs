@@ -7,7 +7,7 @@ use reqwest::{
         HeaderValue, ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, CONTENT_RANGE, CONTENT_TYPE, RANGE,
         REFERER,
     },
-    Body, Response, StatusCode,
+    multipart, Body, Response, StatusCode,
 };
 use select::{document::Document, node::Node, predicate::Name};
 use serde::{de::DeserializeOwned, Serialize};
@@ -18,6 +18,7 @@ use std::{
     fs,
     io::Write,
     ops::Deref,
+    os::unix::fs::MetadataExt,
     path::Path,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -29,8 +30,8 @@ use crate::{
     model::{
         Assignment, CalendarEvent, Colors, ConfirmChunkUploadResult, Course, File, Folder,
         ItemPage, JBoxErrorMessage, JBoxLoginInfo, JboxLoginResult, PersonalSpaceInfo,
-        ProgressPayload, StartChunkUploadContext, Subject, Submission, User, VideoCourse,
-        VideoInfo, VideoPlayInfo,
+        ProgressPayload, StartChunkUploadContext, Subject, Submission, SubmissionUploadResult,
+        SubmissionUploadSuccessResponse, User, VideoCourse, VideoInfo, VideoPlayInfo,
     },
 };
 const BASE_URL: &str = "https://oc.sjtu.edu.cn";
@@ -149,7 +150,7 @@ impl Client {
         &self,
         course_id: i32,
         assignment_id: i32,
-        student_id: i64,
+        student_id: &str,
         comment_id: i64,
         token: &str,
     ) -> Result<()> {
@@ -507,12 +508,146 @@ impl Client {
         Ok(me)
     }
 
+    async fn upload_submission_file_with(
+        &self,
+        params: &SubmissionUploadSuccessResponse,
+        file_path: &str,
+    ) -> Result<File> {
+        let upload_params = &params.upload_params;
+        let file_fs = fs::read(file_path)?;
+        let file = multipart::Part::bytes(file_fs).file_name("filename.filetype");
+        let form = reqwest::multipart::Form::new()
+            .text("x-amz-credential", upload_params.x_amz_credential.clone())
+            .text("x-amz-algorithm", upload_params.x_amz_algorithm.clone())
+            .text("x-amz-date", upload_params.x_amz_date.clone())
+            .text("x-amz-signature", upload_params.x_amz_signature.clone())
+            .text("Filename", upload_params.filename.clone())
+            .text("key", upload_params.key.clone())
+            .text("acl", upload_params.acl.clone())
+            .text("Policy", upload_params.policy.clone())
+            .text(
+                "success_action_redirect",
+                upload_params.success_action_redirect.clone(),
+            )
+            .text("content-type", upload_params.content_type.clone())
+            .part("file", file);
+
+        let resp = self
+            .cli
+            .post(&params.upload_url)
+            .multipart(form)
+            .send()
+            .await?
+            .error_for_status()?;
+
+        let bytes = resp.bytes().await?;
+        let file = serde_json::from_slice(&bytes)?;
+        Ok(file)
+    }
+
+    async fn prepare_upload_submission_file(
+        &self,
+        course_id: i32,
+        assignment_id: i32,
+        file_path: &str,
+        file_name: &str,
+        token: &str,
+    ) -> Result<SubmissionUploadSuccessResponse> {
+        let url = format!(
+            "{}/api/v1/courses/{}/assignments/{}/submissions/self/files",
+            BASE_URL, course_id, assignment_id,
+        );
+        let metadata = fs::metadata(file_path)?;
+        if !metadata.is_file() {
+            let error_message = format!("{} is not a valid file!", file_path);
+            return Err(ClientError::SubmissionUpload(error_message));
+        }
+
+        let form = [("name", file_name), ("size", &metadata.size().to_string())];
+        let resp = self
+            .post_form_with_token(&url, None::<&str>, &form, token)
+            .await?;
+        let bytes = resp.bytes().await?;
+        let result = match serde_json::from_slice::<SubmissionUploadResult>(&bytes)? {
+            SubmissionUploadResult::Success(success_response) => success_response,
+            SubmissionUploadResult::Error(error_response) => {
+                return Err(ClientError::SubmissionUpload(error_response.message))
+            }
+        };
+        Ok(result)
+    }
+
+    pub async fn submit_assignment(
+        &self,
+        course_id: i32,
+        assignment_id: i32,
+        file_paths: &[String],
+        comment: Option<&str>,
+        token: &str,
+    ) -> Result<()> {
+        let mut file_ids = vec![];
+        for file_path in file_paths {
+            let file_name = file_path.split('/').last().unwrap();
+            let file = self
+                .upload_submission_file(course_id, assignment_id, file_path, file_name, token)
+                .await?;
+            file_ids.push(file.id);
+        }
+
+        let url = format!(
+            "{}/api/v1/courses/{}/assignments/{}/submissions",
+            BASE_URL, course_id, assignment_id,
+        );
+        let mut form = vec![("submission[submission_type]", "online_upload".to_owned())];
+        for file_id in file_ids {
+            form.push(("submission[file_ids][]", file_id.to_string()));
+        }
+        if let Some(comment) = comment {
+            form.push(("comment[text_comment]", comment.to_owned()));
+        }
+        self.post_form_with_token(&url, None::<&str>, &form, token)
+            .await?;
+        Ok(())
+    }
+
+    // Reference: https://canvas.instructure.com/doc/api/file.file_uploads.html
+    pub async fn upload_submission_file(
+        &self,
+        course_id: i32,
+        assignment_id: i32,
+        file_path: &str,
+        file_name: &str,
+        token: &str,
+    ) -> Result<File> {
+        // Step 1: Telling Canvas about the file upload and getting a token
+        let params = self
+            .prepare_upload_submission_file(course_id, assignment_id, file_path, file_name, token)
+            .await?;
+        // Step 2: Upload the file data to the URL given in the previous response
+        let file = self.upload_submission_file_with(&params, file_path).await?;
+        Ok(file)
+    }
+
     pub async fn list_ta_courses(&self, token: &str) -> Result<Vec<Course>> {
         let url = format!(
             "{}/api/v1/courses?include[]=teachers&include[]=term&enrollment_type=ta",
             BASE_URL
         );
         self.list_items(&url, token).await
+    }
+
+    pub async fn get_my_single_submission(
+        &self,
+        course_id: i32,
+        assignment_id: i32,
+        token: &str,
+    ) -> Result<Submission> {
+        let url = format!(
+            "{}/api/v1/courses/{}/assignments/{}/submissions/self?include[]=submission_comments",
+            BASE_URL, course_id, assignment_id,
+        );
+        let submission = self.get_json_with_token(&url, None::<&str>, token).await?;
+        Ok(submission)
     }
 
     pub async fn list_course_assignments(

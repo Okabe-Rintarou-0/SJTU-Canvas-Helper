@@ -110,7 +110,7 @@ export interface Assignment {
     name: string;
     html_url: string;
     submission_types: string[];
-    allowed_extensions?: string[];
+    allowed_extensions: string[];
     published: boolean;
     has_submitted_submissions: boolean;
     submission?: Submission;
