@@ -18,7 +18,6 @@ use std::{
     fs,
     io::Write,
     ops::Deref,
-    os::unix::fs::MetadataExt,
     path::Path,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -563,7 +562,7 @@ impl Client {
             return Err(ClientError::SubmissionUpload(error_message));
         }
 
-        let form = [("name", file_name), ("size", &metadata.size().to_string())];
+        let form = [("name", file_name), ("size", &metadata.len().to_string())];
         let resp = self
             .post_form_with_token(&url, None::<&str>, &form, token)
             .await?;
