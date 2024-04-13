@@ -110,7 +110,7 @@ export default function FilesPage() {
                             {getFileIcon(file)}
                             <a
                                 target="_blank"
-                                href={`https://oc.sjtu.edu.cn/courses/65860/files?preview=${file.id}`}
+                                href={`https://oc.sjtu.edu.cn/courses/${selectedCourseId}/files?preview=${file.id}`}
                                 onMouseEnter={() => onHoverEntry(entry)}
                                 onMouseLeave={onLeaveEntry}
                             >
