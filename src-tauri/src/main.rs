@@ -380,6 +380,18 @@ impl App {
             .await?;
         Ok(())
     }
+    async fn open_file_with_name(&self, name: &str) -> Result<()> {
+        let save_path = &self.config.read().await.save_path;
+        let path = Path::new(save_path).join(name);
+
+        #[cfg(target_family = "unix")]
+        let _ = std::process::Command::new("open").arg(path).output()?;
+
+        #[cfg(target_family = "windows")]
+        let _ = std::process::Command::new("cmd").arg("/c").arg(format!("start {}", path.to_str().unwrap())).output()?;
+
+        Ok(())
+    }
 
     async fn delete_file(&self, file: &File) -> Result<()> {
         let save_path = &self.config.read().await.save_path;
@@ -387,7 +399,6 @@ impl App {
         fs::remove_file(path)?;
         Ok(())
     }
-
     async fn delete_file_with_name(&self, name: &str) -> Result<()> {
         let save_path = &self.config.read().await.save_path;
         let path = Path::new(save_path).join(name);
@@ -586,7 +597,7 @@ impl App {
     fn convert_pptx_to_pdf_inner(&self, pptx_path: &PathBuf, pdf_path: &PathBuf) -> Result<()> {
         process::Command::new("powershell.exe")
             .arg("-Command")
-            .arg(format!(r#"$ppt_app = New-Object -ComObject PowerPoint.Application; $document = $ppt_app.Presentations.Open("{}"); $pdf_filename = "{}"; $opt= [Microsoft.Office.Interop.PowerPoint.PpSaveAsFileType]::ppSaveAsPDF; $document.SaveAs($pdf_filename, $opt); $document.Close(); $ppt_app.Quit();"#, 
+            .arg(format!(r#"$ppt_app = New-Object -ComObject PowerPoint.Application; $document = $ppt_app.Presentations.Open("{}"); $pdf_filename = "{}"; $opt= [Microsoft.Office.Interop.PowerPoint.PpSaveAsFileType]::ppSaveAsPDF; $document.SaveAs($pdf_filename, $opt); $document.Close(); $ppt_app.Quit();"#,
         pptx_path.to_str().unwrap(), pdf_path.to_str().unwrap()))
             .output()?;
         Ok(())
@@ -733,10 +744,13 @@ async fn export_users(users: Vec<User>, save_name: String) -> Result<()> {
 }
 
 #[tauri::command]
+async fn open_file_with_name(name: String) -> Result<()> {
+    APP.open_file_with_name(&name).await
+}
+#[tauri::command]
 async fn delete_file(file: File) -> Result<()> {
     APP.delete_file(&file).await
 }
-
 #[tauri::command]
 async fn delete_file_with_name(name: String) -> Result<()> {
     APP.delete_file_with_name(&name).await
@@ -1016,6 +1030,7 @@ async fn main() -> Result<()> {
             get_config,
             save_config,
             save_file_content,
+            open_file_with_name,
             delete_file,
             delete_file_with_name,
             download_file,

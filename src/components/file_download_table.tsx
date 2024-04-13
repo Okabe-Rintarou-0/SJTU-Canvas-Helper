@@ -8,9 +8,11 @@ import { sleep } from "../lib/utils";
 export default function FileDownloadTable({
     tasks,
     handleRemoveTask,
+    handleOpenTaskFile
 }: {
     tasks: FileDownloadTask[],
     handleRemoveTask?: (task: FileDownloadTask) => void,
+    handleOpenTaskFile?: (task: FileDownloadTask) => void,
 }) {
     const [currentTasks, setCurrentTasks] = useState<FileDownloadTask[]>([]);
     const taskSet = new Set<string>(currentTasks.map(task => task.key));
@@ -108,6 +110,10 @@ export default function FileDownloadTable({
             key: 'operation',
             render: (_: any, task: FileDownloadTask) => (
                 <Space size="middle">
+                    <a onClick={e => {
+                        e.preventDefault();
+                        handleOpenTaskFile?.(task);
+                    }}>打开</a>
                     <a onClick={e => {
                         e.preventDefault();
                         handleRemoveTask?.(task);

@@ -266,6 +266,14 @@ export default function FilesPage() {
         setParentFolderId(parentFolder?.parent_folder_id);
     }
 
+    const handleOpenTaskFile = async (task: FileDownloadTask) => {
+        try {
+            await invoke("open_file_with_name", {name: task.file.display_name});
+        } catch (e) {
+            messageApi.error(e as string);
+        }
+    }
+
     const handleRemoveTask = async (taskToRemove: FileDownloadTask) => {
         setDownloadTasks(tasks => tasks.filter(task => task.file.uuid !== taskToRemove.file.uuid));
         try {
@@ -423,7 +431,11 @@ export default function FilesPage() {
             <Divider orientation="left">PDF/PPTX (混合)合并</Divider>
             {merger}
             <Divider orientation="left">文件下载</Divider>
-            <FileDownloadTable tasks={downloadTasks} handleRemoveTask={handleRemoveTask} />
+            <FileDownloadTable
+                tasks={downloadTasks}
+                handleRemoveTask={handleRemoveTask}
+                handleOpenTaskFile={handleOpenTaskFile}
+            />
         </Space>
     </BasicLayout>
 }
