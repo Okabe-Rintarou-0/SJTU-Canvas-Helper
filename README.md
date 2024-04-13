@@ -64,7 +64,7 @@ sudo xattr -r -d com.apple.quarantine /Applications/SJTU\ Canvas\ Helper.app SJT
 + [x] 一键上传[交大云盘（新）](https://pan.sjtu.edu.cn/)
 + [x] DDL 日历 
 + [x] 人员名单导出
-+ [x] 查看/上传作业
++ [x] 查看/提交作业
 + [x] 批改作业/修改作业 DDL
 + [x] 视频下载/播放
 + [x] 自动更新 
