@@ -45,6 +45,9 @@ export default function SettingsPage() {
 
     const initConfig = async () => {
         let config = await getConfig();
+        if (config.proxy_port === 0) {
+            config.proxy_port = 3030;
+        }
         form.setFieldsValue(config);
         if (config.token.length === 0) {
             setOpenTour(true);
