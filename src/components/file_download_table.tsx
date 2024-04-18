@@ -4,6 +4,7 @@ import { appWindow } from "@tauri-apps/api/window";
 import React, { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api";
 import { sleep } from "../lib/utils";
+import useMessage from "antd/es/message/useMessage";
 
 export default function FileDownloadTable({
     tasks,
@@ -16,6 +17,7 @@ export default function FileDownloadTable({
 }) {
     const [currentTasks, setCurrentTasks] = useState<FileDownloadTask[]>([]);
     const taskSet = new Set<string>(currentTasks.map(task => task.key));
+    const [messageApi, contextHolder] = useMessage();
 
     useEffect(() => {
         let unlisten = appWindow.listen<ProgressPayload>("download://progress", ({ payload }) => {
@@ -126,12 +128,25 @@ export default function FileDownloadTable({
             ),
         }
     ];
-    return <>
+
+    const handleOpenSaveDir = async () => {
+        try {
+            await invoke("open_save_dir");
+        } catch (e) {
+            messageApi.error(`打开目录失败🥹：${e}`);
+        }
+    }
+
+    return <Space direction="vertical" style={{ width: "100%" }}>
+        {contextHolder}
         <Table style={{ width: "100%" }} columns={columns} dataSource={currentTasks} pagination={false}
             rowSelection={{
                 onChange: handleSelect,
                 selectedRowKeys: selectedTasks.map(task => task.key),
             }} />
-        <Button onClick={handleRemoveTasks}>删除</Button>
-    </>
+        <Space style={{ width: "100%", marginBottom: 30 }}>
+            <Button onClick={handleOpenSaveDir}>打开保存目录</Button>
+            <Button onClick={handleRemoveTasks} type="primary" disabled={selectedTasks.length === 0}>删除</Button>
+        </Space>
+    </Space>
 }

@@ -436,7 +436,7 @@ export default function SubmissionsPage() {
                     }
                 }}
             />
-            <Button disabled={operating} onClick={handleDownloadSelectedAttachments}>下载</Button>
+            <Button disabled={operating || selectedAttachments.length === 0} onClick={handleDownloadSelectedAttachments}>下载</Button>
             <FileDownloadTable tasks={downloadTasks} handleRemoveTask={handleRemoveTask} />
         </Space>
     </BasicLayout>

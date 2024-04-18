@@ -268,7 +268,7 @@ export default function FilesPage() {
 
     const handleOpenTaskFile = async (task: FileDownloadTask) => {
         try {
-            await invoke("open_file_with_name", {name: task.file.display_name});
+            await invoke("open_file_with_name", { name: task.file.display_name });
         } catch (e) {
             messageApi.error(e as string);
         }
@@ -425,7 +425,7 @@ export default function FilesPage() {
                 }}
             />
             <Space>
-                <Button disabled={operating} onClick={handleDownloadSelectedFiles}>下载</Button>
+                <Button disabled={operating || selectedEntries.length === 0} onClick={handleDownloadSelectedFiles}>下载</Button>
                 <Button disabled={operating || noSelectedPDFs} onClick={handleMergePDFs}>合并 PDF/PPTX</Button>
             </Space>
             <Divider orientation="left">PDF/PPTX (混合)合并</Divider>

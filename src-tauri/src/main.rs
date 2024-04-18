@@ -384,11 +384,29 @@ impl App {
         let save_path = &self.config.read().await.save_path;
         let path = Path::new(save_path).join(name);
 
-        #[cfg(target_family = "unix")]
+        #[cfg(target_os = "macos")]
         let _ = std::process::Command::new("open").arg(path).output()?;
 
-        #[cfg(target_family = "windows")]
-        let _ = std::process::Command::new("cmd").arg("/c").arg(format!("start {}", path.to_str().unwrap())).output()?;
+        #[cfg(target_os = "windows")]
+        let _ = std::process::Command::new("cmd")
+            .arg("/c")
+            .arg(format!("start {}", path.to_str().unwrap()))
+            .output()?;
+
+        Ok(())
+    }
+
+    async fn open_save_dir(&self) -> Result<()> {
+        let save_path = &self.config.read().await.save_path;
+
+        #[cfg(target_os = "macos")]
+        let _ = std::process::Command::new("open").arg(save_path).output()?;
+
+        #[cfg(target_os = "windows")]
+        let _ = std::process::Command::new("cmd")
+            .arg("/c")
+            .arg(format!("start {}", save_path))
+            .output()?;
 
         Ok(())
     }
@@ -747,10 +765,17 @@ async fn export_users(users: Vec<User>, save_name: String) -> Result<()> {
 async fn open_file_with_name(name: String) -> Result<()> {
     APP.open_file_with_name(&name).await
 }
+
+#[tauri::command]
+async fn open_save_dir() -> Result<()> {
+    APP.open_save_dir().await
+}
+
 #[tauri::command]
 async fn delete_file(file: File) -> Result<()> {
     APP.delete_file(&file).await
 }
+
 #[tauri::command]
 async fn delete_file_with_name(name: String) -> Result<()> {
     APP.delete_file_with_name(&name).await
@@ -1031,6 +1056,7 @@ async fn main() -> Result<()> {
             save_config,
             save_file_content,
             open_file_with_name,
+            open_save_dir,
             delete_file,
             delete_file_with_name,
             download_file,
