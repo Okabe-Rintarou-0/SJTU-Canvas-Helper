@@ -705,19 +705,20 @@ impl Client {
 
     pub async fn get_uuid(&self) -> Result<Option<String>> {
         let resp = self.cli.get(MY_SJTU_URL).send().await?.error_for_status()?;
-
         let body = resp.text().await?;
-        let document = Document::from(body.as_str());
+        // let document = Document::from(body.as_str());
+        let re = Regex::new(
+            r#"uuid=([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"#,
+        )
+        .unwrap();
 
-        let Some(input) = document.find(Name("input")).find(|n: &Node| {
-            n.attr("type").unwrap_or_default() == "hidden"
-                && n.attr("name").unwrap_or_default() == "uuid"
-        }) else {
-            return Ok(None);
-        };
+        if let Some(captures) = re.captures(&body) {
+            if let Some(uuid) = captures.get(1) {
+                return Ok(Some(uuid.as_str().to_owned()));
+            }
+        }
 
-        let uuid = input.attr("value").unwrap_or_default();
-        Ok(Some(uuid.to_owned()))
+        Ok(None)
     }
 
     pub async fn express_login(&self, uuid: &str) -> Result<Option<String>> {
