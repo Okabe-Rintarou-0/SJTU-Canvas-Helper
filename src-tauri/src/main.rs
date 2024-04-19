@@ -388,6 +388,9 @@ impl App {
         #[cfg(target_os = "macos")]
         let _ = std::process::Command::new("open").arg(path).output()?;
 
+        #[cfg(target_os = "linux")]
+        let _ = std::process::Command::new("xdg-open").arg(path).output()?;
+
         #[cfg(target_os = "windows")]
         let _ = std::process::Command::new("cmd")
             .arg("/c")
@@ -400,6 +403,9 @@ impl App {
     fn open_dir(&self, dir: &str) -> Result<()> {
         #[cfg(target_os = "macos")]
         let _ = std::process::Command::new("open").arg(dir).output()?;
+
+        #[cfg(target_os = "linux")]
+        let _ = std::process::Command::new("xdg-open").arg(dir).output()?;
 
         #[cfg(target_os = "windows")]
         let _ = std::process::Command::new("cmd")
