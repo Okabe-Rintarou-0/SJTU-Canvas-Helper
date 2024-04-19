@@ -380,6 +380,7 @@ impl App {
             .await?;
         Ok(())
     }
+
     async fn open_file_with_name(&self, name: &str) -> Result<()> {
         let save_path = &self.config.read().await.save_path;
         let path = Path::new(save_path).join(name);
@@ -396,19 +397,31 @@ impl App {
         Ok(())
     }
 
-    async fn open_save_dir(&self) -> Result<()> {
-        let save_path = &self.config.read().await.save_path;
-
+    fn open_dir(&self, dir: &str) -> Result<()> {
         #[cfg(target_os = "macos")]
-        let _ = std::process::Command::new("open").arg(save_path).output()?;
+        let _ = std::process::Command::new("open").arg(dir).output()?;
 
         #[cfg(target_os = "windows")]
         let _ = std::process::Command::new("cmd")
             .arg("/c")
-            .arg(format!("start {}", save_path))
+            .arg(format!("start {}", dir))
             .output()?;
 
         Ok(())
+    }
+
+    async fn open_save_dir(&self) -> Result<()> {
+        let save_path = &self.config.read().await.save_path;
+        self.open_dir(save_path)
+    }
+
+    fn open_config_dir(&self) -> Result<()> {
+        let config_path = format!(
+            "{}/{}",
+            config_dir().unwrap().to_str().unwrap(),
+            "SJTU-Canvas-Helper"
+        );
+        self.open_dir(&config_path)
     }
 
     async fn delete_file(&self, file: &File) -> Result<()> {
@@ -772,6 +785,11 @@ async fn open_save_dir() -> Result<()> {
 }
 
 #[tauri::command]
+fn open_config_dir() -> Result<()> {
+    APP.open_config_dir()
+}
+
+#[tauri::command]
 async fn delete_file(file: File) -> Result<()> {
     APP.delete_file(&file).await
 }
@@ -1057,6 +1075,7 @@ async fn main() -> Result<()> {
             save_file_content,
             open_file_with_name,
             open_save_dir,
+            open_config_dir,
             delete_file,
             delete_file_with_name,
             download_file,

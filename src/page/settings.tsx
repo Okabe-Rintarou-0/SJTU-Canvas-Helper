@@ -73,6 +73,14 @@ export default function SettingsPage() {
         }
     }
 
+    const handleOpenConfigDir = async () => {
+        try {
+            await invoke("open_config_dir");
+        } catch (e) {
+            messageApi.error(`打开失败🥹：${e}`);
+        }
+    }
+
     const savePathValidator = async (_: any, savePath: string) => {
         let valid = await invoke("check_path", { path: savePath });
         return valid ? Promise.resolve() : Promise.reject(new Error("保存路径无效！请检查目录是否存在！"));
@@ -120,6 +128,11 @@ export default function SettingsPage() {
                     <Form.Item>
                         <Button onClick={handleTestToken}>
                             测试 Token
+                        </Button>
+                    </Form.Item>
+                    <Form.Item>
+                        <Button onClick={handleOpenConfigDir}>
+                            打开配置目录
                         </Button>
                     </Form.Item>
                 </Space>
