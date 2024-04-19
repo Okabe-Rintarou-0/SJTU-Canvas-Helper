@@ -89,8 +89,8 @@ export interface CalendarEvent {
     type_field: string;
     assignment: Assignment;
     html_url: string;
-    end_at: string;
-    start_at: string;
+    end_at?: string | null;
+    start_at?: string | null;
     context_code: string;
     context_name: string;
     url: string;

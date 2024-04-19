@@ -143,8 +143,10 @@ pub struct CalendarEvent {
     pub html_url: String,
     pub context_code: String,
     pub context_name: String,
-    pub end_at: String,
-    pub start_at: String,
+    #[serde(default)]
+    pub end_at: Option<String>,
+    #[serde(default)]
+    pub start_at: Option<String>,
     pub url: String,
     pub important_dates: bool,
 }
