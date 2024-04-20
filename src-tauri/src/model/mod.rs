@@ -220,7 +220,7 @@ pub struct AssignmentOverride {
     #[serde(default)]
     pub all_day: bool,
     #[serde(default)]
-    pub all_day_date: String,
+    pub all_day_date: Option<String>,
     #[serde(default)]
     pub unlock_at: Option<String>,
     #[serde(default)]

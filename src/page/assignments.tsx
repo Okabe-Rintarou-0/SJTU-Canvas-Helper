@@ -339,7 +339,7 @@ export default function AssignmentsPage() {
                 pagination={false}
                 expandable={{
                     onExpand: (expanded, assignment) => {
-                        if (expanded) {
+                        if (expanded && !isTA(selectedCourseId)) {
                             handleGetMySingleSubmission(selectedCourseId, assignment.id);
                         }
                     },

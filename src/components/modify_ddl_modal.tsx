@@ -199,7 +199,10 @@ export default function ModifyDDLModal({ open, assignment, courseId, handleCance
                         <Select onChange={(target) => setTargetDate(getTargetDate(target))} style={{ width: "200px" }}
                             key="modify" options={options} />
                     </Form.Item>
-                    <Button onClick={() => setMode("add")}>添加目标</Button>
+                    <Button onClick={() => {
+                        setMode("add");
+                        form.setFieldValue("target", "");
+                    }}>添加目标</Button>
                     <Button disabled={targetDate?.base !== false} type="primary" onClick={() => handleDeleteAssignmentDDLOverride(targetDate!.id)}>删除当前目标</Button>
                 </Space>}
                 {mode === "add" && <Space>
