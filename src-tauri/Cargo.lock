@@ -3045,7 +3045,7 @@ checksum = "38b58827f4464d87d377d175e90bf58eb00fd8716ff0a62f80356b5e61555d0d"
 
 [[package]]
 name = "sjtu_canvas_helper"
-version = "1.2.4"
+version = "1.2.5"
 dependencies = [
  "base64 0.22.0",
  "lazy_static",
