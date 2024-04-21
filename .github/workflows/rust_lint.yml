@@ -16,8 +16,8 @@ jobs:
       - name: Copy src-tauri
         run: |
           ls
-          mv ./src ./src-frontend
-          mv ./src-tauri/* .
+          # mv ./src ./src-frontend
+          # mv ./src-tauri/* .
       - name: Install minimal nightly (only for fmt)
         uses: dtolnay/rust-toolchain@nightly
         with:
