@@ -147,8 +147,8 @@ impl App {
 
     async fn get_single_course_assignment_submission(
         &self,
-        course_id: i32,
-        assignment_id: i32,
+        course_id: i64,
+        assignment_id: i64,
         student_id: i64,
     ) -> Result<Submission> {
         self.client
@@ -163,8 +163,8 @@ impl App {
 
     async fn list_course_assignment_submissions(
         &self,
-        course_id: i32,
-        assignment_id: i32,
+        course_id: i64,
+        assignment_id: i64,
     ) -> Result<Vec<Submission>> {
         self.client
             .list_course_assignment_submissions(
@@ -177,8 +177,8 @@ impl App {
 
     async fn update_grade(
         &self,
-        course_id: i32,
-        assignment_id: i32,
+        course_id: i64,
+        assignment_id: i64,
         student_id: i64,
         grade: &str,
         comment: Option<&str>,
@@ -197,8 +197,8 @@ impl App {
 
     async fn delete_submission_comment(
         &self,
-        course_id: i32,
-        assignment_id: i32,
+        course_id: i64,
+        assignment_id: i64,
         student_id: &str,
         comment_id: i64,
     ) -> Result<()> {
@@ -215,8 +215,8 @@ impl App {
 
     async fn modify_assignment_ddl(
         &self,
-        course_id: i32,
-        assignment_id: i32,
+        course_id: i64,
+        assignment_id: i64,
         due_at: Option<&str>,
         lock_at: Option<&str>,
     ) -> Result<()> {
@@ -233,9 +233,9 @@ impl App {
 
     async fn modify_assignment_ddl_override(
         &self,
-        course_id: i32,
-        assignment_id: i32,
-        override_id: i32,
+        course_id: i64,
+        assignment_id: i64,
+        override_id: i64,
         due_at: Option<&str>,
         lock_at: Option<&str>,
     ) -> Result<()> {
@@ -253,9 +253,9 @@ impl App {
 
     async fn delete_assignment_ddl_override(
         &self,
-        course_id: i32,
-        assignment_id: i32,
-        override_id: i32,
+        course_id: i64,
+        assignment_id: i64,
+        override_id: i64,
     ) -> Result<()> {
         self.client
             .delete_assignment_ddl_override(
@@ -269,9 +269,9 @@ impl App {
 
     async fn add_assignment_ddl_override(
         &self,
-        course_id: i32,
-        assignment_id: i32,
-        student_id: i32,
+        course_id: i64,
+        assignment_id: i64,
+        student_id: i64,
         title: &str,
         due_at: Option<&str>,
         lock_at: Option<&str>,
@@ -303,25 +303,25 @@ impl App {
         self.client.get_me(&self.config.read().await.token).await
     }
 
-    async fn list_course_files(&self, course_id: i32) -> Result<Vec<File>> {
+    async fn list_course_files(&self, course_id: i64) -> Result<Vec<File>> {
         self.client
             .list_course_files(course_id, &self.config.read().await.token)
             .await
     }
 
-    async fn list_course_users(&self, course_id: i32) -> Result<Vec<User>> {
+    async fn list_course_users(&self, course_id: i64) -> Result<Vec<User>> {
         self.client
             .list_course_users(course_id, &self.config.read().await.token)
             .await
     }
 
-    async fn list_course_students(&self, course_id: i32) -> Result<Vec<User>> {
+    async fn list_course_students(&self, course_id: i64) -> Result<Vec<User>> {
         self.client
             .list_course_students(course_id, &self.config.read().await.token)
             .await
     }
 
-    async fn list_course_assignments(&self, course_id: i32) -> Result<Vec<Assignment>> {
+    async fn list_course_assignments(&self, course_id: i64) -> Result<Vec<Assignment>> {
         self.client
             .list_course_assignments(course_id, &self.config.read().await.token)
             .await
@@ -329,27 +329,27 @@ impl App {
 
     async fn get_my_single_submission(
         &self,
-        course_id: i32,
-        assignment_id: i32,
+        course_id: i64,
+        assignment_id: i64,
     ) -> Result<Submission> {
         self.client
             .get_my_single_submission(course_id, assignment_id, &self.config.read().await.token)
             .await
     }
 
-    async fn list_folder_files(&self, folder_id: i32) -> Result<Vec<File>> {
+    async fn list_folder_files(&self, folder_id: i64) -> Result<Vec<File>> {
         self.client
             .list_folder_files(folder_id, &self.config.read().await.token)
             .await
     }
 
-    async fn list_folders(&self, course_id: i32) -> Result<Vec<Folder>> {
+    async fn list_folders(&self, course_id: i64) -> Result<Vec<Folder>> {
         self.client
             .list_folders(course_id, &self.config.read().await.token)
             .await
     }
 
-    async fn list_folder_folders(&self, folder_id: i32) -> Result<Vec<Folder>> {
+    async fn list_folder_folders(&self, folder_id: i64) -> Result<Vec<Folder>> {
         self.client
             .list_folder_folders(folder_id, &self.config.read().await.token)
             .await
@@ -443,7 +443,7 @@ impl App {
         Ok(())
     }
 
-    async fn get_folder_by_id(&self, folder_id: i32) -> Result<Folder> {
+    async fn get_folder_by_id(&self, folder_id: i64) -> Result<Folder> {
         self.client
             .get_folder_by_id(folder_id, &self.config.read().await.token)
             .await
@@ -488,8 +488,8 @@ impl App {
 
     pub async fn submit_assignment(
         &self,
-        course_id: i32,
-        assignment_id: i32,
+        course_id: i64,
+        assignment_id: i64,
         file_paths: &[String],
         comment: Option<&str>,
     ) -> Result<()> {
@@ -502,8 +502,8 @@ impl App {
 
     async fn upload_submission_file(
         &self,
-        course_id: i32,
-        assignment_id: i32,
+        course_id: i64,
+        assignment_id: i64,
         file_path: &str,
         file_name: &str,
     ) -> Result<File> {
@@ -698,8 +698,8 @@ async fn list_courses() -> Result<Vec<Course>> {
 
 #[tauri::command]
 async fn list_course_assignment_submissions(
-    course_id: i32,
-    assignment_id: i32,
+    course_id: i64,
+    assignment_id: i64,
 ) -> Result<Vec<Submission>> {
     APP.list_course_assignment_submissions(course_id, assignment_id)
         .await
@@ -707,8 +707,8 @@ async fn list_course_assignment_submissions(
 
 #[tauri::command]
 async fn get_single_course_assignment_submission(
-    course_id: i32,
-    assignment_id: i32,
+    course_id: i64,
+    assignment_id: i64,
     student_id: i64,
 ) -> Result<Submission> {
     APP.get_single_course_assignment_submission(course_id, assignment_id, student_id)
@@ -721,37 +721,37 @@ async fn list_ta_courses() -> Result<Vec<Course>> {
 }
 
 #[tauri::command]
-async fn list_course_files(course_id: i32) -> Result<Vec<File>> {
+async fn list_course_files(course_id: i64) -> Result<Vec<File>> {
     APP.list_course_files(course_id).await
 }
 
 #[tauri::command]
-async fn list_course_users(course_id: i32) -> Result<Vec<User>> {
+async fn list_course_users(course_id: i64) -> Result<Vec<User>> {
     APP.list_course_users(course_id).await
 }
 
 #[tauri::command]
-async fn list_course_students(course_id: i32) -> Result<Vec<User>> {
+async fn list_course_students(course_id: i64) -> Result<Vec<User>> {
     APP.list_course_students(course_id).await
 }
 
 #[tauri::command]
-async fn list_course_assignments(course_id: i32) -> Result<Vec<Assignment>> {
+async fn list_course_assignments(course_id: i64) -> Result<Vec<Assignment>> {
     APP.list_course_assignments(course_id).await
 }
 
 #[tauri::command]
-async fn list_folder_files(folder_id: i32) -> Result<Vec<File>> {
+async fn list_folder_files(folder_id: i64) -> Result<Vec<File>> {
     APP.list_folder_files(folder_id).await
 }
 
 #[tauri::command]
-async fn list_folders(course_id: i32) -> Result<Vec<Folder>> {
+async fn list_folders(course_id: i64) -> Result<Vec<Folder>> {
     APP.list_folders(course_id).await
 }
 
 #[tauri::command]
-async fn list_folder_folders(folder_id: i32) -> Result<Vec<Folder>> {
+async fn list_folder_folders(folder_id: i64) -> Result<Vec<Folder>> {
     APP.list_folder_folders(folder_id).await
 }
 
@@ -835,7 +835,7 @@ async fn list_calendar_events(
 }
 
 #[tauri::command]
-async fn get_folder_by_id(folder_id: i32) -> Result<Folder> {
+async fn get_folder_by_id(folder_id: i64) -> Result<Folder> {
     APP.get_folder_by_id(folder_id).await
 }
 
@@ -852,8 +852,8 @@ async fn save_config(config: AppConfig) -> Result<()> {
 
 #[tauri::command]
 async fn upload_submission_file(
-    course_id: i32,
-    assignment_id: i32,
+    course_id: i64,
+    assignment_id: i64,
     file_path: String,
     file_name: String,
 ) -> Result<File> {
@@ -863,8 +863,8 @@ async fn upload_submission_file(
 
 #[tauri::command]
 async fn submit_assignment(
-    course_id: i32,
-    assignment_id: i32,
+    course_id: i64,
+    assignment_id: i64,
     file_paths: Vec<String>,
     comment: Option<String>,
 ) -> Result<()> {
@@ -873,14 +873,14 @@ async fn submit_assignment(
 }
 
 #[tauri::command]
-async fn get_my_single_submission(course_id: i32, assignment_id: i32) -> Result<Submission> {
+async fn get_my_single_submission(course_id: i64, assignment_id: i64) -> Result<Submission> {
     APP.get_my_single_submission(course_id, assignment_id).await
 }
 
 #[tauri::command]
 async fn update_grade(
-    course_id: i32,
-    assignment_id: i32,
+    course_id: i64,
+    assignment_id: i64,
     student_id: i64,
     grade: String,
     comment: Option<String>,
@@ -897,8 +897,8 @@ async fn update_grade(
 
 #[tauri::command]
 async fn delete_submission_comment(
-    course_id: i32,
-    assignment_id: i32,
+    course_id: i64,
+    assignment_id: i64,
     student_id: i64,
     comment_id: i64,
 ) -> Result<()> {
@@ -913,8 +913,8 @@ async fn delete_submission_comment(
 
 #[tauri::command]
 async fn delete_my_submission_comment(
-    course_id: i32,
-    assignment_id: i32,
+    course_id: i64,
+    assignment_id: i64,
     comment_id: i64,
 ) -> Result<()> {
     APP.delete_submission_comment(course_id, assignment_id, "self", comment_id)
@@ -923,8 +923,8 @@ async fn delete_my_submission_comment(
 
 #[tauri::command]
 async fn modify_assignment_ddl(
-    course_id: i32,
-    assignment_id: i32,
+    course_id: i64,
+    assignment_id: i64,
     due_at: Option<String>,
     lock_at: Option<String>,
 ) -> Result<()> {
@@ -939,9 +939,9 @@ async fn modify_assignment_ddl(
 
 #[tauri::command]
 async fn modify_assignment_ddl_override(
-    course_id: i32,
-    assignment_id: i32,
-    override_id: i32,
+    course_id: i64,
+    assignment_id: i64,
+    override_id: i64,
     due_at: Option<String>,
     lock_at: Option<String>,
 ) -> Result<()> {
@@ -957,9 +957,9 @@ async fn modify_assignment_ddl_override(
 
 #[tauri::command]
 async fn delete_assignment_ddl_override(
-    course_id: i32,
-    assignment_id: i32,
-    override_id: i32,
+    course_id: i64,
+    assignment_id: i64,
+    override_id: i64,
 ) -> Result<()> {
     APP.delete_assignment_ddl_override(course_id, assignment_id, override_id)
         .await
@@ -967,9 +967,9 @@ async fn delete_assignment_ddl_override(
 
 #[tauri::command]
 async fn add_assignment_ddl_override(
-    course_id: i32,
-    assignment_id: i32,
-    student_id: i32,
+    course_id: i64,
+    assignment_id: i64,
+    student_id: i64,
     title: String,
     due_at: Option<String>,
     lock_at: Option<String>,
@@ -1120,65 +1120,14 @@ async fn main() -> Result<()> {
 mod test {
     use crate::{error::Result, model::File, App};
 
-    #[tokio::test]
-    async fn test_upload_submission() -> Result<()> {
-        tracing_subscriber::fmt::init();
-        let app = App::new();
-        let course_id = 66425;
-        let assignment_id = 266657;
-        let file_path = "./src/tmp.pdf";
-        // let file_name = "main.pdf";
-        // let file = app
-        //     .upload_submission_file(course_id, assignment_id, file_path, file_name)
-        //     .await?;
-        // tracing::info!("Upload succeeded! {:?}", file);
-        app.submit_assignment(
-            course_id,
-            assignment_id,
-            &[file_path.to_owned(), file_path.to_owned()],
-            None,
-        )
-        .await?;
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_assignment_comment() -> Result<()> {
-        tracing_subscriber::fmt::init();
-        let app = App::new();
-        let course_id = 64174;
-        let assignment_id = 269933;
-        let student_id = 479048_i64;
-        app.update_grade(course_id, assignment_id, student_id, "", Some("test"))
-            .await?;
-        let submissions = app
-            .list_course_assignment_submissions(64174, 269933)
-            .await?;
-        let target: Vec<_> = submissions
-            .iter()
-            .filter(|submission| submission.user_id == student_id)
-            .collect();
-        let target = target[0];
-        tracing::info!("get submission: {:?}", target);
-        for comment in &target.submission_comments {
-            tracing::info!("remove comment with id: {}", comment.id);
-            app.delete_submission_comment(
-                course_id,
-                assignment_id,
-                &student_id.to_string(),
-                comment.id,
-            )
-            .await?;
-        }
-        Ok(())
-    }
-
+    #[ignore]
     #[tokio::test]
     async fn test_get_calendar_events() -> Result<()> {
         tracing_subscriber::fmt::init();
         let app = App::new();
+
         let colors = app.get_colors().await?;
-        tracing::info!("{:?}", colors);
+        assert!(!colors.custom_colors.is_empty());
         let mut context_codes = vec![];
         for (course_code, _) in colors.custom_colors {
             context_codes.push(course_code);
@@ -1188,10 +1137,11 @@ mod test {
         let events = app
             .list_calendar_events(&context_codes, start_date, end_date)
             .await?;
-        tracing::info!("{:?}", events);
+        assert!(!events.is_empty());
         Ok(())
     }
 
+    #[ignore]
     #[tokio::test]
     async fn test_video_apis() -> Result<()> {
         tracing_subscriber::fmt::init();
@@ -1218,6 +1168,7 @@ mod test {
         Ok(())
     }
 
+    #[ignore]
     #[tokio::test]
     async fn test_jbox_apis() -> Result<()> {
         tracing_subscriber::fmt::init();

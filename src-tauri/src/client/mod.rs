@@ -147,8 +147,8 @@ impl Client {
 
     pub async fn delete_submission_comment(
         &self,
-        course_id: i32,
-        assignment_id: i32,
+        course_id: i64,
+        assignment_id: i64,
         student_id: &str,
         comment_id: i64,
         token: &str,
@@ -168,8 +168,8 @@ impl Client {
 
     pub async fn update_grade(
         &self,
-        course_id: i32,
-        assignment_id: i32,
+        course_id: i64,
+        assignment_id: i64,
         student_id: i64,
         grade: &str,
         comment: Option<&str>,
@@ -194,8 +194,8 @@ impl Client {
 
     pub async fn modify_assignment_ddl(
         &self,
-        course_id: i32,
-        assignment_id: i32,
+        course_id: i64,
+        assignment_id: i64,
         due_at: Option<&str>,
         lock_at: Option<&str>,
         token: &str,
@@ -220,9 +220,9 @@ impl Client {
 
     pub async fn modify_assignment_ddl_override(
         &self,
-        course_id: i32,
-        assignment_id: i32,
-        override_id: i32,
+        course_id: i64,
+        assignment_id: i64,
+        override_id: i64,
         due_at: Option<&str>,
         lock_at: Option<&str>,
         token: &str,
@@ -247,9 +247,9 @@ impl Client {
 
     pub async fn delete_assignment_ddl_override(
         &self,
-        course_id: i32,
-        assignment_id: i32,
-        override_id: i32,
+        course_id: i64,
+        assignment_id: i64,
+        override_id: i64,
         token: &str,
     ) -> Result<()> {
         let url = format!(
@@ -268,9 +268,9 @@ impl Client {
     #[allow(clippy::too_many_arguments)]
     pub async fn add_assignment_ddl_override(
         &self,
-        course_id: i32,
-        assignment_id: i32,
-        student_id: i32,
+        course_id: i64,
+        assignment_id: i64,
+        student_id: i64,
         title: &str,
         due_at: Option<&str>,
         lock_at: Option<&str>,
@@ -368,28 +368,28 @@ impl Client {
         Ok(all_items)
     }
 
-    pub async fn list_course_files(&self, course_id: i32, token: &str) -> Result<Vec<File>> {
+    pub async fn list_course_files(&self, course_id: i64, token: &str) -> Result<Vec<File>> {
         let url = format!("{}/api/v1/courses/{}/files", BASE_URL, course_id);
         self.list_items(&url, token).await
     }
 
-    pub async fn list_folder_files(&self, folder_id: i32, token: &str) -> Result<Vec<File>> {
+    pub async fn list_folder_files(&self, folder_id: i64, token: &str) -> Result<Vec<File>> {
         let url = format!("{}/api/v1/folders/{}/files", BASE_URL, folder_id);
         self.list_items(&url, token).await
     }
 
     // TODO: 将接口改为list_course_folders
-    pub async fn list_folders(&self, course_id: i32, token: &str) -> Result<Vec<Folder>> {
+    pub async fn list_folders(&self, course_id: i64, token: &str) -> Result<Vec<Folder>> {
         let url = format!("{}/api/v1/courses/{}/folders", BASE_URL, course_id);
         self.list_items(&url, token).await
     }
 
-    pub async fn list_folder_folders(&self, folder_id: i32, token: &str) -> Result<Vec<Folder>> {
+    pub async fn list_folder_folders(&self, folder_id: i64, token: &str) -> Result<Vec<Folder>> {
         let url = format!("{}/api/v1/folders/{}/folders", BASE_URL, folder_id);
         self.list_items(&url, token).await
     }
 
-    pub async fn get_folder_by_id(&self, folder_id: i32, token: &str) -> Result<Folder> {
+    pub async fn get_folder_by_id(&self, folder_id: i64, token: &str) -> Result<Folder> {
         let url = format!("{}/api/v1/folders/{}", BASE_URL, folder_id);
         let folder = self.get_json_with_token(&url, None::<&str>, token).await?;
         Ok(folder)
@@ -450,15 +450,15 @@ impl Client {
         Ok(all_events)
     }
 
-    pub async fn list_course_users(&self, course_id: i32, token: &str) -> Result<Vec<User>> {
+    pub async fn list_course_users(&self, course_id: i64, token: &str) -> Result<Vec<User>> {
         let url = format!("{}/api/v1/courses/{}/users", BASE_URL, course_id);
         self.list_items(&url, token).await
     }
 
     pub async fn get_single_course_assignment_submission(
         &self,
-        course_id: i32,
-        assignment_id: i32,
+        course_id: i64,
+        assignment_id: i64,
         student_id: i64,
         token: &str,
     ) -> Result<Submission> {
@@ -472,8 +472,8 @@ impl Client {
 
     pub async fn list_course_assignment_submissions(
         &self,
-        course_id: i32,
-        assignment_id: i32,
+        course_id: i64,
+        assignment_id: i64,
         token: &str,
     ) -> Result<Vec<Submission>> {
         let url = format!(
@@ -483,7 +483,7 @@ impl Client {
         self.list_items(&url, token).await
     }
 
-    pub async fn list_course_students(&self, course_id: i32, token: &str) -> Result<Vec<User>> {
+    pub async fn list_course_students(&self, course_id: i64, token: &str) -> Result<Vec<User>> {
         let url = format!("{}/api/v1/courses/{}/students", BASE_URL, course_id);
         self.list_items_with_page(&url, token, 0).await
     }
@@ -546,8 +546,8 @@ impl Client {
 
     async fn prepare_upload_submission_file(
         &self,
-        course_id: i32,
-        assignment_id: i32,
+        course_id: i64,
+        assignment_id: i64,
         file_path: &str,
         file_name: &str,
         token: &str,
@@ -578,8 +578,8 @@ impl Client {
 
     pub async fn submit_assignment(
         &self,
-        course_id: i32,
-        assignment_id: i32,
+        course_id: i64,
+        assignment_id: i64,
         file_paths: &[String],
         comment: Option<&str>,
         token: &str,
@@ -612,8 +612,8 @@ impl Client {
     // Reference: https://canvas.instructure.com/doc/api/file.file_uploads.html
     pub async fn upload_submission_file(
         &self,
-        course_id: i32,
-        assignment_id: i32,
+        course_id: i64,
+        assignment_id: i64,
         file_path: &str,
         file_name: &str,
         token: &str,
@@ -637,8 +637,8 @@ impl Client {
 
     pub async fn get_my_single_submission(
         &self,
-        course_id: i32,
-        assignment_id: i32,
+        course_id: i64,
+        assignment_id: i64,
         token: &str,
     ) -> Result<Submission> {
         let url = format!(
@@ -651,7 +651,7 @@ impl Client {
 
     pub async fn list_course_assignments(
         &self,
-        course_id: i32,
+        course_id: i64,
         token: &str,
     ) -> Result<Vec<Assignment>> {
         let url = format!(
@@ -1078,7 +1078,7 @@ impl Client {
         ctx: &StartChunkUploadContext,
         data: &[u8],
         part_number: usize,
-        max_retries: i32,
+        max_retries: i64,
     ) -> Result<()> {
         let mut retries = 0;
         let mut result;
@@ -1147,13 +1147,54 @@ impl Client {
 
 #[cfg(test)]
 mod test {
-    use crate::{client::Client, error::Result};
+    use crate::{
+        client::Client,
+        error::Result,
+        model::{Course, EnrollmentRole},
+    };
+    use std::collections::HashMap;
+
+    fn os_env_hashmap() -> HashMap<String, String> {
+        let mut map = HashMap::new();
+        use std::env;
+        for (key, val) in env::vars_os() {
+            // Use pattern bindings instead of testing .is_some() followed by .unwrap()
+            if let (Ok(k), Ok(v)) = (key.into_string(), val.into_string()) {
+                map.insert(k, v);
+            }
+        }
+        map
+    }
+
+    fn get_token_from_env() -> String {
+        let env_vars = os_env_hashmap();
+        env_vars.get("CANVAS_TOKEN").cloned().unwrap_or_default()
+    }
+
+    fn check_rfc3339_time_format(time: &Option<String>) -> bool {
+        if let Some(time) = time {
+            chrono::DateTime::parse_from_rfc3339(time).is_ok()
+        } else {
+            true
+        }
+    }
+
+    fn is_ta(course: &Course) -> bool {
+        let filtered: Vec<_> = course
+            .enrollments
+            .iter()
+            .filter(|enrollment| enrollment.role == EnrollmentRole::TaEnrollment)
+            .collect();
+        !filtered.is_empty()
+    }
 
     #[tokio::test]
     async fn test_get_uuid() -> Result<()> {
         let cli = Client::new();
         let uuid = cli.get_uuid().await?;
-        println!("Read uuid: {:?}", uuid);
+        assert!(uuid.is_some());
+        let uuid: String = uuid.unwrap();
+        assert!(!uuid.is_empty());
         Ok(())
     }
 
@@ -1167,6 +1208,126 @@ mod test {
             "2b499a5303048d6522118e79711c5ee0",
             cli.get_oauth_signature(id, oauth_nonce, oauth_consumer_key)
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_me() -> Result<()> {
+        let token = get_token_from_env();
+        assert!(!token.is_empty());
+        let cli = Client::new();
+        let me = cli.get_me(&token).await?;
+        assert!(me.id > 0);
+        assert!(!me.name.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_list_courses() -> Result<()> {
+        let token = get_token_from_env();
+        assert!(!token.is_empty());
+        let cli = Client::new();
+
+        let courses = cli.list_courses(&token).await?;
+        assert!(!courses.is_empty());
+        for course in courses {
+            assert!(course.id > 0);
+            assert!(course.term.id > 0);
+            assert!(!course.teachers.is_empty());
+            assert!(!course.uuid.is_empty());
+            assert!(!course.enrollments.is_empty());
+            assert!(check_rfc3339_time_format(&course.term.created_at));
+            assert!(check_rfc3339_time_format(&course.term.start_at));
+            assert!(check_rfc3339_time_format(&course.term.end_at));
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_list_assignments() -> Result<()> {
+        tracing_subscriber::fmt::init();
+        let token = get_token_from_env();
+        assert!(!token.is_empty());
+        let cli = Client::new();
+        let courses = cli.list_courses(&token).await?;
+        for course in courses {
+            let assignments = cli.list_course_assignments(course.id, &token).await?;
+            for assignment in assignments {
+                assert_eq!(assignment.course_id, course.id);
+                assert!(assignment.id > 0);
+                assert!(check_rfc3339_time_format(&assignment.due_at));
+                assert!(check_rfc3339_time_format(&assignment.lock_at));
+                for assignment_override in assignment.overrides {
+                    assert!(check_rfc3339_time_format(&assignment_override.unlock_at));
+                    assert!(check_rfc3339_time_format(&assignment_override.lock_at));
+                    assert!(check_rfc3339_time_format(&assignment_override.due_at));
+                    assert!(!assignment_override.student_ids.is_empty());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_list_users() -> Result<()> {
+        let token = get_token_from_env();
+        assert!(!token.is_empty());
+        let cli = Client::new();
+        let courses = cli.list_courses(&token).await?;
+        for course in courses {
+            let term = &course.term;
+            let Some(end_at) = &term.end_at else {
+                continue;
+            };
+            let is_ta = is_ta(&course);
+            let end_at = chrono::DateTime::parse_from_rfc3339(end_at);
+            assert!(end_at.is_ok());
+            let end_at = end_at.unwrap().naive_local();
+            let now = chrono::offset::Local::now().naive_local();
+
+            if now > end_at && !is_ta {
+                assert!(cli.list_course_users(course.id, &token).await.is_err());
+                continue;
+            }
+            let users = cli.list_course_users(course.id, &token).await?;
+
+            assert!(!users.is_empty());
+
+            for user in users {
+                assert!(user.id > 0);
+                assert!(!user.name.is_empty());
+                if is_ta {
+                    assert!(!user.email.is_empty());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_list_submissions() -> Result<()> {
+        let token = get_token_from_env();
+        assert!(!token.is_empty());
+        let cli = Client::new();
+        let courses = cli.list_courses(&token).await?;
+        for course in courses {
+            let is_ta = is_ta(&course);
+            if !is_ta {
+                continue;
+            }
+
+            let assignments = cli.list_course_assignments(course.id, &token).await?;
+            for assignment in assignments {
+                let submissions = cli
+                    .list_course_assignment_submissions(course.id, assignment.id, &token)
+                    .await?;
+                for submission in submissions {
+                    assert_eq!(submission.assignment_id, assignment.id);
+                    assert!(submission.id > 0);
+                    assert!(check_rfc3339_time_format(&submission.submitted_at));
+                }
+            }
+        }
         Ok(())
     }
 }
