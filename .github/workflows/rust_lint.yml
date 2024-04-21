@@ -12,7 +12,9 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
-
+    defaults:
+      run:
+        working-directory: ./src-tauri
     steps:
       - name: Install minimal nightly (only for fmt)
         uses: dtolnay/rust-toolchain@nightly
@@ -29,8 +31,6 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get install clang libunwind-dev
       - name: Check code formatting
-        working-directory: ./src-tauri
         run: cargo +nightly fmt --all -- --check
       - name: Check cargo clippy warnings
-        working-directory: ./src-tauri
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings

@@ -8,6 +8,9 @@ on:
 
 jobs:
   test:
+    defaults:
+      run:
+        working-directory: ./src-tauri
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -27,6 +30,8 @@ jobs:
         # Profile "ci" is configured in .config/nextest.toml
         working-directory: ./src-tauri
         run: cargo nextest run --workspace --profile ci
+        env:
+          CANVAS_TOKEN: ${{ env.CANVAS_TOKEN }}
       - name: Upload test report
         uses: actions/upload-artifact@v4
         with:
