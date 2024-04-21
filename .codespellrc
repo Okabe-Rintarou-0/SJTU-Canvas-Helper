@@ -1,3 +1,3 @@
 [codespell]
 skip = .git,*.pdf,*.svg,openapi.json,key.pem,Cargo.lock,yarn.lock,package.json,tsconfig.json,tsconfig.node.json,vite.config.ts
-ignore-words-list = crate,ser
+ignore-words-list = crate,ser,vaule
