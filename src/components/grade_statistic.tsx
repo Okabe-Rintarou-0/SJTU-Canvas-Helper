@@ -11,7 +11,7 @@ export default function GradeStatisticChart({ statistic }: {
         }
         const step = 0.5;
         grades.map(grade => {
-            let section = grade / step - (grade % step ? 0 : 1);
+            let section = grade / step;
             let count = gradeMap.get(section) ?? 0;
             gradeMap.set(section, count + 1);
         });
@@ -32,7 +32,7 @@ export default function GradeStatisticChart({ statistic }: {
         const step = 0.5;
 
         for (let i = 0; i <= maxSection; i++) {
-            labels.push(`${step * i}-${step * (i + 1)}`);
+            labels.push(step * i);
             values.push(distribution.get(i) ?? 0);
         }
 
