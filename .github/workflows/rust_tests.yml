@@ -18,7 +18,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - uses: actions/checkout@v4
       - run: |
-          rm -f .gitignore
+          rm .gitignore
           mv src src-frontend
           mv src-tauri/* .
       - uses: Swatinem/rust-cache@v2
