@@ -20,7 +20,7 @@ pub enum ClientError {
     LoginError,
     #[error("JBox error: {0}")]
     JBoxError(String),
-    #[error("Functon unsupported")]
+    #[error("Function unsupported")]
     #[allow(dead_code)]
     FunctionUnsupported,
     #[error("Submission upload error: {0}")]
