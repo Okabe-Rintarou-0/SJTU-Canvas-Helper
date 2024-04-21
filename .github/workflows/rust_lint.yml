@@ -2,7 +2,7 @@ name: Formatter and linter
 
 on:
   push:
-    branches: [master, dev]
+    branches: [main]
   pull_request:
     branches: ["**"]
 
@@ -23,16 +23,14 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: actions/checkout@v4
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: Swatinem/rust-cache@v2
         with:
           key: clippy
       - name: Install dependencies
         run: sudo apt-get install clang libunwind-dev
       - name: Check code formatting
+        working-directory: ./src-tauri
         run: cargo +nightly fmt --all -- --check
       - name: Check cargo clippy warnings
+        working-directory: ./src-tauri
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
