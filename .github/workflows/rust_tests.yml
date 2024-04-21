@@ -8,9 +8,6 @@ on:
 
 jobs:
   test:
-    defaults:
-      run:
-        working-directory: ./src-tauri
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
