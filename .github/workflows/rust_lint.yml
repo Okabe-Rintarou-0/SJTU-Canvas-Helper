@@ -12,12 +12,8 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Copy src-tauri
-        run:
-          ls
-          # mv ./src ./src-frontend
-          # mv ./src-tauri/* .
       - name: Install minimal nightly (only for fmt)
         uses: dtolnay/rust-toolchain@nightly
         with:
@@ -27,6 +23,9 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: actions/checkout@v4
+      - run: |
+          mv src src-frontend
+          mv src-tauri/* .
       - uses: Swatinem/rust-cache@v2
         with:
           key: clippy
