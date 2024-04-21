@@ -9,19 +9,31 @@ on:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: ./src-tauri
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: ubuntu-20.04
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: windows-latest
+            target: i686-pc-windows-msvc
 
     steps:
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@stable
       - uses: actions/checkout@v4
-      - run: |
-          rm .gitignore
-          mv src src-frontend
-          mv src-tauri/* .
-      - uses: Swatinem/rust-cache@v2
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+          key: ${{ matrix.os }}-${{ matrix.target }}
       - name: Install nextest
         uses: taiki-e/install-action@nextest
       - name: install dependencies (ubuntu only)
