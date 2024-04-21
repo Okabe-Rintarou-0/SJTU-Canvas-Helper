@@ -50,7 +50,7 @@ export default function UsersPage() {
             courses = courses.filter(course => {
                 const courseEnd = dayjs(course.term.end_at);
                 const now = dayjs();
-                return now.isBefore(courseEnd);
+                return now.isBefore(courseEnd) || course.enrollments.find(enroll => enroll.role === "TaEnrollment") != undefined;
             });
             setCourses(courses);
         } catch (e) {
