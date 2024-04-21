@@ -14,8 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Copy src-tauri
-        run: mv src src-frontend |
-          mv src-tauri/* .
+        run: |
+          ls
+          mv ./src ./src-frontend
+          mv ./src-tauri/* .
       - name: Install minimal nightly (only for fmt)
         uses: dtolnay/rust-toolchain@nightly
         with:
