@@ -101,7 +101,7 @@ export interface Assignment {
     id: number;
     key: number;
     needs_grading_count: number | null;
-    description: string;
+    description: string | null;
     due_at?: string | null;
     unlock_at?: string;
     lock_at?: string;
@@ -351,4 +351,10 @@ export interface SubmissionComment {
     author_name: string;
     created_at: string;
     avatar_path: string;
+}
+
+export interface GradeStatus {
+    assignmetName: string;
+    maxGrade: number;
+    actualGrade: number;
 }

@@ -155,7 +155,7 @@ pub struct CalendarEvent {
 pub struct Assignment {
     pub id: i64,
     #[serde(default)]
-    pub description: String,
+    pub description: Option<String>,
     #[serde(default)]
     pub due_at: Option<String>,
     #[serde(default)]

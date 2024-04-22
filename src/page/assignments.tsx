@@ -2,7 +2,7 @@ import { Avatar, Button, Checkbox, CheckboxProps, Divider, List, Space, Table, T
 import BasicLayout from "../components/layout";
 import useMessage from "antd/es/message/useMessage";
 import { useEffect, useState } from "react";
-import { Assignment, AssignmentDate, Attachment, Course, Submission, User } from "../lib/model";
+import { Assignment, AssignmentDate, Attachment, Course, GradeStatus, Submission, User } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import { attachmentToFile, formatDate } from "../lib/utils";
 import CourseSelect from "../components/course_select";
@@ -10,6 +10,7 @@ import { usePreview } from "../lib/hooks";
 import dayjs from "dayjs";
 import ModifyDDLModal from "../components/modify_ddl_modal";
 import { SubmitModal } from "../components/submit_modal";
+import { GradeOverviewChart } from "../components/grade_overview";
 
 export default function AssignmentsPage() {
     const [messageApi, contextHolder] = useMessage();
@@ -25,6 +26,7 @@ export default function AssignmentsPage() {
     const [assignmentToModify, setAssignmentToModify] = useState<Assignment | undefined>(undefined);
     const [showModal, setShowModal] = useState<boolean>(false);
     const [selectedAssignment, setSelectedAssignment] = useState<Assignment | undefined>(undefined);
+    const [gradeMap, setGradeMap] = useState<Map<number, GradeStatus>>(new Map());
 
     const initMe = async () => {
         try {
@@ -39,6 +41,29 @@ export default function AssignmentsPage() {
         initMe();
         initCourses();
     }, []);
+
+    useEffect(() => {
+        let newGradeMap = new Map<number, GradeStatus>();
+        assignments.map(assignment => {
+            const actualGrade = Number.parseInt(assignment.submission?.grade ?? "0");
+            const maxGrade = assignment.points_possible ?? 0;
+            const hasGrade = actualGrade > 0;
+            const canGrade = maxGrade > 0;
+            const assignmetName = assignment.name;
+            if ((assignmentNotNeedSubmit(assignment) && !hasGrade) || !canGrade) {
+                return;
+            }
+            if (assignmentIsEnded(assignment) || hasGrade) {
+                let status = {
+                    assignmetName,
+                    actualGrade,
+                    maxGrade
+                } as GradeStatus;
+                newGradeMap.set(assignment.id, status);
+            }
+        })
+        setGradeMap(newGradeMap);
+    }, [assignments])
 
     const handleGetAssignments = async (courseId: number, onlyShowUnfinished: boolean) => {
         if (courseId === -1) {
@@ -70,6 +95,18 @@ export default function AssignmentsPage() {
         } catch (e) {
             messageApi.error(e as string);
         }
+    }
+
+    const assignmentIsEnded = (assignment: Assignment) => {
+        const baseDate = getBaseDate(assignment.all_dates);
+        const dued = dayjs(baseDate?.due_at).isBefore(dayjs());
+        const locked = dayjs(baseDate?.lock_at).isBefore(dayjs());
+        return dued || locked;
+    }
+
+    const assignmentNotNeedSubmit = (assignment: Assignment) => {
+        return !assignment.submission ||
+            assignment.submission_types.includes("none") || assignment.submission_types.includes("not_graded");
     }
 
     const getBaseDate = (dates: AssignmentDate[]) => dates.find(date => date.base);
@@ -112,23 +149,16 @@ export default function AssignmentsPage() {
             key: 'submission',
             render: (submission: Submission, assignment: Assignment) => {
                 const tags = [];
-                const baseDate = getBaseDate(assignment.all_dates);
-                const dued = dayjs(baseDate?.due_at).isBefore(dayjs());
-                const locked = dayjs(baseDate?.lock_at).isBefore(dayjs());
-                if (dued || locked) {
+                if (assignmentIsEnded(assignment)) {
                     tags.push(<Tag color="orange">已截止</Tag>);
                 } else {
                     tags.push(<Tag color="blue">进行中</Tag>);
                 }
-                if (!submission ||
-                    assignment.submission_types.includes("none") || assignment.submission_types.includes("not_graded")) {
-                    // no need to submit
+                if (assignmentNotNeedSubmit(assignment)) {
                     tags.push(<Tag>无需提交</Tag>);
-                }
-                else if (submission.submitted_at) {
+                } else if (submission.submitted_at) {
                     tags.push(submission.late ? <Tag color="red">迟交</Tag> : <Tag color="green">已提交</Tag>);
-                }
-                else {
+                } else {
                     tags.push(<Tag color="red">未提交</Tag>);
                 }
                 return <Space size={"small"}>{tags}</Space>
@@ -265,6 +295,9 @@ export default function AssignmentsPage() {
     }
 
     const dealWithDescription = (assignment: Assignment, linksMap: Record<number, Attachment[]>) => {
+        if (!assignment.description) {
+            return;
+        }
         const parser = new DOMParser();
         const document = parser.parseFromString(assignment.description, "text/html");
         const anchorTags = document.querySelectorAll('a');
@@ -332,6 +365,7 @@ export default function AssignmentsPage() {
         <Space direction="vertical" style={{ width: "100%", overflow: "scroll" }} size={"large"}>
             <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} />
             {!isTA(selectedCourseId) && <Checkbox disabled={operating} onChange={handleSetOnlyShowUnfinished} defaultChecked>只显示未完成</Checkbox>}
+            <GradeOverviewChart gradeMap={gradeMap} />
             <Table style={{ width: "100%" }}
                 loading={operating}
                 columns={getColumns()}
@@ -355,7 +389,7 @@ export default function AssignmentsPage() {
                         }
                         return <Space direction="vertical" style={{ width: "100%" }}>
                             <Divider orientation="left">作业描述</Divider>
-                            <div dangerouslySetInnerHTML={{ __html: assignment.description }} />
+                            {assignment.description && <div dangerouslySetInnerHTML={{ __html: assignment.description }} />}
                             <Divider orientation="left">作业附件</Divider>
                             <Table columns={attachmentColumns} dataSource={linksMap[assignment.id]} pagination={false} />
                             <Divider orientation="left">历史评论</Divider>
