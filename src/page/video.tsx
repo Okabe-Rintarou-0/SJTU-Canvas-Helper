@@ -330,6 +330,11 @@ export default function VideoPage() {
         }
     }, [mainPlayURL]);
 
+    const formatTimestamp = (timestamp: number) => {
+        const date = new Date(timestamp);
+        return date.toLocaleDateString();
+    }
+
     return <BasicLayout>
         {contextHolder}
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
@@ -356,7 +361,7 @@ export default function VideoPage() {
                         defaultValue={selectedVideo?.id}
                         onChange={handleSelectVideo}
                         options={videos.map(video => ({
-                            label: video?.videName,
+                            label: `${video.videName} ${formatTimestamp(video.courBeginTime)}`,
                             value: video.id,
                         }))}
                     />
