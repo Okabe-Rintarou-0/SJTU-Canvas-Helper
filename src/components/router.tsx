@@ -6,6 +6,7 @@ import AssignmentsPage from "../page/assignments";
 import SubmissionsPage from "../page/submissions";
 import CalendarPage from "../page/calendar";
 import VideoPage from "../page/video";
+import { QRCodePage } from "../page/qrcode";
 
 export default function AppRouter() {
     return <BrowserRouter>
@@ -18,6 +19,7 @@ export default function AppRouter() {
             <Route path="/users" element={<UsersPage />} />
             <Route path="/video" element={<VideoPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/qrcode" element={<QRCodePage />} />
             <Route path="*" element={<Navigate to={"/"} />} />
         </Routes>
     </BrowserRouter>

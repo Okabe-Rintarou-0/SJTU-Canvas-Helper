@@ -358,3 +358,8 @@ export interface GradeStatus {
     maxGrade: number;
     actualGrade: number;
 }
+
+export interface QRCodeScanResult {
+    file: File,
+    contents: string[];
+}

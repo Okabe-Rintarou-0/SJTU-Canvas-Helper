@@ -3,6 +3,7 @@ import { FileOutlined, SettingOutlined, UserOutlined, VideoCameraOutlined, FormO
 import { Layout, Menu, theme } from 'antd';
 import { Link, useLocation } from 'react-router-dom';
 import { getVersion } from "@tauri-apps/api/app";
+import { BsQrCode } from 'react-icons/bs';
 
 const { Content, Footer, Sider } = Layout;
 
@@ -38,6 +39,10 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
         icon: <VideoCameraOutlined />,
         label: <Link to={'/video'}>视频</Link>,
     }, {
+        key: 'qrcode',
+        icon: <BsQrCode />,
+        label: <Link to={'/qrcode'}>二维码(beta)</Link>,
+    }, {
         key: 'settings',
         icon: <SettingOutlined />,
         label: <Link to={'/settings'}>设置</Link>,
@@ -51,7 +56,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
     } = theme.useToken();
 
     return <Layout style={{ minHeight: "100vh" }}>
-        <Sider theme="light" style={{position: 'fixed', height: '100%' }}>
+        <Sider theme="light" style={{ position: 'fixed', height: '100%' }}>
             <Menu theme="light" mode="inline" defaultSelectedKeys={selectedKeys} items={items} />
         </Sider>
         <Layout style={{ marginLeft: 200 }}>

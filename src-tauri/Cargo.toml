@@ -1,6 +1,6 @@
 [package]
 name = "sjtu_canvas_helper"
-version = "1.2.8"
+version = "1.2.9"
 description = "SJTU Canvas Helper"
 authors = ["Okabe"]
 edition = "2021"
@@ -34,7 +34,9 @@ warp = "0.3.6"
 warp-reverse-proxy = "1.0.0"
 regex = "1.10.3"
 chrono = "0.4.38"
-
+bytes = "1.6.0"
+bardecoder = "0.5.0"
+image = "0.24"
 [dependencies.uuid]
 version = "1.8.0"
 features = [

@@ -25,6 +25,10 @@ pub enum ClientError {
     FunctionUnsupported,
     #[error("Submission upload error: {0}")]
     SubmissionUpload(String),
+    #[error("Join error: {0}")]
+    JoinError(#[from] tokio::task::JoinError),
+    #[error("QRCode Image error: {0}")]
+    QRCodeImage(#[from] image::ImageError),
 }
 
 impl serde::Serialize for ClientError {

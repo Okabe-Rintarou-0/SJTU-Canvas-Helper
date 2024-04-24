@@ -1,3 +1,4 @@
+use ::bytes::Bytes;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use md5::{Digest, Md5};
 use regex::Regex;
@@ -299,6 +300,16 @@ impl Client {
         Ok(())
     }
 
+    pub async fn get_file_content(file: &File) -> Result<Bytes> {
+        let response = reqwest::Client::new()
+            .get(&file.url)
+            .send()
+            .await?
+            .error_for_status()?;
+        let bytes = response.bytes().await?;
+        Ok(bytes)
+    }
+
     pub async fn download_file<F: Fn(ProgressPayload) + Send>(
         &self,
         file: &File,
@@ -370,6 +381,14 @@ impl Client {
 
     pub async fn list_course_files(&self, course_id: i64, token: &str) -> Result<Vec<File>> {
         let url = format!("{}/api/v1/courses/{}/files", BASE_URL, course_id);
+        self.list_items(&url, token).await
+    }
+
+    pub async fn list_course_images(&self, course_id: i64, token: &str) -> Result<Vec<File>> {
+        let url = format!(
+            "{}/api/v1/courses/{}/files?content_types[]=image",
+            BASE_URL, course_id
+        );
         self.list_items(&url, token).await
     }
 

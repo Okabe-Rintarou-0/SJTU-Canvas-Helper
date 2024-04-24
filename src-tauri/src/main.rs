@@ -4,11 +4,11 @@
 use client::Client;
 use error::{ClientError, Result};
 use model::{
-    AppConfig, Assignment, CalendarEvent, Colors, Course, File, Folder, ProgressPayload, Subject,
-    Submission, User, VideoCourse, VideoInfo, VideoPlayInfo,
+    AppConfig, Assignment, CalendarEvent, Colors, Course, File, Folder, ProgressPayload,
+    QRCodeScanResult, Subject, Submission, User, VideoCourse, VideoInfo, VideoPlayInfo,
 };
 use std::{
-    fs,
+    fs::{self, remove_file},
     io::Write,
     path::{Path, PathBuf},
     process,
@@ -16,7 +16,10 @@ use std::{
     time::Duration,
 };
 use tauri::{api::path::config_dir, Runtime, Window};
-use tokio::{sync::RwLock, task::JoinHandle};
+use tokio::{
+    sync::RwLock,
+    task::{JoinHandle, JoinSet},
+};
 use uuid::Uuid;
 use warp::{hyper::Response, Filter};
 use warp_reverse_proxy::reverse_proxy_filter;
@@ -304,9 +307,71 @@ impl App {
     }
 
     async fn list_course_files(&self, course_id: i64) -> Result<Vec<File>> {
-        self.client
-            .list_course_files(course_id, &self.config.read().await.token)
-            .await
+        let token = self.config.read().await.token.clone();
+        self.client.list_course_files(course_id, &token).await
+    }
+
+    async fn list_course_images(&self, course_id: i64) -> Result<Vec<File>> {
+        let token = self.config.read().await.token.clone();
+        self.client.list_course_images(course_id, &token).await
+    }
+
+    async fn filter_course_qrcode_images_inner(
+        file: File,
+        save_dir: String,
+    ) -> Result<QRCodeScanResult> {
+        let mut scan_result = QRCodeScanResult {
+            file: file.clone(),
+            contents: vec![],
+        };
+        let ext = if file.display_name.ends_with(".jpg") {
+            ".jpg"
+        } else if file.display_name.ends_with(".png") {
+            ".png"
+        } else {
+            return Ok(scan_result);
+        };
+        let content = Client::get_file_content(&file).await?;
+        let tmp_path = format!("{}/tmp_{}{}", save_dir, Uuid::new_v4(), ext);
+        let mut tmp_file = fs::File::create(&tmp_path)?;
+        tmp_file.write_all(&content)?;
+        let img = image::open(&tmp_path)?;
+        let decoder = bardecoder::default_decoder();
+
+        let results = decoder.decode(&img);
+        for content in results.into_iter().flatten() {
+            scan_result.contents.push(content);
+        }
+        remove_file(tmp_path)?;
+        Ok(scan_result)
+    }
+
+    pub async fn filter_course_qrcode_images(
+        &self,
+        course_id: i64,
+    ) -> Result<Vec<QRCodeScanResult>> {
+        let images = self.list_course_images(course_id).await?;
+        let mut tasks = JoinSet::new();
+        let mut results = vec![];
+        let save_dir = self.config.read().await.save_path.clone();
+        for image in images.into_iter() {
+            tasks.spawn(Self::filter_course_qrcode_images_inner(
+                image,
+                save_dir.clone(),
+            ));
+        }
+        while let Some(res) = tasks.join_next().await {
+            let result = res?;
+            match result {
+                Ok(scan_result) => {
+                    if !scan_result.contents.is_empty() {
+                        results.push(scan_result);
+                    }
+                }
+                Err(err) => tracing::error!("{:?}", err),
+            }
+        }
+        Ok(results)
     }
 
     async fn list_course_users(&self, course_id: i64) -> Result<Vec<User>> {
@@ -726,6 +791,11 @@ async fn list_course_files(course_id: i64) -> Result<Vec<File>> {
 }
 
 #[tauri::command]
+async fn list_course_images(course_id: i64) -> Result<Vec<File>> {
+    APP.list_course_images(course_id).await
+}
+
+#[tauri::command]
 async fn list_course_users(course_id: i64) -> Result<Vec<User>> {
     APP.list_course_users(course_id).await
 }
@@ -738,6 +808,11 @@ async fn list_course_students(course_id: i64) -> Result<Vec<User>> {
 #[tauri::command]
 async fn list_course_assignments(course_id: i64) -> Result<Vec<Assignment>> {
     APP.list_course_assignments(course_id).await
+}
+
+#[tauri::command]
+async fn filter_course_qrcode_images(course_id: i64) -> Result<Vec<QRCodeScanResult>> {
+    APP.filter_course_qrcode_images(course_id).await
 }
 
 #[tauri::command]
@@ -1061,10 +1136,12 @@ async fn main() -> Result<()> {
             list_courses,
             list_ta_courses,
             list_course_files,
+            list_course_images,
             list_course_users,
             list_course_students,
             list_course_assignments,
             list_course_assignment_submissions,
+            filter_course_qrcode_images,
             get_single_course_assignment_submission,
             list_folder_files,
             list_folders,
@@ -1138,6 +1215,18 @@ mod test {
             .list_calendar_events(&context_codes, start_date, end_date)
             .await?;
         assert!(!events.is_empty());
+        Ok(())
+    }
+
+    #[ignore]
+    #[tokio::test]
+    async fn test_filter_course_qrcode() -> Result<()> {
+        tracing_subscriber::fmt::init();
+        let app = App::new();
+        app.init().await?;
+        let course_id = 64174;
+        let result = app.filter_course_qrcode_images(course_id).await?;
+        tracing::info!("result: {:?}", result);
         Ok(())
     }
 

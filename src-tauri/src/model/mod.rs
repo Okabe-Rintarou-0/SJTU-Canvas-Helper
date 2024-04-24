@@ -624,3 +624,9 @@ pub struct SubmissionUploadErrorResponse {
     pub status: String,
     pub message: String,
 }
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct QRCodeScanResult {
+    pub file: File,
+    pub contents: Vec<String>,
+}
