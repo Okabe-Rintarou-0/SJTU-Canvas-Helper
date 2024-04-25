@@ -1,4 +1,4 @@
-import { Dispatch, SetStateAction, useEffect, useRef, useState } from "react";
+import { CSSProperties, Dispatch, ReactNode, SetStateAction, useEffect, useRef, useState } from "react";
 import PreviewModal from "../components/preview_modal";
 import { Entry, File, isFile, LoginMessage } from "./model";
 import PDFMerger from 'pdf-merger-js/browser';
@@ -14,7 +14,7 @@ const SEND_INTERVAL = 1000 * 50;
 const QRCODE_BASE_URL = "https://jaccount.sjtu.edu.cn/jaccount/confirmscancode";
 const WEBSOCKET_BASE_URL = "wss://jaccount.sjtu.edu.cn/jaccount/sub";
 
-export function usePreview() {
+export function usePreview(footer?: ReactNode, bodyStyle?: CSSProperties, monitorBlankKey = true) {
     const [entries, setEntries] = useState<Entry[]>([]);
     const [previewEntry, setPreviewEntry] = useState<Entry | undefined>(undefined);
     const [hoveredEntry, setHoveredEntry] = useState<Entry | undefined>(undefined);
@@ -24,6 +24,9 @@ export function usePreview() {
         hoveredEntry={hoveredEntry}
         setHoveredEntry={setHoveredEntry}
         entries={entries}
+        footer={footer}
+        bodyStyle={bodyStyle}
+        monitorBlankKey={monitorBlankKey}
     />
 
     const onHoverEntry = (entry: Entry) => {
@@ -36,22 +39,27 @@ export function usePreview() {
             setHoveredEntry(undefined);
         }
     }
-    return { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry, setEntries }
+    return { previewer, previewEntry, onHoverEntry, onLeaveEntry, setPreviewEntry, setEntries }
 }
 
 // type FileType = File | undefined;
 type EntryType = Entry | undefined;
 
-function Previewer({ previewEntry, setPreviewEntry, hoveredEntry, setHoveredEntry, entries }: {
+function Previewer({ previewEntry, setPreviewEntry, hoveredEntry, setHoveredEntry, entries, footer, bodyStyle, monitorBlankKey }: {
     previewEntry: EntryType,
     setPreviewEntry: Dispatch<SetStateAction<EntryType>>,
     hoveredEntry: EntryType,
     setHoveredEntry: Dispatch<SetStateAction<EntryType>>
     entries: Entry[],
+    footer?: ReactNode,
+    bodyStyle?: CSSProperties
+    monitorBlankKey: boolean,
 }) {
     const entriesRef = useRef<Entry[]>([]);
     const hoveredEntryRef = useRef<EntryType>(undefined);
     const previewEntryRef = useRef<EntryType>(undefined);
+    const monitorBlankKeyRef = useRef<boolean>(monitorBlankKey);
+    const [files, setFiles] = useState<File[]>([]);
 
     const getNextEntry = (entry: Entry) => {
         const entries = entriesRef.current;
@@ -86,6 +94,11 @@ function Previewer({ previewEntry, setPreviewEntry, hoveredEntry, setHoveredEntr
 
     useEffect(() => {
         previewEntryRef.current = previewEntry;
+        if (previewEntry && isFile(previewEntry)) {
+            setFiles([previewEntry as File]);
+        } else {
+            setFiles([]);
+        }
     }, [previewEntry]);
 
     useEffect(() => {
@@ -96,7 +109,14 @@ function Previewer({ previewEntry, setPreviewEntry, hoveredEntry, setHoveredEntr
         entriesRef.current = entries;
     }, [entries]);
 
+    useEffect(() => {
+        monitorBlankKeyRef.current = monitorBlankKey;
+    }, [monitorBlankKey]);
+
     const handleKeyDownEvent = (ev: KeyboardEvent) => {
+        if (!monitorBlankKeyRef.current) {
+            return;
+        }
         if (ev.key === " " && !ev.repeat) {
             ev.stopPropagation();
             ev.preventDefault();
@@ -136,13 +156,12 @@ function Previewer({ previewEntry, setPreviewEntry, hoveredEntry, setHoveredEntr
         setPreviewEntry(undefined);
     }
 
-    const shouldOpen = previewEntry !== undefined;
-
-    return <>{previewEntry &&
-        isFile(previewEntry) &&
-        <PreviewModal open={shouldOpen} files={[previewEntry as File]}
-            title={(previewEntry as File).display_name}
-            handleCancelPreview={handleCancelPreview} />
+    const shouldOpen = previewEntry !== undefined && files.length > 0;
+    return <>{shouldOpen && <PreviewModal open={shouldOpen} files={files}
+        footer={footer}
+        bodyStyle={bodyStyle}
+        title={(previewEntry as File).display_name}
+        handleCancelPreview={handleCancelPreview} />
     }</>
 }
 

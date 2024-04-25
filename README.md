@@ -99,6 +99,12 @@ https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/assets/58595459/7f05cabc-
 
 ## 开发指南
 
++ 下载 [Rust](https://www.rust-lang.org/tools/install)。Rust 快速学习：[Rust语言圣经(Rust Course)](https://course.rs/about-book.html)。
++ 下载 [NodeJS](https://nodejs.org/en/download/current)，自带 `npm` 和 `yarn` 包管理器。
++ 启动项目：
+  ```shell
+  yarn tauri dev
+  ```
 + Tauri 使用的是 Chrome 内核，所以你可以把它当成一个浏览器来 debug。MacOS 可以按下 `⌘command + ⌥option + i` 查看控制台；Windows 则为 `ctrl + shift + i `。
 
 ## Star History

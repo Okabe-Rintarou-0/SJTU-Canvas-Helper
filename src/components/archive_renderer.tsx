@@ -35,7 +35,6 @@ export default function ArchiveRenderer({
     const [fileMap, setFileMap] = useState<Map<string, any> | undefined>(undefined);
     const [selectedDoc, setSelectedDoc] = useState<IDocument | undefined>(undefined);
 
-
     useEffect(() => {
         parse();
 
@@ -104,6 +103,13 @@ export default function ArchiveRenderer({
         }
     }
 
+    const setDocAndGC = (oldDoc: IDocument | undefined, newDoc: IDocument | undefined) => {
+        if (oldDoc) {
+            URL.revokeObjectURL(oldDoc.uri);
+        }
+        return newDoc;
+    }
+
     const onSelect: TreeProps['onSelect'] = async (_, info) => {
         let path = info.node.key as string;
         let fileReader = fileMap?.get(path);
@@ -114,10 +120,10 @@ export default function ArchiveRenderer({
                 fileName: file.name,
                 fileType: await getFileType(file.name),
             } as IDocument;
-            setSelectedDoc(doc);
+            setSelectedDoc(oldDoc => setDocAndGC(oldDoc, doc));
             setSelectedPath(path);
         } else {
-            setSelectedDoc(undefined);
+            setSelectedDoc(oldDoc => setDocAndGC(oldDoc, undefined));
             if (fileReader === null) {
                 messageApi.warning(`当前文件${path}解压失败，无法预览！😩😩😩`);
             }

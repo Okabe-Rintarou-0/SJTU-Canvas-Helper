@@ -47,20 +47,18 @@ export default function AssignmentsPage() {
         assignments.map(assignment => {
             const actualGrade = Number.parseInt(assignment.submission?.grade ?? "0");
             const maxGrade = assignment.points_possible ?? 0;
-            const hasGrade = actualGrade > 0;
-            const canGrade = maxGrade > 0;
+            const graded = assignment.submission?.workflow_state === "graded";
+            const canGrade = maxGrade > 0 && !isNaN(actualGrade);
             const assignmetName = assignment.name;
-            if ((assignmentNotNeedSubmit(assignment) && !hasGrade) || !canGrade) {
+            if (!graded || !canGrade) {
                 return;
             }
-            if (assignmentIsEnded(assignment) || hasGrade) {
-                let status = {
-                    assignmetName,
-                    actualGrade,
-                    maxGrade
-                } as GradeStatus;
-                newGradeMap.set(assignment.id, status);
-            }
+            let status = {
+                assignmetName,
+                actualGrade,
+                maxGrade
+            } as GradeStatus;
+            newGradeMap.set(assignment.id, status);
         })
         setGradeMap(newGradeMap);
     }, [assignments])

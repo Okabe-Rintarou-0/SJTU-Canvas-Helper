@@ -1,20 +1,21 @@
 import DocViewer, { IDocument } from "@cyntler/react-doc-viewer";
 import { Modal } from "antd";
 import { File } from "../lib/model";
-import { Md5 } from 'ts-md5';
 
 // fix https://github.com/wojtekmaj/react-pdf/issues/991
 import { pdfjs } from "react-pdf";
 import { getFileType } from "../lib/utils";
 import { BasicRenderers } from "./renderers";
-import { useEffect, useState } from "react";
+import { CSSProperties, ReactNode, useEffect, useMemo, useState } from "react";
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.js`;
 
-export default function PreviewModal({ open, files, handleCancelPreview, title }: {
+export default function PreviewModal({ open, files, handleCancelPreview, title, footer, bodyStyle }: {
     open: boolean,
     files: File[],
     handleCancelPreview?: () => void,
     title?: string,
+    footer?: ReactNode,
+    bodyStyle?: CSSProperties,
 }) {
     const [docs, setDocs] = useState<IDocument[]>([]);
 
@@ -38,11 +39,11 @@ export default function PreviewModal({ open, files, handleCancelPreview, title }
         setDocs(docs);
     }
 
-    // compute md5 as key
-    const key = Md5.hashStr(files.map(file => file.url).reduce((k1, k2) => k1 + k2));
-    return <Modal title={title} width={"90%"} styles={{ body: { height: "84vh", marginTop: "0px" } }} style={{ top: "10px" }}
-        open={open} footer={null} onCancel={handleCancelPreview}>
-        <DocViewer
+    const Viewer = useMemo(() => {
+        const body = footer ? bodyStyle : { height: "84vh", marginTop: "0px" };
+        const key = files.map(file => file.url).reduce((k1, k2) => k1 + k2);
+        return <DocViewer
+            style={body}
             key={key}
             config={{
                 header: {
@@ -53,5 +54,10 @@ export default function PreviewModal({ open, files, handleCancelPreview, title }
             pluginRenderers={BasicRenderers}
             documents={docs}
         />
+    }, [docs])
+    return <Modal title={title} width={"90%"} styles={{ body: { marginTop: "0px" } }} style={{ top: "10px" }}
+        open={open} footer={null} onCancel={handleCancelPreview}>
+        {Viewer}
+        {footer}
     </Modal>
 }
