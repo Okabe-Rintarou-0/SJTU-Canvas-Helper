@@ -324,15 +324,13 @@ impl App {
             file: file.clone(),
             contents: vec![],
         };
-        let ext = if file.display_name.ends_with(".jpg") {
-            ".jpg"
-        } else if file.display_name.ends_with(".png") {
-            ".png"
-        } else {
+        let supported_formats = ["jpg", "jpeg", "png"];
+        let ext = file.display_name.split('.').last().unwrap_or_default();
+        if !supported_formats.contains(&ext) {
             return Ok(scan_result);
-        };
+        }
         let content = Client::get_file_content(&file).await?;
-        let tmp_path = format!("{}/tmp_{}{}", save_dir, Uuid::new_v4(), ext);
+        let tmp_path = format!("{}/tmp_{}.{}", save_dir, Uuid::new_v4(), ext);
         let mut tmp_file = fs::File::create(&tmp_path)?;
         tmp_file.write_all(&content)?;
         let img = image::open(&tmp_path)?;
@@ -1224,7 +1222,7 @@ mod test {
         tracing_subscriber::fmt::init();
         let app = App::new();
         app.init().await?;
-        let course_id = 64174;
+        let course_id = 66427;
         let result = app.filter_course_qrcode_images(course_id).await?;
         tracing::info!("result: {:?}", result);
         Ok(())
