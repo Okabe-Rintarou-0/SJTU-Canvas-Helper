@@ -6,6 +6,7 @@ import { firstDayOfMonth, lastDayOfMonth } from "../lib/utils";
 import { invoke } from "@tauri-apps/api";
 import useMessage from "antd/es/message/useMessage";
 import { CalendarEvent, Colors, Course } from "../lib/model";
+import { Link } from "react-router-dom";
 
 export default function CalendarPage() {
     const [currentDate, setCurrentDate] = useState<Dayjs>(dayjs());
@@ -26,6 +27,16 @@ export default function CalendarPage() {
             const startDate = firstDayOfMonth(currentDate);
             const endDate = lastDayOfMonth(currentDate);
             let events = await handleGetCalendarEvents(contextCodes, startDate, endDate);
+            let assignmentSet = new Set<number>();
+            events.map(event => assignmentSet.add(event.assignment.id));
+            events = events.filter(event => {
+                if (assignmentSet.has(event.assignment.id)) {
+                    assignmentSet.delete(event.assignment.id);
+                    return true;
+                } else {
+                    return false;
+                }
+            })
             setEvents(events);
         } catch (e) {
             messageApi.error(e as string)
@@ -51,7 +62,7 @@ export default function CalendarPage() {
             let events = await handleGetCalendarEvents(contextCodes, now, afterAWeek);
             setHintEvents(events);
         } catch (e) {
-            messageApi.error(e as string)
+            messageApi.error(e as string);
         }
     }
 
@@ -62,7 +73,7 @@ export default function CalendarPage() {
                 {filteredEvents.map((event) => (
                     <span key={event.title} style={{ whiteSpace: "nowrap" }}>
                         <Tooltip placement="top" title={event.context_name}>
-                            <Badge color={colors?.custom_colors[event.context_code]} text={<a href={event.html_url} target="_blank">{event.title}</a>} />
+                            <Badge color={colors?.custom_colors[event.context_code]} text={<Link to={`/assignments?id=${getCourseId(event)}`}>{event.title}</Link>} />
                         </Tooltip>
                     </span>
                 ))}
@@ -86,13 +97,19 @@ export default function CalendarPage() {
         }
     }
 
+    const getCourseId = (event: CalendarEvent) => {
+        const parts = event.context_code.split('_');
+        const courseId = parts[parts.length - 1];
+        return courseId;
+    }
+
     const hintList = hintEvents.map(event => {
         const now = dayjs();
         const diff = dayjs(event.end_at).diff(now, 'hour');
         const days = Math.floor(diff / 24);
         const hours = diff % 24;
         return <div key={event.id}>
-            距离作业<a href={event.html_url} target="_blank">{event.title}</a>({event.context_name})截止还有<b>{days}天{hours}小时</b>
+            距离作业<Link to={`/assignments?id=${getCourseId(event)}`} >{event.title}</Link>({event.context_name})截止还有<b>{days}天{hours}小时</b>
         </div>
     })
 

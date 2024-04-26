@@ -2,10 +2,11 @@ import { Select, Space, Tooltip } from "antd";
 import { Course } from "../lib/model";
 import { InfoCircleOutlined } from '@ant-design/icons'
 
-export default function CourseSelect({ courses, disabled, onChange }: {
+export default function CourseSelect({ courses, disabled, onChange, value }: {
     courses: Course[],
     disabled?: boolean,
     onChange?: (courseId: number) => void,
+    value?: number
 }) {
     const formatCourses = (courses: Course[]) => {
         const formatted: Course[] = [];
@@ -32,6 +33,7 @@ export default function CourseSelect({ courses, disabled, onChange }: {
     return <Space>
         <span>选择课程：</span>
         <Select
+            value={value}
             style={{ width: 350 }}
             disabled={disabled}
             onChange={onChange}

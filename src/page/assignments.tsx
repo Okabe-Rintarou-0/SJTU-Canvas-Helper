@@ -11,6 +11,7 @@ import dayjs from "dayjs";
 import ModifyDDLModal from "../components/modify_ddl_modal";
 import { SubmitModal } from "../components/submit_modal";
 import { GradeOverviewChart } from "../components/grade_overview";
+import { useSearchParams } from "react-router-dom";
 
 export default function AssignmentsPage() {
     const [messageApi, contextHolder] = useMessage();
@@ -27,6 +28,7 @@ export default function AssignmentsPage() {
     const [showModal, setShowModal] = useState<boolean>(false);
     const [selectedAssignment, setSelectedAssignment] = useState<Assignment | undefined>(undefined);
     const [gradeMap, setGradeMap] = useState<Map<number, GradeStatus>>(new Map());
+    const [searchParams, setSearchParams] = useSearchParams();
 
     const initMe = async () => {
         try {
@@ -41,6 +43,17 @@ export default function AssignmentsPage() {
         initMe();
         initCourses();
     }, []);
+
+    useEffect(() => {
+        if (courses.length > 0) {
+            const courseId = Number.parseInt(searchParams.get("id") ?? "");
+            if (courseId > 0) {
+                setSearchParams({});
+                setSelectedCourseId(courseId);
+                handleGetAssignments(courseId, onlyShowUnfinished);
+            }
+        }
+    }, [courses]);
 
     useEffect(() => {
         let newGradeMap = new Map<number, GradeStatus>();
@@ -347,7 +360,7 @@ export default function AssignmentsPage() {
                 handleGetMySingleSubmission(selectedCourseId, selectedAssignment.id);
             }} />}
         <Space direction="vertical" style={{ width: "100%", overflow: "scroll" }} size={"large"}>
-            <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} />
+            <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} value={selectedCourseId === -1 ? undefined : selectedCourseId} />
             {!isTA(selectedCourseId) && <Checkbox disabled={operating} onChange={handleSetOnlyShowUnfinished} defaultChecked>只显示未完成</Checkbox>}
             <GradeOverviewChart gradeMap={gradeMap} />
             <Table style={{ width: "100%" }}
