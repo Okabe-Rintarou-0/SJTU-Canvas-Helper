@@ -62,7 +62,7 @@ export function QRCodePage() {
             <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} />
             {
                 scanResults.length > 0 &&
-                <List grid={{ gutter: 16, column: 4 }} style={{ width: "100%" }} dataSource={scanResults}
+                <List grid={{ gutter: 16, column: 2 }} style={{ width: "100%" }} dataSource={scanResults}
                     renderItem={scanResult => <List.Item>
                         <Card
                             hoverable
