@@ -17,7 +17,8 @@ export default function CalendarPage() {
     const [events, setEvents] = useState<CalendarEvent[]>([]);
     const [loading, setLoading] = useState<boolean>(false);
     const [hintEvents, setHintEvents] = useState<CalendarEvent[]>([]);
-    const currentDateRef = useRef(currentDate)
+    const currentDateRef = useRef<Dayjs | undefined>(undefined);
+    const contextCodesRef = useRef<string[]>([]);
 
     useEffect(() => {
         init();
@@ -27,10 +28,11 @@ export default function CalendarPage() {
         }
     }, []);
 
-    useEffect(() => { currentDateRef.current = currentDate }, [currentDate])
+    useEffect(() => { currentDateRef.current = currentDate }, [currentDate]);
+    useEffect(() => { contextCodesRef.current = contextCodes }, [contextCodes]);
 
     const handleKeyDownEvent = (ev: KeyboardEvent) => {
-        if (loading) {
+        if (loading || !currentDateRef.current) {
             return;
         }
         if (ev.key === "ArrowRight" && !ev.repeat) {
@@ -112,6 +114,7 @@ export default function CalendarPage() {
 
     const handlePanelChange = (date: Dayjs) => {
         setCurrentValue(date);
+        const contextCodes = contextCodesRef.current;
         if (contextCodes.length > 0) {
             handleInitCalendarEvents(contextCodes, date);
             setCurrentDate(date);
