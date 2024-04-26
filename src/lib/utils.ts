@@ -1,7 +1,7 @@
 import { decode } from "js-base64";
 import { getConfig } from "./store";
-import { Dayjs } from "dayjs"
-import { Attachment, File as FileModel } from "./model";
+import dayjs, { Dayjs } from "dayjs"
+import { Assignment, AssignmentDate, Attachment, File as FileModel } from "./model";
 
 export function formatDate(inputDate: string | undefined | null): string {
     if (!inputDate) {
@@ -113,4 +113,29 @@ export function attachmentToFile(attachment: Attachment) {
         size: attachment.size,
         mime_class: attachment.mime_class,
     } as FileModel;
+}
+
+export function getBaseDate(dates: AssignmentDate[]) {
+    return dates.find(date => date.base);
+}
+
+export function assignmentIsEnded(assignment: Assignment) {
+    const baseDate = getBaseDate(assignment.all_dates);
+    const dued = dayjs(baseDate?.due_at).isBefore(dayjs());
+    const locked = dayjs(baseDate?.lock_at).isBefore(dayjs());
+    return dued || locked;
+}
+
+export function assignmentIsNotUnlocked(assignment: Assignment) {
+    const baseDate = getBaseDate(assignment.all_dates);
+    if (!baseDate?.unlock_at) {
+        return false;
+    }
+    const locked = dayjs(baseDate.unlock_at).isAfter(dayjs());
+    return locked;
+}
+
+export function assignmentNotNeedSubmit(assignment: Assignment) {
+    return !assignment.submission ||
+        assignment.submission_types.includes("none") || assignment.submission_types.includes("not_graded");
 }

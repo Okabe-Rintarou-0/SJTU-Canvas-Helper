@@ -2,9 +2,9 @@ import { Avatar, Button, Checkbox, CheckboxProps, Divider, List, Space, Table, T
 import BasicLayout from "../components/layout";
 import useMessage from "antd/es/message/useMessage";
 import { useEffect, useState } from "react";
-import { Assignment, AssignmentDate, Attachment, Course, GradeStatus, Submission, User } from "../lib/model";
+import { Assignment, Attachment, Course, GradeStatus, Submission, User } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
-import { attachmentToFile, formatDate } from "../lib/utils";
+import { assignmentIsEnded, assignmentNotNeedSubmit, attachmentToFile, formatDate, getBaseDate } from "../lib/utils";
 import CourseSelect from "../components/course_select";
 import { usePreview } from "../lib/hooks";
 import dayjs from "dayjs";
@@ -94,20 +94,6 @@ export default function AssignmentsPage() {
             messageApi.error(e as string);
         }
     }
-
-    const assignmentIsEnded = (assignment: Assignment) => {
-        const baseDate = getBaseDate(assignment.all_dates);
-        const dued = dayjs(baseDate?.due_at).isBefore(dayjs());
-        const locked = dayjs(baseDate?.lock_at).isBefore(dayjs());
-        return dued || locked;
-    }
-
-    const assignmentNotNeedSubmit = (assignment: Assignment) => {
-        return !assignment.submission ||
-            assignment.submission_types.includes("none") || assignment.submission_types.includes("not_graded");
-    }
-
-    const getBaseDate = (dates: AssignmentDate[]) => dates.find(date => date.base);
 
     const getColumns = () => {
         const columns = [{

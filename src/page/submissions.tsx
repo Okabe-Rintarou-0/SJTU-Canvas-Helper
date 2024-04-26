@@ -1,15 +1,16 @@
 import { Button, Input, Select, Space, Table, Tag } from "antd";
 import BasicLayout from "../components/layout";
 import useMessage from "antd/es/message/useMessage";
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import { Assignment, Attachment, Course, FileDownloadTask, GradeStatistic, Submission, User } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
-import { attachmentToFile, formatDate } from "../lib/utils";
+import { assignmentIsNotUnlocked, attachmentToFile, formatDate } from "../lib/utils";
 import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
 import GradeStatisticChart from "../components/grade_statistic";
 import { usePreview } from "../lib/hooks";
 import CommentPanel from "../components/comment_panel";
+import { WarningOutlined } from "@ant-design/icons"
 
 export default function SubmissionsPage() {
     const [messageApi, contextHolder] = useMessage();
@@ -24,13 +25,14 @@ export default function SubmissionsPage() {
     const [downloadTasks, setDownloadTasks] = useState<FileDownloadTask[]>([]);
     const [selectedAssignment, setSelectedAssignment] = useState<Assignment | undefined>(undefined);
     const [selectedAttachments, setSelectedAttachments] = useState<Attachment[]>([]);
-    const usersMap = new Map<number, User>(users.map(user => ([user.id, user])));
+    const usersMap = useMemo(() => new Map<number, User>(users.map(user => ([user.id, user]))), [users]);
     const [statistic, setStatistic] = useState<GradeStatistic | undefined>(undefined);
     const [keyword, setKeyword] = useState<string>("");
     const [attachmentToComment, setAttachmentToComment] = useState<number>(-1);
     const [expandedRowKeys, setExpandedRowKeys] = useState<number[]>([]);
     const [previewFooter, setPreviewFooter] = useState<ReactNode>(undefined);
     const [commentingWhilePreviewing, setCommentingWhilePreviewing] = useState<boolean>(false);
+    const [notSubmitStudents, setNotSubmitStudents] = useState<User[]>([]);
 
     const refreshSubmission = async (studentId: number) => {
         const submission = await invoke("get_single_course_assignment_submission", {
@@ -93,6 +95,12 @@ export default function SubmissionsPage() {
     useEffect(() => {
         setEntries(attachments.map(attachmentToFile));
     }, [attachments]);
+
+    useEffect(() => {
+        if (attachments.length > 0) {
+            setNotSubmitStudents(getNotSubmitStudents());
+        }
+    }, [attachments])
 
     const validateGrade = (grade: string) => {
         if (grade.length === 0) {
@@ -309,7 +317,6 @@ export default function SubmissionsPage() {
 
     const handleAssignmentSelect = (assignmentId: number) => {
         setStatistic(undefined);
-        setAttachments([]);
         setSelectedAttachments([]);
         let assignment = assignments.find(assignment => assignment.id === assignmentId);
         if (assignment) {
@@ -341,8 +348,35 @@ export default function SubmissionsPage() {
         }
     }
 
+    const getNotSubmitStudents = () => {
+        const notSubmitStudentsMap = new Map<number, User>();
+        usersMap.forEach(user => {
+            notSubmitStudentsMap.set(user.id, user);
+        });
+        attachments.forEach(attachment => {
+            notSubmitStudentsMap.delete(attachment.user_id);
+        });
+        return [...notSubmitStudentsMap.values()].filter(student => student.name !== "测验学生");
+    }
+
+    const getAssignmentTag = (assignment: Assignment) => {
+        const count = assignment.needs_grading_count ?? 0;
+        const notUnlocked = assignmentIsNotUnlocked(assignment);
+        if (notUnlocked) {
+            return <Tag color="geekblue">尚未解锁</Tag>
+        }
+        if (count === 0) {
+            return <Tag color="success">暂无待批改</Tag>
+        }
+
+        return <Tag color="warning" icon={<WarningOutlined />}>{count}份待批改</Tag>
+    }
+
     const assignmentOptions = assignments.map(assignment => ({
-        label: assignment.name,
+        label: <Space>
+            <span>{assignment.name}</span>
+            {getAssignmentTag(assignment)}
+        </Space>,
         value: assignment.id,
     }));
 
@@ -371,6 +405,16 @@ export default function SubmissionsPage() {
             {
                 selectedAssignment?.points_possible &&
                 <span>满分：<b>{selectedAssignment.points_possible}</b>分</span>
+            }
+            {
+                attachments.length > 0 && notSubmitStudents.length > 0 && <Space wrap>
+                    未提交学生: {notSubmitStudents.map(s => <Tag>{s.name}</Tag>)}
+                </Space>
+            }
+            {
+                attachments.length === 0 && <Space wrap>
+                    未提交学生: <Tag>暂无任何提交</Tag>
+                </Space>
             }
             {statistic && <GradeStatisticChart statistic={statistic} />}
             <Input.Search placeholder="输入学生姓名关键词" onSearch={setKeyword} />

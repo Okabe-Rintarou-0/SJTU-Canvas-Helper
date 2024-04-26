@@ -1,4 +1,4 @@
-import { Card, Image, Space } from "antd";
+import { Card, Image, List, Space } from "antd";
 import BasicLayout from "../components/layout";
 import CourseSelect from "../components/course_select";
 import { useEffect, useState } from "react";
@@ -62,14 +62,17 @@ export function QRCodePage() {
             <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} />
             {
                 scanResults.length > 0 &&
-                scanResults.map(scanResult => {
-                    return <Card
-                        hoverable
-                        cover={<Image src={scanResult.file.url} />}
-                    >
-                        <Meta title={scanResult.file.display_name} />
-                    </Card>;
-                })
+                <List grid={{ gutter: 16, column: 4 }} style={{ width: "100%" }} dataSource={scanResults}
+                    renderItem={scanResult => <List.Item>
+                        <Card
+                            hoverable
+                            cover={<Image src={scanResult.file.url} />}
+                        >
+                            <Meta title={scanResult.file.display_name} />
+                        </Card>
+
+                    </List.Item>}>
+                </List>
             }
             {scanResults.length === 0 && <Empty />}
         </Space>
