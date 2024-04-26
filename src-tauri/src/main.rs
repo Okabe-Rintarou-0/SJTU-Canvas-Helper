@@ -50,12 +50,34 @@ impl App {
         }
     }
 
+    fn portable() -> bool {
+        let exe_dir = std::env::current_exe()
+            .map(|path| path.parent().unwrap().to_owned())
+            .ok();
+        
+        if let Some(dir) = exe_dir {
+            let portable_file = dir.join(".config/PORTABLE");
+            portable_file.exists()
+        } else {
+            false
+        }
+    }
+
+    fn config_dir() -> Result<String> {
+        if App::portable() {
+            let exe_dir = std::env::current_exe()
+                .map(|path| path.parent().unwrap().to_owned())
+                .ok().unwrap();
+            let config_dir = exe_dir.join(".config");
+            return Ok(config_dir.to_str().unwrap().to_owned());
+        } else {
+            let config_dir = config_dir().unwrap().join("SJTU-Canvas-Helper");
+            return Ok(config_dir.to_str().unwrap().to_owned());
+        }
+    }
+
     fn new() -> Self {
-        let config_dir = format!(
-            "{}/{}",
-            config_dir().unwrap().to_str().unwrap(),
-            "SJTU-Canvas-Helper"
-        );
+        let config_dir = App::config_dir().unwrap();
         App::ensure_directory(&config_dir);
         let config_path = format!("{}/{}", config_dir, "sjtu_canvas_helper_config.json");
         let config = match App::read_config_from_file(&config_path) {
@@ -471,9 +493,8 @@ impl App {
         let _ = std::process::Command::new("xdg-open").arg(dir).output()?;
 
         #[cfg(target_os = "windows")]
-        let _ = std::process::Command::new("cmd")
-            .arg("/c")
-            .arg(format!("start {}", dir))
+        let _ = std::process::Command::new("explorer")
+            .arg(dir)
             .output()?;
 
         Ok(())
@@ -485,11 +506,7 @@ impl App {
     }
 
     fn open_config_dir(&self) -> Result<()> {
-        let config_path = format!(
-            "{}/{}",
-            config_dir().unwrap().to_str().unwrap(),
-            "SJTU-Canvas-Helper"
-        );
+        let config_path = App::config_dir().unwrap();
         self.open_dir(&config_path)
     }
 
