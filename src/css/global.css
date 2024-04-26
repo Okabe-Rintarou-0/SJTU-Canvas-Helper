@@ -1,3 +1,8 @@
 svg {
     vertical-align: baseline;
 }
+
+/* https://github.com/ant-design/ant-design/issues/12373 */
+.ant-picker-calendar-header .ant-radio-group {
+    display: none !important
+}

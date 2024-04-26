@@ -1,6 +1,6 @@
 import { Alert, Badge, Calendar, Space, Spin, Tooltip } from "antd";
 import BasicLayout from "../components/layout";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import dayjs, { Dayjs } from "dayjs";
 import { firstDayOfMonth, lastDayOfMonth } from "../lib/utils";
 import { invoke } from "@tauri-apps/api";
@@ -10,16 +10,36 @@ import { Link } from "react-router-dom";
 
 export default function CalendarPage() {
     const [currentDate, setCurrentDate] = useState<Dayjs>(dayjs());
+    const [currentValue, setCurrentValue] = useState<Dayjs>(dayjs());
     const [messageApi, contextHolder] = useMessage();
     const [colors, setColors] = useState<Colors | undefined>(undefined);
     const [contextCodes, setContextCodes] = useState<string[]>([]);
     const [events, setEvents] = useState<CalendarEvent[]>([]);
     const [loading, setLoading] = useState<boolean>(false);
     const [hintEvents, setHintEvents] = useState<CalendarEvent[]>([]);
+    const currentDateRef = useRef(currentDate)
 
     useEffect(() => {
         init();
+        document.body.addEventListener("keydown", handleKeyDownEvent, true);
+        return () => {
+            document.body.removeEventListener("keydown", handleKeyDownEvent, true);
+        }
     }, []);
+
+    useEffect(() => { currentDateRef.current = currentDate }, [currentDate])
+
+    const handleKeyDownEvent = (ev: KeyboardEvent) => {
+        if (loading) {
+            return;
+        }
+        if (ev.key === "ArrowRight" && !ev.repeat) {
+            handlePanelChange(currentDateRef.current.add(1, 'month'));
+        }
+        if (ev.key === "ArrowLeft" && !ev.repeat) {
+            handlePanelChange(currentDateRef.current.subtract(1, 'month'));
+        }
+    }
 
     const handleInitCalendarEvents = async (contextCodes: string[], currentDate: Dayjs) => {
         setLoading(true);
@@ -36,7 +56,7 @@ export default function CalendarPage() {
                 } else {
                     return false;
                 }
-            })
+            });
             setEvents(events);
         } catch (e) {
             messageApi.error(e as string)
@@ -69,7 +89,7 @@ export default function CalendarPage() {
     const cellRender = (date: Dayjs) => {
         let filteredEvents = events.filter(event => dayjs(event.end_at).isSame(date, "day"));
         return (
-            <ul>
+            <Space direction="vertical">
                 {filteredEvents.map((event) => (
                     <span key={event.title} style={{ whiteSpace: "nowrap" }}>
                         <Tooltip placement="top" title={event.context_name}>
@@ -77,7 +97,7 @@ export default function CalendarPage() {
                         </Tooltip>
                     </span>
                 ))}
-            </ul>
+            </Space>
         );
     };
 
@@ -91,6 +111,7 @@ export default function CalendarPage() {
     }
 
     const handlePanelChange = (date: Dayjs) => {
+        setCurrentValue(date);
         if (contextCodes.length > 0) {
             handleInitCalendarEvents(contextCodes, date);
             setCurrentDate(date);
@@ -111,14 +132,15 @@ export default function CalendarPage() {
         return <div key={event.id}>
             距离作业<Link to={`/assignments?id=${getCourseId(event)}`} >{event.title}</Link>({event.context_name})截止还有<b>{days}天{hours}小时</b>
         </div>
-    })
+    });
 
     return <BasicLayout>
         {contextHolder}
         <Space direction="vertical">
             <Alert message={"DDL 提示"} description={hintList} type="warning" showIcon />
+            <Alert message={"温馨提示"} description={"按下左右键可以切换月份哦😙"} type="info" showIcon />
             <Spin spinning={loading}>
-                <Calendar onPanelChange={handlePanelChange} cellRender={cellRender} />
+                <Calendar onPanelChange={handlePanelChange} cellRender={cellRender} value={currentValue} onChange={setCurrentValue} />
             </Spin>
         </Space>
     </BasicLayout >
