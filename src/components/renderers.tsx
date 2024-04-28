@@ -12,5 +12,5 @@ export const BasicRenderers = [BMPRenderer, JPGRenderer, PDFRenderer, PNGRendere
 
 // exclude MSDocRenderer
 export const ArchiveSupportedRenderers = [BMPRenderer, JPGRenderer, PDFRenderer, PNGRenderer, TIFFRenderer, CSVRenderer, GIFRenderer, VideoRenderer,
-    XlsxRenderer, CodeRenderer, DocxRenderer, ImageRenderer, MarkdownRenderer
+    XlsxRenderer, CodeRenderer, DocxRenderer, ImageRenderer, MarkdownRenderer, ArchiveRenderer
 ]
