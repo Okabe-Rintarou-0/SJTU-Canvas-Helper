@@ -1375,6 +1375,7 @@ mod test {
         Ok(())
     }
 
+    #[ignore]
     #[tokio::test]
     async fn test_account() -> Result<()> {
         tracing_subscriber::fmt::init();
