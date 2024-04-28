@@ -29,6 +29,14 @@ pub enum ClientError {
     JoinError(#[from] tokio::task::JoinError),
     #[error("QRCode Image error: {0}")]
     QRCodeImage(#[from] image::ImageError),
+    #[error("Account already exists")]
+    AccountAlreadyExists,
+    #[error("Account not exists")]
+    AccountNotExists,
+    #[error("Not allowed to delete default account")]
+    NotAllowedToDeleteDefaultAccount,
+    #[error("Not allowed to create default account")]
+    NotAllowedToCreateDefaultAccount,
 }
 
 impl serde::Serialize for ClientError {

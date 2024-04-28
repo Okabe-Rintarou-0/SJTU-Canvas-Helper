@@ -4,8 +4,9 @@
 use client::Client;
 use error::{ClientError, Result};
 use model::{
-    AppConfig, Assignment, CalendarEvent, Colors, Course, File, Folder, ProgressPayload,
-    QRCodeScanResult, Subject, Submission, User, VideoCourse, VideoInfo, VideoPlayInfo,
+    Account, AccountInfo, AppConfig, Assignment, CalendarEvent, Colors, Course, File, Folder,
+    ProgressPayload, QRCodeScanResult, Subject, Submission, User, VideoCourse, VideoInfo,
+    VideoPlayInfo,
 };
 use std::{
     fs::{self, remove_file},
@@ -37,7 +38,7 @@ lazy_static! {
 
 struct App {
     client: Arc<Client>,
-    config_path: String,
+    current_account: RwLock<Account>,
     config: RwLock<AppConfig>,
     handle: RwLock<Option<JoinHandle<()>>>,
 }
@@ -54,7 +55,7 @@ impl App {
         let exe_dir = std::env::current_exe()
             .map(|path| path.parent().unwrap().to_owned())
             .ok();
-        
+
         if let Some(dir) = exe_dir {
             let portable_file = dir.join(".config/PORTABLE");
             portable_file.exists()
@@ -67,7 +68,8 @@ impl App {
         if App::portable() {
             let exe_dir = std::env::current_exe()
                 .map(|path| path.parent().unwrap().to_owned())
-                .ok().unwrap();
+                .ok()
+                .unwrap();
             let config_dir = exe_dir.join(".config");
             return Ok(config_dir.to_str().unwrap().to_owned());
         } else {
@@ -76,18 +78,114 @@ impl App {
         }
     }
 
+    fn save_account_info(account: &AccountInfo) -> Result<()> {
+        let config_dir = App::config_dir()?;
+        let account_path = format!("{}/{}", config_dir, "account.json");
+        let content = serde_json::to_vec(account)?;
+        fs::write(account_path, content)?;
+        Ok(())
+    }
+
+    fn read_account_info() -> Result<AccountInfo> {
+        let config_dir = App::config_dir()?;
+        let account_path = format!("{}/{}", config_dir, "account.json");
+        fs::metadata(&account_path)?;
+        let content = fs::read(&account_path)?;
+        Ok(serde_json::from_slice(&content)?)
+    }
+
+    fn account_exists(account: &Account) -> Result<bool> {
+        let config_path = App::get_config_path(account);
+        let exists = fs::metadata(config_path).is_ok();
+        Ok(exists)
+    }
+
+    pub fn create_account(account: &Account) -> Result<()> {
+        if *account == Account::Default {
+            return Err(ClientError::NotAllowedToCreateDefaultAccount);
+        }
+        if App::account_exists(account)? {
+            return Err(ClientError::AccountAlreadyExists);
+        }
+        let config = AppConfig::default();
+        let config_path = App::get_config_path(account);
+        let content = serde_json::to_vec(&config)?;
+        fs::write(config_path, content)?;
+
+        let mut account_info = App::read_account_info()?;
+        account_info.all_accounts.push(account.clone());
+        App::save_account_info(&account_info)?;
+        Ok(())
+    }
+
+    pub fn list_accounts() -> Result<Vec<Account>> {
+        let account_info = App::read_account_info()?;
+        Ok(account_info.all_accounts)
+    }
+
+    pub async fn delete_account(&self, account: &Account) -> Result<()> {
+        if *account == Account::Default {
+            return Err(ClientError::NotAllowedToDeleteDefaultAccount);
+        }
+        if !App::account_exists(account)? {
+            return Err(ClientError::AccountNotExists);
+        }
+
+        let config_path = App::get_config_path(account);
+        fs::remove_file(&config_path)?;
+
+        let current_account = self.current_account.read().await.clone();
+        // if delete current account, then switch to default
+        if *account == current_account {
+            self.switch_account(&Default::default()).await?;
+        }
+        let mut account_info = App::read_account_info()?;
+        for i in 0..account_info.all_accounts.len() {
+            if account_info.all_accounts[i] == *account {
+                account_info.all_accounts.remove(i);
+                break;
+            }
+        }
+        App::save_account_info(&account_info)?;
+        Ok(())
+    }
+
+    pub async fn switch_account(&self, account: &Account) -> Result<()> {
+        if !App::account_exists(account)? {
+            return Err(ClientError::AccountNotExists);
+        }
+        let config_path = App::get_config_path(account);
+        let config = App::read_config_from_file(&config_path)?;
+        *self.config.write().await = config;
+        let mut account_info = App::read_account_info()?;
+        account_info.current_account = account.clone();
+        App::save_account_info(&account_info)?;
+        *self.current_account.write().await = account.clone();
+        Ok(())
+    }
+
     fn new() -> Self {
+        let account_info = match App::read_account_info() {
+            Ok(account) => account,
+            Err(_) => {
+                let account = Default::default();
+                App::save_account_info(&account).unwrap();
+                account
+            }
+        };
+        tracing::info!("Read current account: {:?}", account_info);
         let config_dir = App::config_dir().unwrap();
         App::ensure_directory(&config_dir);
-        let config_path = format!("{}/{}", config_dir, "sjtu_canvas_helper_config.json");
+        let config_path = App::get_config_path(&account_info.current_account);
+        tracing::info!("Read config path: {}", config_path);
         let config = match App::read_config_from_file(&config_path) {
             Ok(config) => config,
             Err(_) => Default::default(),
         };
 
         Self {
-            config_path,
             client: Arc::new(Client::new()),
+            current_account: RwLock::new(account_info.current_account),
             config: RwLock::new(config),
             handle: Default::default(),
         }
@@ -158,6 +256,16 @@ impl App {
         let content = fs::read(config_path)?;
         let config = serde_json::from_slice(&content)?;
         Ok(config)
+    }
+
+    fn get_config_path(account: &Account) -> String {
+        let config_dir = App::config_dir().unwrap();
+        let mut config_file_name = "sjtu_canvas_helper_config".to_owned();
+        if let Account::Custom(name) = account {
+            config_file_name += &format!("_{}", name);
+        }
+        let config_path = format!("{}/{}.json", config_dir, config_file_name);
+        config_path
     }
 
     async fn get_config(&self) -> AppConfig {
@@ -493,9 +601,7 @@ impl App {
         let _ = std::process::Command::new("xdg-open").arg(dir).output()?;
 
         #[cfg(target_os = "windows")]
-        let _ = std::process::Command::new("explorer")
-            .arg(dir)
-            .output()?;
+        let _ = std::process::Command::new("explorer").arg(dir).output()?;
 
         Ok(())
     }
@@ -506,8 +612,8 @@ impl App {
     }
 
     fn open_config_dir(&self) -> Result<()> {
-        let config_path = App::config_dir().unwrap();
-        self.open_dir(&config_path)
+        let config_dir = App::config_dir()?;
+        self.open_dir(&config_dir)
     }
 
     async fn delete_file(&self, file: &File) -> Result<()> {
@@ -551,7 +657,9 @@ impl App {
     }
 
     async fn save_config(&self, config: AppConfig) -> Result<()> {
-        fs::write(&APP.config_path, serde_json::to_vec(&config).unwrap())?;
+        let account = self.current_account.read().await.clone();
+        let config_path = App::get_config_path(&account);
+        fs::write(&config_path, serde_json::to_vec(&config).unwrap())?;
         *self.config.write().await = config;
         Ok(())
     }
@@ -769,6 +877,31 @@ impl App {
             .upload_file(file, save_dir, &info, progress_handler)
             .await
     }
+}
+
+#[tauri::command]
+fn create_account(account: Account) -> Result<()> {
+    App::create_account(&account)
+}
+
+#[tauri::command]
+fn read_account_info() -> Result<AccountInfo> {
+    App::read_account_info()
+}
+
+#[tauri::command]
+async fn switch_account(account: Account) -> Result<()> {
+    APP.switch_account(&account).await
+}
+
+#[tauri::command]
+async fn delete_account(account: Account) -> Result<()> {
+    APP.delete_account(&account).await
+}
+
+#[tauri::command]
+fn list_accounts() -> Result<Vec<Account>> {
+    App::list_accounts()
 }
 
 #[tauri::command]
@@ -1148,6 +1281,11 @@ async fn main() -> Result<()> {
     APP.init().await?;
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            switch_account,
+            create_account,
+            delete_account,
+            read_account_info,
+            list_accounts,
             list_courses,
             list_ta_courses,
             list_course_files,
@@ -1210,7 +1348,11 @@ async fn main() -> Result<()> {
 
 #[cfg(test)]
 mod test {
-    use crate::{error::Result, model::File, App};
+    use crate::{
+        error::Result,
+        model::{Account, File},
+        App,
+    };
 
     #[ignore]
     #[tokio::test]
@@ -1230,6 +1372,58 @@ mod test {
             .list_calendar_events(&context_codes, start_date, end_date)
             .await?;
         assert!(!events.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_account() -> Result<()> {
+        tracing_subscriber::fmt::init();
+        let app = App::new();
+        app.init().await?;
+
+        let custom_account = Account::Custom("test".to_owned());
+        let default_account = Account::Default;
+        let non_existent_account = Account::Custom("Non-Existent".to_owned());
+        let mut current_account = App::read_account_info()?;
+        assert_eq!(current_account.all_accounts, vec![default_account.clone()]);
+        assert_eq!(App::list_accounts()?, current_account.all_accounts);
+
+        // Step 0: try to delete default account, should fail
+        assert!(app.delete_account(&default_account).await.is_err());
+
+        // Step 1: create account
+        App::create_account(&custom_account)?;
+        current_account = App::read_account_info()?;
+        assert!(App::account_exists(&custom_account)?);
+        assert_eq!(
+            current_account.all_accounts,
+            vec![default_account.clone(), custom_account.clone()]
+        );
+        assert_eq!(App::list_accounts()?, current_account.all_accounts);
+
+        // cannot create duplicate accounts
+        assert!(App::create_account(&custom_account).is_err());
+
+        // Step 2: switch account
+        app.switch_account(&custom_account).await?;
+        current_account = App::read_account_info()?;
+        assert_eq!(custom_account, current_account.current_account);
+        assert_eq!(
+            current_account.all_accounts,
+            vec![default_account.clone(), custom_account.clone()]
+        );
+        assert_eq!(App::list_accounts()?, current_account.all_accounts);
+
+        // Step 3 delete account
+        app.delete_account(&custom_account).await?;
+        current_account = App::read_account_info()?;
+        assert!(!App::account_exists(&custom_account)?);
+        assert_eq!(current_account.current_account, Default::default());
+        assert_eq!(current_account.all_accounts, vec![default_account.clone()]);
+        assert_eq!(App::list_accounts()?, current_account.all_accounts);
+
+        // try to delete non-existent account should fail
+        assert!(app.delete_account(&non_existent_account).await.is_err());
         Ok(())
     }
 

@@ -1,7 +1,7 @@
-import { Button, Form, Image, Input, InputNumber, Space, Tour } from "antd";
+import { Button, Form, Image, Input, InputNumber, Select, Space, Tour } from "antd";
 import BasicLayout from "../components/layout";
 import { useEffect, useRef, useState } from "react";
-import { AppConfig, User } from "../lib/model";
+import { AccountInfo, AppConfig, User } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import useMessage from "antd/es/message/useMessage";
 import { getConfig, saveConfig } from "../lib/store";
@@ -9,14 +9,19 @@ const { Password } = Input;
 import type { InputRef, TourProps } from 'antd';
 import { PathSelector } from "../components/path_selector";
 
+type AccountMode = "create" | "select";
+
 export default function SettingsPage() {
     const [form] = Form.useForm<AppConfig>();
     const [messageApi, contextHolder] = useMessage();
     const tokenRef = useRef<InputRef>(null);
     const savePathRef = useRef<InputRef>(null);
     const saveButtonRef = useRef(null);
-
+    const createAccountInputRef = useRef<InputRef>(null);
+    const [accounts, setAccounts] = useState<string[]>([]);
     const [openTour, setOpenTour] = useState<boolean>(false);
+    const [accountMode, setAccountMode] = useState<AccountMode>("select");
+    const [currentAccount, setCurrentAccount] = useState<string>("");
 
     const steps: TourProps['steps'] = [
         {
@@ -43,14 +48,26 @@ export default function SettingsPage() {
         initConfig();
     }, []);
 
+    const initAccounts = async () => {
+        let accounts = await invoke("list_accounts") as string[];
+        setAccounts(accounts);
+    }
+
     const initConfig = async () => {
-        let config = await getConfig();
-        if (config.proxy_port === 0) {
-            config.proxy_port = 3030;
-        }
-        form.setFieldsValue(config);
-        if (config.token.length === 0) {
-            setOpenTour(true);
+        try {
+            await initAccounts();
+            let config = await getConfig(true);
+            let accountInfo = await invoke("read_account_info") as AccountInfo;
+            setCurrentAccount(accountInfo.current_account);
+            if (config.proxy_port === 0) {
+                config.proxy_port = 3030;
+            }
+            form.setFieldsValue(config);
+            if (config.token.length === 0) {
+                setOpenTour(true);
+            }
+        } catch (e) {
+            messageApi.error(`初始化时发生错误：${e}`);
         }
     }
 
@@ -92,9 +109,69 @@ export default function SettingsPage() {
         return valid ? Promise.resolve() : Promise.reject(new Error("端口必须是 0 - 65535 之间的数字"));
     }
 
+    const handleCreateAccount = async () => {
+        try {
+            let account = createAccountInputRef.current?.input?.value;
+            if (!account) {
+                messageApi.warning("账号名不得为空⚠️！")
+                return;
+            }
+            await invoke("create_account", { account });
+            await initAccounts();
+            setAccountMode("select");
+            messageApi.success("创建账号成功🎉！")
+        } catch (e) {
+            messageApi.error(`创建账号失败：${e}`);
+        }
+    }
+
+    const handleSwitchAccount = async (account: string) => {
+        try {
+            await invoke("switch_account", { account });
+            initConfig();
+            // messageApi.success("切换账号成功🎉！");
+        } catch (e) {
+            messageApi.error(`切换账号失败😢：${e}`);
+        }
+    }
+
+    const handleDeleteAccount = async () => {
+        try {
+            await invoke("delete_account", { account: currentAccount });
+            initConfig();
+            messageApi.success("删除账号成功🎉！");
+        } catch (e) {
+            messageApi.error(`删除账号失败😢：${e}`);
+        }
+    }
+
     return <BasicLayout>
         {contextHolder}
         <Space direction="vertical" style={{ width: "100%" }}>
+            {accountMode === "select" && < Space >
+                <span>选择账号：</span>
+                <Select
+                    onChange={handleSwitchAccount}
+                    style={{ width: 200 }}
+                    value={currentAccount}
+                    options={accounts.map(account => ({
+                        label: account,
+                        value: account
+                    }))}
+                />
+                <Button onClick={() => setAccountMode("create")}>新建账号</Button>
+                <Button disabled={currentAccount === "Default"} type="primary" onClick={handleDeleteAccount}>删除当前账号</Button>
+            </Space>}
+            {accountMode === "create" && < Space >
+                <span>新建账号：</span>
+                <Input
+                    ref={createAccountInputRef}
+                    style={{ width: 250 }}
+                    placeholder='请输入账号名，比如"本科账号"'
+                />
+                <Button onClick={handleCreateAccount}>创建</Button>
+                <Button onClick={() => setAccountMode("select")}>取消</Button>
+            </Space>}
             <Form
                 form={form}
                 layout="vertical"
@@ -139,5 +216,5 @@ export default function SettingsPage() {
             </Form>
         </Space>
         {openTour && <Tour open={openTour} onClose={() => setOpenTour(false)} steps={steps} />}
-    </BasicLayout>
+    </BasicLayout >
 }

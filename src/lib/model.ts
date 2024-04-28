@@ -210,6 +210,11 @@ export interface AppConfig {
     proxy_port: number;
 }
 
+export interface AccountInfo {
+    current_account: string;
+    all_accounts: string[];
+}
+
 export interface ExportUsersConfig {
     save_name: string;
 }

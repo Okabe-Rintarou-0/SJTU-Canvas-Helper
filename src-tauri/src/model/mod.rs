@@ -83,7 +83,45 @@ pub struct Folder {
     pub folders_count: i64,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Account {
+    Default,
+    #[serde(untagged)]
+    Custom(String),
+}
+
+impl Default for Account {
+    fn default() -> Self {
+        Self::Default
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AccountInfo {
+    pub current_account: Account,
+    pub all_accounts: Vec<Account>,
+}
+
+impl Default for AccountInfo {
+    fn default() -> Self {
+        Self {
+            current_account: Default::default(),
+            all_accounts: vec![Default::default()],
+        }
+    }
+}
+
+impl AccountInfo {
+    #[allow(dead_code)]
+    pub fn custom<T: Into<String>>(name: T) -> Self {
+        Self {
+            current_account: Account::Custom(name.into()),
+            ..Default::default()
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
     pub token: String,
@@ -101,6 +139,21 @@ pub struct AppConfig {
     pub proxy_port: u16,
     #[serde(default)]
     pub jbox_login_info: JBoxLoginInfo,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            token: Default::default(),
+            save_path: Default::default(),
+            serve_as_plaintext: Default::default(),
+            ja_auth_cookie: Default::default(),
+            video_cookies: Default::default(),
+            oauth_consumer_key: Default::default(),
+            proxy_port: 3030,
+            jbox_login_info: Default::default(),
+        }
+    }
 }
 
 fn default_proxy_port() -> u16 {

@@ -12,13 +12,11 @@ export const PathSelector = React.forwardRef<InputRef, PathSelectorProps>(({ val
     const [saveDir, setSaveDir] = useState<string>("");
 
     useEffect(() => {
-        if (value) {
-            setSaveDir(value);
-        }
-    }, [value])
+        setSaveDir(value ?? "");
+    }, [value]);
 
     const handleSelectDirectory = async () => {
-        const config = await getConfig();
+        const config = await getConfig(true);
         const path = config.save_path.length > 0 ? config.save_path : undefined;
         const saveDir = await open({
             directory: true,
