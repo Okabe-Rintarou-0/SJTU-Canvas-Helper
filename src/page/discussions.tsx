@@ -14,6 +14,7 @@ export default function DiscussionsPage() {
     const [me, setMe] = useState<User | undefined>(undefined);
     const [operating, setOperating] = useState<boolean>(false);
     const [courses, setCourses] = useState<Course[]>([]);
+    const [selectedTopic, setSelectedTopic] = useState<DiscussionTopic | undefined>(undefined);
     const [fullDiscussion, setFullDiscussion] = useState<FullDiscussion | undefined>(undefined);
     const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
 
@@ -72,6 +73,7 @@ export default function DiscussionsPage() {
 
     const handleTopicSelect = (topicId: number) => {
         handleGetFullDiscussion(topicId);
+        setSelectedTopic(topics.find(topic => topic.id === topicId));
     }
 
     return <BasicLayout>
@@ -93,15 +95,38 @@ export default function DiscussionsPage() {
             </Space>
             {!fullDiscussion && <Empty />}
             {fullDiscussion &&
-                <Card styles={{ body: { backgroundColor: "#f5f5f5f5" } }}>
-                    <Space direction='vertical' style={{ display: "flex" }}>
-                        <div style={{ overflow: "scroll" }}>
+                <Card styles={{ body: { backgroundColor: "#f5f5f5f5", width: "100%" } }}>
+                    <Space direction='vertical' style={{ width: "100%" }}>
+                        <div style={{ overflow: "scroll", width: "100%" }}>
+                            {selectedTopic && <MessageBox
+                                key={selectedTopic.id}
+                                id={selectedTopic.id}
+                                focus={false}
+                                titleColor=''
+                                forwarded={false}
+                                styles={{
+                                    marginBottom: "10px"
+                                }}
+                                removeButton={false}
+                                status='received'
+                                notch={false}
+                                retracted={false}
+                                title={selectedTopic.title}
+                                position={'left'}
+                                type={'text'}
+                                // hack here
+                                text={<div style={{ maxWidth: "500px" }} dangerouslySetInnerHTML={{ __html: selectedTopic.message }} /> as unknown as string}
+                                replyButton={false}
+                                date={selectedTopic.created_at ? new Date(selectedTopic.created_at) : new Date()}
+                            />}
                             {fullDiscussion.view.map(view => {
                                 const user = fullDiscussion.participants.find(p => p.id === view.user_id);
                                 if (!user) {
                                     return null;
                                 }
-                                const position = user.id === me?.id ? "right" : "left";
+                                const is_mine = user.id === me?.id;
+                                const position = is_mine ? "right" : "left";
+                                const color = is_mine ? "#E6E6FA" : undefined;
                                 return <MessageBox
                                     key={view.id}
                                     id={view.id}
@@ -109,6 +134,7 @@ export default function DiscussionsPage() {
                                     titleColor=''
                                     forwarded={false}
                                     styles={{
+                                        background: color,
                                         marginBottom: "10px"
                                     }}
                                     removeButton={false}
@@ -120,7 +146,7 @@ export default function DiscussionsPage() {
                                     position={position}
                                     type={'text'}
                                     // hack here
-                                    text={<div dangerouslySetInnerHTML={{ __html: view.message ?? "" }} /> as unknown as string}
+                                    text={<div style={{ maxWidth: "500px" }} dangerouslySetInnerHTML={{ __html: view.message ?? "" }} /> as unknown as string}
                                     replyButton={false}
                                     date={view.created_at ? new Date(view.created_at) : new Date()}
                                 />
