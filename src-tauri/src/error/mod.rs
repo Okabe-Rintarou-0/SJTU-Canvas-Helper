@@ -3,7 +3,7 @@ use std::io;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum ClientError {
+pub enum AppError {
     #[error("Network error: {0}")]
     Network(#[from] reqwest::Error),
     #[error("Json parse error: {0}")]
@@ -39,7 +39,7 @@ pub enum ClientError {
     NotAllowedToCreateDefaultAccount,
 }
 
-impl serde::Serialize for ClientError {
+impl serde::Serialize for AppError {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: serde::ser::Serializer,
@@ -48,4 +48,4 @@ impl serde::Serialize for ClientError {
     }
 }
 
-pub type Result<T> = std::result::Result<T, ClientError>;
+pub type Result<T> = std::result::Result<T, AppError>;

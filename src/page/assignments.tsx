@@ -59,12 +59,14 @@ export default function AssignmentsPage() {
         let newGradeMap = new Map<number, GradeStatus>();
         assignments.map(assignment => {
             const actualGrade = Number.parseInt(assignment.submission?.grade ?? "0");
-            const maxGrade = assignment.points_possible ?? 0;
-            const graded = assignment.submission?.workflow_state === "graded";
-            const canGrade = maxGrade > 0 && !isNaN(actualGrade);
+            let maxGrade = assignment.points_possible ?? 0;
+            const graded = assignment.submission?.workflow_state === "graded" && !isNaN(actualGrade);
             const assignmetName = assignment.name;
-            if (!graded || !canGrade) {
+            if (!graded) {
                 return;
+            }
+            if (maxGrade < actualGrade) {
+                maxGrade = actualGrade;
             }
             let status = {
                 assignmetName,

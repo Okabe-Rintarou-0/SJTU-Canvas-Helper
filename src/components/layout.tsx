@@ -41,7 +41,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
     }, {
         key: 'qrcode',
         icon: <BsQrCode />,
-        label: <Link to={'/qrcode'}>二维码(beta)</Link>,
+        label: <Link to={'/qrcode'}>二维码</Link>,
     }, {
         key: 'settings',
         icon: <SettingOutlined />,

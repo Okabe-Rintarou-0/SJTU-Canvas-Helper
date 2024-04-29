@@ -286,6 +286,7 @@ pub enum WorkflowState {
     Submitted,
     Unsubmitted,
     Graded,
+    PendingReview,
 }
 
 impl Default for WorkflowState {

@@ -144,7 +144,7 @@ export interface AssignmentOverride {
     lock_at: string | null;
 }
 
-export type WorkflowState = "submitted" | "unsubmitted" | "graded";
+export type WorkflowState = "submitted" | "unsubmitted" | "graded" | "pending_review";
 
 export interface Submission {
     id: number;
