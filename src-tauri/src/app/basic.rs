@@ -441,7 +441,7 @@ impl App {
         tmp_file.write_all(&content)?;
 
         let tmp_path = tmp_file.path();
-        let img = image::open(&tmp_path)?;
+        let img = image::open(tmp_path)?;
         let decoder = bardecoder::default_decoder();
 
         let results = decoder.decode(&img);
