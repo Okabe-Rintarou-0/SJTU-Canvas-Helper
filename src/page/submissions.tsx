@@ -1,4 +1,4 @@
-import { Button, Input, Select, Space, Table, Tag } from "antd";
+import { Button, Input, Popconfirm, Select, Space, Table, Tag } from "antd";
 import BasicLayout from "../components/layout";
 import useMessage from "antd/es/message/useMessage";
 import { ReactNode, useEffect, useMemo, useState } from "react";
@@ -408,7 +408,20 @@ export default function SubmissionsPage() {
             }
             {
                 attachments.length > 0 && notSubmitStudents.length > 0 && <Space wrap>
-                    未提交学生: {notSubmitStudents.map(s => <Tag>{s.name}</Tag>)}
+                    未提交学生: {notSubmitStudents.map(s => <Popconfirm
+                        key={s.id}
+                        placement="top"
+                        title={"学生信息"}
+                        showCancel={false}
+                        description={<Space direction="vertical">
+                            <p>姓名：{s.name}</p>
+                            <p>学号: {s.login_id}</p>
+                            <p>邮箱: <a href={`mailto:${s.email}`} target="_blank">{s.email}</a></p>
+                        </Space>}
+                        okText="确认"
+                    >
+                        <a><Tag>{s.name}</Tag></a>
+                    </Popconfirm>)}
                 </Space>
             }
             {

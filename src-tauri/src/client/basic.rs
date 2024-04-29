@@ -381,8 +381,11 @@ impl Client {
     }
 
     pub async fn list_course_students(&self, course_id: i64, token: &str) -> Result<Vec<User>> {
-        let url = format!("{}/api/v1/courses/{}/students", BASE_URL, course_id);
-        self.list_items_with_page(&url, token, 0).await
+        let url = format!(
+            "{}/api/v1/courses/{}/users?enrollment_type[]=student",
+            BASE_URL, course_id
+        );
+        self.list_items(&url, token).await
     }
 
     pub async fn list_courses(&self, token: &str) -> Result<Vec<Course>> {
