@@ -3,7 +3,7 @@ use std::process;
 
 use error::{AppError, Result};
 use std::{
-    fs::{self, remove_file},
+    fs,
     io::Write,
     path::{Path, PathBuf},
     sync::Arc,
@@ -16,7 +16,7 @@ use warp::{hyper::Response, Filter};
 use warp_reverse_proxy::reverse_proxy_filter;
 use xlsxwriter::Workbook;
 
-use crate::{client::Client, error, model::*};
+use crate::{client::Client, error, model::*, utils::TempFile};
 
 use super::App;
 
@@ -437,9 +437,10 @@ impl App {
             return Ok(scan_result);
         }
         let content = Client::get_file_content(&file).await?;
-        let tmp_path = format!("{}/tmp_{}.{}", save_dir, Uuid::new_v4(), ext);
-        let mut tmp_file = fs::File::create(&tmp_path)?;
+        let mut tmp_file = TempFile::with_extension(&save_dir, ext)?;
         tmp_file.write_all(&content)?;
+
+        let tmp_path = tmp_file.path();
         let img = image::open(&tmp_path)?;
         let decoder = bardecoder::default_decoder();
 
@@ -447,7 +448,6 @@ impl App {
         for content in results.into_iter().flatten() {
             scan_result.contents.push(content);
         }
-        remove_file(tmp_path)?;
         Ok(scan_result)
     }
 

@@ -286,6 +286,16 @@ impl Client {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn test_get_uuid() -> Result<()> {
+        let cli = Client::new();
+        let uuid = cli.get_uuid().await?;
+        assert!(uuid.is_some());
+        let uuid: String = uuid.unwrap();
+        assert!(!uuid.is_empty());
+        Ok(())
+    }
+
     #[test]
     fn test_get_oauth_signature() -> Result<()> {
         let cli = Client::new();

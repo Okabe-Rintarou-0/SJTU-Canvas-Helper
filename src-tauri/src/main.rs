@@ -14,6 +14,7 @@ mod app;
 mod client;
 mod error;
 mod model;
+mod utils;
 
 #[macro_use]
 extern crate lazy_static;
