@@ -148,8 +148,13 @@ async fn export_users(users: Vec<User>, save_name: String) -> Result<()> {
 }
 
 #[tauri::command]
-async fn open_file_with_name(name: String) -> Result<()> {
-    APP.open_file_with_name(&name).await
+async fn open_file(name: String) -> Result<()> {
+    APP.open_file(&name).await
+}
+
+#[tauri::command]
+async fn open_course_file(name: String, course: Course) -> Result<()> {
+    APP.open_course_file(&name, &course).await
 }
 
 #[tauri::command]
@@ -168,6 +173,11 @@ async fn delete_file(file: File) -> Result<()> {
 }
 
 #[tauri::command]
+async fn delete_course_file(file: File, course: Course) -> Result<()> {
+    APP.delete_course_file(&file, &course).await
+}
+
+#[tauri::command]
 async fn delete_file_with_name(name: String) -> Result<()> {
     APP.delete_file_with_name(&name).await
 }
@@ -175,6 +185,18 @@ async fn delete_file_with_name(name: String) -> Result<()> {
 #[tauri::command]
 async fn download_file<R: Runtime>(window: Window<R>, file: File) -> Result<()> {
     APP.download_file(&file, &|progress| {
+        let _ = window.emit("download://progress", progress);
+    })
+    .await
+}
+
+#[tauri::command]
+async fn download_course_file<R: Runtime>(
+    window: Window<R>,
+    file: File,
+    course: Course,
+) -> Result<()> {
+    APP.download_course_file(&file, &course, &|progress| {
         let _ = window.emit("download://progress", progress);
     })
     .await
@@ -453,12 +475,15 @@ async fn main() -> Result<()> {
             get_config,
             save_config,
             save_file_content,
-            open_file_with_name,
+            open_course_file,
+            open_file,
             open_save_dir,
             open_config_dir,
             delete_file,
             delete_file_with_name,
+            delete_course_file,
             download_file,
+            download_course_file,
             check_path,
             export_users,
             update_grade,

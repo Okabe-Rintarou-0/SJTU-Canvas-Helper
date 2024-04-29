@@ -57,8 +57,7 @@ export default function FilesPage() {
     }, [files]);
 
     useEffect(() => {
-        handleGetFolderFiles(currentFolderId);
-        handleGetFolderFolders(currentFolderId);
+        handleGetFoldersAndFiles(currentFolderId);
     }, [currentFolderId]);
 
     const getFileIcon = (file: File) => {
@@ -126,9 +125,7 @@ export default function FilesPage() {
                             <a
                                 onMouseEnter={() => onHoverEntry(entry)}
                                 onMouseLeave={onLeaveEntry}
-                                onClick={async () => {
-                                    await handleFolderOpen(folder.id);
-                                }}
+                                onClick={() => handleFolderOpen(folder.id)}
                             >
                                 {folder.name}
                             </a>
@@ -147,7 +144,7 @@ export default function FilesPage() {
                         isFile(file) && <Space>
                             {file.url && <a onClick={e => {
                                 e.preventDefault();
-                                handleDownloadFile(file);
+                                handleAddDownloadFileTask(file);
                             }}>下载</a>}
                             {file.url && <a onClick={e => {
                                 e.preventDefault();
@@ -176,13 +173,15 @@ export default function FilesPage() {
         }
     }
 
+    const getSelectedCourse = () => {
+        return courses.find(course => course.id === selectedCourseId);
+    }
+
     /**
      * 获取课程的主文件夹(course files) id
      * @param courseId
      */
     const getCourseMainFolderId = async (courseId: number) => {
-        setOperating(true);
-        setLoading(true);
         let mainFolderId;
         try {
             let courseFolders = await invoke("list_folders", { courseId }) as Folder[];
@@ -190,14 +189,10 @@ export default function FilesPage() {
         } catch (_) {
             mainFolderId = undefined;
         }
-        setOperating(false);
-        setLoading(false);
         return mainFolderId;
     };
 
     const getParentFolder = async (folderId: number): Promise<Folder | undefined> => {
-        setOperating(true);
-        setLoading(true);
         let parentFolder = undefined;
         try {
             let folder = await invoke("get_folder_by_id", { folderId }) as Folder;
@@ -205,14 +200,10 @@ export default function FilesPage() {
         } catch (_) {
             parentFolder = undefined;
         }
-        setOperating(false);
-        setLoading(false);
         return parentFolder;
     }
 
     const handleGetFolderFiles = async (folderId: number) => {
-        setOperating(true);
-        setLoading(true);
         try {
             let files = await invoke("list_folder_files", { folderId }) as File[];
             files.map(file => file.key = file.uuid);
@@ -220,13 +211,9 @@ export default function FilesPage() {
         } catch (e) {
             setFiles([]);
         }
-        setOperating(false);
-        setLoading(false);
     }
 
     const handleGetFolderFolders = async (folderId: number) => {
-        setOperating(true);
-        setLoading(true);
         try {
             let folders = await invoke("list_folder_folders", { folderId }) as Folder[];
             folders.map(folder => folder.key = folder.id.toString());
@@ -234,11 +221,15 @@ export default function FilesPage() {
         } catch (e) {
             setFolders([]);
         }
-        setOperating(false);
-        setLoading(false);
+    }
+
+    const handleGetFoldersAndFiles = async (mainFolderId: number) => {
+        await Promise.all([handleGetFolderFolders(mainFolderId), handleGetFolderFiles(mainFolderId)]);
     }
 
     const handleCourseSelect = async (courseId: number) => {
+        setOperating(true);
+        setLoading(true);
         if (courses.find(course => course.id === courseId)) {
             setSelectedCourseId(courseId);
             setSelectedEntries([]);
@@ -246,14 +237,15 @@ export default function FilesPage() {
             setFolders([]);
             let courseMainFolderId = await getCourseMainFolderId(courseId);
             if (courseMainFolderId !== undefined) {
-                await handleGetFolderFolders(courseMainFolderId)
-                await handleGetFolderFiles(courseMainFolderId);
+                await handleGetFoldersAndFiles(courseMainFolderId);
                 setCurrentFolderId(courseMainFolderId);
                 setCurrentFolderFullName(MAIN_FOLDER);
                 setParentFolderId(null);
                 setOperating(false);
             }
         }
+        setOperating(false);
+        setLoading(false);
     }
 
     const handleFolderOpen = async (folderId: number) => {
@@ -267,17 +259,25 @@ export default function FilesPage() {
     }
 
     const handleOpenTaskFile = async (task: FileDownloadTask) => {
+        const name = task.file.display_name;
+        const course = getSelectedCourse()!;
         try {
-            await invoke("open_file_with_name", { name: task.file.display_name });
+            await invoke("open_course_file", { name, course });
         } catch (e) {
             messageApi.error(e as string);
         }
     }
 
+    const handleDownloadFile = async (file: File) => {
+        const course = getSelectedCourse()!;
+        await invoke("download_course_file", { file, course });
+    }
+
     const handleRemoveTask = async (taskToRemove: FileDownloadTask) => {
         setDownloadTasks(tasks => tasks.filter(task => task.file.uuid !== taskToRemove.file.uuid));
+        let course = getSelectedCourse();
         try {
-            await invoke("delete_file", { file: taskToRemove.file });
+            await invoke("delete_course_file", { file: taskToRemove.file, course });
             // messageApi.success("删除成功🎉！", 0.5);
         } catch (e) {
             if (taskToRemove.state !== "fail") {
@@ -287,7 +287,7 @@ export default function FilesPage() {
         }
     }
 
-    const handleDownloadFile = async (file: File) => {
+    const handleAddDownloadFileTask = async (file: File) => {
         if (!downloadTasks.find(task => task.file.uuid === file.uuid)) {
             setDownloadTasks(tasks => [...tasks, {
                 key: file.uuid,
@@ -301,7 +301,7 @@ export default function FilesPage() {
     }
 
     const handleUploadFile = async (file: File) => {
-        let course = courses.find(course => course.id === selectedCourseId)!;
+        let course = getSelectedCourse()!;
         const saveDir = course.name + currentFolderFullName?.replace("course files", "");
         const savePath = saveDir + "/" + file.display_name;
         const infoKey = `uploading_${savePath}`;
@@ -345,7 +345,7 @@ export default function FilesPage() {
     const handleDownloadSelectedFiles = () => {
         for (let selectedEntry of selectedEntries) {
             if (isFile(selectedEntry)) {
-                handleDownloadFile(selectedEntry as File);
+                handleAddDownloadFileTask(selectedEntry as File);
             }
         }
     }
@@ -388,7 +388,7 @@ export default function FilesPage() {
         {contextHolder}
         {previewer}
         {modal}
-        <Space direction="vertical" style={{ width: "100%" }} size={"large"}>
+        <Space direction="vertical" style={{ width: "100%", overflow: "scroll" }} size={"large"}>
             <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} />
             <Space>
                 <Checkbox disabled={operating} onChange={handleSetShowAllFiles} defaultChecked>只显示可下载文件</Checkbox>
@@ -434,6 +434,7 @@ export default function FilesPage() {
             <FileDownloadTable
                 tasks={downloadTasks}
                 handleRemoveTask={handleRemoveTask}
+                handleDownloadFile={handleDownloadFile}
                 handleOpenTaskFile={handleOpenTaskFile}
             />
         </Space>

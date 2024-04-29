@@ -124,12 +124,12 @@ export default function VideoDownloadTable({
             ),
         }
     ];
-    return <>
+    return <Space direction="vertical" style={{ width: "100%" }} >
         <Table style={{ width: "100%" }} columns={columns} dataSource={currentTasks} pagination={false}
             rowSelection={{
                 onChange: handleSelect,
                 selectedRowKeys: selectedTasks.map(task => task.key),
             }} />
         <Button onClick={handleRemoveTasks}>删除</Button>
-    </>
+    </Space>
 }

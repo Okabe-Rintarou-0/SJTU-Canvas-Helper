@@ -9,11 +9,13 @@ import useMessage from "antd/es/message/useMessage";
 export default function FileDownloadTable({
     tasks,
     handleRemoveTask,
+    handleDownloadFile,
     handleOpenTaskFile
 }: {
     tasks: FileDownloadTask[],
-    handleRemoveTask?: (task: FileDownloadTask) => void,
-    handleOpenTaskFile?: (task: FileDownloadTask) => void,
+    handleRemoveTask: (task: FileDownloadTask) => void,
+    handleDownloadFile: (file: File) => Promise<void>
+    handleOpenTaskFile: (task: FileDownloadTask) => Promise<void>,
 }) {
     const [currentTasks, setCurrentTasks] = useState<FileDownloadTask[]>([]);
     const taskSet = new Set<string>(currentTasks.map(task => task.key));
@@ -33,24 +35,25 @@ export default function FileDownloadTable({
         for (let task of tasks) {
             if (!taskSet.has(task.key)) {
                 taskSet.add(task.key);
-                handleDownloadFile(task.file);
+                downloadFile(task.file);
             }
         }
     }, [tasks]);
 
-    const handleDownloadFile = async (file: File) => {
+    const downloadFile = async (file: File) => {
         updateTaskProgress(file.uuid, 0);
 
         let retries = 0;
         let maxRetries = 3;
         while (retries < maxRetries) {
             try {
-                await invoke("download_file", { file });
+                await handleDownloadFile(file);
                 updateTaskProgress(file.uuid, 100);
                 // messageApi.success("下载成功！", 0.5);
                 break;
             } catch (e) {
                 updateTaskProgress(file.uuid, undefined, e as string);
+                console.log(e);
                 retries += 1;
             }
             await sleep(1000);

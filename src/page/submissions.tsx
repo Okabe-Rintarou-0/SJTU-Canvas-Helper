@@ -2,7 +2,7 @@ import { Button, Input, Popconfirm, Select, Space, Table, Tag } from "antd";
 import BasicLayout from "../components/layout";
 import useMessage from "antd/es/message/useMessage";
 import { ReactNode, useEffect, useMemo, useState } from "react";
-import { Assignment, Attachment, Course, FileDownloadTask, GradeStatistic, Submission, User } from "../lib/model";
+import { Assignment, Attachment, Course, File, FileDownloadTask, GradeStatistic, Submission, User } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import { assignmentIsNotUnlocked, attachmentToFile, formatDate } from "../lib/utils";
 import CourseSelect from "../components/course_select";
@@ -223,7 +223,6 @@ export default function SubmissionsPage() {
         if (courseId === -1) {
             return;
         }
-        setOperating(true);
         try {
             let users = await invoke("list_course_students", { courseId }) as User[];
             users.map(user => user.key = user.id);
@@ -231,14 +230,12 @@ export default function SubmissionsPage() {
         } catch (e) {
             messageApi.error(e as string);
         }
-        setOperating(false);
     }
 
     const handleGetAssignments = async (courseId: number) => {
         if (courseId === -1) {
             return;
         }
-        setOperating(true);
         try {
             let assignments = await invoke("list_course_assignments", { courseId }) as Assignment[];
             assignments.map(assignment => assignment.key = assignment.id);
@@ -246,14 +243,12 @@ export default function SubmissionsPage() {
         } catch (e) {
             messageApi.error(e as string);
         }
-        setOperating(false);
     }
 
     const handleGetSubmissions = async (courseId: number, assignmentId: number) => {
         if (courseId === -1 || assignmentId === -1) {
             return;
         }
-        setOperating(true);
         setLoading(true);
         try {
             let submissions = await invoke("list_course_assignment_submissions", { courseId, assignmentId }) as Submission[];
@@ -276,7 +271,6 @@ export default function SubmissionsPage() {
         } catch (e) {
             messageApi.error(e as string);
         }
-        setOperating(false);
         setLoading(false);
     }
 
@@ -304,18 +298,21 @@ export default function SubmissionsPage() {
     }
 
     const handleCourseSelect = async (courseId: number) => {
+        setOperating(true);
         if (courses.find(course => course.id === courseId)) {
             setAttachments([]);
             setSelectedAttachments([]);
             setStatistic(undefined);
             setSelectedAssignment(undefined);
             setSelectedCourseId(courseId);
-            handleGetUsers(courseId);
             handleGetAssignments(courseId);
+            await handleGetUsers(courseId);
         }
+        setOperating(false);
     }
 
     const handleAssignmentSelect = (assignmentId: number) => {
+        setOperating(true);
         setStatistic(undefined);
         setSelectedAttachments([]);
         let assignment = assignments.find(assignment => assignment.id === assignmentId);
@@ -323,6 +320,7 @@ export default function SubmissionsPage() {
             setSelectedAssignment(assignment);
             handleGetSubmissions(selectedCourseId, assignmentId);
         }
+        setOperating(false);
     }
 
     const handleAttachmentSelect = (_: React.Key[], selectedAttachments: Attachment[]) => {
@@ -382,6 +380,19 @@ export default function SubmissionsPage() {
 
     const shouldShow = (attachment: Attachment) => {
         return attachment.user && attachment.user.indexOf(keyword) !== -1;
+    }
+
+    const handleDownloadFile = async (file: File) => {
+        await invoke("download_file", { file });
+    }
+
+    const handleOpenTaskFile = async (task: FileDownloadTask) => {
+        const name = task.file.display_name;
+        try {
+            await invoke("open_file", { name });
+        } catch (e) {
+            messageApi.error(e as string);
+        }
     }
 
     const showShowAttachments = attachments.filter(attachment => shouldShow(attachment));
@@ -458,7 +469,11 @@ export default function SubmissionsPage() {
                 }}
             />
             <Button disabled={operating || selectedAttachments.length === 0} onClick={handleDownloadSelectedAttachments}>下载</Button>
-            <FileDownloadTable tasks={downloadTasks} handleRemoveTask={handleRemoveTask} />
+            <FileDownloadTable
+                tasks={downloadTasks}
+                handleDownloadFile={handleDownloadFile}
+                handleOpenTaskFile={handleOpenTaskFile}
+                handleRemoveTask={handleRemoveTask} />
         </Space>
     </BasicLayout >
 }

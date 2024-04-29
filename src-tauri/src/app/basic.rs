@@ -21,10 +21,10 @@ use crate::{client::Client, error, model::*, utils::TempFile};
 use super::App;
 
 impl App {
-    fn ensure_directory(config_dir: &str) {
-        let metadata = fs::metadata(config_dir);
+    fn ensure_directory(dir: &str) {
+        let metadata = fs::metadata(dir);
         if metadata.is_err() {
-            fs::create_dir(config_dir).unwrap();
+            fs::create_dir(dir).unwrap();
         }
     }
 
@@ -551,10 +551,47 @@ impl App {
         Ok(())
     }
 
-    pub async fn open_file_with_name(&self, name: &str) -> Result<()> {
+    pub async fn download_course_file<F: Fn(ProgressPayload) + Send>(
+        &self,
+        file: &File,
+        course: &Course,
+        progress_handler: F,
+    ) -> Result<()> {
+        let guard = self.config.read().await;
+        let token = &guard.token.clone();
+        let course_identifier = self.get_course_identifier(course);
+        let save_path = Path::new(&guard.save_path).join(course_identifier);
+        let save_path = save_path.to_str().unwrap_or_default();
+        App::ensure_directory(save_path);
+        tracing::info!("Download file at path: {:?}", save_path);
+        self.client
+            .download_file(file, token, save_path, progress_handler)
+            .await?;
+        Ok(())
+    }
+
+    fn get_course_identifier(&self, course: &Course) -> String {
+        format!(
+            "{}({} {})",
+            course.name, course.term.name, course.teachers[0].display_name
+        )
+    }
+
+    pub async fn open_file(&self, name: &str) -> Result<()> {
         let save_path = &self.config.read().await.save_path;
         let path = Path::new(save_path).join(name);
+        self.open_path(path.to_str().unwrap_or_default())
+    }
 
+    pub async fn open_course_file(&self, name: &str, course: &Course) -> Result<()> {
+        let save_path = &self.config.read().await.save_path;
+        let path = Path::new(save_path)
+            .join(self.get_course_identifier(course))
+            .join(name);
+        self.open_path(path.to_str().unwrap_or_default())
+    }
+
+    fn open_path(&self, path: &str) -> Result<()> {
         #[cfg(target_os = "macos")]
         let _ = std::process::Command::new("open").arg(path).output()?;
 
@@ -562,40 +599,33 @@ impl App {
         let _ = std::process::Command::new("xdg-open").arg(path).output()?;
 
         #[cfg(target_os = "windows")]
-        let _ = std::process::Command::new("cmd")
-            .arg("/c")
-            .arg(format!("start {}", path.to_str().unwrap()))
-            .output()?;
-
-        Ok(())
-    }
-
-    fn open_dir(&self, dir: &str) -> Result<()> {
-        #[cfg(target_os = "macos")]
-        let _ = std::process::Command::new("open").arg(dir).output()?;
-
-        #[cfg(target_os = "linux")]
-        let _ = std::process::Command::new("xdg-open").arg(dir).output()?;
-
-        #[cfg(target_os = "windows")]
-        let _ = std::process::Command::new("explorer").arg(dir).output()?;
+        let _ = std::process::Command::new("explorer").arg(path).output()?;
 
         Ok(())
     }
 
     pub async fn open_save_dir(&self) -> Result<()> {
         let save_path = &self.config.read().await.save_path;
-        self.open_dir(save_path)
+        self.open_path(save_path)
     }
 
     pub fn open_config_dir(&self) -> Result<()> {
         let config_dir = App::config_dir()?;
-        self.open_dir(&config_dir)
+        self.open_path(&config_dir)
     }
 
     pub async fn delete_file(&self, file: &File) -> Result<()> {
         let save_path = &self.config.read().await.save_path;
         let path = Path::new(save_path).join(&file.display_name);
+        fs::remove_file(path)?;
+        Ok(())
+    }
+
+    pub async fn delete_course_file(&self, file: &File, course: &Course) -> Result<()> {
+        let save_path = &self.config.read().await.save_path;
+        let path = Path::new(save_path)
+            .join(self.get_course_identifier(course))
+            .join(&file.display_name);
         fs::remove_file(path)?;
         Ok(())
     }
