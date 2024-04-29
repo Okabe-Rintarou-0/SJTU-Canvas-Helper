@@ -4,6 +4,7 @@ import { Layout, Menu, theme } from 'antd';
 import { Link, useLocation } from 'react-router-dom';
 import { getVersion } from "@tauri-apps/api/app";
 import { BsQrCode } from 'react-icons/bs';
+import { GoDiscussionOutdated } from 'react-icons/go';
 
 const { Content, Footer, Sider } = Layout;
 
@@ -22,6 +23,10 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
         key: 'assignments',
         icon: <FormOutlined />,
         label: <Link to={'/assignments'}>查看作业</Link>,
+    }, {
+        key: 'discussions',
+        icon: <GoDiscussionOutdated />,
+        label: <Link to={'/discussions'}>讨论区</Link>,
     }, {
         key: 'calendar',
         icon: <CalendarOutlined />,

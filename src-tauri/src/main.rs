@@ -3,8 +3,9 @@
 
 use error::Result;
 use model::{
-    Account, AccountInfo, AppConfig, Assignment, CalendarEvent, Colors, Course, File, Folder,
-    QRCodeScanResult, Subject, Submission, User, VideoCourse, VideoInfo, VideoPlayInfo,
+    Account, AccountInfo, AppConfig, Assignment, CalendarEvent, Colors, Course, DiscussionTopic,
+    File, Folder, FullDiscussion, QRCodeScanResult, Subject, Submission, User, VideoCourse,
+    VideoInfo, VideoPlayInfo,
 };
 
 use tauri::{Runtime, Window};
@@ -75,6 +76,16 @@ async fn get_single_course_assignment_submission(
 #[tauri::command]
 async fn list_ta_courses() -> Result<Vec<Course>> {
     APP.list_ta_courses().await
+}
+
+#[tauri::command]
+async fn list_discussion_topics(course_id: i64) -> Result<Vec<DiscussionTopic>> {
+    APP.list_discussion_topics(course_id).await
+}
+
+#[tauri::command]
+async fn get_full_discussion(course_id: i64, topic_id: i64) -> Result<FullDiscussion> {
+    APP.get_full_discussion(course_id, topic_id).await
 }
 
 #[tauri::command]
@@ -454,6 +465,8 @@ async fn main() -> Result<()> {
             list_accounts,
             list_courses,
             list_ta_courses,
+            get_full_discussion,
+            list_discussion_topics,
             list_course_files,
             list_course_images,
             list_course_users,

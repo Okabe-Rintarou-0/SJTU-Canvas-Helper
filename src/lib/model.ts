@@ -368,3 +368,90 @@ export interface QRCodeScanResult {
     file: File,
     contents: string[];
 }
+
+export interface DiscussionTopic {
+    id: number;
+    title: string;
+    last_reply_at: string | null;
+    created_at: string | null;
+    delayed_post_at: string | null;
+    posted_at: string | null;
+    user_name: string | null;
+    lock_at: string | null;
+    assignment_id: number | null;
+    podcast_has_student_posts: boolean;
+    discussion_type: string;
+    allow_rating: boolean;
+    only_graders_can_rate: boolean;
+    sort_by_rating: boolean;
+    is_section_specific: boolean;
+    discussion_subentry_count: number;
+    permissions: Permissions;
+    require_initial_post: boolean;
+    user_can_see_posts: boolean;
+    podcast_url: string | null;
+    read_state: string;
+    unread_count: number;
+    subscribed: boolean;
+    attachments: Attachment[];
+    published: boolean;
+    can_unpublish: boolean;
+    locked: boolean;
+    can_lock: boolean;
+    comments_disabled: boolean;
+    html_url: string;
+    url: string;
+    pinned: boolean;
+    can_group: boolean;
+    locked_for_user: boolean;
+    lock_explanation: string;
+    message: string;
+    assignment: Assignment | null;
+}
+
+export interface Permissions {
+    attach: boolean;
+    update: boolean;
+    reply: boolean;
+    delete: boolean;
+}
+
+export interface FullDiscussion {
+    unread_entries: number[];
+    new_entries: number[];
+    participants: Participant[];
+    view: DiscussionView[];
+}
+
+export interface Participant {
+    id: number;
+    anonymous_id: string;
+    display_name: string;
+    avatar_image_url: string;
+    html_url: string;
+}
+
+export interface DiscussionView {
+    id: number;
+    parent_id: number | null;
+    created_at: string | null;
+    updated_at: string | null;
+    editor_id: number | null;
+    rating_count: number | null;
+    rating_sum: number | null;
+    deleted: boolean | null;
+    user_id: number | null;
+    message: string | null;
+    replies: Reply[];
+}
+
+export interface Reply {
+    id: number;
+    user_id: number;
+    parent_id: number;
+    created_at: string | null;
+    updated_at: string | null;
+    rating_count: number | null;
+    rating_sum: number | null;
+    message: string | null;
+}

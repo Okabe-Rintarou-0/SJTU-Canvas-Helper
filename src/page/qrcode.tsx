@@ -8,7 +8,7 @@ import { invoke } from "@tauri-apps/api";
 import Meta from "antd/es/card/Meta";
 import { Empty } from "antd/lib";
 
-export function QRCodePage() {
+export default function QRCodePage() {
     const [courses, setCourses] = useState<Course[]>([]);
     const [messageApi, contextHolder] = useMessage();
     const [operating, setOperating] = useState<boolean>(false);

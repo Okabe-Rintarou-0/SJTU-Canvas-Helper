@@ -413,6 +413,22 @@ impl App {
         self.client.get_me(&self.config.read().await.token).await
     }
 
+    pub async fn list_discussion_topics(&self, course_id: i64) -> Result<Vec<DiscussionTopic>> {
+        let token = self.config.read().await.token.clone();
+        self.client.list_discussion_topics(course_id, &token).await
+    }
+
+    pub async fn get_full_discussion(
+        &self,
+        course_id: i64,
+        topic_id: i64,
+    ) -> Result<FullDiscussion> {
+        let token = self.config.read().await.token.clone();
+        self.client
+            .get_full_discussion(course_id, topic_id, &token)
+            .await
+    }
+
     pub async fn list_course_files(&self, course_id: i64) -> Result<Vec<File>> {
         let token = self.config.read().await.token.clone();
         self.client.list_course_files(course_id, &token).await

@@ -684,3 +684,161 @@ pub struct QRCodeScanResult {
     pub file: File,
     pub contents: Vec<String>,
 }
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DiscussionTopic {
+    pub id: i64,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub last_reply_at: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub delayed_post_at: Option<String>,
+    #[serde(default)]
+    pub posted_at: Option<String>,
+    #[serde(default)]
+    pub user_name: Option<String>,
+    #[serde(default)]
+    pub lock_at: Option<String>,
+    #[serde(default)]
+    pub assignment_id: Option<i64>,
+    #[serde(default)]
+    pub podcast_has_student_posts: bool,
+    #[serde(default)]
+    pub discussion_type: String,
+    #[serde(default)]
+    pub allow_rating: bool,
+    #[serde(default)]
+    pub only_graders_can_rate: bool,
+    #[serde(default)]
+    pub sort_by_rating: bool,
+    #[serde(default)]
+    pub is_section_specific: bool,
+    #[serde(default)]
+    pub discussion_subentry_count: i64,
+    #[serde(default)]
+    pub permissions: Permissions,
+    #[serde(default)]
+    pub require_initial_post: bool,
+    #[serde(default)]
+    pub user_can_see_posts: bool,
+    #[serde(default)]
+    pub podcast_url: Option<String>,
+    #[serde(default)]
+    pub read_state: String,
+    #[serde(default)]
+    pub unread_count: i64,
+    #[serde(default)]
+    pub subscribed: bool,
+    #[serde(default)]
+    pub attachments: Vec<Attachment>,
+    #[serde(default)]
+    pub published: bool,
+    #[serde(default)]
+    pub can_unpublish: bool,
+    #[serde(default)]
+    pub locked: bool,
+    #[serde(default)]
+    pub can_lock: bool,
+    #[serde(default)]
+    pub comments_disabled: bool,
+    #[serde(default)]
+    pub html_url: String,
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub pinned: bool,
+    #[serde(default)]
+    pub can_group: bool,
+    #[serde(default)]
+    pub locked_for_user: bool,
+    #[serde(default)]
+    pub lock_explanation: String,
+    #[serde(default)]
+    pub message: String,
+    #[serde(default)]
+    pub assignment: Option<Assignment>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Permissions {
+    #[serde(default)]
+    pub attach: bool,
+    #[serde(default)]
+    pub update: bool,
+    #[serde(default)]
+    pub reply: bool,
+    #[serde(default)]
+    pub delete: bool,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FullDiscussion {
+    #[serde(default)]
+    pub unread_entries: Vec<i64>,
+    #[serde(default)]
+    pub new_entries: Vec<i64>,
+    #[serde(default)]
+    pub participants: Vec<Participant>,
+    #[serde(default)]
+    pub view: Vec<DiscussionView>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Participant {
+    pub id: i64,
+    #[serde(default)]
+    pub anonymous_id: String,
+    #[serde(default)]
+    pub display_name: String,
+    #[serde(default)]
+    pub avatar_image_url: String,
+    #[serde(default)]
+    pub html_url: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DiscussionView {
+    pub id: i64,
+    #[serde(default)]
+    pub parent_id: Option<i64>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub updated_at: Option<String>,
+    #[serde(default)]
+    pub editor_id: Option<i64>,
+    #[serde(default)]
+    pub rating_count: Option<i64>,
+    #[serde(default)]
+    pub rating_sum: Option<i64>,
+    #[serde(default)]
+    pub deleted: Option<bool>,
+    #[serde(default)]
+    pub user_id: Option<i64>,
+    #[serde(default)]
+    pub message: Option<String>,
+    #[serde(default)]
+    pub replies: Vec<Reply>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Reply {
+    pub id: i64,
+    #[serde(default)]
+    pub user_id: i64,
+    #[serde(default)]
+    pub parent_id: i64,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub updated_at: Option<String>,
+    #[serde(default)]
+    pub rating_count: Option<i64>,
+    #[serde(default)]
+    pub rating_sum: Option<i64>,
+    #[serde(default)]
+    pub message: Option<String>,
+}

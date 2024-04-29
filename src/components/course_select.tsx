@@ -33,6 +33,17 @@ export default function CourseSelect({ courses, disabled, onChange, value }: {
     return <Space>
         <span>选择课程：</span>
         <Select
+            showSearch
+            optionFilterProp="children"
+            filterOption={(filter, options) => {
+                if (!options || !filter) {
+                    return true;
+                }
+                let courseId = options.value;
+                let course = courses.find(course => course.id === courseId)!;
+                // filter by course name or teacher name
+                return course.name.includes(filter) || course.teachers.filter(teacher => teacher.display_name.includes(filter)).length > 0;
+            }}
             value={value}
             style={{ width: 350 }}
             disabled={disabled}

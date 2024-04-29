@@ -8,8 +8,8 @@ use crate::{
     client::constants::CHUNK_SIZE,
     error::{AppError, Result},
     model::{
-        Assignment, CalendarEvent, Colors, Course, File, Folder, ProgressPayload, Submission,
-        SubmissionUploadResult, SubmissionUploadSuccessResponse, User,
+        Assignment, CalendarEvent, Colors, Course, DiscussionTopic, File, Folder, FullDiscussion,
+        ProgressPayload, Submission, SubmissionUploadResult, SubmissionUploadSuccessResponse, User,
     },
 };
 
@@ -255,6 +255,31 @@ impl Client {
             all_items.extend(items);
         }
         Ok(all_items)
+    }
+
+    pub async fn list_discussion_topics(
+        &self,
+        course_id: i64,
+        token: &str,
+    ) -> Result<Vec<DiscussionTopic>> {
+        let url = format!(
+            "{}/api/v1/courses/{}/discussion_topics",
+            BASE_URL, course_id
+        );
+        self.list_items(&url, token).await
+    }
+
+    pub async fn get_full_discussion(
+        &self,
+        course_id: i64,
+        topic_id: i64,
+        token: &str,
+    ) -> Result<FullDiscussion> {
+        let url = format!(
+            "{}/api/v1/courses/{}/discussion_topics/{}/view",
+            BASE_URL, course_id, topic_id
+        );
+        self.get_json_with_token(&url, None::<&str>, token).await
     }
 
     pub async fn list_course_files(&self, course_id: i64, token: &str) -> Result<Vec<File>> {

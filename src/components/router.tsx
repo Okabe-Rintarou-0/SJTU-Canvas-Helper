@@ -6,7 +6,8 @@ import AssignmentsPage from "../page/assignments";
 import SubmissionsPage from "../page/submissions";
 import CalendarPage from "../page/calendar";
 import VideoPage from "../page/video";
-import { QRCodePage } from "../page/qrcode";
+import QRCodePage from "../page/qrcode";
+import DiscussionsPage from "../page/discussions";
 
 export default function AppRouter() {
     return <BrowserRouter>
@@ -14,6 +15,7 @@ export default function AppRouter() {
             <Route index element={<Navigate to={"/files"} />} />
             <Route path="/files" element={<FilesPage />} />
             <Route path="/assignments" element={<AssignmentsPage />} />
+            <Route path="/discussions" element={<DiscussionsPage />} />
             <Route path="/submissions" element={<SubmissionsPage />} />
             <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/users" element={<UsersPage />} />
