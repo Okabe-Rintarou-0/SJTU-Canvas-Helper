@@ -705,25 +705,25 @@ pub struct DiscussionTopic {
     #[serde(default)]
     pub assignment_id: Option<i64>,
     #[serde(default)]
-    pub podcast_has_student_posts: bool,
+    pub podcast_has_student_posts: Option<bool>,
     #[serde(default)]
     pub discussion_type: String,
     #[serde(default)]
-    pub allow_rating: bool,
+    pub allow_rating: Option<bool>,
     #[serde(default)]
-    pub only_graders_can_rate: bool,
+    pub only_graders_can_rate: Option<bool>,
     #[serde(default)]
-    pub sort_by_rating: bool,
+    pub sort_by_rating: Option<bool>,
     #[serde(default)]
-    pub is_section_specific: bool,
+    pub is_section_specific: Option<bool>,
     #[serde(default)]
     pub discussion_subentry_count: i64,
     #[serde(default)]
     pub permissions: Permissions,
     #[serde(default)]
-    pub require_initial_post: bool,
+    pub require_initial_post: Option<bool>,
     #[serde(default)]
-    pub user_can_see_posts: bool,
+    pub user_can_see_posts: Option<bool>,
     #[serde(default)]
     pub podcast_url: Option<String>,
     #[serde(default)]
@@ -731,29 +731,29 @@ pub struct DiscussionTopic {
     #[serde(default)]
     pub unread_count: i64,
     #[serde(default)]
-    pub subscribed: bool,
+    pub subscribed: Option<bool>,
     #[serde(default)]
     pub attachments: Vec<Attachment>,
     #[serde(default)]
-    pub published: bool,
+    pub published: Option<bool>,
     #[serde(default)]
-    pub can_unpublish: bool,
+    pub can_unpublish: Option<bool>,
     #[serde(default)]
-    pub locked: bool,
+    pub locked: Option<bool>,
     #[serde(default)]
-    pub can_lock: bool,
+    pub can_lock: Option<bool>,
     #[serde(default)]
-    pub comments_disabled: bool,
+    pub comments_disabled: Option<bool>,
     #[serde(default)]
     pub html_url: String,
     #[serde(default)]
     pub url: String,
     #[serde(default)]
-    pub pinned: bool,
+    pub pinned: Option<bool>,
     #[serde(default)]
-    pub can_group: bool,
+    pub can_group: Option<bool>,
     #[serde(default)]
-    pub locked_for_user: bool,
+    pub locked_for_user: Option<bool>,
     #[serde(default)]
     pub lock_explanation: String,
     #[serde(default)]
