@@ -478,7 +478,7 @@ export default function FilesPage() {
             <Divider orientation="left">PDF/PPTX (混合)合并</Divider>
             {merger}
             <Divider orientation="left">文件下载</Divider>
-            <Button onClick={handleSyncFiles}>一键同步</Button>
+            {selectedCourseId > 0 && <Button onClick={handleSyncFiles}>一键同步</Button>}
             <FileDownloadTable
                 tasks={downloadTasks}
                 handleRemoveTask={handleRemoveTask}
