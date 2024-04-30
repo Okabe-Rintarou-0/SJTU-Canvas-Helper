@@ -124,12 +124,24 @@ export default function VideoDownloadTable({
             ),
         }
     ];
+
+    const handleOpenSaveDir = async () => {
+        try {
+            await invoke("open_save_dir");
+        } catch (e) {
+            message.error(`打开目录失败🥹：${e}`);
+        }
+    }
+
     return <Space direction="vertical" style={{ width: "100%" }} >
         <Table style={{ width: "100%" }} columns={columns} dataSource={currentTasks} pagination={false}
             rowSelection={{
                 onChange: handleSelect,
                 selectedRowKeys: selectedTasks.map(task => task.key),
             }} />
-        <Button onClick={handleRemoveTasks}>删除</Button>
+        <Space>
+            <Button onClick={handleOpenSaveDir}>打开保存目录</Button>
+            <Button onClick={handleRemoveTasks}>删除</Button>
+        </Space>
     </Space>
 }
