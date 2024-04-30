@@ -354,13 +354,12 @@ impl Client {
 
                         let mut path = Path::new(save_dir).join(self.get_course_identifier(course));
                         if folder_name != "course files" {
-                            path = path.join(folder_name[13..].to_owned());
+                            path = path.join(&folder_name[13..]);
                         }
                         path = path.join(&file.display_name);
-                        tracing::info!("path: {:?}", path);
-                        return fs::metadata(&path).is_err();
+                        fs::metadata(&path).is_err()
                     }
-                    None => return true,
+                    None => true,
                 }
             })
             .collect();
