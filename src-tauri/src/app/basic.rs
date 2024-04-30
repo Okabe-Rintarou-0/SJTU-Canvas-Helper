@@ -128,6 +128,10 @@ impl App {
         Ok(())
     }
 
+    async fn invalidate_cache(&self) {
+        *self.cached_courses.write().await = None;
+    }
+
     pub async fn switch_account(&self, account: &Account) -> Result<()> {
         if !App::account_exists(account)? {
             return Err(AppError::AccountNotExists);
@@ -139,6 +143,7 @@ impl App {
         account_info.current_account = account.clone();
         App::save_account_info(&account_info)?;
         *self.current_account.write().await = account.clone();
+        self.invalidate_cache().await;
         Ok(())
     }
 
@@ -166,6 +171,7 @@ impl App {
             current_account: RwLock::new(account_info.current_account),
             config: RwLock::new(config),
             handle: Default::default(),
+            cached_courses: Default::default(),
         }
     }
 
@@ -251,9 +257,15 @@ impl App {
     }
 
     pub async fn list_courses(&self) -> Result<Vec<Course>> {
-        self.client
+        if let Some(cached_courses) = self.cached_courses.read().await.clone() {
+            return Ok(cached_courses);
+        }
+        let courses = self
+            .client
             .list_courses(&self.config.read().await.token)
-            .await
+            .await?;
+        *self.cached_courses.write().await = Some(courses.clone());
+        Ok(courses)
     }
 
     pub async fn get_single_course_assignment_submission(

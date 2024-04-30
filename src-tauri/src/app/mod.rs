@@ -3,16 +3,18 @@ use tokio::{sync::RwLock, task::JoinHandle};
 
 use crate::{
     client::Client,
-    model::{Account, AppConfig},
+    model::{Account, AppConfig, Course},
 };
 pub mod basic;
 pub mod jbox;
 pub mod video;
+
 pub struct App {
     client: Arc<Client>,
     current_account: RwLock<Account>,
     config: RwLock<AppConfig>,
     handle: RwLock<Option<JoinHandle<()>>>,
+    cached_courses: RwLock<Option<Vec<Course>>>,
 }
 
 #[cfg(test)]
