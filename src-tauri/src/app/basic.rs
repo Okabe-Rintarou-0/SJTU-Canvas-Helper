@@ -148,6 +148,8 @@ impl App {
     }
 
     pub fn new() -> Self {
+        let config_dir = App::config_dir().unwrap();
+        App::ensure_directory(&config_dir);
         let account_info = match App::read_account_info() {
             Ok(account) => account,
             Err(_) => {
@@ -157,8 +159,6 @@ impl App {
             }
         };
         tracing::info!("Read current account: {:?}", account_info);
-        let config_dir = App::config_dir().unwrap();
-        App::ensure_directory(&config_dir);
         let config_path = App::get_config_path(&account_info.current_account);
         tracing::info!("Read config path: {}", config_path);
         let config = match App::read_config_from_file(&config_path) {
