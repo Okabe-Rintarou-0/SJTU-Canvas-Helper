@@ -199,7 +199,7 @@ export interface VideoDownloadTask {
     state: DownloadState;
 }
 
-export type DownloadState = "downloading" | "succeed" | "fail";
+export type DownloadState = "downloading" | "succeed" | "fail" | "wait_retry";
 
 export interface AppConfig {
     token: string;

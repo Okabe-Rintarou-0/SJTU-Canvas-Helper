@@ -89,6 +89,11 @@ async fn get_full_discussion(course_id: i64, topic_id: i64) -> Result<FullDiscus
 }
 
 #[tauri::command]
+async fn sync_course_files(course: Course) -> Result<Vec<File>> {
+    APP.sync_course_files(&course).await
+}
+
+#[tauri::command]
 async fn list_course_files(course_id: i64) -> Result<Vec<File>> {
     APP.list_course_files(course_id).await
 }
@@ -164,8 +169,8 @@ async fn open_file(name: String) -> Result<()> {
 }
 
 #[tauri::command]
-async fn open_course_file(name: String, course: Course) -> Result<()> {
-    APP.open_course_file(&name, &course).await
+async fn open_course_file(name: String, course: Course, folder_path: String) -> Result<()> {
+    APP.open_course_file(&name, &course, &folder_path).await
 }
 
 #[tauri::command]
@@ -184,8 +189,8 @@ async fn delete_file(file: File) -> Result<()> {
 }
 
 #[tauri::command]
-async fn delete_course_file(file: File, course: Course) -> Result<()> {
-    APP.delete_course_file(&file, &course).await
+async fn delete_course_file(file: File, course: Course, folder_path: String) -> Result<()> {
+    APP.delete_course_file(&file, &course, &folder_path).await
 }
 
 #[tauri::command]
@@ -206,8 +211,9 @@ async fn download_course_file<R: Runtime>(
     window: Window<R>,
     file: File,
     course: Course,
+    folder_path: String,
 ) -> Result<()> {
-    APP.download_course_file(&file, &course, &|progress| {
+    APP.download_course_file(&file, &course, &folder_path, &|progress| {
         let _ = window.emit("download://progress", progress);
     })
     .await
@@ -467,6 +473,7 @@ async fn main() -> Result<()> {
             list_ta_courses,
             get_full_discussion,
             list_discussion_topics,
+            sync_course_files,
             list_course_files,
             list_course_images,
             list_course_users,

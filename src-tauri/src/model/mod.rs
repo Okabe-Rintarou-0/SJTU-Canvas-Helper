@@ -842,3 +842,20 @@ pub struct Reply {
     #[serde(default)]
     pub message: Option<String>,
 }
+
+#[derive(Default, Debug)]
+pub struct FoldersAndFiles {
+    pub files: Vec<File>,
+    // folder_id -> folder
+    pub folders_map: HashMap<i64, Folder>,
+}
+
+impl FoldersAndFiles {
+    pub fn new(folders: Vec<Folder>, files: Vec<File>) -> Self {
+        let mut folders_map = HashMap::new();
+        for folder in folders {
+            folders_map.insert(folder.id, folder);
+        }
+        Self { files, folders_map }
+    }
+}

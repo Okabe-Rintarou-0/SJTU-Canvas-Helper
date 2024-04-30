@@ -36,6 +36,8 @@ export default function FileDownloadTable({
             if (!taskSet.has(task.key)) {
                 taskSet.add(task.key);
                 downloadFile(task.file);
+            } else if (task.state === "wait_retry") {
+                handleRetryTask(task);
             }
         }
     }, [tasks]);
@@ -44,7 +46,8 @@ export default function FileDownloadTable({
         updateTaskProgress(file.uuid, 0);
 
         let retries = 0;
-        let maxRetries = 3;
+        let maxRetries = 5;
+        let backoffCoef = 1;
         while (retries < maxRetries) {
             try {
                 await handleDownloadFile(file);
@@ -56,7 +59,8 @@ export default function FileDownloadTable({
                 console.log(e);
                 retries += 1;
             }
-            await sleep(1000);
+            await sleep(1000 * backoffCoef);
+            backoffCoef *= 2;
         }
     }
 
@@ -74,6 +78,13 @@ export default function FileDownloadTable({
             handleRemoveTask?.(task);
         }
         setSelectedTasks([]);
+    }
+
+    const handleRetryTasks = () => {
+        const tasks = selectedTasks.filter(task => task.state === "fail");
+        for (let task of tasks) {
+            handleRetryTask(task);
+        }
     }
 
     const [selectedTasks, setSelectedTasks] = useState<FileDownloadTask[]>([]);
@@ -150,6 +161,7 @@ export default function FileDownloadTable({
         <Space style={{ width: "100%", marginBottom: 30 }}>
             <Button onClick={handleOpenSaveDir}>打开保存目录</Button>
             <Button onClick={handleRemoveTasks} type="primary" disabled={selectedTasks.length === 0}>删除</Button>
+            <Button onClick={handleRetryTasks} disabled={selectedTasks.filter(task => task.state === "fail").length === 0}>重试</Button>
         </Space>
     </Space>
 }

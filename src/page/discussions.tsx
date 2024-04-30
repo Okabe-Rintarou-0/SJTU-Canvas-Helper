@@ -81,7 +81,7 @@ export default function DiscussionsPage() {
         <Space direction="vertical" style={{ width: "100%", overflow: "scroll" }} size={"large"}>
             <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} />
             <Space>
-                <span>选择讨论话题：</span>
+                <span>选择讨论：</span>
                 <Select
                     key={selectedCourseId}
                     style={{ width: 350 }}

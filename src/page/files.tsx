@@ -1,6 +1,6 @@
 import { Button, Checkbox, CheckboxProps, Divider, Input, Space, Table, message } from "antd";
 import BasicLayout from "../components/layout";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Course, Entry, entryName, File, FileDownloadTask, Folder, isFile } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import useMessage from "antd/es/message/useMessage";
@@ -11,6 +11,11 @@ import { PiMicrosoftExcelLogoFill, PiMicrosoftPowerpointLogoFill, PiMicrosoftWor
 import { FaRegFilePdf, FaImage, FaFileCsv, FaRegFileArchive, FaRegFileVideo, FaRegFileAudio } from "react-icons/fa";
 import { FolderOutlined, FileOutlined, HomeOutlined, LeftOutlined } from "@ant-design/icons"
 
+interface DownloadInfo {
+    course: Course;
+    folderPath: string;
+}
+
 export default function FilesPage() {
     const MAIN_FOLDER = 'course files';
     const [courses, setCourses] = useState<Course[]>([]);
@@ -18,6 +23,7 @@ export default function FilesPage() {
     const [selectedEntries, setSelectedEntries] = useState<Entry[]>([]);
     const [files, setFiles] = useState<File[]>([]);
     const [folders, setFolders] = useState<Folder[]>([]);
+    const [allFolders, setAllFolders] = useState<Folder[]>([]);
     const [downloadableOnly, setDownloadableOnly] = useState<boolean>(true);
     const [downloadTasks, setDownloadTasks] = useState<FileDownloadTask[]>([]);
     const [messageApi, contextHolder] = useMessage();
@@ -29,6 +35,8 @@ export default function FilesPage() {
     const [keyword, setKeyword] = useState<string>("");
     const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry, setEntries } = usePreview();
     const { merger, mergePDFs } = useMerger({ setPreviewEntry, onHoverEntry, onLeaveEntry });
+
+    const downloadInfoMap = useMemo(() => new Map<number, DownloadInfo>(), []);
 
     const handleLoginJbox = async () => {
         try {
@@ -177,20 +185,20 @@ export default function FilesPage() {
         return courses.find(course => course.id === selectedCourseId);
     }
 
-    /**
-     * 获取课程的主文件夹(course files) id
-     * @param courseId
-     */
-    const getCourseMainFolderId = async (courseId: number) => {
-        let mainFolderId;
+    const initAllFolders = async (courseId: number) => {
         try {
             let courseFolders = await invoke("list_folders", { courseId }) as Folder[];
-            mainFolderId = courseFolders.find(folder => folder.name === MAIN_FOLDER)?.id;
+            setAllFolders(courseFolders);
+            let folder = courseFolders.find(folder => folder.name === MAIN_FOLDER)!;
+            setCurrentFolderId(folder.id);
+            setCurrentFolderFullName(MAIN_FOLDER);
+            setParentFolderId(null);
         } catch (_) {
-            mainFolderId = undefined;
+            setAllFolders([]);
+            setFiles([]);
+            setFolders([]);
         }
-        return mainFolderId;
-    };
+    }
 
     const getParentFolder = async (folderId: number): Promise<Folder | undefined> => {
         let parentFolder = undefined;
@@ -206,6 +214,9 @@ export default function FilesPage() {
     const handleGetFolderFiles = async (folderId: number) => {
         try {
             let files = await invoke("list_folder_files", { folderId }) as File[];
+            if (folderId !== currentFolderId) {
+                return;
+            }
             files.map(file => file.key = file.uuid);
             setFiles(files);
         } catch (e) {
@@ -223,29 +234,26 @@ export default function FilesPage() {
         }
     }
 
-    const handleGetFoldersAndFiles = async (mainFolderId: number) => {
-        await Promise.all([handleGetFolderFolders(mainFolderId), handleGetFolderFiles(mainFolderId)]);
-    }
-
-    const handleCourseSelect = async (courseId: number) => {
+    const handleGetFoldersAndFiles = async (folderId: number) => {
         setOperating(true);
         setLoading(true);
-        if (courses.find(course => course.id === courseId)) {
-            setSelectedCourseId(courseId);
-            setSelectedEntries([]);
+        try {
+            await Promise.all([handleGetFolderFolders(folderId), handleGetFolderFiles(folderId)]);
+        } catch (e) {
+            console.log(e);
             setFiles([]);
             setFolders([]);
-            let courseMainFolderId = await getCourseMainFolderId(courseId);
-            if (courseMainFolderId !== undefined) {
-                await handleGetFoldersAndFiles(courseMainFolderId);
-                setCurrentFolderId(courseMainFolderId);
-                setCurrentFolderFullName(MAIN_FOLDER);
-                setParentFolderId(null);
-                setOperating(false);
-            }
         }
         setOperating(false);
         setLoading(false);
+    }
+
+    const handleCourseSelect = async (courseId: number) => {
+        if (courses.find(course => course.id === courseId)) {
+            setSelectedCourseId(courseId);
+            setSelectedEntries([]);
+            await initAllFolders(courseId);
+        }
     }
 
     const handleFolderOpen = async (folderId: number) => {
@@ -258,11 +266,18 @@ export default function FilesPage() {
         setParentFolderId(parentFolder?.parent_folder_id);
     }
 
+    const getFolderPath = (file: File) => {
+        let folderPath = allFolders.find(folder => folder.id === file.folder_id)?.full_name.slice(MAIN_FOLDER.length + 1);
+        return folderPath;
+    }
+
     const handleOpenTaskFile = async (task: FileDownloadTask) => {
         const name = task.file.display_name;
-        const course = getSelectedCourse()!;
+        const downloadInfo = downloadInfoMap.get(task.file.folder_id)!;
+        const course = downloadInfo.course;
+        const folderPath = downloadInfo.folderPath;
         try {
-            await invoke("open_course_file", { name, course });
+            await invoke("open_course_file", { name, course, folderPath });
         } catch (e) {
             messageApi.error(e as string);
         }
@@ -270,14 +285,46 @@ export default function FilesPage() {
 
     const handleDownloadFile = async (file: File) => {
         const course = getSelectedCourse()!;
-        await invoke("download_course_file", { file, course });
+        const folderPath = getFolderPath(file);
+        if (!downloadInfoMap.get(file.folder_id) && folderPath !== undefined) {
+            downloadInfoMap.set(file.folder_id, {
+                course,
+                folderPath
+            });
+        }
+        await invoke("download_course_file", { file, course, folderPath });
+    }
+
+    const handleSyncFiles = async () => {
+        try {
+            const course = getSelectedCourse()!;
+            messageApi.open({
+                type: "loading",
+                key: "syncing",
+                content: "正在计算中🚀..."
+            });
+            let filesToSync = await invoke("sync_course_files", { course }) as File[];
+            messageApi.destroy("syncing");
+            if (filesToSync.length > 0) {
+                messageApi.success(`共${filesToSync.length}个文件需要下载，下载任务开始🥰`, 1);
+            } else {
+                messageApi.success("已同步，无需下载🎉", 1);
+            }
+            filesToSync.map(file => handleAddDownloadFileTask(file));
+        } catch (e) {
+            console.log(e);
+            messageApi.error(`同步失败😑：${e}`)
+        }
     }
 
     const handleRemoveTask = async (taskToRemove: FileDownloadTask) => {
         setDownloadTasks(tasks => tasks.filter(task => task.file.uuid !== taskToRemove.file.uuid));
-        let course = getSelectedCourse();
+        const file = taskToRemove.file;
+        const downloadInfo = downloadInfoMap.get(file.folder_id)!;
+        const course = downloadInfo.course;
+        const folderPath = downloadInfo.folderPath;
         try {
-            await invoke("delete_course_file", { file: taskToRemove.file, course });
+            await invoke("delete_course_file", { file, course, folderPath });
             // messageApi.success("删除成功🎉！", 0.5);
         } catch (e) {
             if (taskToRemove.state !== "fail") {
@@ -288,14 +335,18 @@ export default function FilesPage() {
     }
 
     const handleAddDownloadFileTask = async (file: File) => {
-        if (!downloadTasks.find(task => task.file.uuid === file.uuid)) {
+        let task = downloadTasks.find(task => task.file.uuid === file.uuid);
+        if (!task) {
             setDownloadTasks(tasks => [...tasks, {
                 key: file.uuid,
                 file,
-                progress: 0
+                progress: 0,
+                state: "downloading",
             } as FileDownloadTask]);
-        } else {
-            messageApi.warning("请勿重复添加任务！");
+        } else if (task.state === "fail") {
+            task.progress = 0;
+            task.state = 'wait_retry';
+            setDownloadTasks([...downloadTasks]);
             return;
         }
     }
@@ -365,14 +416,10 @@ export default function FilesPage() {
     }
 
     const backToRootDir = async () => {
-        let courseMainFolderId = await getCourseMainFolderId(selectedCourseId);
-        if (typeof courseMainFolderId === 'number') {
-            setFiles([]);
-            setFolders([]);
-            setCurrentFolderId(courseMainFolderId);
-            setCurrentFolderFullName(MAIN_FOLDER);
-            setParentFolderId(null);
-        }
+        let mainFolder = allFolders.find(folder => folder.name === MAIN_FOLDER)!;
+        setCurrentFolderId(mainFolder.id);
+        setCurrentFolderFullName(MAIN_FOLDER);
+        setParentFolderId(null);
     }
 
     const shouldShow = (entry: Entry) => {
@@ -431,6 +478,7 @@ export default function FilesPage() {
             <Divider orientation="left">PDF/PPTX (混合)合并</Divider>
             {merger}
             <Divider orientation="left">文件下载</Divider>
+            <Button onClick={handleSyncFiles}>一键同步</Button>
             <FileDownloadTable
                 tasks={downloadTasks}
                 handleRemoveTask={handleRemoveTask}

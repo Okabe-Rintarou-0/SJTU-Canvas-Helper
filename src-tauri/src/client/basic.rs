@@ -8,8 +8,9 @@ use crate::{
     client::constants::CHUNK_SIZE,
     error::{AppError, Result},
     model::{
-        Assignment, CalendarEvent, Colors, Course, DiscussionTopic, File, Folder, FullDiscussion,
-        ProgressPayload, Submission, SubmissionUploadResult, SubmissionUploadSuccessResponse, User,
+        Assignment, CalendarEvent, Colors, Course, DiscussionTopic, File, Folder, FoldersAndFiles,
+        FullDiscussion, ProgressPayload, Submission, SubmissionUploadResult,
+        SubmissionUploadSuccessResponse, User,
     },
 };
 
@@ -315,6 +316,55 @@ impl Client {
         let url = format!("{}/api/v1/folders/{}", BASE_URL, folder_id);
         let folder = self.get_json_with_token(&url, None::<&str>, token).await?;
         Ok(folder)
+    }
+
+    async fn get_folders_and_files(&self, course_id: i64, token: &str) -> Result<FoldersAndFiles> {
+        let folders = self.list_folders(course_id, token).await?;
+        let files = self.list_course_files(course_id, token).await?;
+        Ok(FoldersAndFiles::new(folders, files))
+    }
+
+    pub fn get_course_identifier(&self, course: &Course) -> String {
+        format!(
+            "{}({} {})",
+            course.name, course.term.name, course.teachers[0].display_name
+        )
+    }
+
+    pub async fn sync_course_files(
+        &self,
+        course: &Course,
+        save_dir: &str,
+        token: &str,
+    ) -> Result<Vec<File>> {
+        let folders_and_files = self.get_folders_and_files(course.id, token).await?;
+        let folders_map = &folders_and_files.folders_map;
+        tracing::info!("folders_map: {:?}", folders_map);
+        let files = folders_and_files
+            .files
+            .into_iter()
+            .filter(|file| {
+                let folder = folders_map.get(&file.folder_id);
+                match folder {
+                    Some(folder) => {
+                        let folder_name = &folder.full_name;
+                        if folder_name.len() < 12 {
+                            return false;
+                        }
+
+                        let mut path = Path::new(save_dir).join(self.get_course_identifier(course));
+                        if folder_name != "course files" {
+                            path = path.join(folder_name[13..].to_owned());
+                        }
+                        path = path.join(&file.display_name);
+                        tracing::info!("path: {:?}", path);
+                        return fs::metadata(&path).is_err();
+                    }
+                    None => return true,
+                }
+            })
+            .collect();
+        Ok(files)
     }
 
     pub async fn get_colors(&self, token: &str) -> Result<Colors> {

@@ -23,8 +23,9 @@ use super::App;
 impl App {
     fn ensure_directory(dir: &str) {
         let metadata = fs::metadata(dir);
+        tracing::info!("dir: {:?}", dir);
         if metadata.is_err() {
-            fs::create_dir(dir).unwrap();
+            _ = fs::create_dir_all(dir);
         }
     }
 
@@ -571,12 +572,15 @@ impl App {
         &self,
         file: &File,
         course: &Course,
+        folder_path: &str,
         progress_handler: F,
     ) -> Result<()> {
         let guard = self.config.read().await;
         let token = &guard.token.clone();
         let course_identifier = self.get_course_identifier(course);
-        let save_path = Path::new(&guard.save_path).join(course_identifier);
+        let save_path = Path::new(&guard.save_path)
+            .join(course_identifier)
+            .join(folder_path);
         let save_path = save_path.to_str().unwrap_or_default();
         App::ensure_directory(save_path);
         tracing::info!("Download file at path: {:?}", save_path);
@@ -587,10 +591,16 @@ impl App {
     }
 
     fn get_course_identifier(&self, course: &Course) -> String {
-        format!(
-            "{}({} {})",
-            course.name, course.term.name, course.teachers[0].display_name
-        )
+        self.client.get_course_identifier(course)
+    }
+
+    pub async fn sync_course_files(&self, course: &Course) -> Result<Vec<File>> {
+        let guard = self.config.read().await;
+        let save_dir = guard.save_path.clone();
+        let token = guard.token.clone();
+        self.client
+            .sync_course_files(course, &save_dir, &token)
+            .await
     }
 
     pub async fn open_file(&self, name: &str) -> Result<()> {
@@ -599,10 +609,16 @@ impl App {
         self.open_path(path.to_str().unwrap_or_default())
     }
 
-    pub async fn open_course_file(&self, name: &str, course: &Course) -> Result<()> {
+    pub async fn open_course_file(
+        &self,
+        name: &str,
+        course: &Course,
+        folder_path: &str,
+    ) -> Result<()> {
         let save_path = &self.config.read().await.save_path;
         let path = Path::new(save_path)
             .join(self.get_course_identifier(course))
+            .join(folder_path)
             .join(name);
         self.open_path(path.to_str().unwrap_or_default())
     }
@@ -637,10 +653,16 @@ impl App {
         Ok(())
     }
 
-    pub async fn delete_course_file(&self, file: &File, course: &Course) -> Result<()> {
+    pub async fn delete_course_file(
+        &self,
+        file: &File,
+        course: &Course,
+        folder_path: &str,
+    ) -> Result<()> {
         let save_path = &self.config.read().await.save_path;
         let path = Path::new(save_path)
             .join(self.get_course_identifier(course))
+            .join(folder_path)
             .join(&file.display_name);
         fs::remove_file(path)?;
         Ok(())
