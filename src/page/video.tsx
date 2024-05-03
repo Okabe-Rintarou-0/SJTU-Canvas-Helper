@@ -310,6 +310,13 @@ export default function VideoPage() {
         subVideo.onpause = null;
         mainVideo.onpause = (() => subVideo?.pause());
 
+        subVideo.onratechange = null;
+        mainVideo.onratechange = (() => {
+            if (subVideo && mainVideo) {
+                subVideo.playbackRate = mainVideo.playbackRate;
+            }
+        });
+
         subVideo.onseeked = null;
         mainVideo.onseeked = (() => {
             if (subVideo && mainVideo) {
