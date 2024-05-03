@@ -653,7 +653,7 @@ impl App {
         self.open_path(save_path)
     }
 
-    pub fn open_config_dir(&self) -> Result<()> {
+    pub async fn open_config_dir(&self) -> Result<()> {
         let config_dir = App::config_dir()?;
         self.open_path(&config_dir)
     }
