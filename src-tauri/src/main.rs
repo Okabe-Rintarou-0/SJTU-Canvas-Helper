@@ -179,8 +179,8 @@ async fn open_save_dir() -> Result<()> {
 }
 
 #[tauri::command]
-fn open_config_dir() -> Result<()> {
-    APP.open_config_dir()
+async fn open_config_dir() -> Result<()> {
+    APP.open_config_dir().await
 }
 
 #[tauri::command]
