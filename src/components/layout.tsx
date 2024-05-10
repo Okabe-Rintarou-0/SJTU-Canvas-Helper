@@ -1,15 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { FileOutlined, SettingOutlined, UserOutlined, VideoCameraOutlined, FormOutlined, CalendarOutlined, CloudDownloadOutlined } from '@ant-design/icons';
-import { Layout, Menu, theme } from 'antd';
+import { Layout, Menu, Space, theme } from 'antd';
 import { Link, useLocation } from 'react-router-dom';
 import { getVersion } from "@tauri-apps/api/app";
 import { BsQrCode } from 'react-icons/bs';
 import { GoDiscussionOutdated } from 'react-icons/go';
+import { ChangeLogModal } from './change_log_modal';
 
 const { Content, Footer, Sider } = Layout;
 
 export default function BasicLayout({ children }: React.PropsWithChildren) {
     const [version, setVersion] = useState<string>("");
+    const [showChangeLog, setShowChangeLog] = useState<boolean>(false);
 
     useEffect(() => {
         getVersion().then(version => setVersion(version));
@@ -77,8 +79,16 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
                     {children}
                 </div>
             </Content>
+            <ChangeLogModal open={showChangeLog} onCancel={() => setShowChangeLog(false)} onOk={() => setShowChangeLog(false)} />
             <Footer style={{ textAlign: 'center' }}>
-                当前版本：{version} <br />
+                <Space>
+                    <span>当前版本：{version}</span>
+                    <a onClick={(e) => {
+                        e.preventDefault();
+                        setShowChangeLog(true);
+                    }}>更新日志</a>
+                </Space>
+                <br />
                 SJTU Canvas Helper ©{new Date().getFullYear()} Created by <a target="_blank" href='https://github.com/Okabe-Rintarou-0'>Okabe</a>
             </Footer>
         </Layout>
