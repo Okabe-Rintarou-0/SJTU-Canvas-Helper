@@ -7,9 +7,8 @@ import useMessage from "antd/es/message/useMessage";
 import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
 import { useLoginModal, useMerger, usePreview } from "../lib/hooks";
-import { PiMicrosoftExcelLogoFill, PiMicrosoftPowerpointLogoFill, PiMicrosoftWordLogoFill } from "react-icons/pi";
-import { FaRegFilePdf, FaImage, FaFileCsv, FaRegFileArchive, FaRegFileVideo, FaRegFileAudio } from "react-icons/fa";
-import { FolderOutlined, FileOutlined, HomeOutlined, LeftOutlined } from "@ant-design/icons"
+import { FolderOutlined, HomeOutlined, LeftOutlined } from "@ant-design/icons"
+import { getFileIcon } from "../lib/utils";
 
 interface DownloadInfo {
     course: Course;
@@ -67,42 +66,6 @@ export default function FilesPage() {
     useEffect(() => {
         handleGetFoldersAndFiles(currentFolderId);
     }, [currentFolderId]);
-
-    const getFileIcon = (file: File) => {
-        const name = file.display_name;
-        const mime_class = file.mime_class;
-        if (name.endsWith(".pdf")) {
-            return <FaRegFilePdf style={{ fontSize: '22px' }} />
-        }
-        if (name.endsWith(".doc") || name.endsWith(".docx")) {
-            return <PiMicrosoftWordLogoFill style={{ fontSize: '24px' }} />
-        }
-        if (name.endsWith(".ppt") || name.endsWith(".pptx")) {
-            return <PiMicrosoftPowerpointLogoFill style={{ fontSize: '24px' }} />
-        }
-        if (name.endsWith(".csv")) {
-            return <FaFileCsv style={{ fontSize: '22px' }} />
-        }
-        if (name.endsWith(".xls") || name.endsWith(".xlsx")) {
-            return <PiMicrosoftExcelLogoFill style={{ fontSize: '24px' }} />
-        }
-        if (name.endsWith(".ppt") || name.endsWith(".pptx")) {
-            return <PiMicrosoftPowerpointLogoFill style={{ fontSize: '24px' }} />
-        }
-        if (name.endsWith(".flv") || name.endsWith(".mp4") || name.endsWith(".mov") || name.endsWith(".m4v") || name.endsWith(".avi")) {
-            return <FaRegFileVideo style={{ fontSize: '22px' }} />
-        }
-        if (name.endsWith(".mp3") || name.endsWith(".wav")) {
-            return <FaRegFileAudio style={{ fontSize: '22px' }} />
-        }
-        if (name.endsWith(".7z") || name.endsWith(".rar") || name.endsWith(".tar") || name.endsWith(".zip")) {
-            return <FaRegFileArchive style={{ fontSize: '22px' }} />
-        }
-        if (mime_class.startsWith("image")) {
-            return <FaImage style={{ fontSize: '22px' }} />
-        }
-        return <FileOutlined style={{ fontSize: '21px' }} />
-    }
 
     const fileColumns = [
         {

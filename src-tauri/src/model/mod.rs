@@ -139,6 +139,8 @@ pub struct AppConfig {
     pub proxy_port: u16,
     #[serde(default)]
     pub jbox_login_info: JBoxLoginInfo,
+    #[serde(default)]
+    pub course_assignment_file_bindings: HashMap<i64, Vec<File>>,
 }
 
 impl Default for AppConfig {
@@ -152,6 +154,7 @@ impl Default for AppConfig {
             oauth_consumer_key: Default::default(),
             proxy_port: 3030,
             jbox_login_info: Default::default(),
+            course_assignment_file_bindings: Default::default(),
         }
     }
 }

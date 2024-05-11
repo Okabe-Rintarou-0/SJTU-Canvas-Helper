@@ -2,6 +2,9 @@ import { decode } from "js-base64";
 import { getConfig } from "./store";
 import dayjs, { Dayjs } from "dayjs"
 import { Assignment, AssignmentDate, Attachment, File as FileModel } from "./model";
+import { PiMicrosoftExcelLogoFill, PiMicrosoftPowerpointLogoFill, PiMicrosoftWordLogoFill } from "react-icons/pi";
+import { FaRegFilePdf, FaImage, FaFileCsv, FaRegFileArchive, FaRegFileVideo, FaRegFileAudio } from "react-icons/fa";
+import { FileOutlined } from "@ant-design/icons"
 
 export function formatDate(inputDate: string | undefined | null): string {
     if (!inputDate) {
@@ -138,4 +141,77 @@ export function assignmentIsNotUnlocked(assignment: Assignment) {
 export function assignmentNotNeedSubmit(assignment: Assignment) {
     return !assignment.submission ||
         assignment.submission_types.includes("none") || assignment.submission_types.includes("not_graded");
+}
+
+
+export function getFileIcon(file: FileModel) {
+    const name = file.display_name;
+    const mime_class = file.mime_class;
+    if (name.endsWith(".pdf")) {
+        return <FaRegFilePdf style={{ fontSize: '22px' }} />
+    }
+    if (name.endsWith(".doc") || name.endsWith(".docx")) {
+        return <PiMicrosoftWordLogoFill style={{ fontSize: '24px' }} />
+    }
+    if (name.endsWith(".ppt") || name.endsWith(".pptx")) {
+        return <PiMicrosoftPowerpointLogoFill style={{ fontSize: '24px' }} />
+    }
+    if (name.endsWith(".csv")) {
+        return <FaFileCsv style={{ fontSize: '22px' }} />
+    }
+    if (name.endsWith(".xls") || name.endsWith(".xlsx")) {
+        return <PiMicrosoftExcelLogoFill style={{ fontSize: '24px' }} />
+    }
+    if (name.endsWith(".ppt") || name.endsWith(".pptx")) {
+        return <PiMicrosoftPowerpointLogoFill style={{ fontSize: '24px' }} />
+    }
+    if (name.endsWith(".flv") || name.endsWith(".mp4") || name.endsWith(".mov") || name.endsWith(".m4v") || name.endsWith(".avi")) {
+        return <FaRegFileVideo style={{ fontSize: '22px' }} />
+    }
+    if (name.endsWith(".mp3") || name.endsWith(".wav")) {
+        return <FaRegFileAudio style={{ fontSize: '22px' }} />
+    }
+    if (name.endsWith(".7z") || name.endsWith(".rar") || name.endsWith(".tar") || name.endsWith(".zip")) {
+        return <FaRegFileArchive style={{ fontSize: '22px' }} />
+    }
+    if (mime_class.startsWith("image")) {
+        return <FaImage style={{ fontSize: '22px' }} />
+    }
+    return <FileOutlined style={{ fontSize: '21px' }} />
+}
+
+export function getBigFileIcon(file: FileModel) {
+    const name = file.display_name;
+    const mime_class = file.mime_class;
+    if (name.endsWith(".pdf")) {
+        return <FaRegFilePdf style={{ fontSize: '40px' }} />
+    }
+    if (name.endsWith(".doc") || name.endsWith(".docx")) {
+        return <PiMicrosoftWordLogoFill style={{ fontSize: '42px' }} />
+    }
+    if (name.endsWith(".ppt") || name.endsWith(".pptx")) {
+        return <PiMicrosoftPowerpointLogoFill style={{ fontSize: '42px' }} />
+    }
+    if (name.endsWith(".csv")) {
+        return <FaFileCsv style={{ fontSize: '40px' }} />
+    }
+    if (name.endsWith(".xls") || name.endsWith(".xlsx")) {
+        return <PiMicrosoftExcelLogoFill style={{ fontSize: '42px' }} />
+    }
+    if (name.endsWith(".ppt") || name.endsWith(".pptx")) {
+        return <PiMicrosoftPowerpointLogoFill style={{ fontSize: '42px' }} />
+    }
+    if (name.endsWith(".flv") || name.endsWith(".mp4") || name.endsWith(".mov") || name.endsWith(".m4v") || name.endsWith(".avi")) {
+        return <FaRegFileVideo style={{ fontSize: '40px' }} />
+    }
+    if (name.endsWith(".mp3") || name.endsWith(".wav")) {
+        return <FaRegFileAudio style={{ fontSize: '40px' }} />
+    }
+    if (name.endsWith(".7z") || name.endsWith(".rar") || name.endsWith(".tar") || name.endsWith(".zip")) {
+        return <FaRegFileArchive style={{ fontSize: '40px' }} />
+    }
+    if (mime_class.startsWith("image")) {
+        return <FaImage style={{ fontSize: '40px' }} />
+    }
+    return <FileOutlined style={{ fontSize: '39px' }} />
 }

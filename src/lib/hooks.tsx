@@ -1,6 +1,6 @@
 import { CSSProperties, Dispatch, ReactNode, SetStateAction, useEffect, useRef, useState } from "react";
 import PreviewModal from "../components/preview_modal";
-import { Entry, File, isFile, LoginMessage } from "./model";
+import { Entry, File, Folder, isFile, LoginMessage } from "./model";
 import PDFMerger from 'pdf-merger-js/browser';
 import { Button, Input, Progress, Space, message } from "antd";
 import dayjs from "dayjs";
@@ -382,4 +382,59 @@ export function useLoginModal({ onLogin }: { onLogin?: () => void }) {
     let modal = <LoginAlertModal open={open} onCancelLogin={closeModal} onLogin={onLogin} />
 
     return { modal, showModal, closeModal }
+}
+
+export function useData<T>(command: string, shouldFetch: boolean, args?: any) {
+    const [data, setData] = useState<T | undefined>();
+    const [error, setError] = useState<unknown>();
+    const [isLoading, setIsLoading] = useState<boolean>(true);
+
+    const mutate = async () => {
+        setIsLoading(true);
+        try {
+            const data = await invoke(command, args) as T;
+            setData(data);
+        } catch (e) {
+            console.log(e);
+            setError(e);
+        }
+        setIsLoading(false);
+    }
+
+    useEffect(() => {
+        if (shouldFetch) {
+            mutate();
+        }
+    }, [command, args]);
+
+    return {
+        data, isLoading, error, mutate
+    }
+}
+
+export function useFolderFiles(folderId?: number) {
+    const [args, setArgs] = useState<any>({ folderId });
+    useEffect(() => {
+        setArgs({ folderId });
+    }, [folderId]);
+    const shouldFetch = folderId != undefined;
+    return useData<File[]>("list_folder_files", shouldFetch, args);
+}
+
+export function useFolderFolders(folderId?: number) {
+    const [args, setArgs] = useState<any>({ folderId });
+    useEffect(() => {
+        setArgs({ folderId });
+    }, [folderId]);
+    const shouldFetch = folderId != undefined;
+    return useData<Folder[]>("list_folder_folders", shouldFetch, args);
+}
+
+export function useCourseFolders(courseId?: number) {
+    const [args, setArgs] = useState<any>({ courseId });
+    useEffect(() => {
+        setArgs({ courseId });
+    }, [courseId]);
+    const shouldFetch = courseId != undefined;
+    return useData<Folder[]>("list_folders", shouldFetch, args);
 }

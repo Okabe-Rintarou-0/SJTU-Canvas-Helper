@@ -11,6 +11,8 @@ import GradeStatisticChart from "../components/grade_statistic";
 import { usePreview } from "../lib/hooks";
 import CommentPanel from "../components/comment_panel";
 import { WarningOutlined } from "@ant-design/icons"
+import CourseFileSelector from "../components/course_file_selector";
+import { getConfig, saveConfig } from "../lib/store";
 
 export default function SubmissionsPage() {
     const [messageApi, contextHolder] = useMessage();
@@ -33,6 +35,7 @@ export default function SubmissionsPage() {
     const [previewFooter, setPreviewFooter] = useState<ReactNode>(undefined);
     const [commentingWhilePreviewing, setCommentingWhilePreviewing] = useState<boolean>(false);
     const [notSubmitStudents, setNotSubmitStudents] = useState<User[]>([]);
+    const [boundFiles, setBoundFiles] = useState<File[]>([]);
 
     const refreshSubmission = async (studentId: number) => {
         const submission = await invoke("get_single_course_assignment_submission", {
@@ -320,6 +323,14 @@ export default function SubmissionsPage() {
             setSelectedAssignment(assignment);
             handleGetSubmissions(selectedCourseId, assignmentId);
         }
+        getConfig(true).then(config => {
+            if (assignmentId in config.course_assignment_file_bindings) {
+                const files = config.course_assignment_file_bindings[assignmentId];
+                setBoundFiles(files);
+            } else {
+                setBoundFiles([]);
+            }
+        });
         setOperating(false);
     }
 
@@ -395,6 +406,14 @@ export default function SubmissionsPage() {
         }
     }
 
+    const bindCourseAssignmentFiles = async (files: File[]) => {
+        let config = await getConfig(true);
+        if (selectedAssignment) {
+            config.course_assignment_file_bindings[selectedAssignment.id] = files;
+            await saveConfig(config);
+        }
+    }
+
     const showShowAttachments = attachments.filter(attachment => shouldShow(attachment));
 
     return <BasicLayout>
@@ -413,6 +432,7 @@ export default function SubmissionsPage() {
                     options={assignmentOptions}
                 />
             </Space>
+            {selectedCourseId > 0 && selectedAssignment && <CourseFileSelector courseId={selectedCourseId} onSelectFiles={bindCourseAssignmentFiles} initialFiles={boundFiles} />}
             {
                 selectedAssignment?.points_possible &&
                 <span>满分：<b>{selectedAssignment.points_possible}</b>分</span>

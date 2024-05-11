@@ -11,6 +11,12 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v1.3.3 2024/5/11</Title>
+            <Paragraph>
+                <ul>
+                    <li>[Feature] 可以给课程的作业绑定（支持多个）文件，便于预览作业要求。</li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v1.3.2 2024/5/10</Title>
             <Paragraph>
                 <ul>
