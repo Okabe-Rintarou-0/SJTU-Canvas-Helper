@@ -31,9 +31,9 @@ export default function ArchiveRenderer({
     if (!currentDocument || !currentDocument.fileData) return null;
     const [selectedPath, setSelectedPath] = useState<string>("");
     const [messageApi, contextHolder] = useMessage();
-    const [treeData, setTreeData] = useState<TreeDataNode | undefined>(undefined);
-    const [fileMap, setFileMap] = useState<Map<string, any> | undefined>(undefined);
-    const [selectedDoc, setSelectedDoc] = useState<IDocument | undefined>(undefined);
+    const [treeData, setTreeData] = useState<TreeDataNode | undefined>();
+    const [fileMap, setFileMap] = useState<Map<string, any> | undefined>();
+    const [selectedDoc, setSelectedDoc] = useState<IDocument | undefined>();
 
     useEffect(() => {
         parse();

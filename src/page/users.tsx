@@ -2,23 +2,21 @@ import { Button, Form, Input, Space, Table } from "antd";
 import BasicLayout from "../components/layout";
 import useMessage from "antd/es/message/useMessage";
 import { useEffect, useState } from "react";
-import { Course, ExportUsersConfig, User } from "../lib/model";
+import { ExportUsersConfig, User } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import CourseSelect from "../components/course_select";
-import dayjs from "dayjs";
 import { formatDate } from "../lib/utils";
+import { useCourses } from "../lib/hooks";
 
 export default function UsersPage() {
     const [messageApi, contextHolder] = useMessage();
     const [operating, setOperating] = useState<boolean>(false);
-    // const [onlyExportStudents, setOnlyExportStudents] = useState<boolean>(true);
-    const [courses, setCourses] = useState<Course[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
-    // const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
     const [form] = Form.useForm<ExportUsersConfig>();
+    const courses = useCourses();
+
     useEffect(() => {
-        initCourses();
         form.setFieldsValue({ save_name: "用户名单" } as ExportUsersConfig);
     }, []);
 
@@ -44,22 +42,8 @@ export default function UsersPage() {
         render: column === 'created_at' ? formatDate : undefined,
     }));
 
-    const initCourses = async () => {
-        try {
-            let courses = await invoke("list_courses") as Course[];
-            courses = courses.filter(course => {
-                const courseEnd = dayjs(course.term.end_at);
-                const now = dayjs();
-                return now.isBefore(courseEnd) || course.enrollments.find(enroll => enroll.role === "TaEnrollment") != undefined;
-            });
-            setCourses(courses);
-        } catch (e) {
-            messageApi.error(e as string);
-        }
-    }
-
     const handleCourseSelect = async (courseId: number) => {
-        if (courses.find(course => course.id === courseId)) {
+        if (courses.data.find(course => course.id === courseId)) {
             // setSelectedCourseId(selectedCourse.id);
             setSelectedUsers([]);
             setUsers([]);
@@ -83,7 +67,7 @@ export default function UsersPage() {
     return <BasicLayout>
         {contextHolder}
         <Space direction="vertical" style={{ width: "100%", overflow: "scroll" }} size={"large"}>
-            <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} />
+            <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses.data} />
             <Table style={{ width: "100%" }}
                 loading={operating}
                 columns={columns}

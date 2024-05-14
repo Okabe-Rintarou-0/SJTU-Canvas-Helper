@@ -6,7 +6,7 @@ import { invoke } from "@tauri-apps/api";
 import useMessage from "antd/es/message/useMessage";
 import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
-import { useLoginModal, useMerger, usePreview } from "../lib/hooks";
+import { useCourses, useLoginModal, useMerger, usePreview } from "../lib/hooks";
 import { FolderOutlined, HomeOutlined, LeftOutlined } from "@ant-design/icons"
 import { getFileIcon } from "../lib/utils";
 
@@ -17,7 +17,6 @@ interface DownloadInfo {
 
 export default function FilesPage() {
     const MAIN_FOLDER = 'course files';
-    const [courses, setCourses] = useState<Course[]>([]);
     const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
     const [selectedEntries, setSelectedEntries] = useState<Entry[]>([]);
     const [files, setFiles] = useState<File[]>([]);
@@ -34,7 +33,7 @@ export default function FilesPage() {
     const [keyword, setKeyword] = useState<string>("");
     const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry, setEntries } = usePreview();
     const { merger, mergePDFs } = useMerger({ setPreviewEntry, onHoverEntry, onLeaveEntry });
-
+    const courses = useCourses();
     const downloadInfoMap = useMemo(() => new Map<number, DownloadInfo>(), []);
 
     const handleLoginJbox = async () => {
@@ -54,10 +53,6 @@ export default function FilesPage() {
     }
 
     const { modal, showModal, closeModal } = useLoginModal({ onLogin });
-
-    useEffect(() => {
-        initCourses();
-    }, []);
 
     useEffect(() => {
         setEntries(files)
@@ -135,17 +130,8 @@ export default function FilesPage() {
         }
     ];
 
-    const initCourses = async () => {
-        try {
-            let courses = await invoke("list_courses") as Course[];
-            setCourses(courses);
-        } catch (e) {
-            messageApi.error(e as string);
-        }
-    }
-
     const getSelectedCourse = () => {
-        return courses.find(course => course.id === selectedCourseId);
+        return courses.data.find(course => course.id === selectedCourseId);
     }
 
     const initAllFolders = async (courseId: number) => {
@@ -212,7 +198,7 @@ export default function FilesPage() {
     }
 
     const handleCourseSelect = async (courseId: number) => {
-        if (courses.find(course => course.id === courseId)) {
+        if (courses.data.find(course => course.id === courseId)) {
             setSelectedCourseId(courseId);
             setSelectedEntries([]);
             await initAllFolders(courseId);
@@ -399,7 +385,7 @@ export default function FilesPage() {
         {previewer}
         {modal}
         <Space direction="vertical" style={{ width: "100%", overflow: "scroll" }} size={"large"}>
-            <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} />
+            <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses.data} />
             <Space>
                 <Checkbox disabled={operating} onChange={handleSetShowAllFiles} defaultChecked>只显示可下载文件</Checkbox>
                 <Input.Search placeholder="输入文件关键词" onSearch={setKeyword} />

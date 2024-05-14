@@ -1,6 +1,6 @@
 import { CSSProperties, Dispatch, ReactNode, SetStateAction, useEffect, useRef, useState } from "react";
 import PreviewModal from "../components/preview_modal";
-import { Entry, File, Folder, isFile, LoginMessage } from "./model";
+import { Course, Entry, File, Folder, isFile, LoginMessage, User } from "./model";
 import PDFMerger from 'pdf-merger-js/browser';
 import { Button, Input, Progress, Space, message } from "antd";
 import dayjs from "dayjs";
@@ -410,6 +410,28 @@ export function useData<T>(command: string, shouldFetch: boolean, args?: any) {
     return {
         data, isLoading, error, mutate
     }
+}
+
+export function useCourses() {
+    const courses = useData<Course[]>("list_courses", true);
+
+    return {
+        ...courses,
+        data: courses.data ?? []
+    }
+}
+
+export function useTACourses() {
+    const courses = useData<Course[]>("list_ta_courses", true);
+
+    return {
+        ...courses,
+        data: courses.data ?? []
+    }
+}
+
+export function useMe() {
+    return useData<User>("get_me", true);
 }
 
 export function useFolderFiles(folderId?: number) {

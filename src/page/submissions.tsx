@@ -2,13 +2,13 @@ import { Button, Input, Popconfirm, Select, Space, Table, Tag } from "antd";
 import BasicLayout from "../components/layout";
 import useMessage from "antd/es/message/useMessage";
 import { ReactNode, useEffect, useMemo, useState } from "react";
-import { Assignment, Attachment, Course, File, FileDownloadTask, GradeStatistic, Submission, User } from "../lib/model";
+import { Assignment, Attachment, File, FileDownloadTask, GradeStatistic, Submission, User } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import { assignmentIsNotUnlocked, attachmentToFile, formatDate } from "../lib/utils";
 import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
 import GradeStatisticChart from "../components/grade_statistic";
-import { usePreview } from "../lib/hooks";
+import { useMe, usePreview, useTACourses } from "../lib/hooks";
 import CommentPanel from "../components/comment_panel";
 import { WarningOutlined } from "@ant-design/icons"
 import CourseFileSelector from "../components/course_file_selector";
@@ -18,9 +18,7 @@ export default function SubmissionsPage() {
     const [messageApi, contextHolder] = useMessage();
     const [operating, setOperating] = useState<boolean>(false);
     const [loading, setLoading] = useState<boolean>(false);
-    const [courses, setCourses] = useState<Course[]>([]);
     const [users, setUsers] = useState<User[]>([]);
-    const [me, setMe] = useState<User | undefined>(undefined);
     const [attachments, setAttachments] = useState<Attachment[]>([]);
     const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
     const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -36,6 +34,8 @@ export default function SubmissionsPage() {
     const [commentingWhilePreviewing, setCommentingWhilePreviewing] = useState<boolean>(false);
     const [notSubmitStudents, setNotSubmitStudents] = useState<User[]>([]);
     const [boundFiles, setBoundFiles] = useState<File[]>([]);
+    const courses = useTACourses();
+    const me = useMe();
 
     const refreshSubmission = async (studentId: number) => {
         const submission = await invoke("get_single_course_assignment_submission", {
@@ -74,26 +74,12 @@ export default function SubmissionsPage() {
                     placeholder="输入成绩并按下回车以打分"
                     onPressEnter={(ev) => handleGrade(ev.currentTarget.value, previewedAttachement)} />
             </Space>
-            <CommentPanel me={me} onRefresh={refreshSubmission}
+            <CommentPanel me={me.data} onRefresh={refreshSubmission}
                 onFocus={() => setCommentingWhilePreviewing(true)} onBlur={() => setCommentingWhilePreviewing(false)}
                 attachment={previewedAttachement} assignmentId={selectedAssignment.id} courseId={selectedCourseId} showInput={true} messageApi={messageApi} />
         </Space>
         setPreviewFooter(footer);
     }, [previewEntry, attachments]);
-
-    const initMe = async () => {
-        try {
-            const me = await invoke("get_me") as User;
-            setMe(me);
-        } catch (e) {
-            console.log(e);
-        }
-    }
-
-    useEffect(() => {
-        initCourses();
-        initMe();
-    }, []);
 
     useEffect(() => {
         setEntries(attachments.map(attachmentToFile));
@@ -277,15 +263,6 @@ export default function SubmissionsPage() {
         setLoading(false);
     }
 
-    const initCourses = async () => {
-        try {
-            let courses = await invoke("list_ta_courses") as Course[];
-            setCourses(courses);
-        } catch (e) {
-            messageApi.error(e as string);
-        }
-    }
-
     const handleDownloadAttachment = async (attachment: Attachment) => {
         let file = attachmentToFile(attachment);
         if (!downloadTasks.find(task => task.file.uuid === file.uuid)) {
@@ -302,7 +279,7 @@ export default function SubmissionsPage() {
 
     const handleCourseSelect = async (courseId: number) => {
         setOperating(true);
-        if (courses.find(course => course.id === courseId)) {
+        if (courses.data.find(course => course.id === courseId)) {
             setAttachments([]);
             setSelectedAttachments([]);
             setStatistic(undefined);
@@ -420,7 +397,7 @@ export default function SubmissionsPage() {
         {contextHolder}
         {previewer}
         <Space direction="vertical" style={{ width: "100%", overflow: "scroll" }} size={"large"}>
-            <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} />
+            <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses.data} />
             <Space>
                 <span>选择作业：</span>
                 <Select
@@ -483,7 +460,7 @@ export default function SubmissionsPage() {
                             return null;
                         }
                         const showInput = attachmentToComment === attachment.id;
-                        return <CommentPanel me={me} onRefresh={refreshSubmission}
+                        return <CommentPanel me={me.data} onRefresh={refreshSubmission}
                             attachment={attachment} assignmentId={selectedAssignment.id} courseId={selectedCourseId} showInput={showInput} messageApi={messageApi} />
                     }
                 }}

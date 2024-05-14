@@ -71,6 +71,13 @@ pub struct File {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UserSubmissions {
+    pub user_id: i64,
+    #[serde(default)]
+    pub submissions: Vec<Submission>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Folder {
     pub id: i64,
     pub name: String,

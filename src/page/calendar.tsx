@@ -12,12 +12,12 @@ export default function CalendarPage() {
     const [currentDate, setCurrentDate] = useState<Dayjs>(dayjs());
     const [currentValue, setCurrentValue] = useState<Dayjs>(dayjs());
     const [messageApi, contextHolder] = useMessage();
-    const [colors, setColors] = useState<Colors | undefined>(undefined);
+    const [colors, setColors] = useState<Colors | undefined>();
     const [contextCodes, setContextCodes] = useState<string[]>([]);
     const [events, setEvents] = useState<CalendarEvent[]>([]);
     const [loading, setLoading] = useState<boolean>(false);
     const [hintEvents, setHintEvents] = useState<CalendarEvent[]>([]);
-    const currentDateRef = useRef<Dayjs | undefined>(undefined);
+    const currentDateRef = useRef<Dayjs | undefined>();
     const contextCodesRef = useRef<string[]>([]);
 
     useEffect(() => {

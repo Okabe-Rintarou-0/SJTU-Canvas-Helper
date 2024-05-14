@@ -1,45 +1,24 @@
 import { Card, Empty, Select, Space } from "antd";
 import BasicLayout from "../components/layout";
 import useMessage from "antd/es/message/useMessage";
-import { useEffect, useState } from "react";
-import { Course, DiscussionTopic, FullDiscussion, User } from "../lib/model";
+import { useState } from "react";
+import { DiscussionTopic, FullDiscussion } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import CourseSelect from "../components/course_select";
 import { MessageBox } from "react-chat-elements";
+import { useCourses, useMe } from "../lib/hooks";
+
 import 'react-chat-elements/dist/main.css'
 
 export default function DiscussionsPage() {
     const [messageApi, contextHolder] = useMessage();
     const [topics, setTopics] = useState<DiscussionTopic[]>([]);
-    const [me, setMe] = useState<User | undefined>(undefined);
     const [operating, setOperating] = useState<boolean>(false);
-    const [courses, setCourses] = useState<Course[]>([]);
-    const [selectedTopic, setSelectedTopic] = useState<DiscussionTopic | undefined>(undefined);
-    const [fullDiscussion, setFullDiscussion] = useState<FullDiscussion | undefined>(undefined);
+    const [selectedTopic, setSelectedTopic] = useState<DiscussionTopic | undefined>();
+    const [fullDiscussion, setFullDiscussion] = useState<FullDiscussion | undefined>();
     const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
-
-    useEffect(() => {
-        initCourses();
-        initMe();
-    }, []);
-
-    const initMe = async () => {
-        try {
-            const me = await invoke("get_me") as User;
-            setMe(me);
-        } catch (e) {
-            console.log(e);
-        }
-    }
-
-    const initCourses = async () => {
-        try {
-            let courses = await invoke("list_courses") as Course[];
-            setCourses(courses);
-        } catch (e) {
-            messageApi.error(e as string);
-        }
-    }
+    const courses = useCourses();
+    const me = useMe();
 
     const handleGetDiscussionTopics = async (courseId: number) => {
         try {
@@ -53,7 +32,7 @@ export default function DiscussionsPage() {
     const handleCourseSelect = async (courseId: number) => {
         setOperating(true);
         setSelectedCourseId(courseId);
-        if (courses.find(course => course.id === courseId)) {
+        if (courses.data.find(course => course.id === courseId)) {
             setTopics([]);
             handleGetDiscussionTopics(courseId);
         }
@@ -79,7 +58,7 @@ export default function DiscussionsPage() {
     return <BasicLayout>
         {contextHolder}
         <Space direction="vertical" style={{ width: "100%", overflow: "scroll" }} size={"large"}>
-            <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} />
+            <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses.data} />
             <Space>
                 <span>选择讨论：</span>
                 <Select
@@ -124,7 +103,7 @@ export default function DiscussionsPage() {
                                 if (!user) {
                                     return null;
                                 }
-                                const is_mine = user.id === me?.id;
+                                const is_mine = user.id === me.data?.id;
                                 const position = is_mine ? "right" : "left";
                                 const color = is_mine ? "#E6E6FA" : undefined;
                                 return <MessageBox

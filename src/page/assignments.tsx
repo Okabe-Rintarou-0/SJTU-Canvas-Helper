@@ -2,11 +2,11 @@ import { Avatar, Button, Checkbox, CheckboxProps, Divider, List, Space, Table, T
 import BasicLayout from "../components/layout";
 import useMessage from "antd/es/message/useMessage";
 import { useEffect, useState } from "react";
-import { Assignment, Attachment, Course, GradeStatus, Submission, User } from "../lib/model";
+import { Assignment, Attachment, GradeStatus, Submission } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import { assignmentIsEnded, assignmentNotNeedSubmit, attachmentToFile, formatDate, getBaseDate } from "../lib/utils";
 import CourseSelect from "../components/course_select";
-import { usePreview } from "../lib/hooks";
+import { useCourses, useMe, usePreview } from "../lib/hooks";
 import dayjs from "dayjs";
 import ModifyDDLModal from "../components/modify_ddl_modal";
 import { SubmitModal } from "../components/submit_modal";
@@ -17,35 +17,21 @@ export default function AssignmentsPage() {
     const [messageApi, contextHolder] = useMessage();
     const [operating, setOperating] = useState<boolean>(false);
     const [onlyShowUnfinished, setOnlyShowUnfinished] = useState<boolean>(true);
-    const [courses, setCourses] = useState<Course[]>([]);
     const [assignments, setAssignments] = useState<Assignment[]>([]);
     const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
-    const [me, setMe] = useState<User | undefined>(undefined);
     const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry } = usePreview();
     const [linksMap, setLinksMap] = useState<Record<number, Attachment[]>>({});
     const [showModifyDDLModal, setShowModifyDDLModal] = useState<boolean>(false);
-    const [assignmentToModify, setAssignmentToModify] = useState<Assignment | undefined>(undefined);
+    const [assignmentToModify, setAssignmentToModify] = useState<Assignment | undefined>();
     const [showModal, setShowModal] = useState<boolean>(false);
-    const [selectedAssignment, setSelectedAssignment] = useState<Assignment | undefined>(undefined);
+    const [selectedAssignment, setSelectedAssignment] = useState<Assignment | undefined>();
     const [gradeMap, setGradeMap] = useState<Map<number, GradeStatus>>(new Map());
     const [searchParams, setSearchParams] = useSearchParams();
-
-    const initMe = async () => {
-        try {
-            const me = await invoke("get_me") as User;
-            setMe(me);
-        } catch (e) {
-            console.log(e);
-        }
-    }
+    const courses = useCourses();
+    const me = useMe();
 
     useEffect(() => {
-        initMe();
-        initCourses();
-    }, []);
-
-    useEffect(() => {
-        if (courses.length > 0) {
+        if (courses.data.length > 0) {
             const courseId = Number.parseInt(searchParams.get("id") ?? "");
             if (courseId > 0) {
                 setSearchParams({});
@@ -53,7 +39,7 @@ export default function AssignmentsPage() {
                 handleGetAssignments(courseId, onlyShowUnfinished);
             }
         }
-    }, [courses]);
+    }, [courses.data]);
 
     useEffect(() => {
         let newGradeMap = new Map<number, GradeStatus>();
@@ -99,15 +85,6 @@ export default function AssignmentsPage() {
             messageApi.error(e as string);
         }
         setOperating(false);
-    }
-
-    const initCourses = async () => {
-        try {
-            let courses = await invoke("list_courses") as Course[];
-            setCourses(courses);
-        } catch (e) {
-            messageApi.error(e as string);
-        }
     }
 
     const getColumns = () => {
@@ -199,7 +176,7 @@ export default function AssignmentsPage() {
     }
 
     const isTA = (courseId: number) => {
-        const course = courses.find(course => course.id === courseId);
+        const course = courses.data.find(course => course.id === courseId);
         return course !== undefined && course.enrollments.find(enrollment => enrollment.role == "TaEnrollment") !== undefined;
     }
 
@@ -280,7 +257,7 @@ export default function AssignmentsPage() {
     }];
 
     const handleCourseSelect = async (courseId: number) => {
-        let selectedCourse = courses.find(course => course.id === courseId);
+        let selectedCourse = courses.data.find(course => course.id === courseId);
         if (selectedCourse) {
             setSelectedCourseId(courseId);
             handleGetAssignments(courseId, onlyShowUnfinished);
@@ -362,7 +339,7 @@ export default function AssignmentsPage() {
                 handleGetMySingleSubmission(selectedCourseId, selectedAssignment.id);
             }} />}
         <Space direction="vertical" style={{ width: "100%", overflow: "scroll" }} size={"large"}>
-            <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses} value={selectedCourseId === -1 ? undefined : selectedCourseId} />
+            <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses.data} value={selectedCourseId === -1 ? undefined : selectedCourseId} />
             {!isTA(selectedCourseId) && <Checkbox disabled={operating} onChange={handleSetOnlyShowUnfinished} defaultChecked>只显示未完成</Checkbox>}
             <GradeOverviewChart gradeMap={gradeMap} />
             <Table style={{ width: "100%" }}
@@ -396,7 +373,7 @@ export default function AssignmentsPage() {
                                 itemLayout="horizontal"
                                 dataSource={assignment.submission?.submission_comments}
                                 renderItem={(comment) => (
-                                    <List.Item actions={comment.author_id === me?.id ? [<a onClick={(e) => {
+                                    <List.Item actions={comment.author_id === me.data?.id ? [<a onClick={(e) => {
                                         e.preventDefault();
                                         handleDeleteComment(comment.id, assignment.id);
                                     }}>删除</a>] : undefined}>
