@@ -6,7 +6,7 @@ import { ExportUsersConfig, User } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import CourseSelect from "../components/course_select";
 import { formatDate } from "../lib/utils";
-import { useCourses } from "../lib/hooks";
+import { useCurrentTermCourses } from "../lib/hooks";
 
 export default function UsersPage() {
     const [messageApi, contextHolder] = useMessage();
@@ -14,7 +14,7 @@ export default function UsersPage() {
     const [users, setUsers] = useState<User[]>([]);
     const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
     const [form] = Form.useForm<ExportUsersConfig>();
-    const courses = useCourses();
+    const courses = useCurrentTermCourses();
 
     useEffect(() => {
         form.setFieldsValue({ save_name: "用户名单" } as ExportUsersConfig);

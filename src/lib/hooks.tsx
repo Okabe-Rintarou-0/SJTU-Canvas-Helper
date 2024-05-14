@@ -1,6 +1,6 @@
 import { CSSProperties, Dispatch, ReactNode, SetStateAction, useEffect, useRef, useState } from "react";
 import PreviewModal from "../components/preview_modal";
-import { Course, Entry, File, Folder, isFile, LoginMessage, User } from "./model";
+import { Assignment, Course, Entry, File, Folder, isFile, LoginMessage, User, UserSubmissions } from "./model";
 import PDFMerger from 'pdf-merger-js/browser';
 import { Button, Input, Progress, Space, message } from "antd";
 import dayjs from "dayjs";
@@ -13,6 +13,8 @@ const UPDATE_QRCODE_MESSAGE = "{ \"type\": \"UPDATE_QR_CODE\" }";
 const SEND_INTERVAL = 1000 * 50;
 const QRCODE_BASE_URL = "https://jaccount.sjtu.edu.cn/jaccount/confirmscancode";
 const WEBSOCKET_BASE_URL = "wss://jaccount.sjtu.edu.cn/jaccount/sub";
+
+const EMPTY_ARRAY: any[] = [];
 
 export function usePreview(footer?: ReactNode, bodyStyle?: CSSProperties, monitorBlankKey = true) {
     const [entries, setEntries] = useState<Entry[]>([]);
@@ -387,7 +389,7 @@ export function useLoginModal({ onLogin }: { onLogin?: () => void }) {
 export function useData<T>(command: string, shouldFetch: boolean, args?: any) {
     const [data, setData] = useState<T | undefined>();
     const [error, setError] = useState<unknown>();
-    const [isLoading, setIsLoading] = useState<boolean>(true);
+    const [isLoading, setIsLoading] = useState<boolean>(false);
 
     const mutate = async () => {
         setIsLoading(true);
@@ -417,7 +419,7 @@ export function useCourses() {
 
     return {
         ...courses,
-        data: courses.data ?? []
+        data: courses.data ?? EMPTY_ARRAY as Course[]
     }
 }
 
@@ -426,12 +428,61 @@ export function useTACourses() {
 
     return {
         ...courses,
-        data: courses.data ?? []
+        data: courses.data ?? EMPTY_ARRAY as Course[]
     }
+}
+
+export function useCurrentTermCourses() {
+    const courses = useCourses();
+    courses.data = courses.data.filter(course => {
+        const courseEnd = dayjs(course.term.end_at);
+        const now = dayjs();
+        return now.isBefore(courseEnd) || course.enrollments.find(enroll => enroll.role === "TaEnrollment") != undefined;
+    });
+    return courses;
 }
 
 export function useMe() {
     return useData<User>("get_me", true);
+}
+
+export function useUserSubmissions(courseId?: number) {
+    const [args, setArgs] = useState<any>({ courseId });
+    useEffect(() => {
+        setArgs({ courseId });
+    }, [courseId]);
+    const shouldFetch = courseId != undefined;
+    const submissions = useData<UserSubmissions[]>("list_user_submissions", shouldFetch, args);
+    return {
+        ...submissions,
+        data: submissions.data ?? EMPTY_ARRAY as UserSubmissions[]
+    }
+}
+
+export function useAssignments(courseId?: number) {
+    const [args, setArgs] = useState<any>({ courseId });
+    useEffect(() => {
+        setArgs({ courseId });
+    }, [courseId]);
+    const shouldFetch = courseId != undefined;
+    const assignments = useData<Assignment[]>("list_course_assignments", shouldFetch, args);
+    return {
+        ...assignments,
+        data: assignments.data ?? EMPTY_ARRAY as Assignment[]
+    }
+}
+
+export function useStudents(courseId?: number) {
+    const [args, setArgs] = useState<any>({ courseId });
+    useEffect(() => {
+        setArgs({ courseId });
+    }, [courseId]);
+    const shouldFetch = courseId != undefined;
+    const students = useData<User[]>("list_course_students", shouldFetch, args);
+    return {
+        ...students,
+        data: students.data ?? EMPTY_ARRAY as User[]
+    }
 }
 
 export function useFolderFiles(folderId?: number) {

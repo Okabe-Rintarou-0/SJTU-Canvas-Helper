@@ -78,6 +78,12 @@ export interface User {
     email: string;
 }
 
+export interface UserSubmissions {
+    user_id: number;
+    username?: string;
+    submissions: Submission[]
+}
+
 export interface Colors {
     custom_colors: { [key: string]: string };
 }

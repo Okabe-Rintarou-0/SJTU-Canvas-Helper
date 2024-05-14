@@ -268,6 +268,12 @@ impl App {
         Ok(courses)
     }
 
+    pub async fn list_user_submissions(&self, course_id: i64) -> Result<Vec<UserSubmissions>> {
+        let token = self.config.read().await.token.clone();
+        let user_submissions = self.client.list_user_submissions(course_id, &token).await?;
+        Ok(user_submissions)
+    }
+
     pub async fn get_single_course_assignment_submission(
         &self,
         course_id: i64,

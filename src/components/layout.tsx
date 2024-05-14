@@ -6,6 +6,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { BsQrCode } from 'react-icons/bs';
 import { GoDiscussionOutdated } from 'react-icons/go';
 import { ChangeLogModal } from './change_log_modal';
+import { LuBookOpenCheck } from 'react-icons/lu';
 
 const { Content, Footer, Sider } = Layout;
 
@@ -37,6 +38,10 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
         key: 'users',
         icon: <UserOutlined />,
         label: <Link to={'/users'}>人员导出</Link>,
+    }, {
+        key: 'grades',
+        icon: <LuBookOpenCheck />,
+        label: <Link to={'/grades'}>评分册</Link>,
     }, {
         key: 'submissions',
         icon: <CloudDownloadOutlined />,

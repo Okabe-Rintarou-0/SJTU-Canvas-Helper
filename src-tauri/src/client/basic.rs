@@ -10,7 +10,7 @@ use crate::{
     model::{
         Assignment, CalendarEvent, Colors, Course, DiscussionTopic, File, Folder, FoldersAndFiles,
         FullDiscussion, ProgressPayload, Submission, SubmissionUploadResult,
-        SubmissionUploadSuccessResponse, User,
+        SubmissionUploadSuccessResponse, User, UserSubmissions,
     },
 };
 
@@ -473,6 +473,19 @@ impl Client {
             .filter(|course: &Course| !course.is_access_restricted())
             .collect();
         Ok(filtered_courses)
+    }
+
+    pub async fn list_user_submissions(
+        &self,
+        course_id: i64,
+        token: &str,
+    ) -> Result<Vec<UserSubmissions>> {
+        let url = format!(
+            "{}/api/v1/courses/{}/students/submissions?student_ids[]=all&grouped=true",
+            BASE_URL, course_id
+        );
+        let user_submissions = self.list_items(&url, token).await?;
+        Ok(user_submissions)
     }
 
     pub async fn get_me(&self, token: &str) -> Result<User> {

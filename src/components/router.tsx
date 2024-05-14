@@ -8,6 +8,7 @@ import CalendarPage from "../page/calendar";
 import VideoPage from "../page/video";
 import QRCodePage from "../page/qrcode";
 import DiscussionsPage from "../page/discussions";
+import GradePage from "../page/grades";
 
 export default function AppRouter() {
     return <BrowserRouter>
@@ -16,6 +17,7 @@ export default function AppRouter() {
             <Route path="/files" element={<FilesPage />} />
             <Route path="/assignments" element={<AssignmentsPage />} />
             <Route path="/discussions" element={<DiscussionsPage />} />
+            <Route path="/grades" element={<GradePage />} />
             <Route path="/submissions" element={<SubmissionsPage />} />
             <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/users" element={<UsersPage />} />
