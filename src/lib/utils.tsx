@@ -5,6 +5,7 @@ import { Assignment, AssignmentDate, Attachment, File as FileModel } from "./mod
 import { PiMicrosoftExcelLogoFill, PiMicrosoftPowerpointLogoFill, PiMicrosoftWordLogoFill } from "react-icons/pi";
 import { FaRegFilePdf, FaImage, FaFileCsv, FaRegFileArchive, FaRegFileVideo, FaRegFileAudio } from "react-icons/fa";
 import { FileOutlined } from "@ant-design/icons"
+import { invoke } from "@tauri-apps/api";
 
 export function formatDate(inputDate: string | undefined | null): string {
     if (!inputDate) {
@@ -127,6 +128,11 @@ export function assignmentIsEnded(assignment: Assignment) {
     const dued = dayjs(baseDate?.due_at).isBefore(dayjs());
     const locked = dayjs(baseDate?.lock_at).isBefore(dayjs());
     return dued || locked;
+}
+
+export async function savePathValidator(_: any, savePath: string) {
+    let valid = await invoke("check_path", { path: savePath });
+    return valid ? Promise.resolve() : Promise.reject(new Error("保存路径无效！请检查目录是否存在！"));
 }
 
 export function assignmentIsNotUnlocked(assignment: Assignment) {

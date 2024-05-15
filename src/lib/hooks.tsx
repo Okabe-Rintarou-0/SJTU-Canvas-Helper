@@ -446,12 +446,12 @@ export function useMe() {
     return useData<User>("get_me", true);
 }
 
-export function useUserSubmissions(courseId?: number) {
-    const [args, setArgs] = useState<any>({ courseId });
+export function useUserSubmissions(courseId?: number, studentIds?: number[]) {
+    const [args, setArgs] = useState<any>({ courseId, studentIds });
     useEffect(() => {
-        setArgs({ courseId });
-    }, [courseId]);
-    const shouldFetch = courseId != undefined;
+        setArgs({ courseId, studentIds });
+    }, [courseId, studentIds]);
+    const shouldFetch = courseId != undefined && (studentIds?.length ?? 0) > 0;
     const submissions = useData<UserSubmissions[]>("list_user_submissions", shouldFetch, args);
     return {
         ...submissions,

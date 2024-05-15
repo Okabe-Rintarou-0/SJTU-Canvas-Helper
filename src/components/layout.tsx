@@ -41,7 +41,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
     }, {
         key: 'grades',
         icon: <LuBookOpenCheck />,
-        label: <Link to={'/grades'}>评分册</Link>,
+        label: <Link to={'/grades'}>评分册(beta)</Link>,
     }, {
         key: 'submissions',
         icon: <CloudDownloadOutlined />,

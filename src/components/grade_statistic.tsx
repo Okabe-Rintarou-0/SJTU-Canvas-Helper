@@ -1,8 +1,14 @@
+import { ReactNode } from "react";
 import { GradeStatistic } from "../lib/model"
 import ReactEcharts from "echarts-for-react";
 
-export default function GradeStatisticChart({ statistic }: {
-    statistic: GradeStatistic
+export default function GradeStatisticChart({ statistic, subTitleRenderer }: {
+    statistic: GradeStatistic,
+    subTitleRenderer?: (info: {
+        graded: number,
+        total: number,
+        average: number
+    }) => ReactNode
 }) {
     const computeGradeDistribution = (grades: number[]) => {
         const gradeMap = new Map<number, number>();
@@ -58,7 +64,11 @@ export default function GradeStatisticChart({ statistic }: {
     const average = graded > 0 ? statistic.grades.reduce((g1, g2) => g1 + g2) / graded : 0;
     const options = getGradeDistributionOptions(statistic.grades);
 
-    return <>{statistic.total > 0 && <span><b>{graded}/{statistic.total}</b>个作业已记分（平均<b>{average.toFixed(2)}</b>分）</span>}
+    return <>{statistic.total > 0 && <>
+        {subTitleRenderer === undefined && <span>
+            <b>{graded}/{statistic.total}</b>个提交已记分（平均<b>{average.toFixed(2)}</b>分）</span>}
+        {subTitleRenderer !== undefined && subTitleRenderer({ graded, total: statistic.total, average: Number.parseFloat(average.toFixed(2)) })}
+    </>}
         {graded > 0 && <ReactEcharts option={options} />}
     </>
 }

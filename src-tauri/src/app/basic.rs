@@ -268,9 +268,17 @@ impl App {
         Ok(courses)
     }
 
-    pub async fn list_user_submissions(&self, course_id: i64) -> Result<Vec<UserSubmissions>> {
+    pub async fn list_user_submissions(
+        &self,
+        course_id: i64,
+        student_ids: &[i64],
+    ) -> Result<Vec<UserSubmissions>> {
         let token = self.config.read().await.token.clone();
-        let user_submissions = self.client.list_user_submissions(course_id, &token).await?;
+        let user_submissions = self
+            .client
+            .clone()
+            .list_user_submissions(course_id, student_ids, &token)
+            .await?;
         Ok(user_submissions)
     }
 
@@ -766,6 +774,24 @@ impl App {
             .upload_submission_file(course_id, assignment_id, file_path, file_name, &token)
             .await?;
         Ok(file)
+    }
+
+    pub async fn export_excel(
+        &self,
+        data: &[Vec<String>],
+        file_name: &str,
+        folder_path: &str,
+    ) -> Result<()> {
+        let path = Path::new(folder_path).join(file_name);
+        let workbook = Workbook::new(path.to_str().unwrap())?;
+        let mut sheet = workbook.add_worksheet(None)?;
+        for (row, row_data) in data.iter().enumerate() {
+            for (col, col_data) in row_data.iter().enumerate() {
+                sheet.write_string(row as u32, col as u16, col_data, None)?;
+            }
+        }
+        workbook.close()?;
+        Ok(())
     }
 
     pub async fn export_users(&self, users: &[User], save_name: &str) -> Result<()> {

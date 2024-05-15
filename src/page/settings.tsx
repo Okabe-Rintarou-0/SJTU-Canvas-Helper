@@ -8,6 +8,7 @@ import { getConfig, saveConfig } from "../lib/store";
 const { Password } = Input;
 import type { InputRef, TourProps } from 'antd';
 import { PathSelector } from "../components/path_selector";
+import { savePathValidator } from "../lib/utils";
 
 type AccountMode = "create" | "select";
 
@@ -96,11 +97,6 @@ export default function SettingsPage() {
         } catch (e) {
             messageApi.error(`打开失败🥹：${e}`);
         }
-    }
-
-    const savePathValidator = async (_: any, savePath: string) => {
-        let valid = await invoke("check_path", { path: savePath });
-        return valid ? Promise.resolve() : Promise.reject(new Error("保存路径无效！请检查目录是否存在！"));
     }
 
     const proxyPortValidator = async (_: any, port: number) => {

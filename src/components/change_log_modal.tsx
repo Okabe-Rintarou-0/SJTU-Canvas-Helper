@@ -11,6 +11,12 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v1.3.4 2024/5/15</Title>
+            <Paragraph>
+                <ul>
+                    <li>[Feature] 新增成绩册页面，支持多种视图、导出成绩为 excel 表格。</li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v1.3.3 2024/5/11</Title>
             <Paragraph>
                 <ul>

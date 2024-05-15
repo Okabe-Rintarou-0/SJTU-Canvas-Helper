@@ -3,6 +3,7 @@ use ::bytes::Bytes;
 use reqwest::{cookie, multipart};
 use serde::de::DeserializeOwned;
 use std::{cmp::min, fs, io::Write, ops::Deref, path::Path, sync::Arc};
+use tokio::task::JoinSet;
 
 use crate::{
     client::constants::CHUNK_SIZE,
@@ -475,16 +476,77 @@ impl Client {
         Ok(filtered_courses)
     }
 
-    pub async fn list_user_submissions(
-        &self,
-        course_id: i64,
-        token: &str,
-    ) -> Result<Vec<UserSubmissions>> {
-        let url = format!(
-            "{}/api/v1/courses/{}/students/submissions?student_ids[]=all&grouped=true",
+    fn get_user_submissions_url(&self, course_id: i64, student_ids: &[i64]) -> String {
+        let mut url = format!(
+            "{}/api/v1/courses/{}/students/submissions?grouped=true&per_page=50",
             BASE_URL, course_id
         );
-        let user_submissions = self.list_items(&url, token).await?;
+        for student_id in student_ids {
+            url += &format!("&student_ids[]={}", student_id);
+        }
+        url
+    }
+
+    async fn list_user_submissions_inner(
+        &self,
+        course_id: i64,
+        partition_id: usize,
+        student_ids: &[i64],
+        token: &str,
+    ) -> Result<(usize, Vec<UserSubmissions>)> {
+        let url = self.get_user_submissions_url(course_id, student_ids);
+        let user_submissions = self.get_json_with_token(&url, None::<&str>, token).await?;
+        Ok((partition_id, user_submissions))
+    }
+
+    pub async fn list_user_submissions(
+        self: Arc<Self>,
+        course_id: i64,
+        student_ids: &[i64],
+        token: &str,
+    ) -> Result<Vec<UserSubmissions>> {
+        const STUDENT_PER_PARITION: usize = 50;
+        let num_students = student_ids.len();
+        let num_partitions = if num_students % STUDENT_PER_PARITION == 0 {
+            num_students / STUDENT_PER_PARITION
+        } else {
+            num_students / STUDENT_PER_PARITION + 1
+        };
+
+        let mut tasks = JoinSet::new();
+        let mut results = Vec::with_capacity(num_partitions);
+        for i in 0..num_partitions {
+            results.push(vec![]);
+            let start = i * STUDENT_PER_PARITION;
+            let end = if i == num_partitions - 1 {
+                num_students
+            } else {
+                (i + 1) * STUDENT_PER_PARITION
+            };
+
+            let sub_student_ids = student_ids[start..end].to_vec();
+            let cloned_token = token.to_owned();
+            let cloned_self = self.clone();
+            tasks.spawn(async move {
+                cloned_self
+                    .list_user_submissions_inner(course_id, i, &sub_student_ids, &cloned_token)
+                    .await
+            });
+        }
+
+        while let Some(res) = tasks.join_next().await {
+            let res = res??;
+            let partition_id = res.0;
+            let partitioned_user_submissions = res.1;
+            tracing::info!("partition {} done", partition_id);
+            results[partition_id] = partitioned_user_submissions;
+        }
+
+        let mut user_submissions = vec![];
+        for partitioned_user_submissions in results {
+            user_submissions.extend(partitioned_user_submissions);
+        }
+
         Ok(user_submissions)
     }
 

@@ -55,8 +55,11 @@ async fn list_courses() -> Result<Vec<Course>> {
 }
 
 #[tauri::command]
-async fn list_user_submissions(course_id: i64) -> Result<Vec<UserSubmissions>> {
-    APP.list_user_submissions(course_id).await
+async fn list_user_submissions(
+    course_id: i64,
+    student_ids: Vec<i64>,
+) -> Result<Vec<UserSubmissions>> {
+    APP.list_user_submissions(course_id, &student_ids).await
 }
 
 #[tauri::command]
@@ -201,6 +204,15 @@ async fn delete_course_file(file: File, course: Course, folder_path: String) -> 
 #[tauri::command]
 async fn delete_file_with_name(name: String) -> Result<()> {
     APP.delete_file_with_name(&name).await
+}
+
+#[tauri::command]
+async fn export_excel(
+    data: Vec<Vec<String>>,
+    file_name: String,
+    folder_path: String,
+) -> Result<()> {
+    APP.export_excel(&data, &file_name, &folder_path).await
 }
 
 #[tauri::command]
@@ -488,6 +500,7 @@ async fn main() -> Result<()> {
             list_course_assignment_submissions,
             filter_course_qrcode_images,
             get_single_course_assignment_submission,
+            export_excel,
             list_folder_files,
             list_folders,
             list_folder_folders,
