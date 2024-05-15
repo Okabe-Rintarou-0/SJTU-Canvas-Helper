@@ -14,7 +14,7 @@ export default function CourseSelect({ courses, disabled, onChange, value }: {
             const term = course.term.name.replace("Spring", "春").replace("Fall", "秋");
             formatted.push({
                 ...course,
-                name: `${course.name}(${term}, ${course.teachers[0].display_name})`
+                name: `${course.name}(${term}, ${course.teachers?.[0]?.display_name ?? '未知教师'})`
             });
         });
         // sort by term id, latest first
