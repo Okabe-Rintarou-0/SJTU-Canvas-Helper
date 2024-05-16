@@ -11,6 +11,13 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v1.3.5 2024/5/16</Title>
+            <Paragraph>
+                <ul>
+                    <li>[Fix] 修复老师无法正常使用批改作业功能的 bug。</li>
+                    <li>[Fix] 修复课程无老师时无法正确显示的 bug。</li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v1.3.4 2024/5/15</Title>
             <Paragraph>
                 <ul>

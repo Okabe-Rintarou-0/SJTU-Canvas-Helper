@@ -73,7 +73,7 @@ export default function AssignmentsPage() {
             let linksMap = {};
             let assignments = await invoke("list_course_assignments", { courseId }) as Assignment[];
             assignments.map(assignment => assignment.key = assignment.id);
-            if (!isTA(courseId) && onlyShowUnfinished) {
+            if (!isTAOrTeacher(courseId) && onlyShowUnfinished) {
                 assignments = assignments.filter(assignment => assignment.submission?.workflow_state === "unsubmitted")
             }
             for (let assignment of assignments) {
@@ -140,7 +140,7 @@ export default function AssignmentsPage() {
                 return <Space size={"small"}>{tags}</Space>
             }
         }];
-        if (isTA(selectedCourseId)) {
+        if (isTAOrTeacher(selectedCourseId)) {
             columns.push({
                 title: '操作',
                 key: 'action',
@@ -175,9 +175,9 @@ export default function AssignmentsPage() {
         return columns;
     }
 
-    const isTA = (courseId: number) => {
+    const isTAOrTeacher = (courseId: number) => {
         const course = courses.data.find(course => course.id === courseId);
-        return course !== undefined && course.enrollments.find(enrollment => enrollment.role == "TaEnrollment") !== undefined;
+        return course !== undefined && course.enrollments.find(enrollment => enrollment.role === "TaEnrollment" || enrollment.role === "TeacherEnrollment") !== undefined;
     }
 
     const handleDownloadAttachment = async (attachment: Attachment) => {
@@ -340,7 +340,7 @@ export default function AssignmentsPage() {
             }} />}
         <Space direction="vertical" style={{ width: "100%", overflow: "scroll" }} size={"large"}>
             <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses.data} value={selectedCourseId === -1 ? undefined : selectedCourseId} />
-            {!isTA(selectedCourseId) && <Checkbox disabled={operating} onChange={handleSetOnlyShowUnfinished} defaultChecked>只显示未完成</Checkbox>}
+            {!isTAOrTeacher(selectedCourseId) && <Checkbox disabled={operating} onChange={handleSetOnlyShowUnfinished} defaultChecked>只显示未完成</Checkbox>}
             <GradeOverviewChart gradeMap={gradeMap} />
             <Table style={{ width: "100%" }}
                 loading={operating}
@@ -349,7 +349,7 @@ export default function AssignmentsPage() {
                 pagination={false}
                 expandable={{
                     onExpand: (expanded, assignment) => {
-                        if (expanded && !isTA(selectedCourseId)) {
+                        if (expanded && !isTAOrTeacher(selectedCourseId)) {
                             handleGetMySingleSubmission(selectedCourseId, assignment.id);
                         }
                     },

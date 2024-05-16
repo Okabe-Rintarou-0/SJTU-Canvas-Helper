@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import BasicLayout from "../components/layout";
-import { useAssignments, useStudents, useTACourses, useUserSubmissions } from "../lib/hooks";
+import { useAssignments, useStudents, useTAOrTeacherCourses, useUserSubmissions } from "../lib/hooks";
 import CourseSelect from "../components/course_select";
 import { Assignment, Course, GradeStatistic, Submission, User } from "../lib/model";
 import { Button, Empty, Form, Input, Space, Spin, Table, Tabs, TabsProps, Tag } from "antd";
@@ -25,7 +25,7 @@ interface ExportInfo {
 export default function GradePage() {
     const [selectedCourseId, setSelectedCourseId] = useState<number | undefined>();
     const [studentIds, setStudentIds] = useState<number[]>([]);
-    const courses = useTACourses();
+    const courses = useTAOrTeacherCourses();
     const students = useStudents(selectedCourseId);
     const userSubmissions = useUserSubmissions(selectedCourseId, studentIds);
     const assignments = useAssignments(selectedCourseId);

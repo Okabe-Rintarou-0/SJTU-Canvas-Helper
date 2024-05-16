@@ -8,7 +8,7 @@ import { assignmentIsNotUnlocked, attachmentToFile, formatDate } from "../lib/ut
 import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
 import GradeStatisticChart from "../components/grade_statistic";
-import { useMe, usePreview, useTACourses } from "../lib/hooks";
+import { useMe, usePreview, useTAOrTeacherCourses } from "../lib/hooks";
 import CommentPanel from "../components/comment_panel";
 import { WarningOutlined } from "@ant-design/icons"
 import CourseFileSelector from "../components/course_file_selector";
@@ -34,7 +34,7 @@ export default function SubmissionsPage() {
     const [commentingWhilePreviewing, setCommentingWhilePreviewing] = useState<boolean>(false);
     const [notSubmitStudents, setNotSubmitStudents] = useState<User[]>([]);
     const [boundFiles, setBoundFiles] = useState<File[]>([]);
-    const courses = useTACourses();
+    const courses = useTAOrTeacherCourses();
     const me = useMe();
 
     const refreshSubmission = async (studentId: number) => {

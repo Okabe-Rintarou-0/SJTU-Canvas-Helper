@@ -82,11 +82,6 @@ async fn get_single_course_assignment_submission(
 }
 
 #[tauri::command]
-async fn list_ta_courses() -> Result<Vec<Course>> {
-    APP.list_ta_courses().await
-}
-
-#[tauri::command]
 async fn list_discussion_topics(course_id: i64) -> Result<Vec<DiscussionTopic>> {
     APP.list_discussion_topics(course_id).await
 }
@@ -487,7 +482,6 @@ async fn main() -> Result<()> {
             read_account_info,
             list_accounts,
             list_courses,
-            list_ta_courses,
             list_user_submissions,
             get_full_discussion,
             list_discussion_topics,

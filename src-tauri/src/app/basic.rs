@@ -426,12 +426,6 @@ impl App {
             .await
     }
 
-    pub async fn list_ta_courses(&self) -> Result<Vec<Course>> {
-        self.client
-            .list_ta_courses(&self.config.read().await.token)
-            .await
-    }
-
     pub async fn test_token(&self, token: &str) -> Result<User> {
         self.client.get_me(token).await
     }

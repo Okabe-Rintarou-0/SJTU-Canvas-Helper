@@ -676,9 +676,19 @@ impl Client {
         Ok(file)
     }
 
+    #[allow(dead_code)]
     pub async fn list_ta_courses(&self, token: &str) -> Result<Vec<Course>> {
         let url = format!(
             "{}/api/v1/courses?include[]=teachers&include[]=term&enrollment_type=ta",
+            BASE_URL
+        );
+        self.list_items(&url, token).await
+    }
+
+    #[allow(dead_code)]
+    pub async fn list_teacher_courses(&self, token: &str) -> Result<Vec<Course>> {
+        let url = format!(
+            "{}/api/v1/courses?include[]=teachers&include[]=term&enrollment_type=teacher",
             BASE_URL
         );
         self.list_items(&url, token).await

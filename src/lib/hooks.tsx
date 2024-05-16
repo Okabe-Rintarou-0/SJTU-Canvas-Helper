@@ -423,12 +423,13 @@ export function useCourses() {
     }
 }
 
-export function useTACourses() {
-    const courses = useData<Course[]>("list_ta_courses", true);
-
+export function useTAOrTeacherCourses() {
+    const courses = useData<Course[]>("list_courses", true);
+    let data = courses.data ?? EMPTY_ARRAY as Course[];
+    data = data.filter(course => course.enrollments.find(enrollment => enrollment.role === "TaEnrollment" || enrollment.role === "TeacherEnrollment"))
     return {
         ...courses,
-        data: courses.data ?? EMPTY_ARRAY as Course[]
+        data
     }
 }
 
