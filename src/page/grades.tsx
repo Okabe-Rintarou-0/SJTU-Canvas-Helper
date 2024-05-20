@@ -64,7 +64,8 @@ export default function GradePage() {
         const columns = [{
             title: "学生",
             dataIndex: 'username',
-            key: "username"
+            key: "username",
+            fixed: 'left'
         }, ...assignments.data.map((assignment) => {
             const isEnded = assignmentIsEnded(assignment);
             const readonlyGrade = assignment.needs_grading_count === null;
@@ -233,7 +234,7 @@ export default function GradePage() {
             key: 'overview',
             label: '总览视图',
             children: <Space style={{ width: "100%" }} direction="vertical">
-                <Table columns={columns} dataSource={data} loading={isLoading} pagination={false} />
+                <Table columns={columns} dataSource={data} loading={isLoading} pagination={false} bordered />
                 {userSubmissions.data.length > 0 && <Form
                     form={form}
                     layout="vertical"
