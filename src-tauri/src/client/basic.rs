@@ -302,9 +302,13 @@ impl Client {
         self.list_items(&url, token).await
     }
 
-    // TODO: 将接口改为list_course_folders
-    pub async fn list_folders(&self, course_id: i64, token: &str) -> Result<Vec<Folder>> {
+    pub async fn list_course_folders(&self, course_id: i64, token: &str) -> Result<Vec<Folder>> {
         let url = format!("{}/api/v1/courses/{}/folders", BASE_URL, course_id);
+        self.list_items(&url, token).await
+    }
+
+    pub async fn list_my_folders(&self, token: &str) -> Result<Vec<Folder>> {
+        let url = format!("{}/api/v1/users/self/folders", BASE_URL);
         self.list_items(&url, token).await
     }
 
@@ -320,7 +324,7 @@ impl Client {
     }
 
     async fn get_folders_and_files(&self, course_id: i64, token: &str) -> Result<FoldersAndFiles> {
-        let folders = self.list_folders(course_id, token).await?;
+        let folders = self.list_course_folders(course_id, token).await?;
         let files = self.list_course_files(course_id, token).await?;
         Ok(FoldersAndFiles::new(folders, files))
     }

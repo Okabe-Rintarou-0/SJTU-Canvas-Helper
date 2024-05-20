@@ -92,6 +92,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
                         e.preventDefault();
                         setShowChangeLog(true);
                     }}>更新日志</a>
+                    <a href='mailto:923048992@sjtu.edu.cn' target='_blank'>我要反馈</a>
                 </Space>
                 <br />
                 SJTU Canvas Helper ©{new Date().getFullYear()} Created by <a target="_blank" href='https://github.com/Okabe-Rintarou-0'>Okabe</a>

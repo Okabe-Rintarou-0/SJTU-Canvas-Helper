@@ -132,8 +132,13 @@ async fn list_folder_files(folder_id: i64) -> Result<Vec<File>> {
 }
 
 #[tauri::command]
-async fn list_folders(course_id: i64) -> Result<Vec<Folder>> {
-    APP.list_folders(course_id).await
+async fn list_course_folders(course_id: i64) -> Result<Vec<Folder>> {
+    APP.list_course_folders(course_id).await
+}
+
+#[tauri::command]
+async fn list_my_folders() -> Result<Vec<Folder>> {
+    APP.list_my_folders().await
 }
 
 #[tauri::command]
@@ -177,6 +182,11 @@ async fn open_course_file(name: String, course: Course, folder_path: String) -> 
 }
 
 #[tauri::command]
+async fn open_my_file(name: String, folder_path: String) -> Result<()> {
+    APP.open_my_file(&name, &folder_path).await
+}
+
+#[tauri::command]
 async fn open_save_dir() -> Result<()> {
     APP.open_save_dir().await
 }
@@ -194,6 +204,11 @@ async fn delete_file(file: File) -> Result<()> {
 #[tauri::command]
 async fn delete_course_file(file: File, course: Course, folder_path: String) -> Result<()> {
     APP.delete_course_file(&file, &course, &folder_path).await
+}
+
+#[tauri::command]
+async fn delete_my_file(file: File, folder_path: String) -> Result<()> {
+    APP.delete_my_file(&file, &folder_path).await
 }
 
 #[tauri::command]
@@ -226,6 +241,18 @@ async fn download_course_file<R: Runtime>(
     folder_path: String,
 ) -> Result<()> {
     APP.download_course_file(&file, &course, &folder_path, &|progress| {
+        let _ = window.emit("download://progress", progress);
+    })
+    .await
+}
+
+#[tauri::command]
+async fn download_my_file<R: Runtime>(
+    window: Window<R>,
+    file: File,
+    folder_path: String,
+) -> Result<()> {
+    APP.download_my_file(&file, &folder_path, &|progress| {
         let _ = window.emit("download://progress", progress);
     })
     .await
@@ -496,7 +523,8 @@ async fn main() -> Result<()> {
             get_single_course_assignment_submission,
             export_excel,
             list_folder_files,
-            list_folders,
+            list_course_folders,
+            list_my_folders,
             list_folder_folders,
             list_calendar_events,
             test_token,
@@ -509,14 +537,17 @@ async fn main() -> Result<()> {
             save_config,
             save_file_content,
             open_course_file,
+            open_my_file,
             open_file,
             open_save_dir,
             open_config_dir,
             delete_file,
             delete_file_with_name,
             delete_course_file,
+            delete_my_file,
             download_file,
             download_course_file,
+            download_my_file,
             check_path,
             export_users,
             update_grade,

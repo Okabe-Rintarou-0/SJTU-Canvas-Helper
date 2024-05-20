@@ -510,5 +510,5 @@ export function useCourseFolders(courseId?: number) {
         setArgs({ courseId });
     }, [courseId]);
     const shouldFetch = courseId != undefined;
-    return useData<Folder[]>("list_folders", shouldFetch, args);
+    return useData<Folder[]>("list_course_folders", shouldFetch, args);
 }

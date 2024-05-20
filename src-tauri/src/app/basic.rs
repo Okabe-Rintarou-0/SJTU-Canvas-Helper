@@ -20,6 +20,8 @@ use crate::{client::Client, error, model::*, utils::TempFile};
 
 use super::App;
 
+const MY_CANVAS_FILES_FOLDER_NAME: &str = "我的Canvas文件";
+
 impl App {
     fn ensure_directory(dir: &str) {
         let metadata = fs::metadata(dir);
@@ -550,9 +552,15 @@ impl App {
             .await
     }
 
-    pub async fn list_folders(&self, course_id: i64) -> Result<Vec<Folder>> {
+    pub async fn list_course_folders(&self, course_id: i64) -> Result<Vec<Folder>> {
         self.client
-            .list_folders(course_id, &self.config.read().await.token)
+            .list_course_folders(course_id, &self.config.read().await.token)
+            .await
+    }
+
+    pub async fn list_my_folders(&self) -> Result<Vec<Folder>> {
+        self.client
+            .list_my_folders(&self.config.read().await.token)
             .await
     }
 
@@ -610,6 +618,26 @@ impl App {
         Ok(())
     }
 
+    pub async fn download_my_file<F: Fn(ProgressPayload) + Send>(
+        &self,
+        file: &File,
+        folder_path: &str,
+        progress_handler: F,
+    ) -> Result<()> {
+        let guard = self.config.read().await;
+        let token = &guard.token.clone();
+        let save_path = Path::new(&guard.save_path)
+            .join(MY_CANVAS_FILES_FOLDER_NAME)
+            .join(folder_path);
+        let save_path = save_path.to_str().unwrap_or_default();
+        App::ensure_directory(save_path);
+        tracing::info!("Download file at path: {:?}", save_path);
+        self.client
+            .download_file(file, token, save_path, progress_handler)
+            .await?;
+        Ok(())
+    }
+
     fn get_course_identifier(&self, course: &Course) -> String {
         self.client.get_course_identifier(course)
     }
@@ -638,6 +666,15 @@ impl App {
         let save_path = &self.config.read().await.save_path;
         let path = Path::new(save_path)
             .join(self.get_course_identifier(course))
+            .join(folder_path)
+            .join(name);
+        self.open_path(path.to_str().unwrap_or_default())
+    }
+
+    pub async fn open_my_file(&self, name: &str, folder_path: &str) -> Result<()> {
+        let save_path = &self.config.read().await.save_path;
+        let path = Path::new(save_path)
+            .join(MY_CANVAS_FILES_FOLDER_NAME)
             .join(folder_path)
             .join(name);
         self.open_path(path.to_str().unwrap_or_default())
@@ -682,6 +719,16 @@ impl App {
         let save_path = &self.config.read().await.save_path;
         let path = Path::new(save_path)
             .join(self.get_course_identifier(course))
+            .join(folder_path)
+            .join(&file.display_name);
+        fs::remove_file(path)?;
+        Ok(())
+    }
+
+    pub async fn delete_my_file(&self, file: &File, folder_path: &str) -> Result<()> {
+        let save_path = &self.config.read().await.save_path;
+        let path = Path::new(save_path)
+            .join(MY_CANVAS_FILES_FOLDER_NAME)
             .join(folder_path)
             .join(&file.display_name);
         fs::remove_file(path)?;

@@ -6,11 +6,18 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
     onCancel: () => void,
     onOk: () => void,
 }) {
-    return <Modal title="更新日志" open={open} footer={null} onCancel={onCancel} onOk={onOk} style={{
+    return <Modal title="更新日志" open={open} width={"90%"} footer={null} onCancel={onCancel} onOk={onOk} style={{
         maxHeight: "80%",
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v1.3.6 2024/5/20</Title>
+            <Paragraph>
+                <ul>
+                    <li>[Feature] 支持查看<a href="https://oc.sjtu.edu.cn/files" target="_blank">我的文件</a>。</li>
+                    <li>祝各位 520 快乐🎉，早日找到另一半～</li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v1.3.5 2024/5/16</Title>
             <Paragraph>
                 <ul>
