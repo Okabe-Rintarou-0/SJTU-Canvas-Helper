@@ -221,3 +221,7 @@ export function getBigFileIcon(file: FileModel) {
     }
     return <FileOutlined style={{ fontSize: '39px' }} />
 }
+
+export function scrollToTop() {
+    window.scrollTo(0, 0);
+}

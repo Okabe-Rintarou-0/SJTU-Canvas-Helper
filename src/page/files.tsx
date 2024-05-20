@@ -8,7 +8,7 @@ import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
 import { useCourses, useLoginModal, useMerger, usePreview } from "../lib/hooks";
 import { FolderOutlined, HomeOutlined, LeftOutlined } from "@ant-design/icons"
-import { getFileIcon } from "../lib/utils";
+import { scrollToTop, getFileIcon } from "../lib/utils";
 
 interface DownloadInfo {
     course?: Course;
@@ -254,6 +254,7 @@ export default function FilesPage() {
         const parentFolder = await getParentFolder(folderId);
         setCurrentFolderFullName(parentFolder?.full_name);
         setParentFolderId(parentFolder?.parent_folder_id);
+        scrollToTop();
     }
 
     const getFolderPath = (file: File) => {
