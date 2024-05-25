@@ -234,6 +234,7 @@ export function useMerger({ setPreviewEntry, onHoverEntry, onLeaveEntry }: {
         setResult(result);
         setResultBlob(mergedPdf);
         setMsg("合并成功🎉！");
+        setError(false);
         setMerging(false);
     }
 
