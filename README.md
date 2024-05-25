@@ -2,6 +2,8 @@
 
 ![](./images/logo.png)
 
+**还在为下载一堆学生上传的压缩包而苦恼吗？**
+
 SJTU Canvas 小帮手，帮助您更便捷地使用交大 Canvas。基于 [Tauri](https://tauri.app/) 开发。
 参与讨论：[水源社区](https://shuiyuan.sjtu.edu.cn/t/topic/245275)。
 
