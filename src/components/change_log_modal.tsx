@@ -11,6 +11,13 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v1.3.7 2024/5/26</Title>
+            <Paragraph>
+                <ul>
+                    <li>[Enhancement] 在使用评分册时，水平滚动的时候学生名字将始终显示在屏幕左侧。</li>
+                    <li>[Enhancement] 在“文件”页面，点击进入目录时会自动滚动到页面顶部。</li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v1.3.6 2024/5/20</Title>
             <Paragraph>
                 <ul>
