@@ -326,7 +326,8 @@ pub struct Submission {
 pub struct Attachment {
     pub id: i64,
     pub uuid: String,
-    pub folder_id: i64,
+    #[serde(default)]
+    pub folder_id: Option<i64>,
     pub display_name: String,
     pub filename: String,
     #[serde(default)]
@@ -629,6 +630,16 @@ pub struct ConfirmChunkUploadResult {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MediaComment {
+    #[serde(rename = "content-type")]
+    pub content_type: String,
+    pub display_name: String,
+    pub media_id: String,
+    pub media_type: String,
+    pub url: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SubmissionComment {
     #[serde(default)]
     pub id: i64,
@@ -642,6 +653,10 @@ pub struct SubmissionComment {
     pub created_at: String,
     #[serde(default)]
     pub avatar_path: String,
+    #[serde(default)]
+    pub media_comment: Option<MediaComment>,
+    #[serde(default)]
+    pub attachments: Vec<Attachment>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

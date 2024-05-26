@@ -461,6 +461,8 @@ export default function SubmissionsPage() {
                         }
                         const showInput = attachmentToComment === attachment.id;
                         return <CommentPanel me={me.data} onRefresh={refreshSubmission}
+                            onHoverEntry={onHoverEntry}
+                            onLeaveEntry={onLeaveEntry}
                             attachment={attachment} assignmentId={selectedAssignment.id} courseId={selectedCourseId} showInput={showInput} messageApi={messageApi} />
                     }
                 }}

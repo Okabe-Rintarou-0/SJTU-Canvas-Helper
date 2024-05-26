@@ -111,7 +111,7 @@ export function attachmentToFile(attachment: Attachment) {
         uuid: attachment.uuid,
         url: attachment.url,
         display_name: prefix + attachment.display_name,
-        folder_id: attachment.folder_id,
+        folder_id: attachment.folder_id ?? 0,
         locked: attachment.locked,
         filename: attachment.filename,
         size: attachment.size,

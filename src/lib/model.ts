@@ -180,7 +180,7 @@ export interface Attachment {
     late: boolean;
     comments: SubmissionComment[];
     uuid: string;
-    folder_id: number;
+    folder_id: number | null;
     display_name: string;
     filename: string;
     "content-type": string;
@@ -356,6 +356,14 @@ export interface Teacher {
     html_url: string;
 }
 
+export interface MediaComment {
+    content_type: string;
+    display_name: string;
+    media_id: string;
+    media_type: string;
+    url: string;
+}
+
 export interface SubmissionComment {
     id: number;
     comment: string;
@@ -363,6 +371,8 @@ export interface SubmissionComment {
     author_name: string;
     created_at: string;
     avatar_path: string;
+    media_comment?: MediaComment | null;
+    attachments: Attachment[]
 }
 
 export interface GradeStatus {
