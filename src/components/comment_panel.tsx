@@ -101,5 +101,5 @@ export default function CommentPanel({ attachment, assignmentId, courseId, showI
                 <Button onClick={() => handleCommentSubmission(attachment)}>确认</Button>
             </>
         }
-    </Space >
+    </Space>
 }
