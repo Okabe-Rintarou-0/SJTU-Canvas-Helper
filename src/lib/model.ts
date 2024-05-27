@@ -176,7 +176,7 @@ export interface Attachment {
     submitted_at?: string;
     grade: string | null;
     id: number;
-    key: number;
+    key: React.Key;
     late: boolean;
     comments: SubmissionComment[];
     uuid: string;

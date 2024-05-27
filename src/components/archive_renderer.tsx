@@ -177,5 +177,5 @@ export default function ArchiveRenderer({
     </>
 }
 
-ArchiveRenderer.fileTypes = ["zip", "rar", "tar", "7z"];
+ArchiveRenderer.fileTypes = ["zip", "rar", "tar", "7z", "gz"];
 ArchiveRenderer.weight = 1;

@@ -277,7 +277,7 @@ export default function AssignmentsPage() {
         const parser = new DOMParser();
         const document = parser.parseFromString(assignment.description, "text/html");
         const anchorTags = document.querySelectorAll('a');
-        const downloadableRegex = /https:\/\/oc\.sjtu\.edu\.cn\/courses\/(\d+)\/files\/(\d+)\/download\?/g;
+        const downloadableRegex = /https:\/\/oc\.sjtu\.edu\.cn\/courses\/(\d+)\/files\/(\d+)/g;
         const id = assignment.id;
         if (!linksMap[id]) {
             linksMap[id] = [];
@@ -286,8 +286,12 @@ export default function AssignmentsPage() {
         anchorTags.forEach(anchorTag => {
             // Set the target attribute of each anchor tag to "_blank"
             anchorTag.setAttribute("target", "_blank");
-            if (anchorTag.href.match(downloadableRegex)) {
-                links.push({ url: anchorTag.href, display_name: anchorTag.text, key: assignment.id } as Attachment);
+            let result = anchorTag.href.match(downloadableRegex);
+            if (result && result.length > 0) {
+                const urlObj = new URL(anchorTag.href);
+                const params = new URLSearchParams(urlObj.search);
+                let url = result[0] + "/download?" + params;
+                links.push({ url, display_name: anchorTag.text, key: url } as Attachment);
             }
         });
         assignment.description = document.body.innerHTML;
