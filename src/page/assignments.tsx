@@ -2,7 +2,7 @@ import { Avatar, Button, Checkbox, CheckboxProps, Divider, List, Space, Table, T
 import BasicLayout from "../components/layout";
 import useMessage from "antd/es/message/useMessage";
 import { useEffect, useState } from "react";
-import { Assignment, Attachment, GradeStatus, Submission } from "../lib/model";
+import { Assignment, Attachment, GradeStatus, ScoreStatistic, Submission } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import { assignmentIsEnded, assignmentNotNeedSubmit, attachmentToFile, formatDate, getBaseDate } from "../lib/utils";
 import CourseSelect from "../components/course_select";
@@ -118,6 +118,16 @@ export default function AssignmentsPage() {
                     return `${grade}/${points_possible}`;
                 }
                 return grade;
+            }
+        }, {
+            title: '最低分/最高分/平均分',
+            dataIndex: 'score_statistics',
+            key: 'score_statistics',
+            render: (score_statistics: ScoreStatistic | null) => {
+                if (score_statistics) {
+                    return `${score_statistics.min}/${score_statistics.max}/${score_statistics.mean}`
+                }
+                return null;
             }
         }, {
             title: '状态',

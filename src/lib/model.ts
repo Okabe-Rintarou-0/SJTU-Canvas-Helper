@@ -122,6 +122,7 @@ export interface Assignment {
     submission?: Submission;
     overrides: AssignmentOverride[];
     all_dates: AssignmentDate[];
+    score_statistics: ScoreStatistic | null
 }
 
 export interface AssignmentDate {
@@ -168,6 +169,12 @@ export interface Submission {
 export interface GradeStatistic {
     grades: number[];
     total: number;
+}
+
+export interface ScoreStatistic {
+    min: number;
+    max: number;
+    mean: number;
 }
 
 export interface Attachment {

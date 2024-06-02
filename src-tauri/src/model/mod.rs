@@ -244,6 +244,8 @@ pub struct Assignment {
     pub overrides: Vec<AssignmentOverride>,
     #[serde(default)]
     pub all_dates: Vec<AssignmentDate>,
+    #[serde(default)]
+    pub score_statistics: Option<ScoreStatistics>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -866,6 +868,13 @@ pub struct Reply {
     pub rating_sum: Option<i64>,
     #[serde(default)]
     pub message: Option<String>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ScoreStatistics {
+    pub min: f64,
+    pub max: f64,
+    pub mean: f64,
 }
 
 #[derive(Default, Debug)]

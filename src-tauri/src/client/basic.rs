@@ -718,7 +718,7 @@ impl Client {
         token: &str,
     ) -> Result<Vec<Assignment>> {
         let url = format!(
-            "{}/api/v1/courses/{}/assignments?include[]=submission&include[]=overrides&include[]=all_dates",
+            "{}/api/v1/courses/{}/assignments?include[]=submission&include[]=overrides&include[]=all_dates&include[]=score_statistics",
             BASE_URL, course_id
         );
         self.list_items(&url, token).await
