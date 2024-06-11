@@ -11,6 +11,13 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v1.3.8 2024/6/11</Title>
+            <Paragraph>
+                <ul>
+                    <li>[Fix] 修复视屏播放重名课程导致的 UI bug。 </li>
+                    <li>[Enhancement] 增加作业板块均分/最高分/最低分的显示。</li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v1.3.7 2024/5/26</Title>
             <Paragraph>
                 <ul>

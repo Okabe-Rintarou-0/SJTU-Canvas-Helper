@@ -354,7 +354,7 @@ export default function VideoPage() {
                         style={{ width: 350 }}
                         onChange={handleSelectSubject}
                         options={subjects.map(subject => ({
-                            label: subject.subjectName,
+                            label: `${subject.subjectName}(${subject.classroomName}, id: ${subject.subjectId})`,
                             value: subject.subjectId,
                         }))}
                     />
