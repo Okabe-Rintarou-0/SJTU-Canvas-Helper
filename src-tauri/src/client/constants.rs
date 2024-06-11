@@ -1,4 +1,5 @@
 pub const BASE_URL: &str = "https://oc.sjtu.edu.cn";
+pub const JI_BASE_URL: &str = "https://jicanvas.com";
 pub const VIDEO_BASE_URL: &str = "https://courses.sjtu.edu.cn/app";
 pub const VIDEO_LOGIN_URL: &str =
     "https://courses.sjtu.edu.cn/app/oauth/2.0/login?login_type=outer";

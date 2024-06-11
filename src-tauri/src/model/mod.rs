@@ -128,12 +128,26 @@ impl AccountInfo {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
+pub enum AccountType {
+    Default,
+    JI,
+}
+
+impl Default for AccountType {
+    fn default() -> Self {
+        AccountType::Default
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
     pub token: String,
     #[serde(default)]
     pub save_path: String,
+    #[serde(default)]
+    pub account_type: AccountType,
     #[serde(default)]
     pub serve_as_plaintext: String,
     #[serde(default)]
@@ -155,6 +169,7 @@ impl Default for AppConfig {
         Self {
             token: Default::default(),
             save_path: Default::default(),
+            account_type: Default::default(),
             serve_as_plaintext: Default::default(),
             ja_auth_cookie: Default::default(),
             video_cookies: Default::default(),

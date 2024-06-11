@@ -3,7 +3,7 @@ use ::bytes::Bytes;
 use reqwest::{cookie, multipart};
 use serde::de::DeserializeOwned;
 use std::{cmp::min, fs, io::Write, ops::Deref, path::Path, sync::Arc};
-use tokio::task::JoinSet;
+use tokio::{sync::RwLock, task::JoinSet};
 
 use crate::{
     client::constants::CHUNK_SIZE,
@@ -17,13 +17,23 @@ use crate::{
 
 // Apis here are for canvas
 impl Client {
+    #[allow(dead_code)]
     pub fn new() -> Self {
+        Self::with_base_url(BASE_URL.to_owned())
+    }
+
+    pub fn with_base_url<S: Into<String>>(base_url: S) -> Self {
         let jar = Arc::new(cookie::Jar::default());
         let cli = reqwest::Client::builder()
             .cookie_provider(jar.clone())
             .build()
             .unwrap();
-        Self { cli, jar }
+        let base_url = RwLock::new(base_url.into());
+        Self { cli, jar, base_url }
+    }
+
+    pub async fn set_base_url<S: Into<String>>(&self, base_url: S) {
+        *self.base_url.write().await = base_url.into();
     }
 
     pub async fn delete_submission_comment(
@@ -36,7 +46,11 @@ impl Client {
     ) -> Result<()> {
         let url = format!(
             "{}/api/v1/courses/{}/assignments/{}/submissions/{}/comments/{}",
-            BASE_URL, course_id, assignment_id, student_id, comment_id
+            self.base_url.read().await,
+            course_id,
+            assignment_id,
+            student_id,
+            comment_id
         );
         self.cli
             .delete(url)
@@ -58,7 +72,9 @@ impl Client {
     ) -> Result<()> {
         let url = format!(
             "{}/api/v1/courses/{}/assignments/{}/submissions/update_grades",
-            BASE_URL, course_id, assignment_id
+            self.base_url.read().await,
+            course_id,
+            assignment_id
         );
         let form = match comment {
             Some(comment) => vec![
@@ -83,7 +99,9 @@ impl Client {
     ) -> Result<()> {
         let url = format!(
             "{}/api/v1/courses/{}/assignments/{}",
-            BASE_URL, course_id, assignment_id
+            self.base_url.read().await,
+            course_id,
+            assignment_id
         );
         self.put_form_with_token(
             &url,
@@ -110,7 +128,10 @@ impl Client {
     ) -> Result<()> {
         let url = format!(
             "{}/api/v1/courses/{}/assignments/{}/overrides/{}",
-            BASE_URL, course_id, assignment_id, override_id
+            self.base_url.read().await,
+            course_id,
+            assignment_id,
+            override_id
         );
         self.put_form_with_token(
             &url,
@@ -135,7 +156,10 @@ impl Client {
     ) -> Result<()> {
         let url = format!(
             "{}/api/v1/courses/{}/assignments/{}/overrides/{}",
-            BASE_URL, course_id, assignment_id, override_id
+            self.base_url.read().await,
+            course_id,
+            assignment_id,
+            override_id
         );
         self.cli
             .delete(url)
@@ -159,7 +183,9 @@ impl Client {
     ) -> Result<()> {
         let url = format!(
             "{}/api/v1/courses/{}/assignments/{}/overrides",
-            BASE_URL, course_id, assignment_id
+            self.base_url.read().await,
+            course_id,
+            assignment_id
         );
         self.post_form_with_token(
             &url,
@@ -266,7 +292,8 @@ impl Client {
     ) -> Result<Vec<DiscussionTopic>> {
         let url = format!(
             "{}/api/v1/courses/{}/discussion_topics",
-            BASE_URL, course_id
+            self.base_url.read().await,
+            course_id
         );
         self.list_items(&url, token).await
     }
@@ -279,46 +306,69 @@ impl Client {
     ) -> Result<FullDiscussion> {
         let url = format!(
             "{}/api/v1/courses/{}/discussion_topics/{}/view",
-            BASE_URL, course_id, topic_id
+            self.base_url.read().await,
+            course_id,
+            topic_id
         );
         self.get_json_with_token(&url, None::<&str>, token).await
     }
 
     pub async fn list_course_files(&self, course_id: i64, token: &str) -> Result<Vec<File>> {
-        let url = format!("{}/api/v1/courses/{}/files", BASE_URL, course_id);
+        let url = format!(
+            "{}/api/v1/courses/{}/files",
+            self.base_url.read().await,
+            course_id
+        );
         self.list_items(&url, token).await
     }
 
     pub async fn list_course_images(&self, course_id: i64, token: &str) -> Result<Vec<File>> {
         let url = format!(
             "{}/api/v1/courses/{}/files?content_types[]=image",
-            BASE_URL, course_id
+            self.base_url.read().await,
+            course_id
         );
         self.list_items(&url, token).await
     }
 
     pub async fn list_folder_files(&self, folder_id: i64, token: &str) -> Result<Vec<File>> {
-        let url = format!("{}/api/v1/folders/{}/files", BASE_URL, folder_id);
+        let url = format!(
+            "{}/api/v1/folders/{}/files",
+            self.base_url.read().await,
+            folder_id
+        );
         self.list_items(&url, token).await
     }
 
     pub async fn list_course_folders(&self, course_id: i64, token: &str) -> Result<Vec<Folder>> {
-        let url = format!("{}/api/v1/courses/{}/folders", BASE_URL, course_id);
+        let url = format!(
+            "{}/api/v1/courses/{}/folders",
+            self.base_url.read().await,
+            course_id
+        );
         self.list_items(&url, token).await
     }
 
     pub async fn list_my_folders(&self, token: &str) -> Result<Vec<Folder>> {
-        let url = format!("{}/api/v1/users/self/folders", BASE_URL);
+        let url = format!("{}/api/v1/users/self/folders", self.base_url.read().await);
         self.list_items(&url, token).await
     }
 
     pub async fn list_folder_folders(&self, folder_id: i64, token: &str) -> Result<Vec<Folder>> {
-        let url = format!("{}/api/v1/folders/{}/folders", BASE_URL, folder_id);
+        let url = format!(
+            "{}/api/v1/folders/{}/folders",
+            self.base_url.read().await,
+            folder_id
+        );
         self.list_items(&url, token).await
     }
 
     pub async fn get_folder_by_id(&self, folder_id: i64, token: &str) -> Result<Folder> {
-        let url = format!("{}/api/v1/folders/{}", BASE_URL, folder_id);
+        let url = format!(
+            "{}/api/v1/folders/{}",
+            self.base_url.read().await,
+            folder_id
+        );
         let folder = self.get_json_with_token(&url, None::<&str>, token).await?;
         Ok(folder)
     }
@@ -372,7 +422,7 @@ impl Client {
     }
 
     pub async fn get_colors(&self, token: &str) -> Result<Colors> {
-        let url = format!("{}/api/v1/users/self/colors", BASE_URL);
+        let url = format!("{}/api/v1/users/self/colors", self.base_url.read().await);
         let colors = self.get_json_with_token(&url, None::<&str>, token).await?;
         Ok(colors)
     }
@@ -391,7 +441,10 @@ impl Client {
             .unwrap_or_default();
         let url = format!(
             "{}/api/v1/calendar_events?type=assignment&{}&start_date={}&end_date={}",
-            BASE_URL, context_codes, start_date, end_date
+            self.base_url.read().await,
+            context_codes,
+            start_date,
+            end_date
         );
         self.list_items(&url, token).await
     }
@@ -427,7 +480,11 @@ impl Client {
     }
 
     pub async fn list_course_users(&self, course_id: i64, token: &str) -> Result<Vec<User>> {
-        let url = format!("{}/api/v1/courses/{}/users", BASE_URL, course_id);
+        let url = format!(
+            "{}/api/v1/courses/{}/users",
+            self.base_url.read().await,
+            course_id
+        );
         self.list_items(&url, token).await
     }
 
@@ -440,7 +497,10 @@ impl Client {
     ) -> Result<Submission> {
         let url = format!(
             "{}/api/v1/courses/{}/assignments/{}/submissions/{}?include[]=submission_comments",
-            BASE_URL, course_id, assignment_id, student_id,
+            self.base_url.read().await,
+            course_id,
+            assignment_id,
+            student_id,
         );
         let submission = self.get_json_with_token(&url, None::<&str>, token).await?;
         Ok(submission)
@@ -454,7 +514,9 @@ impl Client {
     ) -> Result<Vec<Submission>> {
         let url = format!(
             "{}/api/v1/courses/{}/assignments/{}/submissions?include[]=submission_comments",
-            BASE_URL, course_id, assignment_id
+            self.base_url.read().await,
+            course_id,
+            assignment_id
         );
         self.list_items(&url, token).await
     }
@@ -462,7 +524,8 @@ impl Client {
     pub async fn list_course_students(&self, course_id: i64, token: &str) -> Result<Vec<User>> {
         let url = format!(
             "{}/api/v1/courses/{}/users?enrollment_type[]=student",
-            BASE_URL, course_id
+            self.base_url.read().await,
+            course_id
         );
         self.list_items(&url, token).await
     }
@@ -470,7 +533,7 @@ impl Client {
     pub async fn list_courses(&self, token: &str) -> Result<Vec<Course>> {
         let url = format!(
             "{}/api/v1/courses?include[]=teachers&include[]=term",
-            BASE_URL
+            self.base_url.read().await,
         );
         let all_courses = self.list_items(&url, token).await?;
         let filtered_courses: Vec<Course> = all_courses
@@ -480,10 +543,11 @@ impl Client {
         Ok(filtered_courses)
     }
 
-    fn get_user_submissions_url(&self, course_id: i64, student_ids: &[i64]) -> String {
+    async fn get_user_submissions_url(&self, course_id: i64, student_ids: &[i64]) -> String {
         let mut url = format!(
             "{}/api/v1/courses/{}/students/submissions?grouped=true&per_page=50",
-            BASE_URL, course_id
+            self.base_url.read().await,
+            course_id
         );
         for student_id in student_ids {
             url += &format!("&student_ids[]={}", student_id);
@@ -498,7 +562,7 @@ impl Client {
         student_ids: &[i64],
         token: &str,
     ) -> Result<(usize, Vec<UserSubmissions>)> {
-        let url = self.get_user_submissions_url(course_id, student_ids);
+        let url = self.get_user_submissions_url(course_id, student_ids).await;
         let user_submissions = self.get_json_with_token(&url, None::<&str>, token).await?;
         Ok((partition_id, user_submissions))
     }
@@ -555,7 +619,7 @@ impl Client {
     }
 
     pub async fn get_me(&self, token: &str) -> Result<User> {
-        let url = format!("{}/api/v1/users/self", BASE_URL);
+        let url = format!("{}/api/v1/users/self", self.base_url.read().await,);
         let me = self.get_json_with_token(&url, None::<&str>, token).await?;
         Ok(me)
     }
@@ -607,7 +671,9 @@ impl Client {
     ) -> Result<SubmissionUploadSuccessResponse> {
         let url = format!(
             "{}/api/v1/courses/{}/assignments/{}/submissions/self/files",
-            BASE_URL, course_id, assignment_id,
+            self.base_url.read().await,
+            course_id,
+            assignment_id,
         );
         let metadata = fs::metadata(file_path)?;
         if !metadata.is_file() {
@@ -648,7 +714,9 @@ impl Client {
 
         let url = format!(
             "{}/api/v1/courses/{}/assignments/{}/submissions",
-            BASE_URL, course_id, assignment_id,
+            self.base_url.read().await,
+            course_id,
+            assignment_id,
         );
         let mut form = vec![("submission[submission_type]", "online_upload".to_owned())];
         for file_id in file_ids {
@@ -684,7 +752,7 @@ impl Client {
     pub async fn list_ta_courses(&self, token: &str) -> Result<Vec<Course>> {
         let url = format!(
             "{}/api/v1/courses?include[]=teachers&include[]=term&enrollment_type=ta",
-            BASE_URL
+            self.base_url.read().await,
         );
         self.list_items(&url, token).await
     }
@@ -693,7 +761,7 @@ impl Client {
     pub async fn list_teacher_courses(&self, token: &str) -> Result<Vec<Course>> {
         let url = format!(
             "{}/api/v1/courses?include[]=teachers&include[]=term&enrollment_type=teacher",
-            BASE_URL
+            self.base_url.read().await,
         );
         self.list_items(&url, token).await
     }
@@ -704,9 +772,10 @@ impl Client {
         assignment_id: i64,
         token: &str,
     ) -> Result<Submission> {
-        let url = format!(
+        let url =
+            format!(
             "{}/api/v1/courses/{}/assignments/{}/submissions/self?include[]=submission_comments",
-            BASE_URL, course_id, assignment_id,
+            self.base_url.read().await, course_id, assignment_id,
         );
         let submission = self.get_json_with_token(&url, None::<&str>, token).await?;
         Ok(submission)
@@ -719,7 +788,7 @@ impl Client {
     ) -> Result<Vec<Assignment>> {
         let url = format!(
             "{}/api/v1/courses/{}/assignments?include[]=submission&include[]=overrides&include[]=all_dates&include[]=score_statistics",
-            BASE_URL, course_id
+            self.base_url.read().await, course_id
         );
         self.list_items(&url, token).await
     }

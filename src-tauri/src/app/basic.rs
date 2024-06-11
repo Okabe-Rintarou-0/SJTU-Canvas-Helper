@@ -16,7 +16,15 @@ use warp::{hyper::Response, Filter};
 use warp_reverse_proxy::reverse_proxy_filter;
 use xlsxwriter::Workbook;
 
-use crate::{client::Client, error, model::*, utils::TempFile};
+use crate::{
+    client::{
+        constants::{BASE_URL, JI_BASE_URL},
+        Client,
+    },
+    error,
+    model::*,
+    utils::TempFile,
+};
 
 use super::App;
 
@@ -140,13 +148,24 @@ impl App {
         }
         let config_path = App::get_config_path(account);
         let config = App::read_config_from_file(&config_path)?;
+        let base_url = Self::get_base_url(&config.account_type);
+        self.client.set_base_url(base_url).await;
         *self.config.write().await = config;
+
         let mut account_info = App::read_account_info()?;
         account_info.current_account = account.clone();
         App::save_account_info(&account_info)?;
         *self.current_account.write().await = account.clone();
         self.invalidate_cache().await;
         Ok(())
+    }
+
+    fn get_base_url(tp: &AccountType) -> &'static str {
+        if *tp == AccountType::JI {
+            JI_BASE_URL
+        } else {
+            BASE_URL
+        }
     }
 
     pub fn new() -> Self {
@@ -168,8 +187,11 @@ impl App {
             Err(_) => Default::default(),
         };
 
+        let base_url = Self::get_base_url(&config.account_type);
+        let client = Client::with_base_url(base_url);
+
         Self {
-            client: Arc::new(Client::new()),
+            client: Arc::new(client),
             current_account: RwLock::new(account_info.current_account),
             config: RwLock::new(config),
             handle: Default::default(),
