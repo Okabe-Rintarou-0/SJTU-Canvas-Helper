@@ -39,7 +39,18 @@ export default function VideoPage() {
     const handleGetSubjects = async () => {
         try {
             const subjects = await invoke("get_subjects") as Subject[];
-            setSubjects(subjects);
+            const subjectIdSet = new Set<number>();
+            for (let subject of subjects) {
+                subjectIdSet.add(subject.subjectId);
+            }
+            setSubjects(subjects.filter(subject => {
+                if (subjectIdSet.has(subject.subjectId)) {
+                    subjectIdSet.delete(subject.subjectId);
+                    return true;
+                } else {
+                    return false;
+                }
+            }));
             return true;
         } catch (e) {
             console.log(e);
@@ -354,7 +365,7 @@ export default function VideoPage() {
                         style={{ width: 350 }}
                         onChange={handleSelectSubject}
                         options={subjects.map(subject => ({
-                            label: `${subject.subjectName}(${subject.classroomName}, id: ${subject.subjectId})`,
+                            label: `${subject.subjectName}(${subject.classroomName})`,
                             value: subject.subjectId,
                         }))}
                     />
