@@ -288,6 +288,15 @@ export interface VideoCourse {
     tetiTerm: number;
 }
 
+export interface CanvasVideo {
+    videoId: string;
+    userName: string;
+    videoName: string;
+    classroomName: string;
+    courseBeginTime: string,
+    courseEndTime: string,
+}
+
 export interface Video {
     id: number;
     userName: string;

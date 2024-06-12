@@ -1,5 +1,6 @@
 pub const BASE_URL: &str = "https://oc.sjtu.edu.cn";
 pub const VIDEO_BASE_URL: &str = "https://courses.sjtu.edu.cn/app";
+pub const CANVAS_LOGIN_URL: &str = "https://oc.sjtu.edu.cn/login/openid_connect";
 pub const VIDEO_LOGIN_URL: &str =
     "https://courses.sjtu.edu.cn/app/oauth/2.0/login?login_type=outer";
 pub const VIDEO_OAUTH_KEY_URL: &str = "https://courses.sjtu.edu.cn/app/vodvideo/vodVideoPlay.d2j?ssoCheckToken=ssoCheckToken&refreshToken=&accessToken=&userId=&";

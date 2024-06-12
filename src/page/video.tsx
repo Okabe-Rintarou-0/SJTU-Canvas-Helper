@@ -2,24 +2,24 @@ import { invoke } from "@tauri-apps/api";
 import { useEffect, useRef, useState } from "react";
 import BasicLayout from "../components/layout";
 import { SwapOutlined } from '@ant-design/icons';
-import { Video, Subject, VideoCourse, VideoInfo, VideoPlayInfo, VideoDownloadTask } from "../lib/model";
+import { VideoInfo, VideoPlayInfo, VideoDownloadTask, CanvasVideo } from "../lib/model";
 import useMessage from "antd/es/message/useMessage";
 import { getConfig, saveConfig } from "../lib/store";
 import { Button, Checkbox, Select, Space, Table } from "antd";
 import VideoDownloadTable from "../components/video_download_table";
 import videoStyles from "../css/video_player.module.css";
 import { LoginAlert } from "../components/login_alert";
-import { useQRCode } from "../lib/hooks";
+import { useCourses, useQRCode } from "../lib/hooks";
+import CourseSelect from "../components/course_select";
 
 export default function VideoPage() {
     const [downloadTasks, setDownloadTasks] = useState<VideoDownloadTask[]>([]);
     const [operating, setOperating] = useState<boolean>(false);
-    const [subjects, setSubjects] = useState<Subject[]>([]);
+    const courses = useCourses();
     const [messageApi, contextHolder] = useMessage();
-    // const [selectedSubject, setSelectedSubject] = useState<Subject | undefined>(undefined);
     const [plays, setPlays] = useState<VideoPlayInfo[]>([]);
-    const [selectedVideo, setSelectedVideo] = useState<Video | undefined>(undefined);
-    const [videos, setVideos] = useState<Video[]>([]);
+    const [selectedVideo, setSelectedVideo] = useState<CanvasVideo | undefined>();
+    const [videos, setVideos] = useState<CanvasVideo[]>([]);
     const [notLogin, setNotLogin] = useState<boolean>(true);
     const [loaded, setLoaded] = useState<boolean>(false);
     const [playURLs, setPlayURLs] = useState<string[]>([]);
@@ -36,32 +36,9 @@ export default function VideoPage() {
     }
     const { qrcode, showQRCode, refreshQRCode } = useQRCode({ onScanSuccess });
 
-    const handleGetSubjects = async () => {
-        try {
-            const subjects = await invoke("get_subjects") as Subject[];
-            const subjectIdSet = new Set<number>();
-            for (let subject of subjects) {
-                subjectIdSet.add(subject.subjectId);
-            }
-            setSubjects(subjects.filter(subject => {
-                if (subjectIdSet.has(subject.subjectId)) {
-                    subjectIdSet.delete(subject.subjectId);
-                    return true;
-                } else {
-                    return false;
-                }
-            }));
-            return true;
-        } catch (e) {
-            console.log(e);
-            setSubjects([]);
-            return false;
-        }
-    }
-
     const handleLoginWebsite = async () => {
         try {
-            await invoke("login_video_website");
+            await invoke("login_canvas_website");
             return true;
         } catch (e) {
             console.log(e);
@@ -80,7 +57,7 @@ export default function VideoPage() {
 
     const loginAndCheck = async (retry = false) => {
         let config = await getConfig(true);
-        let success = await handleLoginWebsite() && await handleGetSubjects();
+        let success = await handleLoginWebsite();
         if (!success) {
             config.ja_auth_cookie = ""
             await saveConfig(config);
@@ -95,7 +72,7 @@ export default function VideoPage() {
         return success;
     }
 
-    const handleSelectSubject = (selected: number) => {
+    const handleSelectCourse = (selected: number) => {
         setOperating(true);
         setVideos([]);
         setSelectedVideo(undefined);
@@ -103,24 +80,20 @@ export default function VideoPage() {
         setPlays([]);
         setMainPlayURL("");
         setMutedPlayURL("");
-        let subject = subjects.find(subject => subject.subjectId === selected);
-        if (subject) {
-            // setSelectedSubject(subject);
-            handleGetCourse(subject.subjectId, subject.teclId);
-        }
+        handleGetVideos(selected);
         setOperating(false);
     }
 
-    const handleGetVideoInfo = async (video: Video) => {
+    const handleGetVideoInfo = async (video: CanvasVideo) => {
         try {
-            let videoInfo = await invoke("get_video_info", { videoId: video.id }) as VideoInfo;
+            let videoInfo = await invoke("get_canvas_video_info", { videoId: video.videoId }) as VideoInfo;
             let plays = videoInfo.videoPlayResponseVoList;
             plays.map((play, index) => {
                 play.key = play.id;
                 play.index = index;
                 let part = index === 0 ? "" : `_录屏`;
                 let suffix = index > 2 ? `_${index}.mp4` : '.mp4';
-                play.name = `${video.videName}${part}${suffix}`;
+                play.name = `${video.videoName}${part}${suffix}`;
             });
             setPlays(plays);
         } catch (e) {
@@ -128,8 +101,8 @@ export default function VideoPage() {
         }
     }
 
-    const handleSelectVideo = (selected: number) => {
-        let video = videos.find(video => video.id === selected);
+    const handleSelectVideo = (selected: string) => {
+        let video = videos.find(video => video.videoId === selected);
         if (video) {
             setPlays([]);
             setPlayURLs([]);
@@ -140,12 +113,10 @@ export default function VideoPage() {
         }
     }
 
-    const handleGetCourse = async (subjectId: number, teclId: number) => {
+    const handleGetVideos = async (courseId: number) => {
         try {
-            let course = await invoke("get_video_course", { subjectId, teclId }) as VideoCourse | null;
-            if (course) {
-                setVideos(course.responseVoList);
-            }
+            let videos = await invoke("get_canvas_videos", { courseId }) as CanvasVideo[];
+            setVideos(videos);
         } catch (e) {
             messageApi.error(`获取录像的时候发生了错误🙅：${e}`);
         }
@@ -171,7 +142,6 @@ export default function VideoPage() {
         setDownloadTasks(tasks => tasks.filter(task => task.key !== taskToRemove.key));
         try {
             await invoke("delete_file_with_name", { name: taskToRemove.video.name });
-            // messageApi.success("删除成功🎉！", 0.5);
         } catch (e) {
             if (taskToRemove.state !== "fail") {
                 // no need to show error message for already failed tasks
@@ -348,39 +318,23 @@ export default function VideoPage() {
         }
     }, [mainPlayURL]);
 
-    const formatTimestamp = (timestamp: number) => {
-        const date = new Date(timestamp);
-        return date.toLocaleDateString();
-    }
-
     return <BasicLayout>
         {contextHolder}
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
             {shouldShowAlert && <LoginAlert qrcode={qrcode} refreshQRCode={refreshQRCode} />}
             {!notLogin && <>
-                <Space>
-                    <span>选择课程：</span>
-                    <Select
-                        disabled={operating}
-                        style={{ width: 350 }}
-                        onChange={handleSelectSubject}
-                        options={subjects.map(subject => ({
-                            label: `${subject.subjectName}(${subject.classroomName})`,
-                            value: subject.subjectId,
-                        }))}
-                    />
-                </Space>
+                <CourseSelect courses={courses.data} onChange={handleSelectCourse}></CourseSelect>
                 <Space>
                     <span>选择视频：</span>
                     <Select
                         disabled={operating}
                         style={{ width: 350 }}
-                        value={selectedVideo?.id}
-                        defaultValue={selectedVideo?.id}
+                        value={selectedVideo?.videoId}
+                        defaultValue={selectedVideo?.videoId}
                         onChange={handleSelectVideo}
                         options={videos.map(video => ({
-                            label: `${video.videName} ${formatTimestamp(video.courBeginTime)}`,
-                            value: video.id,
+                            label: `${video.videoName} ${video.courseBeginTime}`,
+                            value: video.videoId,
                         }))}
                     />
                 </Space>

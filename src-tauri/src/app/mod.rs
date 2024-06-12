@@ -140,6 +140,24 @@ mod test {
 
     #[ignore]
     #[tokio::test]
+    async fn test_video_apis_with_canvas() -> Result<()> {
+        tracing_subscriber::fmt::init();
+        let app = App::new();
+        app.init().await?;
+        app.login_canvas_website().await?;
+        let courses = app.list_courses().await?;
+        let course = courses.last().unwrap();
+        tracing::info!("course = {:?}", course.id);
+        let videos = app.get_canvas_videos(course.id).await?;
+        tracing::info!("videos = {:?}", videos.len());
+        let video = videos.first().unwrap();
+        let video_info = app.get_canvas_video_info(&video.video_id).await?;
+        tracing::info!("canvas video info: {:?}", video_info);
+        Ok(())
+    }
+
+    #[ignore]
+    #[tokio::test]
     async fn test_jbox_apis() -> Result<()> {
         tracing_subscriber::fmt::init();
         let app = App::new();

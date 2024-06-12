@@ -3,9 +3,9 @@
 
 use error::Result;
 use model::{
-    Account, AccountInfo, AppConfig, Assignment, CalendarEvent, Colors, Course, DiscussionTopic,
-    File, Folder, FullDiscussion, QRCodeScanResult, Subject, Submission, User, UserSubmissions,
-    VideoCourse, VideoInfo, VideoPlayInfo,
+    Account, AccountInfo, AppConfig, Assignment, CalendarEvent, CanvasVideo, Colors, Course,
+    DiscussionTopic, File, Folder, FullDiscussion, QRCodeScanResult, Subject, Submission, User,
+    UserSubmissions, VideoCourse, VideoInfo, VideoPlayInfo,
 };
 
 use tauri::{Runtime, Window};
@@ -452,6 +452,16 @@ async fn get_subjects() -> Result<Vec<Subject>> {
 }
 
 #[tauri::command]
+async fn get_canvas_videos(course_id: i64) -> Result<Vec<CanvasVideo>> {
+    APP.get_canvas_videos(course_id).await
+}
+
+#[tauri::command]
+async fn login_canvas_website() -> Result<()> {
+    APP.login_canvas_website().await
+}
+
+#[tauri::command]
 async fn get_video_course(subject_id: i64, tecl_id: i64) -> Result<Option<VideoCourse>> {
     APP.get_video_course(subject_id, tecl_id).await
 }
@@ -459,6 +469,11 @@ async fn get_video_course(subject_id: i64, tecl_id: i64) -> Result<Option<VideoC
 #[tauri::command]
 async fn get_video_info(video_id: i64) -> Result<VideoInfo> {
     APP.get_video_info(video_id).await
+}
+
+#[tauri::command]
+async fn get_canvas_video_info(video_id: String) -> Result<VideoInfo> {
+    APP.get_canvas_video_info(&video_id).await
 }
 
 #[tauri::command]
@@ -564,8 +579,11 @@ async fn main() -> Result<()> {
             get_uuid,
             express_login,
             get_subjects,
+            get_canvas_videos,
+            login_canvas_website,
             get_video_course,
             get_video_info,
+            get_canvas_video_info,
             download_video,
             login_video_website,
             prepare_proxy,

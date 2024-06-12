@@ -41,6 +41,20 @@ impl Client {
         Ok(json)
     }
 
+    pub async fn post_form<T: Serialize + ?Sized, Q: Serialize + ?Sized>(
+        &self,
+        url: &str,
+        query: Option<&Q>,
+        form: &T,
+    ) -> Result<Response> {
+        let mut request = self.cli.post(url).form(form);
+        if let Some(query) = query {
+            request = request.query(query);
+        }
+        let response = request.send().await?;
+        Ok(response)
+    }
+
     pub async fn post_form_with_token<T: Serialize + ?Sized, Q: Serialize + ?Sized>(
         &self,
         url: &str,
@@ -91,6 +105,8 @@ impl Client {
             .header(CONTENT_TYPE, "application/json");
         let resp = req.send().await?.error_for_status()?;
         let bytes = resp.bytes().await?;
+
+        // tracing::info!("resp: {:?}", String::from_utf8_lossy(&bytes.to_vec()));
         let result = serde_json::from_slice(&bytes)?;
         Ok(result)
     }

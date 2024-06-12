@@ -3,7 +3,7 @@ use std::path::Path;
 use super::App;
 use crate::{
     error::{AppError, Result},
-    model::{ProgressPayload, Subject, VideoCourse, VideoInfo, VideoPlayInfo},
+    model::{CanvasVideo, ProgressPayload, Subject, VideoCourse, VideoInfo, VideoPlayInfo},
 };
 // Apis for course video
 impl App {
@@ -34,6 +34,11 @@ impl App {
         }
     }
 
+    pub async fn login_canvas_website(&self) -> Result<()> {
+        let cookie = self.get_cookie().await;
+        self.client.login_canvas_website(&cookie).await
+    }
+
     pub async fn get_subjects(&self) -> Result<Vec<Subject>> {
         self.client.get_subjects().await
     }
@@ -41,6 +46,14 @@ impl App {
     pub async fn get_video_info(&self, video_id: i64) -> Result<VideoInfo> {
         let consumer_key = &self.config.read().await.oauth_consumer_key;
         self.client.get_video_info(video_id, consumer_key).await
+    }
+
+    pub async fn get_canvas_video_info(&self, video_id: &str) -> Result<VideoInfo> {
+        self.client.get_canvas_video_info(video_id).await
+    }
+
+    pub async fn get_canvas_videos(&self, course_id: i64) -> Result<Vec<CanvasVideo>> {
+        self.client.get_canvas_videos(course_id).await
     }
 
     pub async fn download_video<F: Fn(ProgressPayload) + Send>(

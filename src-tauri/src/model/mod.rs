@@ -893,3 +893,54 @@ impl FoldersAndFiles {
         Self { files, folders_map }
     }
 }
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasVideoResponse {
+    pub code: i64,
+    pub desc: String,
+    pub body: Option<CanvasVideoResponseBody>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasVideoResponseBody {
+    pub page: CanvasVideoResponsePage,
+    pub list: Vec<CanvasVideo>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasVideoResponsePage {
+    pub page_index: i64,
+    pub page_size: i64,
+    pub page_count: i64,
+    pub page_first: i64,
+    pub page_last: i64,
+    pub page_next: i64,
+    pub page_prev: i64,
+    pub page_show_begin: i64,
+    pub page_show_end: i64,
+    pub page_show_count: i64,
+    pub row_count: i64,
+    pub row_begin: i64,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasVideo {
+    pub video_id: String,
+    pub user_name: String,
+    pub video_name: String,
+    pub classroom_name: String,
+    pub course_begin_time: String,
+    pub course_end_time: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetCanvasVideoInfoResponse {
+    pub code: i64,
+    pub desc: String,
+    pub body: VideoInfo,
+}

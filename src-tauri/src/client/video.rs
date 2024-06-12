@@ -11,16 +11,21 @@ use regex::Regex;
 use reqwest::{
     cookie::CookieStore,
     header::{HeaderValue, ACCEPT, CONTENT_RANGE, RANGE, REFERER},
+    redirect::Policy,
     Response, StatusCode,
 };
-use select::{document::Document, node::Node, predicate::Name};
+use select::{
+    document::Document,
+    node::Node,
+    predicate::{Attr, Name},
+};
 use serde::{de::DeserializeOwned, Serialize};
 use tauri::Url;
 
 use super::{
     constants::{
-        AUTH_URL, EXPRESS_LOGIN_URL, MY_SJTU_URL, VIDEO_BASE_URL, VIDEO_LOGIN_URL,
-        VIDEO_OAUTH_KEY_URL,
+        AUTH_URL, CANVAS_LOGIN_URL, EXPRESS_LOGIN_URL, MY_SJTU_URL, VIDEO_BASE_URL,
+        VIDEO_LOGIN_URL, VIDEO_OAUTH_KEY_URL,
     },
     Client,
 };
@@ -30,7 +35,10 @@ use crate::{
         OAUTH_RANDOM_P2_VAL, VIDEO_CHUNK_SIZE, VIDEO_INFO_URL,
     },
     error::{AppError, Result},
-    model::{ItemPage, ProgressPayload, Subject, VideoCourse, VideoInfo, VideoPlayInfo},
+    model::{
+        CanvasVideo, CanvasVideoResponse, GetCanvasVideoInfoResponse, ItemPage, ProgressPayload,
+        Subject, VideoCourse, VideoInfo, VideoPlayInfo,
+    },
 };
 
 // Apis here are for course video
@@ -95,6 +103,19 @@ impl Client {
         Ok(None)
     }
 
+    pub async fn login_canvas_website(&self, cookie: &str) -> Result<()> {
+        self.jar
+            .add_cookie_str(cookie, &Url::parse(AUTH_URL).unwrap());
+        let response = self.get_request(CANVAS_LOGIN_URL, None::<&str>).await?;
+        let url = response.url();
+        if let Some(domain) = url.domain() {
+            if domain == "jaccount.sjtu.edu.cn" {
+                return Err(AppError::LoginError);
+            }
+        }
+        Ok(())
+    }
+
     pub async fn get_page_items<T: Serialize + DeserializeOwned>(
         &self,
         url: &str,
@@ -123,6 +144,92 @@ impl Client {
             VIDEO_BASE_URL
         );
         self.get_page_items(&url).await
+    }
+
+    async fn get_form_data_for_canvas_course_id(
+        &self,
+        course_id: i64,
+    ) -> Result<Option<HashMap<String, String>>> {
+        let url = format!(
+            "https://oc.sjtu.edu.cn/courses/{}/external_tools/162",
+            course_id
+        );
+        let response = self.cli.get(&url).send().await?;
+        let body = response.text().await?;
+        let document = Document::from(body.as_str());
+        // tracing::info!("resp: {:?}", body);
+        let form = document
+            .find(Attr("action", "https://courses.sjtu.edu.cn/lti/launch"))
+            .next();
+
+        if form.is_none() {
+            return Ok(None);
+        }
+        let form = form.unwrap();
+
+        let mut data = HashMap::new();
+        for input in form.find(Name("input")) {
+            if let Some(name) = input.attr("name") {
+                if let Some(value) = input.attr("value") {
+                    data.insert(name.to_owned(), value.to_owned());
+                }
+            }
+        }
+        Ok(Some(data))
+    }
+
+    async fn to_canvas_course_id(&self, course_id: i64) -> Result<Option<String>> {
+        let data = match self.get_form_data_for_canvas_course_id(course_id).await? {
+            Some(data) => data,
+            None => return Ok(None),
+        };
+
+        // cancel redirection
+        let client = reqwest::Client::builder()
+            .redirect(Policy::none())
+            .cookie_provider(self.jar.clone())
+            .build()?;
+
+        let resp = client
+            .post("https://courses.sjtu.edu.cn/lti/launch")
+            .form(&data)
+            .send()
+            .await?;
+
+        let location_header = resp.headers().get("location");
+        if location_header.is_none() {
+            return Ok(None);
+        }
+        let location_header = location_header.unwrap();
+        let canvas_course_id = location_header.to_str()?.split("?canvasCourseId=").nth(1);
+        Ok(canvas_course_id.map(|id| id.to_owned()))
+    }
+
+    pub async fn get_canvas_videos(&self, course_id: i64) -> Result<Vec<CanvasVideo>> {
+        let canvas_course_id = self.to_canvas_course_id(course_id).await?;
+        if canvas_course_id.is_none() {
+            return Ok(vec![]);
+        }
+        // tracing::info!("canvas_course_id: {:?}", canvas_course_id);
+        let canvas_course_id = canvas_course_id.unwrap();
+        let url = "https://courses.sjtu.edu.cn/lti/vodVideo/findVodVideoList";
+        let mut data = HashMap::new();
+        data.insert("pageIndex", "1");
+        data.insert("pageSize", "1000");
+        data.insert("canvasCourseId", canvas_course_id.as_str());
+
+        let resp = self
+            .post_form(url, None::<&str>, &data)
+            .await?
+            .error_for_status()?;
+        let body = resp.bytes().await?;
+        // tracing::info!("body: {}", String::from_utf8_lossy(&body.to_vec()));
+        let resp = serde_json::from_slice::<CanvasVideoResponse>(&body)?;
+        let videos = match resp.body {
+            Some(body) => body.list,
+            None => vec![],
+        };
+        Ok(videos)
     }
 
     pub async fn get_oauth_consumer_key(&self) -> Result<Option<String>> {
@@ -242,6 +349,21 @@ impl Client {
         }
         tracing::debug!("read total bytes {}", read_total);
         Ok(())
+    }
+
+    pub async fn get_canvas_video_info(&self, video_id: &str) -> Result<VideoInfo> {
+        let mut form_data = HashMap::new();
+        let url = "https://courses.sjtu.edu.cn/lti/vodVideo/getVodVideoInfos";
+        form_data.insert("playTypeHls", "true");
+        form_data.insert("id", video_id);
+        form_data.insert("isAudit", "true");
+        let resp = self
+            .post_form(url, None::<&str>, &form_data)
+            .await?
+            .error_for_status()?;
+        let bytes = resp.bytes().await?;
+        let resp = serde_json::from_slice::<GetCanvasVideoInfoResponse>(&bytes)?;
+        Ok(resp.body)
     }
 
     pub async fn get_video_info(

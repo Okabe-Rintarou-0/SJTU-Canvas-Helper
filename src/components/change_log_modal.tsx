@@ -11,6 +11,12 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v1.3.10 2024/6/12</Title>
+            <Paragraph>
+                <ul>
+                    <li>[Enhancement] 支持所有课程的视频播放下载</li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v1.3.8, v1.3.9 2024/6/11</Title>
             <Paragraph>
                 <ul>
