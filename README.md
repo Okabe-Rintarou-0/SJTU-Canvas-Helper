@@ -7,8 +7,6 @@
 SJTU Canvas 小帮手，帮助您更便捷地使用交大 Canvas。基于 [Tauri](https://tauri.app/) 开发。
 参与讨论：[水源社区](https://shuiyuan.sjtu.edu.cn/t/topic/245275)。
 
-![](images/arch.png)
-
 <div align="center">
   <img align="center" src="https://img.shields.io/badge/rust-1.75-blue" alt="">
   <img align="center" src="https://img.shields.io/github/stars/Okabe-Rintarou-0/SJTU-Canvas-Helper" /> 
@@ -102,6 +100,8 @@ https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/assets/58595459/7f05cabc-
 ![](./images/submission.png)
 
 ## 开发指南
+
+![](images/arch.png)
 
 + 下载 [Rust](https://www.rust-lang.org/tools/install)。Rust 快速学习：[Rust语言圣经(Rust Course)](https://course.rs/about-book.html)。
 + 下载 [NodeJS](https://nodejs.org/en/download/current)，自带 `npm` 和 `yarn` 包管理器。
