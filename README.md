@@ -101,6 +101,8 @@ https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/assets/58595459/7f05cabc-
 
 ## 开发指南
 
+![](images/arch.svg)
+
 + 下载 [Rust](https://www.rust-lang.org/tools/install)。Rust 快速学习：[Rust语言圣经(Rust Course)](https://course.rs/about-book.html)。
 + 下载 [NodeJS](https://nodejs.org/en/download/current)，自带 `npm` 和 `yarn` 包管理器。
 + 启动项目：
