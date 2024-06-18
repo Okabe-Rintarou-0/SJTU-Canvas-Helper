@@ -9,6 +9,7 @@ import FileDownloadTable from "../components/file_download_table";
 import { useCourses, useLoginModal, useMerger, usePreview } from "../lib/hooks";
 import { FolderOutlined, HomeOutlined, LeftOutlined } from "@ant-design/icons"
 import { scrollToTop, getFileIcon } from "../lib/utils";
+import FileOrderSelectModal from "../components/file_order_select_modal";
 
 interface DownloadInfo {
     course?: Course;
@@ -34,6 +35,7 @@ export default function FilesPage() {
     const [currentFolderFullName, setCurrentFolderFullName] = useState<string | undefined>('');
     const [parentFolderId, setParentFolderId] = useState<number | undefined | null>(null);
     const [keyword, setKeyword] = useState<string>("");
+    const [openFileOrderSelectModal, setOpenFileOrderSelectModal] = useState<boolean>(false);
     const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry, setEntries } = usePreview();
     const { merger, mergePDFs } = useMerger({ setPreviewEntry, onHoverEntry, onLeaveEntry });
     const courses = useCourses();
@@ -410,10 +412,6 @@ export default function FilesPage() {
         }
     }
 
-    const handleMergePDFs = () => {
-        mergePDFs(selectedEntries.filter(isFile) as File[]);
-    }
-
     const backToParentDir = async () => {
         setFiles([]);
         setFolders([]);
@@ -454,10 +452,21 @@ export default function FilesPage() {
         }
     ]
 
+    const getSupportedMergeFiles = () => {
+        return (selectedEntries as File[]).filter(f => f.display_name.endsWith(".pptx") || f.display_name.endsWith(".pdf"));
+    }
+
     return <BasicLayout>
         {contextHolder}
         {previewer}
         {modal}
+        <FileOrderSelectModal open={openFileOrderSelectModal}
+            handleOk={(items) => {
+                setOpenFileOrderSelectModal(false);
+                const files = items.map(item => item.data as File);
+                mergePDFs(files);
+            }}
+            handleCancel={() => setOpenFileOrderSelectModal(false)} files={getSupportedMergeFiles()} />
         <Space direction="vertical" style={{ width: "100%", overflow: "scroll" }} size={"large"}>
             <Tabs items={tabs} onChange={setSection} />
             <Space>
@@ -496,7 +505,7 @@ export default function FilesPage() {
             />
             <Space>
                 <Button disabled={operating || selectedEntries.length === 0} onClick={handleDownloadSelectedFiles}>下载</Button>
-                <Button disabled={operating || noSelectedPDFs} onClick={handleMergePDFs}>合并 PDF/PPTX</Button>
+                <Button disabled={operating || noSelectedPDFs} onClick={() => setOpenFileOrderSelectModal(true)}>合并 PDF/PPTX</Button>
             </Space>
             <Divider orientation="left">PDF/PPTX (混合)合并</Divider>
             {merger}

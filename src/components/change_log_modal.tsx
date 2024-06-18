@@ -11,6 +11,12 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v1.3.11 2024/6/18</Title>
+            <Paragraph>
+                <ul>
+                    <li>[Enhancement] 支持调整 PPTX/PDF 合并顺序（源自 Issue: <a target="_blank" href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/issues/29">https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/issues/29</a>）</li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v1.3.10 2024/6/12</Title>
             <Paragraph>
                 <ul>
@@ -66,5 +72,5 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
                 </ul>
             </Paragraph>
         </Typography>
-    </Modal>
+    </Modal >
 }

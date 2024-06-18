@@ -488,3 +488,9 @@ export interface Reply {
     rating_sum: number | null;
     message: string | null;
 }
+
+export interface DraggableItem {
+    id: string;
+    content: string;
+    data: any;
+}
