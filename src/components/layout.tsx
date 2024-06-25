@@ -7,6 +7,7 @@ import { BsQrCode } from 'react-icons/bs';
 import { GoDiscussionOutdated } from 'react-icons/go';
 import { ChangeLogModal } from './change_log_modal';
 import { LuBookOpenCheck } from 'react-icons/lu';
+import { useKeyPress } from '../lib/hooks';
 
 const { Content, Footer, Sider } = Layout;
 
@@ -67,6 +68,20 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
         token: { colorBgContainer, borderRadiusLG },
     } = theme.useToken();
 
+    const [scale, setScale] = useState(1);
+
+    const zoomIn = () => {
+        console.log("zoom in")
+        setScale(prevScale => prevScale + 0.1);
+    };
+
+    const zoomOut = () => {
+        setScale(prevScale => Math.max(0.1, prevScale - 0.1));
+    };
+
+    useKeyPress('=', zoomIn);
+    useKeyPress('-', zoomOut);
+
     return <Layout style={{ minHeight: "100vh" }}>
         <Sider theme="light" style={{ position: 'fixed', height: '100%' }}>
             <Menu theme="light" mode="inline" defaultSelectedKeys={selectedKeys} items={items} />
@@ -79,6 +94,10 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
                         minHeight: 360,
                         background: colorBgContainer,
                         borderRadius: borderRadiusLG,
+                        zoom: scale,
+                        transformOrigin: 'top left',
+                        width: '100%',
+                        height: '100%',
                     }}
                 >
                     {children}

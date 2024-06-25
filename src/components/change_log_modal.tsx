@@ -11,6 +11,12 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v1.3.12 2024/6/25</Title>
+            <Paragraph>
+                <ul>
+                    <li>[Enhancement] 支持按 `ctrl`(`command`) + `=` 和 `ctrl`(`command`) + `-` 进行缩放（源自 Issue: <a target="_blank" href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/issues/31">https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/issues/31</a>）</li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v1.3.11 2024/6/18</Title>
             <Paragraph>
                 <ul>

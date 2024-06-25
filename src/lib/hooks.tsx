@@ -513,3 +513,19 @@ export function useCourseFolders(courseId?: number) {
     const shouldFetch = courseId != undefined;
     return useData<Folder[]>("list_course_folders", shouldFetch, args);
 }
+export const useKeyPress = (targetKey: string, action: () => void) => {
+    useEffect(() => {
+        const keyHandler = (event: KeyboardEvent) => {
+            if ((event.ctrlKey || event.metaKey) && event.key === targetKey) {
+                event.preventDefault();
+                action();
+            }
+        };
+
+        window.addEventListener('keydown', keyHandler);
+
+        return () => {
+            window.removeEventListener('keydown', keyHandler);
+        };
+    }, [targetKey, action]);
+};
