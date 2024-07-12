@@ -1,4 +1,4 @@
-import { CSSProperties, Dispatch, ReactNode, SetStateAction, useEffect, useRef, useState } from "react";
+import { CSSProperties, Dispatch, ReactNode, SetStateAction, useEffect, useState } from "react";
 import PreviewModal from "../components/preview_modal";
 import { Assignment, Course, Entry, File, Folder, isFile, LoginMessage, User, UserSubmissions } from "./model";
 import PDFMerger from 'pdf-merger-js/browser';
@@ -57,14 +57,9 @@ function Previewer({ previewEntry, setPreviewEntry, hoveredEntry, setHoveredEntr
     bodyStyle?: CSSProperties
     monitorBlankKey: boolean,
 }) {
-    const entriesRef = useRef<Entry[]>([]);
-    const hoveredEntryRef = useRef<EntryType>(undefined);
-    const previewEntryRef = useRef<EntryType>(undefined);
-    const monitorBlankKeyRef = useRef<boolean>(monitorBlankKey);
     const [files, setFiles] = useState<File[]>([]);
 
     const getNextEntry = (entry: Entry) => {
-        const entries = entriesRef.current;
         const index = entries.findIndex(file => file.id === entry.id);
         if (index === -1) {
             return null;
@@ -76,7 +71,6 @@ function Previewer({ previewEntry, setPreviewEntry, hoveredEntry, setHoveredEntr
     }
 
     const getPrevEntry = (entry: Entry) => {
-        const entries = entriesRef.current;
         const index = entries.findIndex(file => file.id === entry.id);
         if (index === -1) {
             return null;
@@ -88,71 +82,58 @@ function Previewer({ previewEntry, setPreviewEntry, hoveredEntry, setHoveredEntr
     }
 
     useEffect(() => {
+        const handleKeyDownEvent = (ev: KeyboardEvent) => {
+            if (!monitorBlankKey) {
+                return;
+            }
+            if (ev.key === " " && !ev.repeat) {
+                ev.stopPropagation();
+                ev.preventDefault();
+                if (hoveredEntry && !previewEntry) {
+                    setHoveredEntry(undefined);
+                    setPreviewEntry(hoveredEntry);
+                } else if (previewEntry) {
+                    setPreviewEntry(undefined);
+                }
+                return;
+            }
+            if (!previewEntry) {
+                return;
+            }
+    
+            if (ev.key === "ArrowRight" && !ev.repeat) {
+                ev.stopPropagation();
+                ev.preventDefault();
+                const entry = getNextEntry(previewEntry);
+                if (entry) {
+                    setHoveredEntry(undefined);
+                    setPreviewEntry(entry);
+                }
+            }
+            if (ev.key === "ArrowLeft" && !ev.repeat) {
+                ev.stopPropagation();
+                ev.preventDefault();
+                const entry = getPrevEntry(previewEntry);
+                if (entry) {
+                    setHoveredEntry(undefined);
+                    setPreviewEntry(entry);
+                }
+            }
+        }
+
         document.body.addEventListener("keydown", handleKeyDownEvent, true);
         return () => {
             document.body.removeEventListener("keydown", handleKeyDownEvent, true);
         }
-    }, []);
+    }, [previewEntry, hoveredEntry, monitorBlankKey, entries]);
 
     useEffect(() => {
-        previewEntryRef.current = previewEntry;
         if (previewEntry && isFile(previewEntry)) {
             setFiles([previewEntry as File]);
         } else {
             setFiles([]);
         }
     }, [previewEntry]);
-
-    useEffect(() => {
-        hoveredEntryRef.current = hoveredEntry;
-    }, [hoveredEntry]);
-
-    useEffect(() => {
-        entriesRef.current = entries;
-    }, [entries]);
-
-    useEffect(() => {
-        monitorBlankKeyRef.current = monitorBlankKey;
-    }, [monitorBlankKey]);
-
-    const handleKeyDownEvent = (ev: KeyboardEvent) => {
-        if (!monitorBlankKeyRef.current) {
-            return;
-        }
-        if (ev.key === " " && !ev.repeat) {
-            ev.stopPropagation();
-            ev.preventDefault();
-            if (hoveredEntryRef.current && !previewEntryRef.current) {
-                setHoveredEntry(undefined);
-                setPreviewEntry(hoveredEntryRef.current);
-            } else if (previewEntryRef.current) {
-                setPreviewEntry(undefined);
-            }
-            return;
-        }
-        if (!previewEntryRef.current) {
-            return;
-        }
-
-        if (ev.key === "ArrowRight" && !ev.repeat) {
-            ev.stopPropagation();
-            ev.preventDefault();
-            const entry = getNextEntry(previewEntryRef.current);
-            if (entry) {
-                setHoveredEntry(undefined);
-                setPreviewEntry(entry);
-            }
-        }
-        if (ev.key === "ArrowLeft" && !ev.repeat) {
-            ev.stopPropagation();
-            ev.preventDefault();
-            const entry = getPrevEntry(previewEntryRef.current);
-            if (entry) {
-                setHoveredEntry(undefined);
-                setPreviewEntry(entry);
-            }
-        }
-    }
 
     const handleCancelPreview = () => {
         setPreviewEntry(undefined);
