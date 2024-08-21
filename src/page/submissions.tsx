@@ -13,12 +13,15 @@ import CommentPanel from "../components/comment_panel";
 import { WarningOutlined } from "@ant-design/icons"
 import CourseFileSelector from "../components/course_file_selector";
 import { getConfig, saveConfig } from "../lib/store";
+import type { SelectProps } from 'antd';
+
 
 export default function SubmissionsPage() {
     const [messageApi, contextHolder] = useMessage();
     const [operating, setOperating] = useState<boolean>(false);
     const [loading, setLoading] = useState<boolean>(false);
     const [users, setUsers] = useState<User[]>([]);
+    const [options, setOptions] = useState<SelectProps['options']>([]);
     const [attachments, setAttachments] = useState<Attachment[]>([]);
     const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
     const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -27,7 +30,7 @@ export default function SubmissionsPage() {
     const [selectedAttachments, setSelectedAttachments] = useState<Attachment[]>([]);
     const usersMap = useMemo(() => new Map<number, User>(users.map(user => ([user.id, user]))), [users]);
     const [statistic, setStatistic] = useState<GradeStatistic | undefined>(undefined);
-    const [keyword, setKeyword] = useState<string>("");
+    const [keywords, setKeywords] = useState<string[]>([""]);
     const [attachmentToComment, setAttachmentToComment] = useState<number>(-1);
     const [expandedRowKeys, setExpandedRowKeys] = useState<number[]>([]);
     const [previewFooter, setPreviewFooter] = useState<ReactNode>(undefined);
@@ -216,6 +219,7 @@ export default function SubmissionsPage() {
             let users = await invoke("list_course_students", { courseId }) as User[];
             users.map(user => user.key = user.id);
             setUsers(users);
+            setOptions(users.map(user => { return { label: user.name, value: user.name } }));
         } catch (e) {
             messageApi.error(e as string);
         }
@@ -367,7 +371,7 @@ export default function SubmissionsPage() {
     }));
 
     const shouldShow = (attachment: Attachment) => {
-        return attachment.user && attachment.user.indexOf(keyword) !== -1;
+        return attachment.user && (keywords.length == 0 || keywords.includes(attachment.user));
     }
 
     const handleDownloadFile = async (file: File) => {
@@ -438,7 +442,8 @@ export default function SubmissionsPage() {
                 </Space>
             }
             {statistic && <GradeStatisticChart statistic={statistic} />}
-            <Input.Search placeholder="输入学生姓名关键词" onSearch={setKeyword} />
+            {/* <Input.Search placeholder="输入学生姓名关键词" onSearch={setKeyword} /> */}
+            <Select mode="multiple" allowClear style={{ width: '100%' }} placeholder="Please select" onChange={(value) => { setKeywords(value) }} options={options} />
             <Table style={{ width: "100%" }}
                 columns={columns}
                 loading={loading}
