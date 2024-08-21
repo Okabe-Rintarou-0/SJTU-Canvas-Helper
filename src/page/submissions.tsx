@@ -443,7 +443,7 @@ export default function SubmissionsPage() {
             }
             {statistic && <GradeStatisticChart statistic={statistic} />}
             {/* <Input.Search placeholder="输入学生姓名关键词" onSearch={setKeyword} /> */}
-            <Select mode="multiple" allowClear style={{ width: '100%' }} placeholder="Please select" onChange={(value) => { setKeywords(value) }} options={options} />
+            <Select mode="multiple" allowClear style={{ width: '100%' }} placeholder="请选择学生" onChange={(value) => { setKeywords(value) }} options={options} />
             <Table style={{ width: "100%" }}
                 columns={columns}
                 loading={loading}

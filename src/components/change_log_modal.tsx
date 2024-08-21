@@ -11,6 +11,12 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v1.3.13 2024/8/21</Title>
+            <Paragraph>
+                <ul>
+                    <li>[Enhancement] 优化“作业批改”中选择学生的方式（源自 PR: <a target="_blank" href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/pull/33">https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/pull/33</a>）</li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v1.3.12 2024/6/25</Title>
             <Paragraph>
                 <ul>

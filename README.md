@@ -58,6 +58,12 @@ sudo xattr -r -d com.apple.quarantine /Applications/SJTU\ Canvas\ Helper.app SJT
         <sub><b>wytili</b></sub>
       </a>
     </td>
+    <td align="center">
+      <a href="https://github.com/xeonliu" style="display:inline-block;width:80px">
+        <img src="https://github.com/xeonliu.png" width="64px;" alt="xeonliu"/><br/>
+        <sub><b>xeonliu</b></sub>
+      </a>
+    </td>
   </tr>
 </table>
 
