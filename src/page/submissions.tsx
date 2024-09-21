@@ -428,7 +428,7 @@ export default function SubmissionsPage() {
                         description={<Space direction="vertical">
                             <p>姓名：{s.name}</p>
                             <p>学号: {s.login_id}</p>
-                            <p>邮箱: <a href={`mailto:${s.email}`} target="_blank">{s.email}</a></p>
+                            {s.email && <p>邮箱: <a href={`mailto:${s.email}`} target="_blank">{s.email}</a></p>}
                         </Space>}
                         okText="确认"
                     >

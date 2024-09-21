@@ -75,7 +75,7 @@ export interface User {
     sortable_name: string;
     short_name: string;
     login_id: string;
-    email: string;
+    email: string | null;
 }
 
 export interface UserSubmissions {

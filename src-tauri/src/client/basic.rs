@@ -853,9 +853,6 @@ mod test {
             for user in users {
                 assert!(user.id > 0);
                 assert!(!user.name.is_empty());
-                if is_ta {
-                    assert!(!user.email.is_empty());
-                }
             }
         }
         Ok(())

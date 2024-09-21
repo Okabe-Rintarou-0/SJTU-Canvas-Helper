@@ -46,11 +46,7 @@ pub struct Term {
 
 impl Course {
     pub fn is_access_restricted(&self) -> bool {
-        if let Some(restricted) = self.access_restricted_by_date {
-            restricted
-        } else {
-            false
-        }
+        self.access_restricted_by_date.unwrap_or_default()
     }
 }
 
@@ -187,7 +183,7 @@ pub struct User {
     #[serde(default)]
     pub login_id: String,
     #[serde(default)]
-    pub email: String,
+    pub email: Option<String>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
