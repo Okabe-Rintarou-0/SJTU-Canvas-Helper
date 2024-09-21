@@ -17,6 +17,7 @@ use crate::{
         ConfirmChunkUploadResult, File, JBoxErrorMessage, JBoxLoginInfo, JboxLoginResult,
         PersonalSpaceInfo, ProgressPayload, StartChunkUploadContext,
     },
+    utils,
 };
 
 // Apis here are for jbox
@@ -86,7 +87,7 @@ impl Client {
         );
         let resp = self.cli.put(&url).send().await?;
         let bytes = resp.bytes().await?;
-        let result = serde_json::from_slice::<JBoxErrorMessage>(&bytes)?;
+        let result = utils::parse_json::<JBoxErrorMessage>(&bytes)?;
         if result.status != 0 && result.code != "SameNameDirectoryOrFileExists" {
             return Err(AppError::JBoxError(result.message));
         }

@@ -3,7 +3,8 @@ use std::{
     io::Write,
 };
 
-use crate::error::Result;
+use crate::error::{AppError, Result};
+use serde::de::DeserializeOwned;
 use uuid::Uuid;
 
 // RAII temp file
@@ -38,4 +39,9 @@ impl Drop for TempFile {
     fn drop(&mut self) {
         _ = fs::remove_file(&self.path);
     }
+}
+
+pub fn parse_json<T: DeserializeOwned>(bytes: &[u8]) -> Result<T> {
+    serde_json::from_slice::<T>(bytes)
+        .map_err(|e| AppError::JsonDeserialize(e, String::from_utf8_lossy(bytes).to_string()))
 }

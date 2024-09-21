@@ -39,6 +39,7 @@ use crate::{
         CanvasVideo, CanvasVideoResponse, GetCanvasVideoInfoResponse, ItemPage, ProgressPayload,
         Subject, VideoCourse, VideoInfo, VideoPlayInfo,
     },
+    utils,
 };
 
 // Apis here are for course video
@@ -224,7 +225,7 @@ impl Client {
             .error_for_status()?;
         let body = resp.bytes().await?;
         // tracing::info!("body: {}", String::from_utf8_lossy(&body.to_vec()));
-        let resp = serde_json::from_slice::<CanvasVideoResponse>(&body)?;
+        let resp = utils::parse_json::<CanvasVideoResponse>(&body)?;
         let videos = match resp.body {
             Some(body) => body.list,
             None => vec![],
@@ -362,7 +363,7 @@ impl Client {
             .await?
             .error_for_status()?;
         let bytes = resp.bytes().await?;
-        let resp = serde_json::from_slice::<GetCanvasVideoInfoResponse>(&bytes)?;
+        let resp = utils::parse_json::<GetCanvasVideoInfoResponse>(&bytes)?;
         Ok(resp.body)
     }
 
@@ -399,7 +400,7 @@ impl Client {
             .await?
             .error_for_status()?;
         let bytes = response.bytes().await?;
-        let video = serde_json::from_slice(&bytes)?;
+        let video = utils::parse_json(&bytes)?;
         Ok(video)
     }
 }

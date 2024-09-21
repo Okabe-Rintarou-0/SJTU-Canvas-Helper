@@ -5,7 +5,7 @@ use reqwest::{
 use serde::{de::DeserializeOwned, Serialize};
 
 use super::Client;
-use crate::error::Result;
+use crate::{error::Result, utils};
 
 impl Client {
     pub async fn get_request_with_token<T: Serialize + ?Sized>(
@@ -37,7 +37,7 @@ impl Client {
             .get_request_with_token(url, query, token)
             .await?
             .error_for_status()?;
-        let json = serde_json::from_slice(&response.bytes().await?)?;
+        let json = utils::parse_json(&response.bytes().await?)?;
         Ok(json)
     }
 
@@ -107,7 +107,7 @@ impl Client {
         let bytes = resp.bytes().await?;
 
         // tracing::info!("resp: {:?}", String::from_utf8_lossy(&bytes.to_vec()));
-        let result = serde_json::from_slice(&bytes)?;
+        let result = utils::parse_json(&bytes)?;
         Ok(result)
     }
 
@@ -140,7 +140,7 @@ impl Client {
         }
 
         let response = req.send().await?.error_for_status()?;
-        let json = serde_json::from_slice(&response.bytes().await?)?;
+        let json = utils::parse_json(&response.bytes().await?)?;
         Ok(json)
     }
 }

@@ -16,7 +16,12 @@ use warp::{hyper::Response, Filter};
 use warp_reverse_proxy::reverse_proxy_filter;
 use xlsxwriter::Workbook;
 
-use crate::{client::Client, error, model::*, utils::TempFile};
+use crate::{
+    client::Client,
+    error,
+    model::*,
+    utils::{self, TempFile},
+};
 
 use super::App;
 
@@ -71,7 +76,7 @@ impl App {
         let account_path = format!("{}/{}", config_dir, "account.json");
         fs::metadata(&account_path)?;
         let content = fs::read(&account_path)?;
-        Ok(serde_json::from_slice(&content)?)
+        utils::parse_json(&content)
     }
 
     pub fn account_exists(account: &Account) -> Result<bool> {
@@ -240,7 +245,7 @@ impl App {
 
     fn read_config_from_file(config_path: &str) -> Result<AppConfig> {
         let content = fs::read(config_path)?;
-        let config = serde_json::from_slice(&content)?;
+        let config = utils::parse_json(&content)?;
         Ok(config)
     }
 

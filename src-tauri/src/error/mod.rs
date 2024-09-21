@@ -1,11 +1,12 @@
 use std::io;
-
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum AppError {
     #[error("Network error: {0}")]
     Network(#[from] reqwest::Error),
+    #[error("Json deserialization error: {0}\n Raw data: {1}")]
+    JsonDeserialize(serde_json::Error, String),
     #[error("Json parse error: {0}")]
     JsonParse(#[from] serde_json::Error),
     #[error("I/O error: {0}")]
