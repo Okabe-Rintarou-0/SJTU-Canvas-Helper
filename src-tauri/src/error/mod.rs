@@ -5,8 +5,8 @@ use thiserror::Error;
 pub enum AppError {
     #[error("Network error: {0}")]
     Network(#[from] reqwest::Error),
-    #[error("Json deserialization error: {0}\n Raw data: {1}")]
-    JsonDeserialize(serde_json::Error, String),
+    #[error("Json deserialization error: {0}, object type: {1}, context: {2}")]
+    JsonDeserialize(serde_json::Error, String, String),
     #[error("Json parse error: {0}")]
     JsonParse(#[from] serde_json::Error),
     #[error("I/O error: {0}")]
