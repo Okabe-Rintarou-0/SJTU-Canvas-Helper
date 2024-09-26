@@ -9,6 +9,7 @@ import VideoPage from "../page/video";
 import QRCodePage from "../page/qrcode";
 import DiscussionsPage from "../page/discussions";
 import GradePage from "../page/grades";
+import RelationshipPage from "../page/relationship";
 
 export default function AppRouter() {
     return <BrowserRouter>
@@ -24,6 +25,7 @@ export default function AppRouter() {
             <Route path="/video" element={<VideoPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/qrcode" element={<QRCodePage />} />
+            <Route path="/relationship" element={<RelationshipPage />} />
             <Route path="*" element={<Navigate to={"/"} />} />
         </Routes>
     </BrowserRouter>

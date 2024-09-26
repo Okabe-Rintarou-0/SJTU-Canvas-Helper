@@ -86,17 +86,12 @@ pub struct Folder {
     pub folders_count: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub enum Account {
+    #[default]
     Default,
     #[serde(untagged)]
     Custom(String),
-}
-
-impl Default for Account {
-    fn default() -> Self {
-        Self::Default
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -288,19 +283,14 @@ pub struct AssignmentOverride {
     pub lock_at: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkflowState {
     Submitted,
+    #[default]
     Unsubmitted,
     Graded,
     PendingReview,
-}
-
-impl Default for WorkflowState {
-    fn default() -> Self {
-        Self::Unsubmitted
-    }
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -939,4 +929,32 @@ pub struct GetCanvasVideoInfoResponse {
     pub code: i64,
     pub desc: String,
     pub body: VideoInfo,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub enum RelationshipNodeType {
+    #[default]
+    Default,
+    Me,
+    Course,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelationshipNode {
+    pub id: String,
+    pub label: String,
+    pub node_type: RelationshipNodeType,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RelationshipEdge {
+    pub source: String,
+    pub target: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RelationshipTopo {
+    pub nodes: Vec<RelationshipNode>,
+    pub edges: Vec<RelationshipEdge>,
 }

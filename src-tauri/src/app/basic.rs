@@ -822,6 +822,12 @@ impl App {
         Ok(file)
     }
 
+    pub async fn collect_relationship(&self) -> Result<RelationshipTopo> {
+        let token = self.config.read().await.token.clone();
+        let topo = self.client.clone().collect_relationship(&token).await?;
+        Ok(topo)
+    }
+
     pub async fn export_excel(
         &self,
         data: &[Vec<String>],

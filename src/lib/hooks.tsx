@@ -1,6 +1,6 @@
 import { CSSProperties, Dispatch, ReactNode, SetStateAction, useEffect, useState } from "react";
 import PreviewModal from "../components/preview_modal";
-import { Assignment, Course, Entry, File, Folder, isFile, LoginMessage, User, UserSubmissions } from "./model";
+import { Assignment, Course, Entry, File, Folder, isFile, LoginMessage, RelationshipTopo, User, UserSubmissions } from "./model";
 import PDFMerger from 'pdf-merger-js/browser';
 import { Button, Input, Progress, Space, message } from "antd";
 import dayjs from "dayjs";
@@ -100,7 +100,7 @@ function Previewer({ previewEntry, setPreviewEntry, hoveredEntry, setHoveredEntr
             if (!previewEntry) {
                 return;
             }
-    
+
             if (ev.key === "ArrowRight" && !ev.repeat) {
                 ev.stopPropagation();
                 ev.preventDefault();
@@ -390,7 +390,6 @@ export function useData<T>(command: string, shouldFetch: boolean, args?: any) {
             mutate();
         }
     }, [command, args]);
-
     return {
         data, isLoading, error, mutate
     }
@@ -466,6 +465,10 @@ export function useStudents(courseId?: number) {
         ...students,
         data: students.data ?? EMPTY_ARRAY as User[]
     }
+}
+
+export function useRelationship() {
+    return useData<RelationshipTopo>("collect_relationship", true);
 }
 
 export function useFolderFiles(folderId?: number) {

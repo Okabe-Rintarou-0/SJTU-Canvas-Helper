@@ -4,8 +4,8 @@
 use error::Result;
 use model::{
     Account, AccountInfo, AppConfig, Assignment, CalendarEvent, CanvasVideo, Colors, Course,
-    DiscussionTopic, File, Folder, FullDiscussion, QRCodeScanResult, Subject, Submission, User,
-    UserSubmissions, VideoCourse, VideoInfo, VideoPlayInfo,
+    DiscussionTopic, File, Folder, FullDiscussion, QRCodeScanResult, RelationshipTopo, Subject,
+    Submission, User, UserSubmissions, VideoCourse, VideoInfo, VideoPlayInfo,
 };
 
 use tauri::{Runtime, Window};
@@ -22,6 +22,11 @@ extern crate lazy_static;
 
 lazy_static! {
     static ref APP: App = App::new();
+}
+
+#[tauri::command]
+async fn collect_relationship() -> Result<RelationshipTopo> {
+    APP.collect_relationship().await
 }
 
 #[tauri::command]
@@ -518,6 +523,7 @@ async fn main() -> Result<()> {
     APP.init().await?;
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            collect_relationship,
             switch_account,
             create_account,
             delete_account,

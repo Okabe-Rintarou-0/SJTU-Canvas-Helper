@@ -2,7 +2,7 @@ use super::{constants::BASE_URL, Client};
 use ::bytes::Bytes;
 use reqwest::{cookie, multipart};
 use serde::de::DeserializeOwned;
-use std::{cmp::min, fs, io::Write, ops::Deref, path::Path, sync::Arc};
+use std::{cmp::min, collections::HashSet, fs, io::Write, ops::Deref, path::Path, sync::Arc};
 use tokio::task::JoinSet;
 
 use crate::{
@@ -10,8 +10,9 @@ use crate::{
     error::{AppError, Result},
     model::{
         Assignment, CalendarEvent, Colors, Course, DiscussionTopic, File, Folder, FoldersAndFiles,
-        FullDiscussion, ProgressPayload, Submission, SubmissionUploadResult,
-        SubmissionUploadSuccessResponse, User, UserSubmissions,
+        FullDiscussion, ProgressPayload, RelationshipEdge, RelationshipNode, RelationshipNodeType,
+        RelationshipTopo, Submission, SubmissionUploadResult, SubmissionUploadSuccessResponse,
+        User, UserSubmissions,
     },
     utils,
 };
@@ -723,6 +724,65 @@ impl Client {
             BASE_URL, course_id
         );
         self.list_items(&url, token).await
+    }
+
+    pub async fn list_current_term_courses(&self, token: &str) -> Result<Vec<Course>> {
+        let url = format!(
+            "{}/api/v1/courses?include[]=teachers&include[]=term&enrollment_state=active",
+            BASE_URL
+        );
+        self.list_items(&url, token).await
+    }
+
+    pub async fn collect_relationship(self: Arc<Self>, token: &str) -> Result<RelationshipTopo> {
+        let courses = self.list_current_term_courses(token).await?;
+        let mut user_set = HashSet::new();
+        let mut nodes = vec![];
+        let mut edges = vec![];
+        let me = self.get_me(token).await?;
+        let mut tasks = JoinSet::new();
+        for course in courses.into_iter() {
+            let self_cloned = self.clone();
+            let token_cloned = token.to_string();
+            tasks.spawn(async move {
+                let course_users = self_cloned
+                    .list_course_users(course.id, &token_cloned)
+                    .await
+                    .unwrap_or_default();
+                (course, course_users)
+            });
+        }
+        while let Some(res) = tasks.join_next().await {
+            let res = res?;
+            let course = res.0;
+            let course_users = res.1;
+            nodes.push(RelationshipNode {
+                id: course.id.to_string(),
+                label: course.name,
+                node_type: RelationshipNodeType::Course,
+            });
+            for user in course_users {
+                let node_type = if user.id == me.id {
+                    RelationshipNodeType::Me
+                } else {
+                    RelationshipNodeType::Default
+                };
+                if !user_set.contains(&user.id) {
+                    user_set.insert(user.id);
+                    nodes.push(RelationshipNode {
+                        id: user.id.to_string(),
+                        label: user.name,
+                        node_type,
+                    });
+                }
+                edges.push(RelationshipEdge {
+                    source: course.id.to_string(),
+                    target: user.id.to_string(),
+                });
+            }
+        }
+        let topo = RelationshipTopo { nodes, edges };
+        Ok(topo)
     }
 }
 

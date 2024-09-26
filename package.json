@@ -10,6 +10,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@antv/g6": "^4.8.24",
     "@cyntler/react-doc-viewer": "^1.14.1",
     "@tauri-apps/api": "^1",
     "@tauri-apps/plugin-updater": "^2.0.0-beta.2",

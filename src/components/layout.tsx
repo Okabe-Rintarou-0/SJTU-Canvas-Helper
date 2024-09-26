@@ -8,7 +8,7 @@ import { GoDiscussionOutdated } from 'react-icons/go';
 import { ChangeLogModal } from './change_log_modal';
 import { LuBookOpenCheck } from 'react-icons/lu';
 import { useKeyPress } from '../lib/hooks';
-
+import { FaPeopleGroup } from "react-icons/fa6";
 const { Content, Footer, Sider } = Layout;
 
 export default function BasicLayout({ children }: React.PropsWithChildren) {
@@ -55,6 +55,10 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
         key: 'qrcode',
         icon: <BsQrCode />,
         label: <Link to={'/qrcode'}>二维码</Link>,
+    }, {
+        key: 'relationship',
+        icon: <FaPeopleGroup />,
+        label: <Link to={'/relationship'}>人际关系图(beta)</Link>,
     }, {
         key: 'settings',
         icon: <SettingOutlined />,

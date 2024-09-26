@@ -27,6 +27,22 @@ export interface Enrollment {
     enrollment_state: string;
 }
 
+export interface RelationshipNode {
+    id: string;
+    label: string;
+    nodeType: "Default" | "Me" | "Course"
+}
+
+export interface RelationshipEdge {
+    source: string;
+    target: string;
+}
+
+export interface RelationshipTopo {
+    nodes: RelationshipNode[];
+    edges: RelationshipEdge[];
+}
+
 export interface File {
     key: string;
     id: number;
