@@ -371,7 +371,7 @@ export default function SubmissionsPage() {
     }));
 
     const shouldShow = (attachment: Attachment) => {
-        return attachment.user && (keywords.length == 0 || keywords.includes(attachment.user));
+        return attachment.user && (keywords.length == 0 || keywords[0] === "" || keywords.includes(attachment.user));
     }
 
     const handleDownloadFile = async (file: File) => {
