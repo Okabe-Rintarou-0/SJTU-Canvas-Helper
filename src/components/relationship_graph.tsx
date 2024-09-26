@@ -91,8 +91,7 @@ export default function RelationshipGraph() {
         return g;
     }
     return <div style={{ overflow: 'hidden' }}>
-        <Spin spinning={relationship.isLoading} fullscreen tip="计算中💪，请耐心等待..." >
-        </Spin>
+        <Spin spinning={relationship.isLoading} fullscreen tip="计算中💪，请耐心等待..." />
         <div style={{
             height: "100vh",
             width: "100%"
