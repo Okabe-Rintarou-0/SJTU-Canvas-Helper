@@ -5,10 +5,11 @@ import { AccountInfo, AppConfig, User } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import useMessage from "antd/es/message/useMessage";
 import { getConfig, saveConfig } from "../lib/store";
-const { Password } = Input;
 import type { InputRef, TourProps } from 'antd';
 import { PathSelector } from "../components/path_selector";
 import { savePathValidator } from "../lib/utils";
+
+const { Password } = Input;
 
 type AccountMode = "create" | "select";
 
@@ -64,6 +65,7 @@ export default function SettingsPage() {
                 config.proxy_port = 3030;
             }
             form.setFieldsValue(config);
+            console.log(config)
             if (config.token.length === 0) {
                 setOpenTour(true);
             }
@@ -182,6 +184,12 @@ export default function SettingsPage() {
                     style={{ margin: "0px" }}
                 >
                     <Password ref={tokenRef} placeholder="请输入 Canvas Token" />
+                </Form.Item>
+                <Form.Item name="account_type" label="账号类型（本部 or 密院）">
+                    <Select>
+                        <Select.Option value="Default">本部</Select.Option>
+                        <Select.Option value="JI">密院</Select.Option>
+                    </Select>
                 </Form.Item>
                 <Form.Item name="save_path" label="下载保存目录" required rules={[{ validator: savePathValidator }]}>
                     <PathSelector />

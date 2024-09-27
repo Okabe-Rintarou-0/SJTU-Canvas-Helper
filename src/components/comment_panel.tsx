@@ -5,6 +5,7 @@ import { useRef } from "react";
 import { MessageInstance } from "antd/es/message/interface";
 import { invoke } from "@tauri-apps/api";
 import { attachmentToFile } from "../lib/utils";
+import { useBaseURL } from "../lib/hooks";
 
 export default function CommentPanel({ attachment, assignmentId, courseId, showInput, me, onRefresh, onFocus, onBlur, onHoverEntry, onLeaveEntry, messageApi }:
     {
@@ -22,6 +23,7 @@ export default function CommentPanel({ attachment, assignmentId, courseId, showI
         messageApi: MessageInstance
     }) {
     const commentInputRef = useRef<TextAreaRef>(null);
+    const baseURL = useBaseURL();
     const handleCommentSubmission = async (attachment: Attachment) => {
         const comment = commentInputRef.current?.resizableTextArea?.textArea.value;
         if (!comment) {
@@ -65,18 +67,22 @@ export default function CommentPanel({ attachment, assignmentId, courseId, showI
         {attachment.comments.length > 0 && <>
             <Divider>历史评论</Divider>
             <List
+                loading={baseURL.isLoading}
                 itemLayout="horizontal"
                 dataSource={attachment.comments}
                 renderItem={(comment) => (
+
                     <List.Item actions={comment.author_id === me?.id ? [<a onClick={(e) => {
                         e.preventDefault();
                         handleDeleteComment(comment.id, attachment);
                     }}>删除</a>] : undefined}>
+
                         <List.Item.Meta
-                            avatar={<Avatar src={"https://oc.sjtu.edu.cn" + comment.avatar_path} />}
+                            avatar={<Avatar src={baseURL.data + comment.avatar_path} />}
                             title={comment.author_name}
                             description={comment.comment}
                         />
+
                         {comment.attachments.length > 0 && <Space>
                             <span>附件：</span>
                             {
@@ -91,15 +97,11 @@ export default function CommentPanel({ attachment, assignmentId, courseId, showI
                     </List.Item>
                 )}
             />
-        </>
-        }
-        {
-            showInput &&
-            <>
-                <Divider>发表评论</Divider>
-                <TextArea ref={commentInputRef} placeholder="请输入评论" onFocus={onFocus} onBlur={onBlur} />
-                <Button onClick={() => handleCommentSubmission(attachment)}>确认</Button>
-            </>
-        }
+        </>}
+        {showInput && <>
+            <Divider>发表评论</Divider>
+            <TextArea ref={commentInputRef} placeholder="请输入评论" onFocus={onFocus} onBlur={onBlur} />
+            <Button onClick={() => handleCommentSubmission(attachment)}>确认</Button>
+        </>}
     </Space>
 }

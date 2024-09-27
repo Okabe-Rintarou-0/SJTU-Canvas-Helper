@@ -6,7 +6,7 @@ import { invoke } from "@tauri-apps/api";
 import useMessage from "antd/es/message/useMessage";
 import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
-import { useCourses, useLoginModal, useMerger, usePreview } from "../lib/hooks";
+import { useBaseURL, useCourses, useLoginModal, useMerger, usePreview } from "../lib/hooks";
 import { FolderOutlined, HomeOutlined, LeftOutlined } from "@ant-design/icons"
 import { scrollToTop, getFileIcon } from "../lib/utils";
 import FileOrderSelectModal from "../components/file_order_select_modal";
@@ -39,6 +39,7 @@ export default function FilesPage() {
     const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry, setEntries } = usePreview();
     const { merger, mergePDFs } = useMerger({ setPreviewEntry, onHoverEntry, onLeaveEntry });
     const courses = useCourses();
+    const baseURL = useBaseURL();
     const downloadInfoMap = useMemo(() => new Map<number, DownloadInfo>(), []);
 
     useEffect(() => {
@@ -95,7 +96,7 @@ export default function FilesPage() {
                             {getFileIcon(file)}
                             <a
                                 target="_blank"
-                                href={`https://oc.sjtu.edu.cn/courses/${selectedCourseId}/files?preview=${file.id}`}
+                                href={`${baseURL.data}/courses/${selectedCourseId}/files?preview=${file.id}`}
                                 onMouseEnter={() => onHoverEntry(entry)}
                                 onMouseLeave={onLeaveEntry}
                             >
@@ -492,7 +493,7 @@ export default function FilesPage() {
             {currentFolderFullName && <span>当前目录：{currentFolderFullName}</span>}
             <Table style={{ width: "100%" }}
                 columns={fileColumns}
-                loading={loading}
+                loading={baseURL.isLoading || loading}
                 pagination={false}
                 dataSource={[...folders as Entry[], ...files as Entry[]].filter(shouldShow)}
                 rowSelection={{

@@ -6,7 +6,7 @@ import { Assignment, Attachment, GradeStatus, ScoreStatistic, Submission } from 
 import { invoke } from "@tauri-apps/api";
 import { assignmentIsEnded, assignmentNotNeedSubmit, attachmentToFile, formatDate, getBaseDate } from "../lib/utils";
 import CourseSelect from "../components/course_select";
-import { useCourses, useMe, usePreview } from "../lib/hooks";
+import { useBaseURL, useCourses, useMe, usePreview } from "../lib/hooks";
 import dayjs from "dayjs";
 import ModifyDDLModal from "../components/modify_ddl_modal";
 import { SubmitModal } from "../components/submit_modal";
@@ -29,6 +29,7 @@ export default function AssignmentsPage() {
     const [searchParams, setSearchParams] = useSearchParams();
     const courses = useCourses();
     const me = useMe();
+    const baseURL = useBaseURL();
 
     useEffect(() => {
         if (courses.data.length > 0) {
@@ -384,6 +385,7 @@ export default function AssignmentsPage() {
                             <Table columns={attachmentColumns} dataSource={linksMap[assignment.id]} pagination={false} />
                             <Divider orientation="left">历史评论</Divider>
                             <List
+                                loading={baseURL.isLoading}
                                 itemLayout="horizontal"
                                 dataSource={assignment.submission?.submission_comments}
                                 renderItem={(comment) => (
@@ -392,7 +394,7 @@ export default function AssignmentsPage() {
                                         handleDeleteComment(comment.id, assignment.id);
                                     }}>删除</a>] : undefined}>
                                         <List.Item.Meta
-                                            avatar={<Avatar src={"https://oc.sjtu.edu.cn" + comment.avatar_path} />}
+                                            avatar={<Avatar src={baseURL.data + comment.avatar_path} />}
                                             title={comment.author_name}
                                             description={comment.comment}
                                         />

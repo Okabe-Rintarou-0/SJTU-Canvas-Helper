@@ -8,6 +8,7 @@ import { invoke } from "@tauri-apps/api";
 import { getConfig, saveConfig } from "./store";
 import useWebSocket, { ReadyState } from "react-use-websocket";
 import { LoginAlertModal } from "../components/login_alert_modal";
+import { BASE_URL, JI_BASE_URL } from "./constants";
 
 const UPDATE_QRCODE_MESSAGE = "{ \"type\": \"UPDATE_QR_CODE\" }";
 const SEND_INTERVAL = 1000 * 50;
@@ -497,6 +498,7 @@ export function useCourseFolders(courseId?: number) {
     const shouldFetch = courseId != undefined;
     return useData<Folder[]>("list_course_folders", shouldFetch, args);
 }
+
 export const useKeyPress = (targetKey: string, action: () => void) => {
     useEffect(() => {
         const keyHandler = (event: KeyboardEvent) => {
@@ -513,3 +515,17 @@ export const useKeyPress = (targetKey: string, action: () => void) => {
         };
     }, [targetKey, action]);
 };
+
+export const useBaseURL = () => {
+    const [isLoading, setIsLoading] = useState<boolean>(true);
+    const [baseURL, setBaseURL] = useState<string>(BASE_URL);
+    useEffect(() => {
+        getConfig(true).then(config => {
+            if (config.account_type === "JI") {
+                setBaseURL(JI_BASE_URL);
+            }
+            setIsLoading(false);
+        });
+    }, []);
+    return { isLoading, data: baseURL };
+}

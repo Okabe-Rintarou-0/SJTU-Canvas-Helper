@@ -8,7 +8,7 @@ import { assignmentIsNotUnlocked, attachmentToFile, formatDate } from "../lib/ut
 import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
 import GradeStatisticChart from "../components/grade_statistic";
-import { useMe, usePreview, useTAOrTeacherCourses } from "../lib/hooks";
+import { useBaseURL, useMe, usePreview, useTAOrTeacherCourses } from "../lib/hooks";
 import CommentPanel from "../components/comment_panel";
 import { WarningOutlined } from "@ant-design/icons"
 import CourseFileSelector from "../components/course_file_selector";
@@ -39,6 +39,7 @@ export default function SubmissionsPage() {
     const [boundFiles, setBoundFiles] = useState<File[]>([]);
     const courses = useTAOrTeacherCourses();
     const me = useMe();
+    const baseURL = useBaseURL();
 
     const refreshSubmission = async (studentId: number) => {
         const submission = await invoke("get_single_course_assignment_submission", {
@@ -171,7 +172,7 @@ export default function SubmissionsPage() {
         title: '文件',
         dataIndex: 'display_name',
         key: 'display_name',
-        render: (name: string, attachment: Attachment) => <a href={`https://oc.sjtu.edu.cn/courses/${selectedCourseId}/gradebook/speed_grader?assignment_id=${selectedAssignment?.id}&student_id=${attachment.user_id}`}
+        render: (name: string, attachment: Attachment) => <a href={`${baseURL.data}/courses/${selectedCourseId}/gradebook/speed_grader?assignment_id=${selectedAssignment?.id}&student_id=${attachment.user_id}`}
             target="_blank"
             onMouseEnter={() => onHoverEntry(attachmentToFile(attachment))}
             onMouseLeave={onLeaveEntry}
@@ -446,7 +447,7 @@ export default function SubmissionsPage() {
             <Select mode="multiple" allowClear style={{ width: '100%' }} placeholder="请选择学生" onChange={(value) => { setKeywords(value) }} options={options} />
             <Table style={{ width: "100%" }}
                 columns={columns}
-                loading={loading}
+                loading={baseURL.isLoading || loading}
                 dataSource={showShowAttachments}
                 pagination={false}
                 rowSelection={{ onChange: handleAttachmentSelect, selectedRowKeys: selectedAttachments.map(attachment => attachment.key) }}

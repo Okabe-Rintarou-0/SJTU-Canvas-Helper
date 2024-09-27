@@ -11,6 +11,12 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v1.3.16 2024/9/27</Title>
+            <Paragraph>
+                <ul>
+                    <li>支持密院 canvas</li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v1.3.15 2024/9/26</Title>
             <Paragraph>
                 <ul>

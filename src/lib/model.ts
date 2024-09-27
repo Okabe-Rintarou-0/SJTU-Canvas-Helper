@@ -232,6 +232,7 @@ export type DownloadState = "downloading" | "succeed" | "fail" | "wait_retry";
 
 export interface AppConfig {
     token: string;
+    account_type: "Default" | "JI";
     save_path: string;
     serve_as_plaintext: string;
     ja_auth_cookie: string;
