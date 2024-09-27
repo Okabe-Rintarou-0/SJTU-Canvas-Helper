@@ -627,7 +627,7 @@ impl Client {
     }
 
     pub async fn get_me(&self, token: &str) -> Result<User> {
-        let url = format!("{}/api/v1/users/self", self.base_url.read().await,);
+        let url = format!("{}/api/v1/users/self", self.base_url.read().await);
         let me = self.get_json_with_token(&url, None::<&str>, token).await?;
         Ok(me)
     }
