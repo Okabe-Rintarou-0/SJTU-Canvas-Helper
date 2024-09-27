@@ -1,11 +1,13 @@
 import { decode } from "js-base64";
 import { getConfig } from "./store";
 import dayjs, { Dayjs } from "dayjs"
+import { checkUpdate } from '@tauri-apps/api/updater';
 import { Assignment, AssignmentDate, Attachment, File as FileModel } from "./model";
 import { PiMicrosoftExcelLogoFill, PiMicrosoftPowerpointLogoFill, PiMicrosoftWordLogoFill } from "react-icons/pi";
 import { FaRegFilePdf, FaImage, FaFileCsv, FaRegFileArchive, FaRegFileVideo, FaRegFileAudio } from "react-icons/fa";
 import { FileOutlined } from "@ant-design/icons"
 import { invoke } from "@tauri-apps/api";
+import { MessageInstance } from "antd/es/message/interface";
 
 export function formatDate(inputDate: string | undefined | null): string {
     if (!inputDate) {
@@ -224,4 +226,22 @@ export function getBigFileIcon(file: FileModel) {
 
 export function scrollToTop() {
     window.scrollTo(0, 0);
+}
+
+export async function checkForUpdates(messageApi: MessageInstance) {
+    try {
+        const messageKey = "checking";
+        messageApi.open({
+            key: messageKey,
+            type: "loading",
+            content: "检查中🚀..."
+        });
+        const { shouldUpdate } = await checkUpdate();
+        messageApi.destroy(messageKey);
+        if (!shouldUpdate) {
+            messageApi.warning("已经是最新版，无需更新😁");
+        }
+    } catch (error) {
+        messageApi.error("🥹出现错误：" + error);
+    }
 }

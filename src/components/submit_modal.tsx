@@ -88,7 +88,7 @@ export function SubmitModal({ open, onCancel, onSubmit, allowed_extensions, cour
                 key: "submitting",
                 type: "loading",
                 content: "正在提交中😄...请耐心等待！"
-            })
+            });
             await invoke("submit_assignment", { courseId, assignmentId, filePaths, comment });
             onSubmit?.();
         } catch (e) {

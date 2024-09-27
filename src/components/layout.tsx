@@ -9,6 +9,8 @@ import { ChangeLogModal } from './change_log_modal';
 import { LuBookOpenCheck } from 'react-icons/lu';
 import { useKeyPress } from '../lib/hooks';
 import { FaPeopleGroup } from "react-icons/fa6";
+import { checkForUpdates } from '../lib/utils';
+import useMessage from 'antd/es/message/useMessage';
 const { Content, Footer, Sider } = Layout;
 
 export default function BasicLayout({ children }: React.PropsWithChildren) {
@@ -72,6 +74,8 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
         token: { colorBgContainer, borderRadiusLG },
     } = theme.useToken();
 
+    const [messageApi, contextHolder] = useMessage();
+
     const [scale, setScale] = useState(1);
 
     const zoomIn = () => {
@@ -87,6 +91,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
     useKeyPress('-', zoomOut);
 
     return <Layout style={{ minHeight: "100vh" }}>
+        {contextHolder}
         <Sider theme="light" style={{ position: 'fixed', height: '100%' }}>
             <Menu theme="light" mode="inline" defaultSelectedKeys={selectedKeys} items={items} />
         </Sider>
@@ -111,6 +116,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
             <Footer style={{ textAlign: 'center' }}>
                 <Space>
                     <span>当前版本：{version}</span>
+                    <a onClick={() => checkForUpdates(messageApi)}>检查更新</a>
                     <a onClick={(e) => {
                         e.preventDefault();
                         setShowChangeLog(true);
