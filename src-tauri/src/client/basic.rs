@@ -34,8 +34,14 @@ impl Client {
         Self { cli, jar, base_url }
     }
 
-    pub async fn set_base_url<S: Into<String>>(&self, base_url: S) {
-        *self.base_url.write().await = base_url.into();
+    pub async fn set_base_url<S: Into<String>>(&self, base_url: S) -> bool {
+        let base_url = base_url.into();
+        tracing::info!("set_base_url: {:?}", &base_url);
+        if *self.base_url.read().await != base_url {
+            *self.base_url.write().await = base_url;
+            return true;
+        }
+        false
     }
 
     pub async fn delete_submission_comment(

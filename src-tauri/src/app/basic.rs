@@ -797,7 +797,9 @@ impl App {
         let config_path = App::get_config_path(&account);
         fs::write(&config_path, serde_json::to_vec(&config).unwrap())?;
         let base_url = Self::get_base_url(&config.account_type);
-        self.client.set_base_url(base_url).await;
+        if self.client.set_base_url(base_url).await {
+            self.invalidate_cache().await;
+        }
         *self.config.write().await = config;
         Ok(())
     }

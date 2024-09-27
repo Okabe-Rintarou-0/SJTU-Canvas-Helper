@@ -74,6 +74,7 @@ sudo xattr -r -d com.apple.quarantine /Applications/SJTU\ Canvas\ Helper.app SJT
 + [x] 人员名单导出
 + [x] 查看/提交作业
 + [x] 批改作业/修改作业 DDL
++ [x] 支持密院和本部 canvas 系统
 + [x] ~~视频下载/播放~~ (由于视频网站变动，该功能暂不支持)
 + [x] 自动更新 
 
