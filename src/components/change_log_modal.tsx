@@ -11,6 +11,12 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v1.3.17 2024/9/27</Title>
+            <Paragraph>
+                <ul>
+                    <li>恢复 canvas 视频下载功能，支持检查更新（见底部）</li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v1.3.16 2024/9/27</Title>
             <Paragraph>
                 <ul>

@@ -190,7 +190,6 @@ impl Client {
             .redirect(Policy::none())
             .cookie_provider(self.jar.clone())
             .build()?;
-
         let resp = client
             .post("https://courses.sjtu.edu.cn/lti/launch")
             .form(&data)

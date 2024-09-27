@@ -5,7 +5,7 @@ import { SwapOutlined } from '@ant-design/icons';
 import { VideoInfo, VideoPlayInfo, VideoDownloadTask, CanvasVideo } from "../lib/model";
 import useMessage from "antd/es/message/useMessage";
 import { getConfig, saveConfig } from "../lib/store";
-import { Button, Checkbox, Select, Space, Table } from "antd";
+import { Alert, Button, Checkbox, Select, Space, Table } from "antd";
 import VideoDownloadTable from "../components/video_download_table";
 import videoStyles from "../css/video_player.module.css";
 import { LoginAlert } from "../components/login_alert";
@@ -180,26 +180,26 @@ export default function VideoPage() {
         }
     }
 
-    const handlePlay = async (play: VideoPlayInfo) => {
-        let config = await getConfig();
-        let playURL = getVidePlayURL(play, config.proxy_port);
-        if (playURLs.find(URL => URL === playURL)) {
-            messageApi.warning("已经在播放啦😁");
-            return;
-        }
-        if (playURLs.length === 2) {
-            messageApi.error("☹️目前只支持双屏观看");
-            return;
-        }
-        await checkOrStartProxy();
-        if (playURLs.length === 0) {
-            setMainPlayURL(playURL);
-        }
-        if (play.index !== 0) {
-            setMutedPlayURL(playURL);
-        }
-        setPlayURLs(playURLs => [...playURLs, playURL]);
-    }
+    // const handlePlay = async (play: VideoPlayInfo) => {
+    //     let config = await getConfig();
+    //     let playURL = getVidePlayURL(play, config.proxy_port);
+    //     if (playURLs.find(URL => URL === playURL)) {
+    //         messageApi.warning("已经在播放啦😁");
+    //         return;
+    //     }
+    //     if (playURLs.length === 2) {
+    //         messageApi.error("☹️目前只支持双屏观看");
+    //         return;
+    //     }
+    //     await checkOrStartProxy();
+    //     if (playURLs.length === 0) {
+    //         setMainPlayURL(playURL);
+    //     }
+    //     if (play.index !== 0) {
+    //         setMutedPlayURL(playURL);
+    //     }
+    //     setPlayURLs(playURLs => [...playURLs, playURL]);
+    // }
 
     const handlePlayAll = async () => {
         if (playURLs.length === 2) {
@@ -240,10 +240,10 @@ export default function VideoPage() {
                         e.preventDefault();
                         handleDownloadVideo(play);
                     }}>下载</a>
-                    <a onClick={e => {
+                    {/* <a onClick={e => {
                         e.preventDefault();
                         handlePlay(play);
-                    }}>播放</a>
+                    }}>播放</a> */}
                 </Space>
             ),
         }
@@ -321,6 +321,7 @@ export default function VideoPage() {
     return <BasicLayout>
         {contextHolder}
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
+            <Alert type="info" showIcon message={"提示"} description="由于 canvas 启用新版视频系统，目前只恢复了下载功能，暂不支持播放。总体功能尚不稳定，待进一步修复。" />
             {shouldShowAlert && <LoginAlert qrcode={qrcode} refreshQRCode={refreshQRCode} />}
             {!notLogin && <>
                 <CourseSelect courses={courses.data} onChange={handleSelectCourse}></CourseSelect>
@@ -344,7 +345,7 @@ export default function VideoPage() {
                         <Checkbox disabled={noSubVideo} defaultChecked onChange={(e) => setSyncPlay(e.target.checked)}>同步播放</Checkbox>
                     </Space>
                     <Space>
-                        <Button disabled={plays.length < 2} onClick={handlePlayAll}>播放全部</Button>
+                        <Button disabled onClick={handlePlayAll}>播放全部</Button>
                         <Button icon={<SwapOutlined />} disabled={noSubVideo} onClick={handleSwapVideo}>主副屏切换</Button>
                         <Select style={{ width: 150 }}
                             disabled={noSubVideo}
