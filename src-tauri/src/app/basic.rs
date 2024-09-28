@@ -26,7 +26,7 @@ use crate::{
     utils::{self, TempFile},
 };
 
-use super::App;
+use super::{constants::COURSES_CACHE_KEY, App};
 
 const MY_CANVAS_FILES_FOLDER_NAME: &str = "我的Canvas文件";
 
@@ -138,8 +138,9 @@ impl App {
         Ok(())
     }
 
-    async fn invalidate_cache(&self) {
-        *self.cached_courses.write().await = None;
+    fn invalidate_cache(&self) -> Result<()> {
+        self.cache.clear()?;
+        Ok(())
     }
 
     pub async fn switch_account(&self, account: &Account) -> Result<()> {
@@ -156,7 +157,7 @@ impl App {
         account_info.current_account = account.clone();
         App::save_account_info(&account_info)?;
         *self.current_account.write().await = account.clone();
-        self.invalidate_cache().await;
+        self.invalidate_cache()?;
         Ok(())
     }
 
@@ -195,7 +196,7 @@ impl App {
             current_account: RwLock::new(account_info.current_account),
             config: RwLock::new(config),
             handle: Default::default(),
-            cached_courses: Default::default(),
+            cache: Default::default(),
         }
     }
 
@@ -281,14 +282,14 @@ impl App {
     }
 
     pub async fn list_courses(&self) -> Result<Vec<Course>> {
-        if let Some(cached_courses) = self.cached_courses.read().await.clone() {
+        if let Some(cached_courses) = self.cache.get(COURSES_CACHE_KEY)? {
             return Ok(cached_courses);
         }
         let courses = self
             .client
             .list_courses(&self.config.read().await.token)
             .await?;
-        *self.cached_courses.write().await = Some(courses.clone());
+        self.cache.set(COURSES_CACHE_KEY, courses.clone())?;
         Ok(courses)
     }
 
@@ -798,7 +799,7 @@ impl App {
         fs::write(&config_path, serde_json::to_vec(&config).unwrap())?;
         let base_url = Self::get_base_url(&config.account_type);
         if self.client.set_base_url(base_url).await {
-            self.invalidate_cache().await;
+            self.invalidate_cache()?;
         }
         *self.config.write().await = config;
         Ok(())

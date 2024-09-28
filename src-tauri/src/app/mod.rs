@@ -1,11 +1,14 @@
+use cache::Cache;
 use std::sync::Arc;
 use tokio::{sync::RwLock, task::JoinHandle};
 
 use crate::{
     client::Client,
-    model::{Account, AppConfig, Course},
+    model::{Account, AppConfig},
 };
 pub mod basic;
+pub mod cache;
+mod constants;
 pub mod jbox;
 pub mod video;
 
@@ -14,7 +17,7 @@ pub struct App {
     current_account: RwLock<Account>,
     config: RwLock<AppConfig>,
     handle: RwLock<Option<JoinHandle<()>>>,
-    cached_courses: RwLock<Option<Vec<Course>>>,
+    cache: Cache,
 }
 
 #[cfg(test)]

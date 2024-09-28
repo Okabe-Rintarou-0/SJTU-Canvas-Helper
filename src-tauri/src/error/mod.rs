@@ -38,6 +38,8 @@ pub enum AppError {
     NotAllowedToDeleteDefaultAccount,
     #[error("Not allowed to create default account")]
     NotAllowedToCreateDefaultAccount,
+    #[error("Mutex error")]
+    MutexError,
 }
 
 impl serde::Serialize for AppError {
