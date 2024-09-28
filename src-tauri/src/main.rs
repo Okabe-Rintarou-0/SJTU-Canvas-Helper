@@ -167,6 +167,11 @@ async fn get_config() -> AppConfig {
 }
 
 #[tauri::command]
+async fn get_raw_config() -> Result<String> {
+    APP.get_raw_config().await
+}
+
+#[tauri::command]
 fn check_path(path: String) -> bool {
     App::check_path(&path)
 }
@@ -555,6 +560,7 @@ async fn main() -> Result<()> {
             get_folder_by_id,
             get_colors,
             get_config,
+            get_raw_config,
             save_config,
             save_file_content,
             open_course_file,

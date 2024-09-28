@@ -8,6 +8,7 @@ import { getConfig, saveConfig } from "../lib/store";
 import type { InputRef, TourProps } from 'antd';
 import { PathSelector } from "../components/path_selector";
 import { savePathValidator } from "../lib/utils";
+import ReactJson from "react-json-view-ts";
 
 const { Password } = Input;
 
@@ -24,6 +25,7 @@ export default function SettingsPage() {
     const [openTour, setOpenTour] = useState<boolean>(false);
     const [accountMode, setAccountMode] = useState<AccountMode>("select");
     const [currentAccount, setCurrentAccount] = useState<string>("");
+    const [rawConfig, setRawConfig] = useState<string>("");
 
     const steps: TourProps['steps'] = [
         {
@@ -78,6 +80,9 @@ export default function SettingsPage() {
         try {
             await saveConfig(config);
             messageApi.success("保存成功！");
+            if (rawConfig) {
+                await getRawConfig();
+            }
         } catch (e) {
             messageApi.error(e as string);
         }
@@ -140,6 +145,15 @@ export default function SettingsPage() {
             messageApi.success("删除账号成功🎉！");
         } catch (e) {
             messageApi.error(`删除账号失败😢：${e}`);
+        }
+    }
+
+    const getRawConfig = async () => {
+        try {
+            let rawConfig = await invoke("get_raw_config") as string;
+            setRawConfig(rawConfig);
+        } catch (e) {
+            messageApi.error(`获取失败😢：${e}`);
         }
     }
 
@@ -212,12 +226,18 @@ export default function SettingsPage() {
                         </Button>
                     </Form.Item>
                     <Form.Item>
+                        {!rawConfig && <Button onClick={getRawConfig}>显示配置文件</Button>}
+                        {rawConfig && <Button onClick={() => setRawConfig("")}>隐藏配置文件</Button>}
+                    </Form.Item>
+                    <Form.Item>
                         <Button onClick={handleOpenConfigDir}>
                             打开配置目录
                         </Button>
                     </Form.Item>
                 </Space>
             </Form>
+
+            {rawConfig && <ReactJson style={{ overflow: "scroll" }} src={JSON.parse(rawConfig)} collapsed={1} />}
         </Space>
         {openTour && <Tour open={openTour} onClose={() => setOpenTour(false)} steps={steps} />}
     </BasicLayout >

@@ -281,6 +281,13 @@ impl App {
         self.config.read().await.clone()
     }
 
+    pub async fn get_raw_config(&self) -> Result<String> {
+        let account = self.current_account.read().await.clone();
+        let config_path = App::get_config_path(&account);
+        let content = fs::read_to_string(config_path)?;
+        Ok(content)
+    }
+
     pub async fn list_courses(&self) -> Result<Vec<Course>> {
         if let Some(cached_courses) = self.cache.get(COURSES_CACHE_KEY)? {
             return Ok(cached_courses);
