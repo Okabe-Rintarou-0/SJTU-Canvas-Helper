@@ -7,6 +7,8 @@ import { invoke } from "@tauri-apps/api";
 import useMessage from "antd/es/message/useMessage";
 import { CalendarEvent, Colors, Course } from "../lib/model";
 import { Link } from "react-router-dom";
+import ClosableAlert from "../components/closable_alert";
+import { CALENDAR_PAGE_HINT_ALERT_KEY } from "../lib/constants";
 
 export default function CalendarPage() {
     const [currentDate, setCurrentDate] = useState<Dayjs>(dayjs());
@@ -127,21 +129,22 @@ export default function CalendarPage() {
         return courseId;
     }
 
-    const hintList = hintEvents.map(event => {
-        const now = dayjs();
-        const diff = dayjs(event.end_at).diff(now, 'hour');
-        const days = Math.floor(diff / 24);
-        const hours = diff % 24;
-        return <div key={event.id}>
-            距离作业<Link to={`/assignments?id=${getCourseId(event)}`} >{event.title}</Link>({event.context_name})截止还有<b>{days}天{hours}小时</b>
-        </div>
-    });
+    const hintList = hintEvents.length === 0 ? <div>暂无临近 DDL，尽情享受当下😎</div> :
+        hintEvents.map(event => {
+            const now = dayjs();
+            const diff = dayjs(event.end_at).diff(now, 'hour');
+            const days = Math.floor(diff / 24);
+            const hours = diff % 24;
+            return <div key={event.id}>
+                距离作业<Link to={`/assignments?id=${getCourseId(event)}`} >{event.title}</Link>({event.context_name})截止还有<b>{days}天{hours}小时</b>
+            </div>
+        });
 
     return <BasicLayout>
         {contextHolder}
         <Space direction="vertical">
-            <Alert message={"DDL 提示"} description={hintList} type="warning" showIcon />
-            <Alert message={"温馨提示"} description={"按下左右键可以切换月份哦😙"} type="info" showIcon />
+            <Alert message="DDL 提示" description={hintList} type="warning" showIcon />
+            <ClosableAlert message="温馨提示" description="按下左右键可以切换月份哦😙" alertType="info" configKey={CALENDAR_PAGE_HINT_ALERT_KEY} />
             <Spin spinning={loading}>
                 <Calendar onPanelChange={handlePanelChange} cellRender={cellRender} value={currentValue} onChange={setCurrentValue} />
             </Spin>

@@ -238,7 +238,8 @@ export interface AppConfig {
     ja_auth_cookie: string;
     video_cookies: string;
     proxy_port: number;
-    course_assignment_file_bindings: Record<number, File[]>
+    course_assignment_file_bindings: Record<number, File[]>;
+    show_alert_map: Record<string, boolean>;
 }
 
 export interface AccountInfo {

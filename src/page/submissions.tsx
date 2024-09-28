@@ -14,6 +14,8 @@ import { WarningOutlined } from "@ant-design/icons"
 import CourseFileSelector from "../components/course_file_selector";
 import { getConfig, saveConfig } from "../lib/store";
 import type { SelectProps } from 'antd';
+import ClosableAlert from "../components/closable_alert";
+import { SUBMISSION_PAGE_HINT_ALERT_KEY } from "../lib/constants";
 
 
 export default function SubmissionsPage() {
@@ -402,6 +404,13 @@ export default function SubmissionsPage() {
         {contextHolder}
         {previewer}
         <Space direction="vertical" style={{ width: "100%", overflow: "scroll" }} size={"large"}>
+            <ClosableAlert message="使用指南" alertType="info" configKey={SUBMISSION_PAGE_HINT_ALERT_KEY}
+                description={<div>
+                    <p>选择文件按钮可以绑定与课程相关的文件。绑定完成后，文件将以超链接的形式存在。鼠标移动到链接上并按下空格键即可进行预览；</p>
+                    <p>填写分数后按下回车键即可提交成绩；</p>
+                    <p>移动到文件名超链接上按下空格键或者按下右边的“预览”即可开启文件预览。预览窗口打开后，可以按下键盘⬅️➡️键切换到前（后）一个提交文件。</p>
+                </div>}
+            />
             <CourseSelect onChange={handleCourseSelect} disabled={operating} courses={courses.data} />
             <Space>
                 <span>选择作业：</span>

@@ -1,6 +1,10 @@
 export const BASE_URL = "https://oc.sjtu.edu.cn";
 export const JI_BASE_URL = "https://jicanvas.com";
 
+export const VIDEO_PAGE_HINT_ALERT_KEY = "video-page-hint-alert-key";
+export const CALENDAR_PAGE_HINT_ALERT_KEY = "calendar-page-hint-alert-key";
+export const SUBMISSION_PAGE_HINT_ALERT_KEY = "submission-page-hint-alert-key";
+
 // Please see: https://github.com/highlightjs/highlight.js/blob/main/SUPPORTED_LANGUAGES.md
 // Exclusion: 'excel', 'xls', 'xlsx', 
 // 'svg'

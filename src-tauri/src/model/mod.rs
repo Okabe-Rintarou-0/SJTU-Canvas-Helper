@@ -148,6 +148,8 @@ pub struct AppConfig {
     pub jbox_login_info: JBoxLoginInfo,
     #[serde(default)]
     pub course_assignment_file_bindings: HashMap<i64, Vec<File>>,
+    #[serde(default)]
+    pub show_alert_map: HashMap<String, bool>,
 }
 
 impl Default for AppConfig {
@@ -163,6 +165,7 @@ impl Default for AppConfig {
             proxy_port: 3030,
             jbox_login_info: Default::default(),
             course_assignment_file_bindings: Default::default(),
+            show_alert_map: Default::default(),
         }
     }
 }

@@ -5,12 +5,14 @@ import { SwapOutlined } from '@ant-design/icons';
 import { VideoInfo, VideoPlayInfo, VideoDownloadTask, CanvasVideo } from "../lib/model";
 import useMessage from "antd/es/message/useMessage";
 import { getConfig, saveConfig } from "../lib/store";
-import { Alert, Button, Checkbox, Select, Space, Table } from "antd";
+import { Button, Checkbox, Select, Space, Table } from "antd";
 import VideoDownloadTable from "../components/video_download_table";
 import videoStyles from "../css/video_player.module.css";
 import { LoginAlert } from "../components/login_alert";
 import { useCourses, useQRCode } from "../lib/hooks";
 import CourseSelect from "../components/course_select";
+import ClosableAlert from "../components/closable_alert";
+import { VIDEO_PAGE_HINT_ALERT_KEY } from "../lib/constants";
 
 export default function VideoPage() {
     const [downloadTasks, setDownloadTasks] = useState<VideoDownloadTask[]>([]);
@@ -321,7 +323,8 @@ export default function VideoPage() {
     return <BasicLayout>
         {contextHolder}
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
-            <Alert type="info" showIcon message={"提示"} description="由于 canvas 启用新版视频系统，目前只恢复了下载功能，暂不支持播放。总体功能尚不稳定，待进一步修复。" />
+            <ClosableAlert alertType="info" message={"提示"} configKey={VIDEO_PAGE_HINT_ALERT_KEY}
+                description="由于 canvas 启用新版视频系统，目前只恢复了下载功能，暂不支持播放。总体功能尚不稳定，待进一步修复。" />
             {shouldShowAlert && <LoginAlert qrcode={qrcode} refreshQRCode={refreshQRCode} />}
             {!notLogin && <>
                 <CourseSelect courses={courses.data} onChange={handleSelectCourse}></CourseSelect>
