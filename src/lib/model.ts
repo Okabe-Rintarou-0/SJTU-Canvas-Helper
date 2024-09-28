@@ -512,3 +512,14 @@ export interface DraggableItem {
     content: string;
     data: any;
 }
+
+export interface VideoAggregateParams {
+    mainVideoPath: string;
+    subVideoPath: string;
+    outputDir: string;
+    outputName: string;
+    // 0% ~ 100%, 100% by default
+    subVideoAlpha: number;
+    // 0% ~ 50%, 25% by default
+    subVideoSizePercentage: number;
+}

@@ -40,6 +40,10 @@ pub enum AppError {
     NotAllowedToCreateDefaultAccount,
     #[error("Mutex error")]
     MutexError,
+    #[error("Failed to open stdout")]
+    OpenStdoutError,
+    #[error("Failed to open stderr")]
+    OpenStderrError,
 }
 
 impl serde::Serialize for AppError {

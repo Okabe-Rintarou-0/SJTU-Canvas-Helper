@@ -11,6 +11,14 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v1.3.18 2024/9/28</Title>
+            <Paragraph>
+                <ul>
+                    <li>新增更详细的操作提示，且提示现在可以关闭（点击不再显示）</li>
+                    <li>支持合并视频（需要预先安装好 ffmpeg）</li>
+                    <li>支持以 JSON 格式查看配置文件（“设置-显示配置文件”）</li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v1.3.17 2024/9/27</Title>
             <Paragraph>
                 <ul>

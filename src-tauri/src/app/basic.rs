@@ -6,10 +6,12 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
+    process::{Command, Stdio},
     sync::Arc,
     time::Duration,
 };
-use tauri::api::path::config_dir;
+use tauri::{api::path::config_dir, Runtime, Window};
+use tokio::{io::AsyncReadExt, process::Command as TokioCommand};
 use tokio::{sync::RwLock, task::JoinSet};
 use uuid::Uuid;
 use warp::{hyper::Response, Filter};
@@ -183,10 +185,7 @@ impl App {
         tracing::info!("Read current account: {:?}", account_info);
         let config_path = App::get_config_path(&account_info.current_account);
         tracing::info!("Read config path: {}", config_path);
-        let config = match App::read_config_from_file(&config_path) {
-            Ok(config) => config,
-            Err(_) => Default::default(),
-        };
+        let config = App::read_config_from_file(&config_path).unwrap_or_default();
 
         let base_url = Self::get_base_url(&config.account_type);
         let client = Client::with_base_url(base_url);
@@ -966,5 +965,86 @@ impl App {
         let pdf_content = fs::read(&pdf_path)?;
         fs::remove_file(&pdf_path)?;
         Ok(pdf_content)
+    }
+
+    pub fn is_ffmpeg_installed() -> bool {
+        let output = Command::new("ffmpeg").arg("-version").output();
+        match output {
+            Ok(output) => output.status.success(),
+            Err(_) => false,
+        }
+    }
+
+    // return execute command, whether succeeded and exit code
+    pub async fn run_video_aggregate<R: Runtime>(
+        window: Window<R>,
+        params: &VideoAggregateParams,
+    ) -> Result<i32> {
+        let scale_percentage = params.sub_video_size_percentage as f64 / 100.0;
+        let scale_width = format!("iw*{}", scale_percentage);
+        let scale_height = format!("ih*{}", scale_percentage);
+
+        let alpha_value = params.sub_video_alpha as f64 / 100.0;
+        let output_path = format!("{}/{}", params.output_dir, params.output_name);
+
+        let mut command = TokioCommand::new("ffmpeg")
+            .args([
+                "-i",
+                &params.main_video_path,
+                "-i",
+                &params.sub_video_path,
+                "-filter_complex",
+                &format!(
+                    "[1:v]scale={}:{}[overlay];[0:v][overlay]overlay=W-w:H-h:format=auto:alpha={}",
+                    scale_width, scale_height, alpha_value
+                ),
+                "-c:a",
+                "copy",
+                &output_path,
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+
+        // catch stdout
+        let mut stdout = command.stdout.take().ok_or(AppError::OpenStdoutError)?;
+        let mut stderr = command.stderr.take().ok_or(AppError::OpenStderrError)?;
+
+        let command_str = format!(
+            "ffmpeg -i \"{}\" -i \"{}\" -filter_complex \"[1:v]scale={}:{}[overlay];[0:v][overlay]overlay=W-w:H-h:format=auto:alpha={}\" -c:a copy \"{}\"",
+            params.main_video_path,
+            params.sub_video_path,
+            scale_width,
+            scale_height,
+            alpha_value,
+            output_path
+        );
+        let _ = window.emit("ffmpeg://output", command_str + "\n");
+        let window_cloned = window.clone();
+
+        tokio::spawn(async move {
+            let mut buffer = [0; 128];
+            while let Ok(bytes_read) = stdout.read(&mut buffer).await {
+                if bytes_read == 0 {
+                    break; // EOF
+                }
+                let output = String::from_utf8_lossy(&buffer[..bytes_read]);
+                let _ = window.emit("ffmpeg://output", output.to_string());
+            }
+        });
+
+        tokio::spawn(async move {
+            let mut buffer = [0; 128];
+            while let Ok(bytes_read) = stderr.read(&mut buffer).await {
+                if bytes_read == 0 {
+                    break; // EOF
+                }
+                let output = String::from_utf8_lossy(&buffer[..bytes_read]);
+                let _ = window_cloned.emit("ffmpeg://output", output.to_string());
+            }
+        });
+
+        let status = command.wait().await?;
+        Ok(status.code().unwrap_or_default())
     }
 }

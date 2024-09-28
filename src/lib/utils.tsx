@@ -228,6 +228,10 @@ export function scrollToTop() {
     window.scrollTo(0, 0);
 }
 
+export function scrollToEnd() {
+    window.scrollTo(0, document.body.scrollHeight);
+}
+
 export async function checkForUpdates(messageApi: MessageInstance) {
     try {
         const messageKey = "checking";

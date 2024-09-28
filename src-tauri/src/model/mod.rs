@@ -971,3 +971,15 @@ pub struct RelationshipTopo {
     pub nodes: Vec<RelationshipNode>,
     pub edges: Vec<RelationshipEdge>,
 }
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoAggregateParams {
+    pub main_video_path: String,
+    pub sub_video_path: String,
+    pub output_dir: String,
+    pub output_name: String,
+    // 0% ~ 100%, 100% by default
+    pub sub_video_alpha: u8,
+    // 0% ~ 50%, 25% by default
+    pub sub_video_size_percentage: u8,
+}

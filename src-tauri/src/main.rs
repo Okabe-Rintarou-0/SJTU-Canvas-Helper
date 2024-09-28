@@ -5,7 +5,7 @@ use error::Result;
 use model::{
     Account, AccountInfo, AppConfig, Assignment, CalendarEvent, CanvasVideo, Colors, Course,
     DiscussionTopic, File, Folder, FullDiscussion, QRCodeScanResult, RelationshipTopo, Subject,
-    Submission, User, UserSubmissions, VideoCourse, VideoInfo, VideoPlayInfo,
+    Submission, User, UserSubmissions, VideoAggregateParams, VideoCourse, VideoInfo, VideoPlayInfo,
 };
 
 use tauri::{Runtime, Window};
@@ -22,6 +22,19 @@ extern crate lazy_static;
 
 lazy_static! {
     static ref APP: App = App::new();
+}
+
+#[tauri::command]
+fn is_ffmpeg_installed() -> bool {
+    App::is_ffmpeg_installed()
+}
+
+#[tauri::command]
+async fn run_video_aggregate<R: Runtime>(
+    window: Window<R>,
+    params: VideoAggregateParams,
+) -> Result<i32> {
+    App::run_video_aggregate(window, &params).await
 }
 
 #[tauri::command]
@@ -528,6 +541,8 @@ async fn main() -> Result<()> {
     APP.init().await?;
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            is_ffmpeg_installed,
+            run_video_aggregate,
             collect_relationship,
             switch_account,
             create_account,
