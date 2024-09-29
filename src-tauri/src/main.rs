@@ -8,7 +8,12 @@ use model::{
     Submission, User, UserSubmissions, VideoAggregateParams, VideoCourse, VideoInfo, VideoPlayInfo,
 };
 
-use tauri::{Runtime, Window};
+use tauri::{api::path::config_dir, Runtime, Window};
+use tracing::Level;
+use tracing_subscriber::{
+    fmt::{self, writer::MakeWriterExt},
+    layer::SubscriberExt,
+};
 
 use crate::app::App;
 mod app;
@@ -535,9 +540,25 @@ async fn upload_file<R: Runtime>(window: Window<R>, file: File, save_dir: String
     .await
 }
 
+fn setup_log() -> Result<()> {
+    let appender = tracing_appender::rolling::never(App::config_dir()?, "app.log");
+    let (non_blocking, _guard) = tracing_appender::non_blocking(appender);
+    let subscriber = tracing_subscriber::registry()
+        .with(
+            fmt::Layer::new()
+                .with_writer(std::io::stdout.with_max_level(Level::INFO))
+                .pretty(),
+        )
+        .with(fmt::Layer::new().with_writer(non_blocking.with_max_level(Level::INFO)));
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("Unable to set a tracing subscriber");
+    tracing::info!("log setup, path: {:?}", config_dir());
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
+    setup_log()?;
     APP.init().await?;
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![

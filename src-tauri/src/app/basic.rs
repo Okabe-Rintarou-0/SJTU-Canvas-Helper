@@ -54,7 +54,7 @@ impl App {
         }
     }
 
-    fn config_dir() -> Result<String> {
+    pub fn config_dir() -> Result<String> {
         if App::portable() {
             let exe_dir = std::env::current_exe()
                 .map(|path| path.parent().unwrap().to_owned())

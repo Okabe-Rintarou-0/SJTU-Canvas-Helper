@@ -8,10 +8,13 @@ install:
 dev:
 	cd $(TAURI_SRC_DIR) && yarn tauri dev
 
+lint:
+	cd $(TAURI_SRC_DIR) && cargo clippy --workspace --all-targets --all-features
+
 clean:
 	rm -rf $(TAURI_TARGET_DIR)
 
 test:
 	cd $(TAURI_SRC_DIR) && cargo test
 
-.PHONY: install dev clean test
+.PHONY: install dev lint clean test
