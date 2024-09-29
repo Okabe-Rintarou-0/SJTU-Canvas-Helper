@@ -944,7 +944,7 @@ impl App {
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    fn convert_pptx_to_pdf_inner(&self, pptx_path: &PathBuf, pdf_path: &PathBuf) -> Result<()> {
+    fn convert_pptx_to_pdf_inner(&self, _: &PathBuf, _: &PathBuf) -> Result<()> {
         Err(AppError::FunctionUnsupported)
     }
 
