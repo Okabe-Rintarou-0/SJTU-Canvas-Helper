@@ -1,0 +1,32 @@
+name: Rust lint
+
+on:
+    push:
+      branches: [main, dev]
+    pull_request:
+      branches: ["**"]
+
+# Make sure CI fails on all warnings, including Clippy lints
+env:
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  rust_lint:
+    defaults:
+      run:
+        working-directory: ./src-tauri
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+      - uses: actions/checkout@v4
+      - name: install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --all-features
