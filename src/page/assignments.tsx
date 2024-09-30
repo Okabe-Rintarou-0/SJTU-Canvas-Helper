@@ -2,7 +2,7 @@ import { Avatar, Button, Checkbox, CheckboxProps, Divider, List, Space, Table, T
 import BasicLayout from "../components/layout";
 import useMessage from "antd/es/message/useMessage";
 import { useEffect, useState } from "react";
-import { Assignment, Attachment, GradeStatus, ScoreStatistic, Submission } from "../lib/model";
+import { Assignment, Attachment, GradeStatus, LOG_LEVEL_ERROR, ScoreStatistic, Submission } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import { assignmentIsEnded, assignmentNotNeedSubmit, attachmentToFile, consoleLog, formatDate, getBaseDate } from "../lib/utils";
 import CourseSelect from "../components/course_select";
@@ -315,7 +315,7 @@ export default function AssignmentsPage() {
             assignment.submission = submission;
             setAssignments([...assignments]);
         } catch (e) {
-            consoleLog(e);
+            consoleLog(LOG_LEVEL_ERROR, e);
             messageApi.error(`加载出错🥹：${e}`);
         }
     }
@@ -330,7 +330,7 @@ export default function AssignmentsPage() {
             messageApi.success("删除成功！🎉", 0.5);
             handleGetMySingleSubmission(selectedCourseId, assignmentId);
         } catch (e) {
-            consoleLog(e);
+            consoleLog(LOG_LEVEL_ERROR, e);
             messageApi.error(e as string);
         }
     }

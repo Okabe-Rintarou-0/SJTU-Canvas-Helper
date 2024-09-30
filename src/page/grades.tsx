@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import BasicLayout from "../components/layout";
 import { useAssignments, useStudents, useTAOrTeacherCourses, useUserSubmissions } from "../lib/hooks";
 import CourseSelect from "../components/course_select";
-import { Assignment, Course, GradeStatistic, Submission, User } from "../lib/model";
+import { Assignment, Course, GradeStatistic, LOG_LEVEL_ERROR, Submission, User } from "../lib/model";
 import { Button, Empty, Form, Input, Space, Spin, Table, Tabs, TabsProps, Tag } from "antd";
 import { assignmentIsEnded, consoleLog } from "../lib/utils";
 import GradeStatisticChart from "../components/grade_statistic";
@@ -73,13 +73,14 @@ export default function GradePage() {
                 title: assignment.name,
                 dataIndex: assignment.id,
                 key: assignment.id,
-                render: (submission: Submission | undefined) => {
+                render: (submission: Submission | undefined, record: any) => {
                     const notSubmitted = isEnded && submission?.workflow_state === "unsubmitted";
                     const grade = submission?.grade ?? "";
                     return <Space>
                         <Input defaultValue={grade} disabled={readonlyGrade} style={{ width: "100px" }} key={submission?.id} onPressEnter={(e) => {
-                            if (submission) {
-                                handleGrade(e.currentTarget.value, assignment, submission);
+                            let userId = record["userId"];
+                            if (submission || userId) {
+                                handleGrade(e.currentTarget.value, assignment, submission?.user_id ?? userId);
                             }
                         }} />
                         {submission?.late && <Tag color="geekblue">迟交</Tag>}
@@ -97,6 +98,7 @@ export default function GradePage() {
             const record: Record<any, any> = {};
             us.submissions.map(submission => record[submission.assignment_id] = submission);
             record["username"] = us.username;
+            record["userId"] = us.user_id;
             record["key"] = `${us.user_id}${selectedCourseId}`;
             data.push(record);
         });
@@ -182,7 +184,7 @@ export default function GradePage() {
         return 0 <= gradeNumber && (!maxGrade || gradeNumber <= maxGrade);
     }
 
-    const handleGrade = async (grade: string, assignment: Assignment, submission: Submission) => {
+    const handleGrade = async (grade: string, assignment: Assignment, studentId: number) => {
         if (!validateGrade(grade, assignment)) {
             messageApi.error("请输入正确格式的评分（不超过上限的正数或空字符串）！🙅🙅🙅");
             return;
@@ -191,12 +193,12 @@ export default function GradePage() {
             await invoke("update_grade", {
                 courseId: selectedCourseId,
                 assignmentId: assignment.id,
-                studentId: submission.user_id,
+                studentId,
                 grade
             });
             messageApi.success("打分成功！🎉", 0.5);
         } catch (e) {
-            consoleLog(e);
+            consoleLog(LOG_LEVEL_ERROR, e);
             messageApi.error(`打分时出错🥹：${e}`);
         }
     }
@@ -224,7 +226,7 @@ export default function GradePage() {
             await invoke("export_excel", { data: exportData, fileName, folderPath });
             messageApi.success("导出成功🎉！");
         } catch (e) {
-            consoleLog(e);
+            consoleLog(LOG_LEVEL_ERROR, e);
             messageApi.error(`导出失败🥹：${e}`);
         }
     }

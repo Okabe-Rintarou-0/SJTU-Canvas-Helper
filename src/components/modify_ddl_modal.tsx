@@ -1,5 +1,5 @@
 import { useForm } from "antd/lib/form/Form";
-import { Assignment, AssignmentDate, User } from "../lib/model";
+import { Assignment, AssignmentDate, LOG_LEVEL_ERROR, User } from "../lib/model";
 import { Button, DatePicker, Form, Modal, Select, Space, Tag } from "antd";
 import dayjs, { Dayjs } from "dayjs";
 import { useEffect, useMemo, useState } from "react";
@@ -64,7 +64,7 @@ export default function ModifyDDLModal({ open, assignment, courseId, handleCance
                 const users = await invoke("list_course_students", { courseId }) as User[];
                 setUsers(users);
             } catch (e) {
-                consoleLog(e);
+                consoleLog(LOG_LEVEL_ERROR, e);
             }
         }
         handleInitUsers();

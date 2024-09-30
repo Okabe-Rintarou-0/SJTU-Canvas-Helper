@@ -4,8 +4,9 @@
 use error::Result;
 use model::{
     Account, AccountInfo, AppConfig, Assignment, CalendarEvent, CanvasVideo, Colors, Course,
-    DiscussionTopic, File, Folder, FullDiscussion, QRCodeScanResult, RelationshipTopo, Subject,
-    Submission, User, UserSubmissions, VideoAggregateParams, VideoCourse, VideoInfo, VideoPlayInfo,
+    DiscussionTopic, File, Folder, FullDiscussion, LogLevel, QRCodeScanResult, RelationshipTopo,
+    Subject, Submission, User, UserSubmissions, VideoAggregateParams, VideoCourse, VideoInfo,
+    VideoPlayInfo,
 };
 
 use tauri::{api::path::config_dir, Runtime, Window};
@@ -541,8 +542,37 @@ async fn upload_file<R: Runtime>(window: Window<R>, file: File, save_dir: String
 }
 
 #[tauri::command]
-fn console_log(message: String, context: String) {
-    tracing::info!(target: "frontend_console", context = context, message = message);
+fn console_log(log_level: i32, message: String, context: String) {
+    match log_level.into() {
+        LogLevel::Debug => {
+            tracing::debug!(
+                target: "frontend_console",
+                context = context,
+                message = message
+            )
+        }
+        LogLevel::Info => {
+            tracing::info!(
+                target: "frontend_console",
+                context = context,
+                message = message
+            )
+        }
+        LogLevel::Warn => {
+            tracing::warn!(
+                target: "frontend_console",
+                context = context,
+                message = message
+            )
+        }
+        LogLevel::Error => {
+            tracing::error!(
+                target: "frontend_console",
+                context = context,
+                message = message
+            )
+        }
+    };
 }
 
 fn setup_log() -> Result<()> {

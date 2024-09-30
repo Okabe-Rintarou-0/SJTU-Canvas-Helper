@@ -2,7 +2,7 @@ import { Card, Empty, Select, Space } from "antd";
 import BasicLayout from "../components/layout";
 import useMessage from "antd/es/message/useMessage";
 import { useState } from "react";
-import { DiscussionTopic, FullDiscussion } from "../lib/model";
+import { DiscussionTopic, FullDiscussion, LOG_LEVEL_ERROR } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import CourseSelect from "../components/course_select";
 import { MessageBox } from "react-chat-elements";
@@ -46,7 +46,7 @@ export default function DiscussionsPage() {
             let fullDiscussion = await invoke("get_full_discussion", { courseId, topicId }) as FullDiscussion;
             setFullDiscussion(fullDiscussion);
         } catch (e) {
-            consoleLog(e);
+            consoleLog(LOG_LEVEL_ERROR, e);
             messageApi.error(`获取讨论内容失败：${e}`);
         }
     }

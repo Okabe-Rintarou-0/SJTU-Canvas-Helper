@@ -1,7 +1,7 @@
 import { Button, Checkbox, CheckboxProps, Divider, Input, Space, Table, Tabs, TabsProps, message } from "antd";
 import BasicLayout from "../components/layout";
 import { useEffect, useMemo, useState } from "react";
-import { Course, Entry, entryName, File, FileDownloadTask, Folder, isFile } from "../lib/model";
+import { Course, Entry, entryName, File, FileDownloadTask, Folder, isFile, LOG_LEVEL_ERROR } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import useMessage from "antd/es/message/useMessage";
 import CourseSelect from "../components/course_select";
@@ -178,7 +178,7 @@ export default function FilesPage() {
             let myFolders = await invoke("list_my_folders") as Folder[];
             initWithFolders(myFolders);
         } catch (e) {
-            consoleLog(e);
+            consoleLog(LOG_LEVEL_ERROR, e);
             clearFilesAndFolders();
         }
     }
@@ -232,7 +232,7 @@ export default function FilesPage() {
         try {
             await Promise.all([handleGetFolderFolders(folderId), handleGetFolderFiles(folderId)]);
         } catch (e) {
-            consoleLog(e);
+            consoleLog(LOG_LEVEL_ERROR, e);
             setFiles([]);
             setFolders([]);
         }
@@ -313,7 +313,7 @@ export default function FilesPage() {
             }
             filesToSync.map(file => handleAddDownloadFileTask(file));
         } catch (e) {
-            consoleLog(e);
+            consoleLog(LOG_LEVEL_ERROR, e);
             messageApi.error(`同步失败😑：${e}`)
         }
     }

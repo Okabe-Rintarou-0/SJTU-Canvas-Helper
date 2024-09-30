@@ -1,6 +1,8 @@
 import { Alert, Radio, Space } from "antd";
 import { ReactNode, useEffect, useState } from "react";
 import { getConfig, saveConfig } from "../lib/store";
+import { consoleLog } from "../lib/utils";
+import { LOG_LEVEL_INFO } from "../lib/model";
 
 export interface ClosableAlertProps {
     // The "not-show-again" option will be persisted in the config with a given key
@@ -14,7 +16,7 @@ export default function ClosableAlert(props: ClosableAlertProps) {
     const [show, setShow] = useState<boolean>(false);
     useEffect(() => {
         getConfig(true).then(config => {
-            console.log(config)
+            consoleLog(LOG_LEVEL_INFO, config)
             // judge if configKey is in the map
             if (!config.show_alert_map.hasOwnProperty(props.configKey) || config.show_alert_map[props.configKey]) {
                 setShow(true);

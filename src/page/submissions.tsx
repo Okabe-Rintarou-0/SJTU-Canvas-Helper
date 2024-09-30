@@ -2,7 +2,7 @@ import { Button, Input, Popconfirm, Select, Space, Table, Tag } from "antd";
 import BasicLayout from "../components/layout";
 import useMessage from "antd/es/message/useMessage";
 import { ReactNode, useEffect, useMemo, useState } from "react";
-import { Assignment, Attachment, File, FileDownloadTask, GradeStatistic, Submission, User } from "../lib/model";
+import { Assignment, Attachment, File, FileDownloadTask, GradeStatistic, LOG_LEVEL_ERROR, Submission, User } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import { assignmentIsNotUnlocked, attachmentToFile, consoleLog, formatDate } from "../lib/utils";
 import CourseSelect from "../components/course_select";
@@ -152,7 +152,7 @@ export default function SubmissionsPage() {
             updateGradeStatistic(attachments);
             messageApi.success("打分成功！🎉", 0.5);
         } catch (e) {
-            consoleLog(e);
+            consoleLog(LOG_LEVEL_ERROR, e);
             messageApi.error(e as string);
         }
     }

@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api";
 import { useEffect, useRef, useState } from "react";
 import BasicLayout from "../components/layout";
 import { SwapOutlined } from '@ant-design/icons';
-import { VideoInfo, VideoPlayInfo, VideoDownloadTask, CanvasVideo } from "../lib/model";
+import { VideoInfo, VideoPlayInfo, VideoDownloadTask, CanvasVideo, LOG_LEVEL_ERROR } from "../lib/model";
 import useMessage from "antd/es/message/useMessage";
 import { getConfig, saveConfig } from "../lib/store";
 import { Button, Checkbox, Divider, Select, Space, Table } from "antd";
@@ -45,7 +45,7 @@ export default function VideoPage() {
             await invoke("login_canvas_website");
             return true;
         } catch (e) {
-            consoleLog(e);
+            consoleLog(LOG_LEVEL_ERROR, e);
             return false;
         }
     }

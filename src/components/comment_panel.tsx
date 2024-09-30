@@ -1,5 +1,5 @@
 import { Avatar, Button, Divider, List, Space } from "antd";
-import { Attachment, Entry, User } from "../lib/model";
+import { Attachment, Entry, LOG_LEVEL_ERROR, User } from "../lib/model";
 import TextArea, { TextAreaRef } from "antd/es/input/TextArea";
 import { useRef } from "react";
 import { MessageInstance } from "antd/es/message/interface";
@@ -41,7 +41,7 @@ export default function CommentPanel({ attachment, assignmentId, courseId, showI
             await messageApi.success("评论成功！🎉", 0.5);
             await onRefresh?.(attachment.user_id);
         } catch (e) {
-            consoleLog(e);
+            consoleLog(LOG_LEVEL_ERROR, e);
             messageApi.error(e as string);
         }
     }
@@ -57,7 +57,7 @@ export default function CommentPanel({ attachment, assignmentId, courseId, showI
             await onRefresh?.(attachment.user_id);
             messageApi.success("删除成功！🎉", 0.5);
         } catch (e) {
-            consoleLog(e);
+            consoleLog(LOG_LEVEL_ERROR, e);
             messageApi.error(e as string);
         }
     }

@@ -1,3 +1,10 @@
+export const LOG_LEVEL_DEBUG = 0;
+export const LOG_LEVEL_INFO = 1;
+export const LOG_LEVEL_WARN = 2;
+export const LOG_LEVEL_ERROR = 3;
+
+export type LogLevel = number;
+
 export interface Course {
     id: number;
     uuid: string;

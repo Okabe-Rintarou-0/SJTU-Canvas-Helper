@@ -983,3 +983,22 @@ pub struct VideoAggregateParams {
     // 0% ~ 50%, 25% by default
     pub sub_video_size_percentage: u8,
 }
+
+pub enum LogLevel {
+    Debug = 0,
+    Info = 1,
+    Warn = 2,
+    Error = 3,
+}
+
+impl From<i32> for LogLevel {
+    fn from(value: i32) -> Self {
+        match value {
+            0 => LogLevel::Debug,
+            1 => LogLevel::Info,
+            2 => LogLevel::Warn,
+            3 => LogLevel::Error,
+            _ => LogLevel::Debug,
+        }
+    }
+}

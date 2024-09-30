@@ -614,7 +614,6 @@ impl Client {
             let res = res??;
             let partition_id = res.0;
             let partitioned_user_submissions = res.1;
-            tracing::info!("partition {} done", partition_id);
             results[partition_id] = partitioned_user_submissions;
         }
 

@@ -7,6 +7,7 @@ import { consoleLog, dataURLtoFile, getFileType } from "../lib/utils";
 import { ArchiveSupportedRenderers } from "./renderers";
 import { Archive } from 'libarchive.js';
 import { invoke } from "@tauri-apps/api";
+import { LOG_LEVEL_ERROR } from "../lib/model";
 
 interface BlackListEntry {
     name: string,
@@ -98,7 +99,7 @@ export default function ArchiveRenderer({
             let treeData = await parseArchiveStructureBFS(files);
             setTreeData(treeData);
         } catch (e) {
-            consoleLog(e);
+            consoleLog(LOG_LEVEL_ERROR, e);
             messageApi.error(e as string);
         }
     }

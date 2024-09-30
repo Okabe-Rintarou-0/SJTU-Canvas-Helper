@@ -1,7 +1,7 @@
 import { Button, Form, Image, Input, InputNumber, Select, Space, Tour } from "antd";
 import BasicLayout from "../components/layout";
 import { useEffect, useRef, useState } from "react";
-import { AccountInfo, AppConfig, User } from "../lib/model";
+import { AccountInfo, AppConfig, LOG_LEVEL_INFO, User } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
 import useMessage from "antd/es/message/useMessage";
 import { getConfig, saveConfig } from "../lib/store";
@@ -67,7 +67,7 @@ export default function SettingsPage() {
                 config.proxy_port = 3030;
             }
             form.setFieldsValue(config);
-            consoleLog("init config: ", config)
+            consoleLog(LOG_LEVEL_INFO, "init config: ", config)
             if (config.token.length === 0) {
                 setOpenTour(true);
             }

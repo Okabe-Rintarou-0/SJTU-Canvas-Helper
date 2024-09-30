@@ -4,7 +4,7 @@ import { useForm } from "antd/es/form/Form";
 import { useEffect, useRef, useState } from "react";
 import { PathSelector } from "./path_selector";
 import useMessage from "antd/es/message/useMessage";
-import { VideoAggregateParams } from "../lib/model";
+import { LOG_LEVEL_INFO, VideoAggregateParams } from "../lib/model";
 import { appWindow } from "@tauri-apps/api/window";
 import { consoleLog } from "../lib/utils";
 
@@ -59,7 +59,7 @@ export default function VideoAggregator() {
 
     const handleSubmit = async (params: VideoAggregateParams) => {
         params.outputName += ".mp4";
-        consoleLog("params: " + params);
+        consoleLog(LOG_LEVEL_INFO, "params: ", params);
         if (!preCheckFfmpegState()) {
             return;
         }

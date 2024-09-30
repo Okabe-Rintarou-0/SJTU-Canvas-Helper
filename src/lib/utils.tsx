@@ -2,7 +2,7 @@ import { decode } from "js-base64";
 import { getConfig } from "./store";
 import dayjs, { Dayjs } from "dayjs"
 import { checkUpdate } from '@tauri-apps/api/updater';
-import { Assignment, AssignmentDate, Attachment, File as FileModel } from "./model";
+import { Assignment, AssignmentDate, Attachment, File as FileModel, LogLevel } from "./model";
 import { PiMicrosoftExcelLogoFill, PiMicrosoftPowerpointLogoFill, PiMicrosoftWordLogoFill } from "react-icons/pi";
 import { FaRegFilePdf, FaImage, FaFileCsv, FaRegFileArchive, FaRegFileVideo, FaRegFileAudio } from "react-icons/fa";
 import { FileOutlined } from "@ant-design/icons"
@@ -250,7 +250,7 @@ export async function checkForUpdates(messageApi: MessageInstance) {
     }
 }
 
-export function consoleLog(...messages: any[]) {
+export function consoleLog(logLevel: LogLevel, ...messages: any[]) {
     let message = messages.map(msg => {
         if (typeof (msg) === "object") {
             return JSON.stringify(msg);
@@ -259,7 +259,7 @@ export function consoleLog(...messages: any[]) {
         }
     }).join(" ");
 
-    const context = new Error().stack?.split("\n").splice(1).join("\n");
-    invoke("console_log", { context, message });
+    const context = new Error().stack?.split("\n")[1];
+    invoke("console_log", { logLevel, context, message });
     console.log(message);
 }

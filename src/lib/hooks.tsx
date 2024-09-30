@@ -1,6 +1,6 @@
 import { CSSProperties, Dispatch, ReactNode, SetStateAction, useEffect, useState } from "react";
 import PreviewModal from "../components/preview_modal";
-import { Assignment, Course, Entry, File, Folder, isFile, LoginMessage, RelationshipTopo, User, UserSubmissions } from "./model";
+import { Assignment, Course, Entry, File, Folder, isFile, LOG_LEVEL_ERROR, LOG_LEVEL_INFO, LoginMessage, RelationshipTopo, User, UserSubmissions } from "./model";
 import PDFMerger from 'pdf-merger-js/browser';
 import { Button, Input, Progress, Space, message } from "antd";
 import dayjs from "dayjs";
@@ -308,7 +308,7 @@ export function useQRCode({ onScanSuccess }: {
             if (!JAAuthCookie) {
                 return;
             }
-            consoleLog("读取到 JAAuthCookie: ", JAAuthCookie);
+            consoleLog(LOG_LEVEL_INFO, "读取到 JAAuthCookie: ", JAAuthCookie);
             let config = await getConfig();
             config.ja_auth_cookie = JAAuthCookie;
             await saveConfig(config);
@@ -343,7 +343,7 @@ export function useQRCode({ onScanSuccess }: {
                         break;
                 }
             } catch (e) {
-                consoleLog(e);
+                consoleLog(LOG_LEVEL_ERROR, e);
             }
         }
     }, [lastMessage]);
@@ -381,7 +381,7 @@ export function useData<T>(command: string, shouldFetch: boolean, args?: any) {
             const data = await invoke(command, args) as T;
             setData(data);
         } catch (e) {
-            consoleLog(e);
+            consoleLog(LOG_LEVEL_ERROR, e);
             setError(e);
         }
         setIsLoading(false);
