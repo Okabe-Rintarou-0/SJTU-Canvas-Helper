@@ -9,6 +9,7 @@ import { getConfig, saveConfig } from "./store";
 import useWebSocket, { ReadyState } from "react-use-websocket";
 import { LoginAlertModal } from "../components/login_alert_modal";
 import { BASE_URL, JI_BASE_URL } from "./constants";
+import { consoleLog } from "./utils";
 
 const UPDATE_QRCODE_MESSAGE = "{ \"type\": \"UPDATE_QR_CODE\" }";
 const SEND_INTERVAL = 1000 * 50;
@@ -307,7 +308,7 @@ export function useQRCode({ onScanSuccess }: {
             if (!JAAuthCookie) {
                 return;
             }
-            console.log("读取到 JAAuthCookie: ", JAAuthCookie);
+            consoleLog("读取到 JAAuthCookie: ", JAAuthCookie);
             let config = await getConfig();
             config.ja_auth_cookie = JAAuthCookie;
             await saveConfig(config);
@@ -342,7 +343,7 @@ export function useQRCode({ onScanSuccess }: {
                         break;
                 }
             } catch (e) {
-                console.log(e);
+                consoleLog(e);
             }
         }
     }, [lastMessage]);
@@ -380,7 +381,7 @@ export function useData<T>(command: string, shouldFetch: boolean, args?: any) {
             const data = await invoke(command, args) as T;
             setData(data);
         } catch (e) {
-            console.log(e);
+            consoleLog(e);
             setError(e);
         }
         setIsLoading(false);

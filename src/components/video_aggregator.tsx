@@ -6,6 +6,7 @@ import { PathSelector } from "./path_selector";
 import useMessage from "antd/es/message/useMessage";
 import { VideoAggregateParams } from "../lib/model";
 import { appWindow } from "@tauri-apps/api/window";
+import { consoleLog } from "../lib/utils";
 
 type FfmpegState = "unknown" | "installed" | "uninstalled";
 
@@ -58,7 +59,7 @@ export default function VideoAggregator() {
 
     const handleSubmit = async (params: VideoAggregateParams) => {
         params.outputName += ".mp4";
-        console.log("params: ", params);
+        consoleLog("params: " + params);
         if (!preCheckFfmpegState()) {
             return;
         }

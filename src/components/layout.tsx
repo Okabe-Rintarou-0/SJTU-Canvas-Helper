@@ -79,7 +79,6 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
     const [scale, setScale] = useState(1);
 
     const zoomIn = () => {
-        console.log("zoom in")
         setScale(prevScale => prevScale + 0.1);
     };
 

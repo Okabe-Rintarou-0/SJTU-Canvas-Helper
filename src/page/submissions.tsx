@@ -4,7 +4,7 @@ import useMessage from "antd/es/message/useMessage";
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import { Assignment, Attachment, File, FileDownloadTask, GradeStatistic, Submission, User } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
-import { assignmentIsNotUnlocked, attachmentToFile, formatDate } from "../lib/utils";
+import { assignmentIsNotUnlocked, attachmentToFile, consoleLog, formatDate } from "../lib/utils";
 import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
 import GradeStatisticChart from "../components/grade_statistic";
@@ -152,7 +152,7 @@ export default function SubmissionsPage() {
             updateGradeStatistic(attachments);
             messageApi.success("打分成功！🎉", 0.5);
         } catch (e) {
-            console.log(e as string);
+            consoleLog(e);
             messageApi.error(e as string);
         }
     }

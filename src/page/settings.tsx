@@ -7,7 +7,7 @@ import useMessage from "antd/es/message/useMessage";
 import { getConfig, saveConfig } from "../lib/store";
 import type { InputRef, TourProps } from 'antd';
 import { PathSelector } from "../components/path_selector";
-import { savePathValidator } from "../lib/utils";
+import { consoleLog, savePathValidator } from "../lib/utils";
 import ReactJson from "react-json-view-ts";
 
 const { Password } = Input;
@@ -67,7 +67,7 @@ export default function SettingsPage() {
                 config.proxy_port = 3030;
             }
             form.setFieldsValue(config);
-            console.log(config)
+            consoleLog("init config: ", config)
             if (config.token.length === 0) {
                 setOpenTour(true);
             }

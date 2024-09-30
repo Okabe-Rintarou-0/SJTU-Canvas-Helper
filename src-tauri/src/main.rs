@@ -540,6 +540,11 @@ async fn upload_file<R: Runtime>(window: Window<R>, file: File, save_dir: String
     .await
 }
 
+#[tauri::command]
+fn console_log(message: String, context: String) {
+    tracing::info!(target: "frontend_console", context = context, message = message);
+}
+
 fn setup_log() -> Result<()> {
     let appender = tracing_appender::rolling::never(App::config_dir()?, "app.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(appender);
@@ -562,6 +567,7 @@ async fn main() -> Result<()> {
     APP.init().await?;
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            console_log,
             is_ffmpeg_installed,
             run_video_aggregate,
             collect_relationship,

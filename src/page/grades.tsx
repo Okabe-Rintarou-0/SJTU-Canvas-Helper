@@ -4,7 +4,7 @@ import { useAssignments, useStudents, useTAOrTeacherCourses, useUserSubmissions 
 import CourseSelect from "../components/course_select";
 import { Assignment, Course, GradeStatistic, Submission, User } from "../lib/model";
 import { Button, Empty, Form, Input, Space, Spin, Table, Tabs, TabsProps, Tag } from "antd";
-import { assignmentIsEnded } from "../lib/utils";
+import { assignmentIsEnded, consoleLog } from "../lib/utils";
 import GradeStatisticChart from "../components/grade_statistic";
 import useMessage from "antd/es/message/useMessage";
 import { invoke } from "@tauri-apps/api";
@@ -196,7 +196,7 @@ export default function GradePage() {
             });
             messageApi.success("打分成功！🎉", 0.5);
         } catch (e) {
-            console.log(e);
+            consoleLog(e);
             messageApi.error(`打分时出错🥹：${e}`);
         }
     }
@@ -224,7 +224,7 @@ export default function GradePage() {
             await invoke("export_excel", { data: exportData, fileName, folderPath });
             messageApi.success("导出成功🎉！");
         } catch (e) {
-            console.log(e);
+            consoleLog(e);
             messageApi.error(`导出失败🥹：${e}`);
         }
     }

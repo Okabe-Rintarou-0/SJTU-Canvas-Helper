@@ -3,7 +3,7 @@ import { File, DownloadState, FileDownloadTask, ProgressPayload } from "../lib/m
 import { appWindow } from "@tauri-apps/api/window";
 import React, { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api";
-import { sleep } from "../lib/utils";
+import { consoleLog, sleep } from "../lib/utils";
 import useMessage from "antd/es/message/useMessage";
 
 export default function FileDownloadTable({
@@ -56,7 +56,7 @@ export default function FileDownloadTable({
                 break;
             } catch (e) {
                 updateTaskProgress(file.uuid, undefined, e as string);
-                console.log(e);
+                consoleLog(e);
                 retries += 1;
             }
             await sleep(1000 * backoffCoef);

@@ -3,7 +3,7 @@ import { Button, Space, Tree, TreeDataNode, TreeProps } from "antd";
 import { useEffect, useState } from "react";
 import { DownOutlined } from '@ant-design/icons';
 import useMessage from "antd/es/message/useMessage";
-import { dataURLtoFile, getFileType } from "../lib/utils";
+import { consoleLog, dataURLtoFile, getFileType } from "../lib/utils";
 import { ArchiveSupportedRenderers } from "./renderers";
 import { Archive } from 'libarchive.js';
 import { invoke } from "@tauri-apps/api";
@@ -98,7 +98,7 @@ export default function ArchiveRenderer({
             let treeData = await parseArchiveStructureBFS(files);
             setTreeData(treeData);
         } catch (e) {
-            console.log(e as string);
+            consoleLog(e);
             messageApi.error(e as string);
         }
     }

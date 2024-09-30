@@ -14,6 +14,7 @@ import CourseSelect from "../components/course_select";
 import ClosableAlert from "../components/closable_alert";
 import { VIDEO_PAGE_HINT_ALERT_KEY } from "../lib/constants";
 import VideoAggregator from "../components/video_aggregator";
+import { consoleLog } from "../lib/utils";
 
 export default function VideoPage() {
     const [downloadTasks, setDownloadTasks] = useState<VideoDownloadTask[]>([]);
@@ -44,7 +45,7 @@ export default function VideoPage() {
             await invoke("login_canvas_website");
             return true;
         } catch (e) {
-            console.log(e);
+            consoleLog(e);
             return false;
         }
     }

@@ -4,7 +4,7 @@ import useMessage from "antd/es/message/useMessage";
 import { useEffect, useState } from "react";
 import { Assignment, Attachment, GradeStatus, ScoreStatistic, Submission } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
-import { assignmentIsEnded, assignmentNotNeedSubmit, attachmentToFile, formatDate, getBaseDate } from "../lib/utils";
+import { assignmentIsEnded, assignmentNotNeedSubmit, attachmentToFile, consoleLog, formatDate, getBaseDate } from "../lib/utils";
 import CourseSelect from "../components/course_select";
 import { useBaseURL, useCourses, useMe, usePreview } from "../lib/hooks";
 import dayjs from "dayjs";
@@ -315,7 +315,7 @@ export default function AssignmentsPage() {
             assignment.submission = submission;
             setAssignments([...assignments]);
         } catch (e) {
-            console.log(e);
+            consoleLog(e);
             messageApi.error(`加载出错🥹：${e}`);
         }
     }
@@ -330,7 +330,7 @@ export default function AssignmentsPage() {
             messageApi.success("删除成功！🎉", 0.5);
             handleGetMySingleSubmission(selectedCourseId, assignmentId);
         } catch (e) {
-            console.log(e as string);
+            consoleLog(e);
             messageApi.error(e as string);
         }
     }

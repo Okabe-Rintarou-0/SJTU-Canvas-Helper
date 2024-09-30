@@ -8,7 +8,7 @@ import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
 import { useBaseURL, useCourses, useLoginModal, useMerger, usePreview } from "../lib/hooks";
 import { FolderOutlined, HomeOutlined, LeftOutlined } from "@ant-design/icons"
-import { scrollToTop, getFileIcon } from "../lib/utils";
+import { scrollToTop, getFileIcon, consoleLog } from "../lib/utils";
 import FileOrderSelectModal from "../components/file_order_select_modal";
 
 interface DownloadInfo {
@@ -54,7 +54,6 @@ export default function FilesPage() {
 
     useEffect(() => {
         if (section === MY_FILES) {
-            console.log("my")
             initAllMyFolders();
         } else {
             if (selectedCourseId !== -1) {
@@ -179,7 +178,7 @@ export default function FilesPage() {
             let myFolders = await invoke("list_my_folders") as Folder[];
             initWithFolders(myFolders);
         } catch (e) {
-            console.log(e);
+            consoleLog(e);
             clearFilesAndFolders();
         }
     }
@@ -233,7 +232,7 @@ export default function FilesPage() {
         try {
             await Promise.all([handleGetFolderFolders(folderId), handleGetFolderFiles(folderId)]);
         } catch (e) {
-            console.log(e);
+            consoleLog(e);
             setFiles([]);
             setFolders([]);
         }
@@ -314,7 +313,7 @@ export default function FilesPage() {
             }
             filesToSync.map(file => handleAddDownloadFileTask(file));
         } catch (e) {
-            console.log(e);
+            consoleLog(e);
             messageApi.error(`同步失败😑：${e}`)
         }
     }

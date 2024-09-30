@@ -5,6 +5,7 @@ import dayjs, { Dayjs } from "dayjs";
 import { useEffect, useMemo, useState } from "react";
 import useMessage from "antd/es/message/useMessage";
 import { invoke } from "@tauri-apps/api";
+import { consoleLog } from "../lib/utils";
 
 const ALL_USERS = [0];
 const ALL_USERS_TARGET = ALL_USERS.join(",");
@@ -63,7 +64,7 @@ export default function ModifyDDLModal({ open, assignment, courseId, handleCance
                 const users = await invoke("list_course_students", { courseId }) as User[];
                 setUsers(users);
             } catch (e) {
-                console.log(e);
+                consoleLog(e);
             }
         }
         handleInitUsers();

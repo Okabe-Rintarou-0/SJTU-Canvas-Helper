@@ -4,7 +4,7 @@ import TextArea, { TextAreaRef } from "antd/es/input/TextArea";
 import { useRef } from "react";
 import { MessageInstance } from "antd/es/message/interface";
 import { invoke } from "@tauri-apps/api";
-import { attachmentToFile } from "../lib/utils";
+import { attachmentToFile, consoleLog } from "../lib/utils";
 import { useBaseURL } from "../lib/hooks";
 
 export default function CommentPanel({ attachment, assignmentId, courseId, showInput, me, onRefresh, onFocus, onBlur, onHoverEntry, onLeaveEntry, messageApi }:
@@ -41,7 +41,7 @@ export default function CommentPanel({ attachment, assignmentId, courseId, showI
             await messageApi.success("评论成功！🎉", 0.5);
             await onRefresh?.(attachment.user_id);
         } catch (e) {
-            console.log(e as string);
+            consoleLog(e);
             messageApi.error(e as string);
         }
     }
@@ -57,7 +57,7 @@ export default function CommentPanel({ attachment, assignmentId, courseId, showI
             await onRefresh?.(attachment.user_id);
             messageApi.success("删除成功！🎉", 0.5);
         } catch (e) {
-            console.log(e as string);
+            consoleLog(e);
             messageApi.error(e as string);
         }
     }

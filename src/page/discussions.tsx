@@ -9,6 +9,7 @@ import { MessageBox } from "react-chat-elements";
 import { useCourses, useMe } from "../lib/hooks";
 
 import 'react-chat-elements/dist/main.css'
+import { consoleLog } from "../lib/utils";
 
 export default function DiscussionsPage() {
     const [messageApi, contextHolder] = useMessage();
@@ -45,7 +46,7 @@ export default function DiscussionsPage() {
             let fullDiscussion = await invoke("get_full_discussion", { courseId, topicId }) as FullDiscussion;
             setFullDiscussion(fullDiscussion);
         } catch (e) {
-            console.log(e);
+            consoleLog(e);
             messageApi.error(`获取讨论内容失败：${e}`);
         }
     }

@@ -249,3 +249,17 @@ export async function checkForUpdates(messageApi: MessageInstance) {
         messageApi.error("🥹出现错误：" + error);
     }
 }
+
+export function consoleLog(...messages: any[]) {
+    let message = messages.map(msg => {
+        if (typeof (msg) === "object") {
+            return JSON.stringify(msg);
+        } else {
+            return String(msg);
+        }
+    }).join(" ");
+
+    const context = new Error().stack?.split("\n").splice(1).join("\n");
+    invoke("console_log", { context, message });
+    console.log(message);
+}
