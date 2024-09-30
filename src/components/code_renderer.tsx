@@ -9,7 +9,7 @@ export default function CodeRenderer({
     if (!currentDocument || currentDocument.fileData === undefined) return null;
     const data = decodeBase64Data(currentDocument.fileData as string);
 
-    return <Highlight className={currentDocument.fileType} >{data}</Highlight>
+    return <Highlight className={currentDocument.fileType}>{data}</Highlight>
 }
 
 CodeRenderer.fileTypes = CODE_LIKE_EXTENSIONS;

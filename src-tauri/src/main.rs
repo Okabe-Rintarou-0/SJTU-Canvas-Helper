@@ -31,6 +31,11 @@ lazy_static! {
 }
 
 #[tauri::command]
+fn read_log_content() -> Result<String> {
+    App::read_log_content()
+}
+
+#[tauri::command]
 fn is_ffmpeg_installed() -> bool {
     App::is_ffmpeg_installed()
 }
@@ -597,6 +602,7 @@ async fn main() -> Result<()> {
     APP.init().await?;
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            read_log_content,
             console_log,
             is_ffmpeg_installed,
             run_video_aggregate,

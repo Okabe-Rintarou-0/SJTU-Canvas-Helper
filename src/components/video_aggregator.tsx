@@ -1,12 +1,13 @@
 import { invoke } from "@tauri-apps/api";
 import { Badge, Button, Divider, Form, Input, InputNumber, Space } from "antd";
 import { useForm } from "antd/es/form/Form";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { PathSelector } from "./path_selector";
 import useMessage from "antd/es/message/useMessage";
 import { LOG_LEVEL_INFO, VideoAggregateParams } from "../lib/model";
 import { appWindow } from "@tauri-apps/api/window";
 import { consoleLog } from "../lib/utils";
+import ReactAnsi from 'react-ansi'
 
 type FfmpegState = "unknown" | "installed" | "uninstalled";
 
@@ -25,7 +26,6 @@ export default function VideoAggregator() {
     const [running, setRunning] = useState<boolean>(false);
     const [form] = useForm<VideoAggregateParams>();
     const [messageApi, contextHolder] = useMessage();
-    const preRef = useRef<HTMLPreElement>(null);
 
     const handleCheckFfmpegState = async () => {
         let installed = await invoke("is_ffmpeg_installed");
@@ -48,9 +48,6 @@ export default function VideoAggregator() {
     useEffect(() => {
         let unlistenOutput = appWindow.listen<String>("ffmpeg://output", ({ payload }) => {
             setOutput(output => output + payload);
-            if (preRef.current) {
-                preRef.current.scrollTop = preRef.current.scrollHeight;
-            }
         });
         return () => {
             unlistenOutput.then(f => f());
@@ -123,10 +120,10 @@ export default function VideoAggregator() {
             </Form.Item>
         </Form>
         <Divider orientation="left">执行输出</Divider>
-        <pre style={{ width: "100%", maxHeight: "500px", overflow: "scroll" }} ref={preRef} >
-            <code style={{ width: "100%", whiteSpace: "pre-wrap" }}>
-                {output}
-            </code>
-        </pre>
+        {output && <ReactAnsi log={output}
+            bodyStyle={{ height: '100%', overflowY: 'auto' }}
+            logStyle={{ height: 500 }}
+            autoScroll
+        />}
     </Space>
 }

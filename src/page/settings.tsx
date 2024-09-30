@@ -9,6 +9,7 @@ import type { InputRef, TourProps } from 'antd';
 import { PathSelector } from "../components/path_selector";
 import { consoleLog, savePathValidator } from "../lib/utils";
 import ReactJson from "react-json-view-ts";
+import LogModal from "../components/log_modal";
 
 const { Password } = Input;
 
@@ -26,6 +27,7 @@ export default function SettingsPage() {
     const [accountMode, setAccountMode] = useState<AccountMode>("select");
     const [currentAccount, setCurrentAccount] = useState<string>("");
     const [rawConfig, setRawConfig] = useState<string>("");
+    const [showLogModal, setShowLogModal] = useState<boolean>(false);
 
     const steps: TourProps['steps'] = [
         {
@@ -226,8 +228,13 @@ export default function SettingsPage() {
                         </Button>
                     </Form.Item>
                     <Form.Item>
-                        {!rawConfig && <Button onClick={getRawConfig}>显示配置文件</Button>}
-                        {rawConfig && <Button onClick={() => setRawConfig("")}>隐藏配置文件</Button>}
+                        {!rawConfig && <Button onClick={getRawConfig}>显示配置</Button>}
+                        {rawConfig && <Button onClick={() => setRawConfig("")}>隐藏配置</Button>}
+                    </Form.Item>
+                    <Form.Item>
+                        <Button onClick={() => setShowLogModal(true)}>
+                            查看日志
+                        </Button>
                     </Form.Item>
                     <Form.Item>
                         <Button onClick={handleOpenConfigDir}>
@@ -236,7 +243,7 @@ export default function SettingsPage() {
                     </Form.Item>
                 </Space>
             </Form>
-
+            {showLogModal && <LogModal onClose={() => setShowLogModal(false)} />}
             {rawConfig && <ReactJson style={{ overflow: "scroll" }} src={JSON.parse(rawConfig)} collapsed={1} />}
         </Space>
         {openTour && <Tour open={openTour} onClose={() => setOpenTour(false)} steps={steps} />}

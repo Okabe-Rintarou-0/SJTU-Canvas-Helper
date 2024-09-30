@@ -501,7 +501,7 @@
   dependencies:
     "@babel/helper-plugin-utils" "^7.24.0"
 
-"@babel/runtime@^7.0.0":
+"@babel/runtime@^7.0.0", "@babel/runtime@^7.7.2", "@babel/runtime@^7.8.7":
   version "7.25.6"
   resolved "https://registry.yarnpkg.com/@babel/runtime/-/runtime-7.25.6.tgz#9afc3289f7184d8d7f98b099884c26317b9264d2"
   integrity sha512-VBj9MYyDb9tuLq7yzqjgzt6Q+IBQLrGZfdjOekyEirZPHxXWoTSGUTMrpsfi58Up73d13NfYLv8HT9vmznjzhQ==
@@ -1373,6 +1373,11 @@ agent-base@6:
   dependencies:
     debug "4"
 
+anser@^1.4.8:
+  version "1.4.10"
+  resolved "https://registry.yarnpkg.com/anser/-/anser-1.4.10.tgz#befa3eddf282684bd03b63dcda3927aef8c2e35b"
+  integrity sha512-hCv9AqTQ8ycjpSd3upOJd7vFwW1JaoYQ7tpham03GJ1ca8/65rqn0RpaWpItOAd6ylW9wAw6luXYPJIyPFVOww==
+
 ansi-regex@^5.0.1:
   version "5.0.1"
   resolved "https://registry.yarnpkg.com/ansi-regex/-/ansi-regex-5.0.1.tgz#082cb2c89c9fe8659a311a53bd6a4dc5301db304"
@@ -1630,6 +1635,11 @@ classnames@2.x, classnames@^2.2.1, classnames@^2.2.3, classnames@^2.2.5, classna
   version "2.5.1"
   resolved "https://registry.yarnpkg.com/classnames/-/classnames-2.5.1.tgz#ba774c614be0f016da105c858e7159eae8e7687b"
   integrity sha512-saHYOzhIQs6wy2sVxTM6bUDsQO4F50V9RQ22qBpEdCW+I+/Wmke2HOl6lS6dTpdxVhb88/I6+Hs+438c3lfUow==
+
+clsx@^1.0.4:
+  version "1.2.1"
+  resolved "https://registry.yarnpkg.com/clsx/-/clsx-1.2.1.tgz#0ddc4a20a549b59c93a4116bb26f5294ca17dc12"
+  integrity sha512-EcR6r5a8bj6pu3ycsa/E/cKVGuTgZJZdsyUYHOksG/UHIiKfjxzRxYJpyVBwYaQeOvghal9fcc4PidlgzugAQg==
 
 clsx@^2.0.0:
   version "2.1.0"
@@ -1908,6 +1918,14 @@ docx-preview@^0.3.0:
   dependencies:
     jszip ">=3.0.0"
 
+dom-helpers@^5.1.3:
+  version "5.2.1"
+  resolved "https://registry.yarnpkg.com/dom-helpers/-/dom-helpers-5.2.1.tgz#d9400536b2bf8225ad98fe052e029451ac40e902"
+  integrity sha512-nRCa7CK3VTrM2NmGkIy4cbK7IZlgBE/PYMn55rrXefr5xXDP0LdtfPnblFDoVdcAfslJ7or6iqAUnx0CCGIWQA==
+  dependencies:
+    "@babel/runtime" "^7.8.7"
+    csstype "^3.0.2"
+
 echarts-for-react@^3.0.2:
   version "3.0.2"
   resolved "https://registry.yarnpkg.com/echarts-for-react/-/echarts-for-react-3.0.2.tgz#ac5859157048a1066d4553e34b328abb24f2b7c1"
@@ -1940,6 +1958,11 @@ encoding@^0.1.11:
   integrity sha512-ETBauow1T35Y/WZMkio9jiM0Z5xjHHmJ4XmjZOq1l/dXz3lr2sRn87nJy20RupqSh1F2m3HHPSp8ShIPQJrJ3A==
   dependencies:
     iconv-lite "^0.6.2"
+
+esbuild-plugin-react-virtualized@^1.0.4:
+  version "1.0.4"
+  resolved "https://registry.yarnpkg.com/esbuild-plugin-react-virtualized/-/esbuild-plugin-react-virtualized-1.0.4.tgz#b8911ce8fae4636daa87cfa898752170f5d45609"
+  integrity sha512-/Y+82TBduHox0/uhJlTgUqi3ZWN+qZPF0xy9crkHQE2AOOdm76l6VY2F0Mdfvue9hqXz2FOlKHlHUVXNalHLzA==
 
 esbuild@^0.20.1:
   version "0.20.2"
@@ -1974,6 +1997,11 @@ escalade@^3.1.1:
   version "3.1.2"
   resolved "https://registry.yarnpkg.com/escalade/-/escalade-3.1.2.tgz#54076e9ab29ea5bf3d8f1ed62acffbb88272df27"
   integrity sha512-ErCHMCae19vR8vQGe50xIsVomy19rg6gFu3+r3jkEO46suLMWBksvVyoGgQV+jOfl84ZSOSlmv6Gxa89PmTGmA==
+
+escape-carriage@^1.3.0:
+  version "1.3.1"
+  resolved "https://registry.yarnpkg.com/escape-carriage/-/escape-carriage-1.3.1.tgz#842658e5422497b1232585e517dc813fc6a86170"
+  integrity sha512-GwBr6yViW3ttx1kb7/Oh+gKQ1/TrhYwxKqVmg5gS+BK+Qe2KrOa/Vh7w3HPBvgGf0LfcDGoY9I6NHKoA5Hozhw==
 
 escape-string-regexp@^1.0.5:
   version "1.0.5"
@@ -2290,6 +2318,11 @@ immediate@~3.0.5:
   version "3.0.6"
   resolved "https://registry.yarnpkg.com/immediate/-/immediate-3.0.6.tgz#9db1dbd0faf8de6fbe0f5dd5e56bb606280de69b"
   integrity sha512-XXOFtyqDjNDAQxVfYxuF7g9Il/IbWmmlQg2MYKOH8ExIT1qg6xc4zyS3HaEEATgs1btfzxq15ciUiY7gjSXRGQ==
+
+immer@^7.0.8:
+  version "7.0.15"
+  resolved "https://registry.yarnpkg.com/immer/-/immer-7.0.15.tgz#dc3bc6db87401659d2e737c67a21b227c484a4ad"
+  integrity sha512-yM7jo9+hvYgvdCQdqvhCNRRio0SCXc8xDPzA25SvKWa7b1WVPjLwQs1VYU5JPXjcJPTqAa5NP5dqpORGYBQ2AA==
 
 inflight@^1.0.4:
   version "1.0.6"
@@ -3754,6 +3787,16 @@ rc-virtual-list@^3.11.1, rc-virtual-list@^3.5.1, rc-virtual-list@^3.5.2:
     rc-resize-observer "^1.0.0"
     rc-util "^5.36.0"
 
+react-ansi@^3.0.2:
+  version "3.0.2"
+  resolved "https://registry.yarnpkg.com/react-ansi/-/react-ansi-3.0.2.tgz#391c3883f69f476a680576dc2778afaa864288c2"
+  integrity sha512-Ycw6SaNS7gFIu3zBWxSQLar53WT/O4hCFrqSLRQ8HAtAHIVaerJ969EFslbbeX/uSpl6zVKrkimMCuSG7pYoMQ==
+  dependencies:
+    anser "^1.4.8"
+    escape-carriage "^1.3.0"
+    immer "^7.0.8"
+    react-virtualized "^9.22.3"
+
 react-base16-styling@^0.5.3:
   version "0.5.3"
   resolved "https://registry.yarnpkg.com/react-base16-styling/-/react-base16-styling-0.5.3.tgz#3858f24e9c4dd8cbd3f702f3f74d581ca2917269"
@@ -3836,6 +3879,11 @@ react-json-view-ts@^1.16.7:
     flux "^3.1.3"
     react-base16-styling "^0.5.3"
     react-textarea-autosize "^5.1.0"
+
+react-lifecycles-compat@^3.0.4:
+  version "3.0.4"
+  resolved "https://registry.yarnpkg.com/react-lifecycles-compat/-/react-lifecycles-compat-3.0.4.tgz#4f1a273afdfc8f3488a8c516bfda78f872352362"
+  integrity sha512-fBASbA6LnOU9dOU2eW7aQ8xmYBSXUIWr+UmF9b1efZBazGNO+rcXT/icdKnYm2pTwcRylVUYwW7H1PHfLekVzA==
 
 react-markdown@^9.0.1:
   version "9.0.1"
@@ -3931,6 +3979,18 @@ react-use-websocket@3.0.0:
   version "3.0.0"
   resolved "https://registry.yarnpkg.com/react-use-websocket/-/react-use-websocket-3.0.0.tgz#754cb8eea76f55d31c5676d4abe3e573bc2cea04"
   integrity sha512-BInlbhXYrODBPKIplDAmI0J1VPM+1KhCLN09o+dzgQ8qMyrYs4t5kEYmCrTqyRuMTmpahylHFZWQXpfYyDkqOw==
+
+react-virtualized@^9.22.3:
+  version "9.22.5"
+  resolved "https://registry.yarnpkg.com/react-virtualized/-/react-virtualized-9.22.5.tgz#bfb96fed519de378b50d8c0064b92994b3b91620"
+  integrity sha512-YqQMRzlVANBv1L/7r63OHa2b0ZsAaDp1UhVNEdUaXI8A5u6hTpA5NYtUueLH2rFuY/27mTGIBl7ZhqFKzw18YQ==
+  dependencies:
+    "@babel/runtime" "^7.7.2"
+    clsx "^1.0.4"
+    dom-helpers "^5.1.3"
+    loose-envify "^1.4.0"
+    prop-types "^15.7.2"
+    react-lifecycles-compat "^3.0.4"
 
 react@^18.2.0:
   version "18.2.0"

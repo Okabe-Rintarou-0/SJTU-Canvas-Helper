@@ -1047,4 +1047,11 @@ impl App {
         let status = command.wait().await?;
         Ok(status.code().unwrap_or_default())
     }
+
+    pub fn read_log_content() -> Result<String> {
+        let log_file_path = App::config_dir()?;
+        let path = Path::new(&log_file_path).join("app.log");
+        let content = fs::read_to_string(path)?;
+        Ok(content)
+    }
 }
