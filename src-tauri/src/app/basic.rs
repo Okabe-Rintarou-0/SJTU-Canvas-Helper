@@ -28,7 +28,10 @@ use crate::{
     utils::{self, TempFile},
 };
 
-use super::{constants::COURSES_CACHE_KEY, App};
+use super::{
+    constants::{COURSES_CACHE_KEY, RELATIONSHIP_CACHE_KEY},
+    App,
+};
 
 const MY_CANVAS_FILES_FOLDER_NAME: &str = "我的Canvas文件";
 
@@ -851,8 +854,13 @@ impl App {
     }
 
     pub async fn collect_relationship(&self) -> Result<RelationshipTopo> {
+        let topo = self.cache.get(RELATIONSHIP_CACHE_KEY)?;
+        if let Some(topo) = topo {
+            return Ok(topo);
+        }
         let token = self.config.read().await.token.clone();
         let topo = self.client.clone().collect_relationship(&token).await?;
+        self.cache.set(RELATIONSHIP_CACHE_KEY, topo.clone())?;
         Ok(topo)
     }
 
