@@ -34,7 +34,7 @@ use super::{
 use crate::{
     client::constants::{
         OAUTH_PATH, OAUTH_RANDOM, OAUTH_RANDOM_P1, OAUTH_RANDOM_P1_VAL, OAUTH_RANDOM_P2,
-        OAUTH_RANDOM_P2_VAL, VIDEO_INFO_URL,
+        OAUTH_RANDOM_P2_VAL, VIDEO_CHUNK_SIZE, VIDEO_INFO_URL,
     },
     error::{AppError, Result},
     model::{
@@ -349,24 +349,34 @@ impl Client {
             let payload = payload.clone();
             let progress_handler = progress_handler.clone();
             tasks.spawn(async move {
-                let response = self_clone.download_video_partial(&url, begin, end).await?;
-                let status = response.status();
-                if !(status == StatusCode::OK || status == StatusCode::PARTIAL_CONTENT) {
-                    tracing::error!("status not ok: {}", status);
-                    return Err(AppError::VideoDownloadError(save_path));
-                }
-                let bytes = response.bytes().await?;
-                let read_bytes = bytes.len() as u64;
-                tracing::info!("read_bytes: {:?}", read_bytes);
-                {
-                    let mut file = output_file.lock().await;
-                    write_file_at_offset(file.by_ref(), &bytes, begin)?;
-                    // release lock automatically after scope release
-                }
+                let mut current_begin = begin;
+                while current_begin < end {
+                    let response = self_clone
+                        .download_video_partial(
+                            &url,
+                            current_begin,
+                            current_begin + VIDEO_CHUNK_SIZE,
+                        )
+                        .await?;
+                    let status = response.status();
+                    if !(status == StatusCode::OK || status == StatusCode::PARTIAL_CONTENT) {
+                        tracing::error!("status not ok: {}", status);
+                        return Err(AppError::VideoDownloadError(save_path));
+                    }
+                    let bytes = response.bytes().await?;
+                    let read_bytes = bytes.len() as u64;
+                    current_begin += read_bytes;
+                    tracing::info!("read_bytes: {:?}", read_bytes);
+                    {
+                        let mut file = output_file.lock().await;
+                        write_file_at_offset(file.by_ref(), &bytes, begin)?;
+                        // release lock automatically after scope release
+                    }
 
-                let mut payload_guard = payload.lock().await;
-                payload_guard.processed += read_bytes;
-                progress_handler.lock().await(payload_guard.clone());
+                    let mut payload_guard = payload.lock().await;
+                    payload_guard.processed += read_bytes;
+                    progress_handler.lock().await(payload_guard.clone());
+                }
                 Ok(())
             });
         }
