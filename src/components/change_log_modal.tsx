@@ -11,6 +11,14 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v1.3.19 2024/10/1</Title>
+            <Paragraph>
+                <ul>
+                    <li>优化日志相关的 UI 和操作（在设置可以打开日志便于排查问题）。目前前端和后端的 log 都会定向到一个日志文件。</li>
+                    <li>提升视频下载速度</li>
+                    <li>各位国庆快乐🎉🇨🇳</li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v1.3.18 2024/9/28</Title>
             <Paragraph>
                 <ul>
