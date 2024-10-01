@@ -18,7 +18,7 @@ pub const OAUTH_RANDOM_P2: &str = "oauth_VWXYZ";
 pub const OAUTH_RANDOM_P1_VAL: &str = "ABCDEFGH";
 pub const OAUTH_RANDOM_P2_VAL: &str = "STUVWXYZ";
 pub const CHUNK_SIZE: u64 = 16 * 1024 * 1024;
-pub const VIDEO_CHUNK_SIZE: u64 = 32 * 1024 * 1024;
+// pub const VIDEO_CHUNK_SIZE: u64 = 32 * 1024 * 1024;
 
 pub const JBOX_LOGIN_URL: &str =
     "https://pan.sjtu.edu.cn/user/v1/sign-in/sso-login-redirect/xpw8ou8y";

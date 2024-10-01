@@ -1,6 +1,6 @@
 use std::{
     fs::{self, File},
-    io::Write,
+    io::{Seek, SeekFrom, Write},
 };
 
 use crate::error::{AppError, Result};
@@ -77,6 +77,12 @@ pub fn parse_json<T: DeserializeOwned>(bytes: &[u8]) -> Result<T> {
         let type_name = get_type_name::<T>().to_string();
         AppError::JsonDeserialize(e, type_name, context)
     })
+}
+
+pub fn write_file_at_offset(file: &mut File, data: &[u8], offset: u64) -> std::io::Result<()> {
+    file.seek(SeekFrom::Start(offset))?;
+    file.write_all(data)?;
+    Ok(())
 }
 
 #[cfg(test)]

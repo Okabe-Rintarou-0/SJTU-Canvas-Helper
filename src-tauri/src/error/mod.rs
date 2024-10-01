@@ -44,6 +44,8 @@ pub enum AppError {
     OpenStdoutError,
     #[error("Failed to open stderr")]
     OpenStderrError,
+    #[error("Failed to download video {0}")]
+    VideoDownloadError(String),
 }
 
 impl serde::Serialize for AppError {

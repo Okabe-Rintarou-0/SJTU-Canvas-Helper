@@ -3348,6 +3348,7 @@ dependencies = [
  "image",
  "lazy_static",
  "md-5",
+ "num_cpus",
  "regex",
  "reqwest",
  "select",

@@ -1,6 +1,8 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::sync::Arc;
+
 use error::Result;
 use model::{
     Account, AccountInfo, AppConfig, Assignment, CalendarEvent, CanvasVideo, Colors, Course,
@@ -526,8 +528,9 @@ async fn download_video<R: Runtime>(
     video: VideoPlayInfo,
     save_name: String,
 ) -> Result<()> {
-    APP.download_video(&video, &save_name, |progress| {
-        let _ = window.emit("video_download://progress", progress);
+    let window = Arc::new(window);
+    APP.download_video(&video, &save_name, move |progress| {
+        let _ = window.clone().emit("video_download://progress", progress);
     })
     .await
 }

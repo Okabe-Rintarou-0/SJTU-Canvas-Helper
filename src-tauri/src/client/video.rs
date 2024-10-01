@@ -1,7 +1,8 @@
 use std::{
     collections::HashMap,
-    fs,
+    fs::File,
     io::Write,
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -21,6 +22,7 @@ use select::{
 };
 use serde::{de::DeserializeOwned, Serialize};
 use tauri::Url;
+use tokio::{sync::Mutex, task::JoinSet};
 
 use super::{
     constants::{
@@ -32,14 +34,14 @@ use super::{
 use crate::{
     client::constants::{
         OAUTH_PATH, OAUTH_RANDOM, OAUTH_RANDOM_P1, OAUTH_RANDOM_P1_VAL, OAUTH_RANDOM_P2,
-        OAUTH_RANDOM_P2_VAL, VIDEO_CHUNK_SIZE, VIDEO_INFO_URL,
+        OAUTH_RANDOM_P2_VAL, VIDEO_INFO_URL,
     },
     error::{AppError, Result},
     model::{
         CanvasVideo, CanvasVideoResponse, GetCanvasVideoInfoResponse, ItemPage, ProgressPayload,
         Subject, VideoCourse, VideoInfo, VideoPlayInfo,
     },
-    utils,
+    utils::{self, write_file_at_offset},
 };
 
 // Apis here are for course video
@@ -310,44 +312,68 @@ impl Client {
         }
     }
 
-    pub async fn download_video<F: Fn(ProgressPayload) + Send>(
-        &self,
+    pub async fn download_video<F: Fn(ProgressPayload) + Send + 'static>(
+        self: Arc<Self>,
         video: &VideoPlayInfo,
         save_path: &str,
         progress_handler: F,
     ) -> Result<()> {
-        let mut output_file = fs::File::create(save_path)?;
-        let mut read_total = 0_u64;
+        let output_file = Arc::new(Mutex::new(File::create(save_path)?));
         let url = &video.rtmp_url_hdv;
         let size = self.get_download_video_size(url).await?;
-        let mut payload = ProgressPayload {
+        let payload = ProgressPayload {
             uuid: video.id.to_string(),
             processed: 0,
             total: size,
         };
         progress_handler(payload.clone());
-        loop {
-            let response = self
-                .download_video_partial(url, read_total, read_total + VIDEO_CHUNK_SIZE)
-                .await?;
 
-            let status = response.status();
-            if !(status == StatusCode::OK || status == StatusCode::PARTIAL_CONTENT) {
-                tracing::error!("status not ok: {}", status);
-            }
-            let bytes = response.bytes().await?;
-            let read_bytes = bytes.len() as u64;
-            tracing::debug!("read bytes {}", read_bytes);
+        let progress_handler = Arc::new(Mutex::new(progress_handler));
+        let payload = Arc::new(Mutex::new(payload));
 
-            output_file.write_all(&bytes)?;
-            read_total += read_bytes;
-            payload.processed += read_bytes;
-            progress_handler(payload.clone());
-            if read_bytes < VIDEO_CHUNK_SIZE {
-                break;
-            }
+        let nproc = num_cpus::get();
+        tracing::info!("nproc: {}", nproc);
+        let chunk_size = size / nproc as u64;
+        let mut tasks = JoinSet::new();
+        for i in 0..nproc {
+            let begin = i as u64 * chunk_size;
+            let end = if i == nproc - 1 {
+                size
+            } else {
+                (i + 1) as u64 * chunk_size - 1
+            };
+            let self_clone = self.clone();
+            let save_path = save_path.to_owned();
+            let output_file = output_file.clone();
+            let url = url.clone();
+            let payload = payload.clone();
+            let progress_handler = progress_handler.clone();
+            tasks.spawn(async move {
+                let response = self_clone.download_video_partial(&url, begin, end).await?;
+                let status = response.status();
+                if !(status == StatusCode::OK || status == StatusCode::PARTIAL_CONTENT) {
+                    tracing::error!("status not ok: {}", status);
+                    return Err(AppError::VideoDownloadError(save_path));
+                }
+                let bytes = response.bytes().await?;
+                let read_bytes = bytes.len() as u64;
+                tracing::info!("read_bytes: {:?}", read_bytes);
+                {
+                    let mut file = output_file.lock().await;
+                    write_file_at_offset(file.by_ref(), &bytes, begin)?;
+                    // release lock automatically after scope release
+                }
+
+                let mut payload_guard = payload.lock().await;
+                payload_guard.processed += read_bytes;
+                progress_handler.lock().await(payload_guard.clone());
+                Ok(())
+            });
         }
-        tracing::debug!("read total bytes {}", read_total);
+        while let Some(result) = tasks.join_next().await {
+            result??;
+        }
+        tracing::info!("Successfully downloaded video to {}", save_path);
         Ok(())
     }
 

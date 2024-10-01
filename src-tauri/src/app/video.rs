@@ -56,7 +56,7 @@ impl App {
         self.client.get_canvas_videos(course_id).await
     }
 
-    pub async fn download_video<F: Fn(ProgressPayload) + Send>(
+    pub async fn download_video<F: Fn(ProgressPayload) + Send + 'static>(
         &self,
         video: &VideoPlayInfo,
         save_name: &str,
@@ -65,6 +65,7 @@ impl App {
         let save_dir = self.config.read().await.save_path.clone();
         let save_path = Path::new(&save_dir).join(save_name);
         self.client
+            .clone()
             .download_video(video, save_path.to_str().unwrap(), progress_handler)
             .await
     }
