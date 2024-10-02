@@ -38,7 +38,7 @@ fn read_log_content() -> Result<String> {
 }
 
 #[tauri::command]
-fn is_ffmpeg_installed() -> bool {
+async fn is_ffmpeg_installed() -> bool {
     App::is_ffmpeg_installed()
 }
 

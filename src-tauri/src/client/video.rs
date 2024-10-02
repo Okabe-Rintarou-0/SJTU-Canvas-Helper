@@ -327,6 +327,13 @@ impl Client {
             total: size,
         };
         progress_handler(payload.clone());
+        if size == 0 {
+            tracing::warn!(
+                "try to download video as {}, but size is 0, can't download",
+                save_path
+            );
+            return Err(AppError::VideoDownloadError(save_path.to_owned()));
+        }
 
         let progress_handler = Arc::new(Mutex::new(progress_handler));
         let payload = Arc::new(Mutex::new(payload));
@@ -338,7 +345,7 @@ impl Client {
         for i in 0..nproc {
             let begin = i as u64 * chunk_size;
             let end = if i == nproc - 1 {
-                size
+                size - 1
             } else {
                 (i + 1) as u64 * chunk_size - 1
             };
@@ -442,6 +449,8 @@ impl Client {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
 
     #[tokio::test]
@@ -451,6 +460,33 @@ mod tests {
         assert!(uuid.is_some());
         let uuid: String = uuid.unwrap();
         assert!(!uuid.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_download_video() -> Result<()> {
+        let cli = Arc::new(Client::new());
+        let video_url = "https://www.w3schools.com/html/mov_bbb.mp4";
+        let save_path = "test.mp4";
+        let video_info = VideoPlayInfo {
+            rtmp_url_hdv: video_url.to_owned(),
+            ..Default::default()
+        };
+        let cli_cloned = cli.clone();
+        cli_cloned
+            .download_video(&video_info, save_path, |_| {})
+            .await?;
+
+        // download original video
+        let original = cli
+            .get_request(video_url, None::<&str>)
+            .await?
+            .bytes()
+            .await?
+            .to_vec();
+
+        let downloaded = fs::read(save_path)?;
+        assert_eq!(original, downloaded);
         Ok(())
     }
 
