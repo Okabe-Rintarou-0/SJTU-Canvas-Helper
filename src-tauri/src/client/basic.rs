@@ -14,7 +14,7 @@ use crate::{
         RelationshipTopo, Submission, SubmissionUploadResult, SubmissionUploadSuccessResponse,
         User, UserSubmissions,
     },
-    utils,
+    utils::{self, get_file_name},
 };
 
 // Apis here are for canvas
@@ -712,7 +712,7 @@ impl Client {
     ) -> Result<()> {
         let mut file_ids = vec![];
         for file_path in file_paths {
-            let file_name = file_path.split('/').last().unwrap();
+            let file_name = &get_file_name(file_path);
             let file = self
                 .upload_submission_file(course_id, assignment_id, file_path, file_name, token)
                 .await?;

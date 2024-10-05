@@ -85,6 +85,15 @@ pub fn write_file_at_offset(file: &mut File, data: &[u8], offset: u64) -> std::i
     Ok(())
 }
 
+pub fn get_file_name(file_path: &str) -> String {
+    file_path
+        .replace("\\", "/")
+        .split("/")
+        .last()
+        .unwrap_or_default()
+        .to_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -124,6 +133,16 @@ mod tests {
         let err = result.unwrap_err();
         println!("{}", err);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_file_name() -> Result<()> {
+        let nix_path = "/path/to/file.txt";
+        let win_path = "\\path\\to\\file.txt";
+        let expected_file_name = "file.txt".to_owned();
+        assert_eq!(get_file_name(nix_path), expected_file_name);
+        assert_eq!(get_file_name(win_path), expected_file_name);
         Ok(())
     }
 }
