@@ -25,6 +25,9 @@
         "confirm": true,
         "message": true,
         "open": true
+      },
+      "path": {
+        "all": true
       }
     },
     "windows": [

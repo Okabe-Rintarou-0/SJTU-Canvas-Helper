@@ -1,11 +1,11 @@
 import { Button, Col, Form, List, Modal, Row, Space } from "antd";
 import { useEffect, useState } from "react";
-import { open } from '@tauri-apps/api/dialog';
+import { DialogFilter, open } from '@tauri-apps/api/dialog';
 import TextArea from "antd/es/input/TextArea";
 import { FaUpload } from "react-icons/fa";
 import useMessage from "antd/es/message/useMessage";
 import { useForm } from "antd/lib/form/Form";
-import { invoke } from "@tauri-apps/api";
+import { invoke, path } from "@tauri-apps/api";
 
 interface SubmitParam {
     filePaths: string[];
@@ -18,20 +18,43 @@ function FilesSelector({ value, onChange, allowed_extensions }: {
     onChange?: (value: string[]) => void,
 }) {
     const [filePaths, setFilePaths] = useState<string[]>([]);
+    const [fileBaseNames, setFileBaseNames] = useState<string[]>([]);
     const [messageApi, contextHolder] = useMessage();
     useEffect(() => {
         if (value) {
             setFilePaths(value);
         }
     }, [value]);
+    useEffect(() => {
+        const fileBaseNamesPromise = Promise.all(
+            filePaths.map(async (filePath) => await path.basename(filePath))
+        );
+        fileBaseNamesPromise.then(fileBaseNames => {
+            setFileBaseNames(fileBaseNames);
+        });
+    }, [filePaths]);
 
     const handleSelectFiles = async () => {
+        let filters: DialogFilter[];
+        if (allowed_extensions.length) {
+            filters = [{
+                name: `所有文件(${allowed_extensions.join(',')})`,
+                extensions: allowed_extensions
+            }].concat(
+                allowed_extensions.map(extension => ({
+                    name: extension,
+                    extensions: [extension],
+                })));
+        } else {
+            filters = [{
+                name: '所有文件(*)',
+                extensions: ['*'],
+            }];
+        }
+
         const selected = await open({
             multiple: true,
-            filters: [{
-                name: "请选择支持的上传格式",
-                extensions: allowed_extensions
-            }]
+            filters: filters,
         });
         if (selected == null) {
             messageApi.warning("未选中文件⚠️！", 1);
@@ -55,12 +78,12 @@ function FilesSelector({ value, onChange, allowed_extensions }: {
         {contextHolder}
         <Button icon={<FaUpload size={15} />} onClick={handleSelectFiles}>选择上传文件</Button>
         <List>
-            {filePaths.map(filePath => <List.Item key={filePath}>
+            {fileBaseNames.map(fileBaseName => <List.Item key={fileBaseName}>
                 <Row justify="space-between" style={{ width: "100%" }}>
-                    <Col>{filePath}</Col>
+                    <Col>{fileBaseName}</Col>
                     <Col><a onClick={(e) => {
                         e.preventDefault();
-                        handleRemove(filePath);
+                        handleRemove(fileBaseName);
                     }}>删除</a></Col>
                 </Row>
             </List.Item>)}
