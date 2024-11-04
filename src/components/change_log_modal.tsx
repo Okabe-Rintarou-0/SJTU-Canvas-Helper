@@ -11,6 +11,13 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v1.3.20 2024/11/4</Title>
+            <Paragraph>
+                <ul>
+                    <li>修复作业提交的路径问题</li>
+                    <li>优化部分ui</li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v1.3.19 2024/10/1</Title>
             <Paragraph>
                 <ul>

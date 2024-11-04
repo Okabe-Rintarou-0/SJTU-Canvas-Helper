@@ -425,7 +425,7 @@ export default function SubmissionsPage() {
             </Space>
             {selectedCourseId > 0 && selectedAssignment && <CourseFileSelector courseId={selectedCourseId} onSelectFiles={bindCourseAssignmentFiles} initialFiles={boundFiles} />}
             {
-                selectedAssignment?.points_possible &&
+                (selectedAssignment?.points_possible != undefined && selectedAssignment?.points_possible > 0) &&
                 <span>满分：<b>{selectedAssignment.points_possible}</b>分</span>
             }
             {
