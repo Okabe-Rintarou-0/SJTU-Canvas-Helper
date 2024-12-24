@@ -530,3 +530,14 @@ export interface VideoAggregateParams {
     // 0% ~ 50%, 25% by default
     subVideoSizePercentage: number;
 }
+
+export interface AnnualCourseStatistic {
+    courseId: number;
+    courseName: string;
+    submitTimeList: string[];
+}
+
+export interface AnnualReport {
+    year: number;
+    courseToStatistic: Record<number, AnnualCourseStatistic>;
+}

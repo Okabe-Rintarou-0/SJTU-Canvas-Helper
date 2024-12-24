@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { FileOutlined, SettingOutlined, UserOutlined, VideoCameraOutlined, FormOutlined, CalendarOutlined, CloudDownloadOutlined } from '@ant-design/icons';
 import { Layout, Menu, Space, theme } from 'antd';
+import { TbReportAnalytics } from "react-icons/tb";
 import { Link, useLocation } from 'react-router-dom';
 import { getVersion } from "@tauri-apps/api/app";
 import { BsQrCode } from 'react-icons/bs';
@@ -61,6 +62,10 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
         key: 'relationship',
         icon: <FaPeopleGroup />,
         label: <Link to={'/relationship'}>人际关系图(beta)</Link>,
+    }, {
+        key: 'annual',
+        icon: <TbReportAnalytics />,
+        label: <Link to={'/annual'}>年度总结（新）</Link>,
     }, {
         key: 'settings',
         icon: <SettingOutlined />,

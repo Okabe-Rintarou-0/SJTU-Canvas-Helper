@@ -5,10 +5,10 @@ use std::sync::Arc;
 
 use error::Result;
 use model::{
-    Account, AccountInfo, AppConfig, Assignment, CalendarEvent, CanvasVideo, Colors, Course,
-    DiscussionTopic, File, Folder, FullDiscussion, LogLevel, QRCodeScanResult, RelationshipTopo,
-    Subject, Submission, User, UserSubmissions, VideoAggregateParams, VideoCourse, VideoInfo,
-    VideoPlayInfo,
+    Account, AccountInfo, AnnualReport, AppConfig, Assignment, CalendarEvent, CanvasVideo, Colors,
+    Course, DiscussionTopic, File, Folder, FullDiscussion, LogLevel, QRCodeScanResult,
+    RelationshipTopo, Subject, Submission, User, UserSubmissions, VideoAggregateParams,
+    VideoCourse, VideoInfo, VideoPlayInfo,
 };
 
 use tauri::{api::path::config_dir, Runtime, Window};
@@ -30,6 +30,11 @@ extern crate lazy_static;
 
 lazy_static! {
     static ref APP: App = App::new();
+}
+
+#[tauri::command]
+async fn generate_annual_report(year: i32) -> Result<AnnualReport> {
+    APP.generate_annual_report(year).await
 }
 
 #[tauri::command]
@@ -683,7 +688,9 @@ async fn main() -> Result<()> {
             stop_proxy,
             // Apis for jbox
             login_jbox,
-            upload_file
+            upload_file,
+            // Annual Report
+            generate_annual_report,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -11,6 +11,13 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v1.3.22 2024/12/24</Title>
+            <Paragraph>
+                <ul>
+                    <li>新增年度总结板块</li>
+                    <li>Merry Xmas!</li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v1.3.21 2024/11/4</Title>
             <Paragraph>
                 <ul>

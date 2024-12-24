@@ -1,6 +1,6 @@
 import { CSSProperties, Dispatch, ReactNode, SetStateAction, useEffect, useState } from "react";
 import PreviewModal from "../components/preview_modal";
-import { Assignment, Course, Entry, File, Folder, isFile, LOG_LEVEL_ERROR, LOG_LEVEL_INFO, LoginMessage, RelationshipTopo, User, UserSubmissions } from "./model";
+import { AnnualReport, Assignment, Course, Entry, File, Folder, isFile, LOG_LEVEL_ERROR, LOG_LEVEL_INFO, LoginMessage, RelationshipTopo, User, UserSubmissions } from "./model";
 import PDFMerger from 'pdf-merger-js/browser';
 import { Button, Input, Progress, Space, message } from "antd";
 import dayjs from "dayjs";
@@ -529,4 +529,12 @@ export const useBaseURL = () => {
         });
     }, []);
     return { isLoading, data: baseURL };
+}
+
+export const useAnnualReport = (year: number) => {
+    const [args, setArgs] = useState<any>({ year });
+    useEffect(() => {
+        setArgs({ year });
+    }, [year]);
+    return useData<AnnualReport>("generate_annual_report", true, args);
 }

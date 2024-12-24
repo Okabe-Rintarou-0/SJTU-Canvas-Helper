@@ -6,6 +6,7 @@ use crate::{
     client::Client,
     model::{Account, AppConfig},
 };
+pub mod annual;
 pub mod basic;
 pub mod cache;
 mod constants;

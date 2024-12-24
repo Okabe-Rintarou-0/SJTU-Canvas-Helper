@@ -971,6 +971,7 @@ pub struct RelationshipTopo {
     pub nodes: Vec<RelationshipNode>,
     pub edges: Vec<RelationshipEdge>,
 }
+
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VideoAggregateParams {
@@ -1001,4 +1002,19 @@ impl From<i32> for LogLevel {
             _ => LogLevel::Debug,
         }
     }
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnnualCourseStatistic {
+    pub course_id: i64,
+    pub course_name: String,
+    pub submit_time_list: Vec<String>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnnualReport {
+    pub year: i32,
+    pub course_to_statistic: HashMap<i64, AnnualCourseStatistic>,
 }

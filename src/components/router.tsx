@@ -10,11 +10,13 @@ import QRCodePage from "../page/qrcode";
 import DiscussionsPage from "../page/discussions";
 import GradePage from "../page/grades";
 import RelationshipPage from "../page/relationship";
+import AnnualPage from "../page/annual";
 
 export default function AppRouter() {
     return <BrowserRouter>
         <Routes>
             <Route index element={<Navigate to={"/files"} />} />
+            <Route path="/annual" element={<AnnualPage />} />
             <Route path="/files" element={<FilesPage />} />
             <Route path="/assignments" element={<AssignmentsPage />} />
             <Route path="/discussions" element={<DiscussionsPage />} />
