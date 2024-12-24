@@ -15,7 +15,7 @@ jobs:
     defaults:
       run:
         working-directory: ./src-tauri
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@stable
