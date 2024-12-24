@@ -19,6 +19,15 @@ const BarChart: React.FC<BarChartProps> = ({ data, xAxisData }) => {
             trigger: 'axis',
             axisPointer: {
                 type: 'cross'
+            },
+            formatter: function (params: any) {
+                let tooltipStr = '';
+                for (const param of params) {
+                    if (param.value !== 0) {
+                        tooltipStr += `${param.marker}${param.seriesName}: ${param.value}<br>`;
+                    }
+                };
+                return tooltipStr || '暂无数据';
             }
         },
         xAxis: {
