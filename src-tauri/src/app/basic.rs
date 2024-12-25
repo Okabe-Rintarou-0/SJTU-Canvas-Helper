@@ -64,10 +64,10 @@ impl App {
                 .ok()
                 .unwrap();
             let config_dir = exe_dir.join(".config");
-            return Ok(config_dir.to_str().unwrap().to_owned());
+            Ok(config_dir.to_str().unwrap().to_owned())
         } else {
             let config_dir = config_dir().unwrap().join("SJTU-Canvas-Helper");
-            return Ok(config_dir.to_str().unwrap().to_owned());
+            Ok(config_dir.to_str().unwrap().to_owned())
         }
     }
 
