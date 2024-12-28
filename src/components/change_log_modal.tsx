@@ -11,6 +11,12 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v1.3.23 2024/12/28</Title>
+            <Paragraph>
+                <ul>
+                    <li>支持 Jupiter Notebook 文件的预览 </li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v1.3.22 2024/12/24</Title>
             <Paragraph>
                 <ul>
