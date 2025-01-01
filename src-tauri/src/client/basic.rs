@@ -255,7 +255,7 @@ impl Client {
             file.write_all(&chunk)?;
         }
 
-        tracing::info!("File downloaded successfully!");
+        tracing::info!("File {:?} downloaded successfully!", path);
         Ok(())
     }
 

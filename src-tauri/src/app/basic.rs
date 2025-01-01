@@ -941,6 +941,38 @@ impl App {
         Ok(())
     }
 
+    #[cfg(target_os = "macos")]
+    fn convert_docx_to_pdf_inner(
+        &self,
+        docx_path: &std::path::PathBuf,
+        pdf_path: &std::path::PathBuf,
+    ) -> Result<()> {
+        process::Command::new("osascript")
+            .arg("-e")
+            .arg(
+                r#"on run {input, output}
+                    tell application "Microsoft Word"
+                        launch
+                        set t to input as string
+                        set docx to input as POSIX file
+                        if t ends with ".doc" or t ends with ".docx" then
+                            set pdfPath to output as POSIX file as string
+                            open docx
+                            set activeDoc to active document
+                            save as activeDoc file name pdfPath file format format PDF
+                        end if
+                    end tell
+                    tell application "Microsoft Word"
+                        quit
+                    end tell
+                end run"#,
+            )
+            .arg(docx_path.as_os_str().to_str().unwrap())
+            .arg(pdf_path.as_os_str().to_str().unwrap())
+            .output()?;
+        Ok(())
+    }
+
     #[cfg(target_os = "windows")]
     fn convert_pptx_to_pdf_inner(&self, pptx_path: &PathBuf, pdf_path: &PathBuf) -> Result<()> {
         process::Command::new("powershell.exe")
@@ -970,6 +1002,25 @@ impl App {
             .await?;
         self.convert_pptx_to_pdf_inner(&pptx_path, &pdf_path)?;
         fs::remove_file(&pptx_path)?;
+        let pdf_content = fs::read(&pdf_path)?;
+        fs::remove_file(&pdf_path)?;
+        Ok(pdf_content)
+    }
+
+    pub async fn convert_docx_to_pdf(&self, file: &mut File) -> Result<Vec<u8>> {
+        let config = self.config.read().await;
+        let token = &config.token.clone();
+        let save_dir = &config.save_path.clone();
+        let out_file_name = file.display_name.replace("docx", "pdf");
+        let tmp_file_name = format!("tmp_{}.docx", Uuid::new_v4());
+        let docx_path = Path::new(save_dir).join(&tmp_file_name);
+        let pdf_path = Path::new(save_dir).join(&out_file_name);
+        file.display_name = tmp_file_name;
+        self.client
+            .download_file(file, token, save_dir, |_| {})
+            .await?;
+        self.convert_docx_to_pdf_inner(&docx_path, &pdf_path)?;
+        fs::remove_file(&docx_path)?;
         let pdf_content = fs::read(&pdf_path)?;
         fs::remove_file(&pdf_path)?;
         Ok(pdf_content)

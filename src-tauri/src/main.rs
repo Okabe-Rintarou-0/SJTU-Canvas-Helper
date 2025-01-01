@@ -311,6 +311,12 @@ async fn convert_pptx_to_pdf(mut file: File) -> Result<Vec<u8>> {
 }
 
 #[tauri::command]
+async fn convert_docx_to_pdf(mut file: File) -> Result<Vec<u8>> {
+    let content = APP.convert_docx_to_pdf(&mut file).await?;
+    Ok(content)
+}
+
+#[tauri::command]
 async fn list_calendar_events(
     context_codes: Vec<String>,
     start_date: String,
@@ -673,6 +679,7 @@ async fn main() -> Result<()> {
             get_my_single_submission,
             // Utils
             convert_pptx_to_pdf,
+            convert_docx_to_pdf,
             // Apis for course video
             get_uuid,
             express_login,

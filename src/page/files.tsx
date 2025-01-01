@@ -8,7 +8,7 @@ import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
 import { useBaseURL, useCourses, useLoginModal, useMerger, usePreview } from "../lib/hooks";
 import { FolderOutlined, HomeOutlined, LeftOutlined } from "@ant-design/icons"
-import { scrollToTop, getFileIcon, consoleLog } from "../lib/utils";
+import { scrollToTop, getFileIcon, consoleLog, isMergableFileType } from "../lib/utils";
 import FileOrderSelectModal from "../components/file_order_select_modal";
 
 interface DownloadInfo {
@@ -436,7 +436,7 @@ export default function FilesPage() {
     }
 
     const noSelectedPDFs = (selectedEntries.filter(isFile) as File[])
-        .filter(file => file.display_name.endsWith(".pdf") || file.display_name.endsWith(".pptx")).length < 2;
+        .filter(file => isMergableFileType(file.display_name)).length < 2;
 
     const tabs: TabsProps['items'] = [
         {
@@ -453,7 +453,7 @@ export default function FilesPage() {
     ]
 
     const getSupportedMergeFiles = () => {
-        return (selectedEntries as File[]).filter(f => f.display_name.endsWith(".pptx") || f.display_name.endsWith(".pdf"));
+        return (selectedEntries as File[]).filter(f => isMergableFileType(f.display_name));
     }
 
     return <BasicLayout>
@@ -505,9 +505,9 @@ export default function FilesPage() {
             />
             <Space>
                 <Button disabled={operating || selectedEntries.length === 0} onClick={handleDownloadSelectedFiles}>下载</Button>
-                <Button disabled={operating || noSelectedPDFs} onClick={() => setOpenFileOrderSelectModal(true)}>合并 PDF/PPTX</Button>
+                <Button disabled={operating || noSelectedPDFs} onClick={() => setOpenFileOrderSelectModal(true)}>合并 Word/PDF/PPTX</Button>
             </Space>
-            <Divider orientation="left">PDF/PPTX (混合)合并</Divider>
+            <Divider orientation="left">Word/PDF/PPTX (混合)合并</Divider>
             {merger}
             <Divider orientation="left">文件下载</Divider>
             {section === COURSE_FILES && selectedCourseId > 0 && <Button onClick={handleSyncFiles}>一键同步</Button>}

@@ -9,7 +9,7 @@ import { getConfig, saveConfig } from "./store";
 import useWebSocket, { ReadyState } from "react-use-websocket";
 import { LoginAlertModal } from "../components/login_alert_modal";
 import { BASE_URL, JI_BASE_URL } from "./constants";
-import { consoleLog } from "./utils";
+import { consoleLog, isMergableFileType } from "./utils";
 
 const UPDATE_QRCODE_MESSAGE = "{ \"type\": \"UPDATE_QR_CODE\" }";
 const SEND_INTERVAL = 1000 * 50;
@@ -164,13 +164,9 @@ export function useMerger({ setPreviewEntry, onHoverEntry, onLeaveEntry }: {
     const [result, setResult] = useState<File | undefined>(undefined);
     const [resultBlob, setResultBlob] = useState<Blob | undefined>(undefined);
     const [outFileName, setOutFileName] = useState<string>("");
-    const isSupportedType = (file: File) => {
-        const name = file.display_name;
-        return name.endsWith(".pdf") || name.endsWith(".pptx");
-    }
 
     const mergePDFs = async (files: File[]) => {
-        files = files.filter(file => isSupportedType(file));
+        files = files.filter(file => isMergableFileType(file.display_name));
         const pdfMerger = new PDFMerger();
         if (files.length === 0) {
             message.warning("未选中多个可用的 PDF 文件🙅！");
@@ -196,6 +192,9 @@ export function useMerger({ setPreviewEntry, onHoverEntry, onLeaveEntry }: {
                 setMsg(`正在添加 "${file.display_name}" ...`);
                 if (file.display_name.endsWith(".pptx")) {
                     const data = new Uint8Array(await invoke("convert_pptx_to_pdf", { file }));
+                    await pdfMerger.add(data);
+                } else if (file.display_name.endsWith(".docx")) {
+                    const data = new Uint8Array(await invoke("convert_docx_to_pdf", { file }));
                     await pdfMerger.add(data);
                 } else {
                     await pdfMerger.add(file.url);

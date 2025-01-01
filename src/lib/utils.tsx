@@ -9,6 +9,15 @@ import { FileOutlined } from "@ant-design/icons"
 import { invoke } from "@tauri-apps/api";
 import { MessageInstance } from "antd/es/message/interface";
 
+export function isMergableFileType(fileType: string): boolean {
+    for (let ext of ["pptx", "pdf", "docx"]) {
+        if (fileType.toLowerCase().endsWith(ext)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 export function formatDate(inputDate: string | undefined | null): string {
     if (!inputDate) {
         return "";
