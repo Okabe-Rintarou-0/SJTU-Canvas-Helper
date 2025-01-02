@@ -5,7 +5,7 @@ use error::{AppError, Result};
 use std::{
     fs,
     io::Write,
-    path::{Path, PathBuf},
+    path::Path,
     process::{Command, Stdio},
     sync::Arc,
     time::Duration,
@@ -913,7 +913,7 @@ impl App {
     }
 
     #[cfg(target_os = "macos")]
-    fn convert_pptx_to_pdf_inner(&self, pptx_path: &PathBuf, pdf_path: &PathBuf) -> Result<()> {
+    fn convert_pptx_to_pdf_inner(&self, pptx_path: &Path, pdf_path: &Path) -> Result<()> {
         // Reference https://github.com/jeongwhanchoi/convert-ppt-to-pdf
         process::Command::new("osascript")
             .arg("-e")
@@ -942,11 +942,7 @@ impl App {
     }
 
     #[cfg(target_os = "macos")]
-    fn convert_docx_to_pdf_inner(
-        &self,
-        docx_path: &std::path::PathBuf,
-        pdf_path: &std::path::PathBuf,
-    ) -> Result<()> {
+    fn convert_docx_to_pdf_inner(&self, docx_path: &Path, pdf_path: &Path) -> Result<()> {
         process::Command::new("osascript")
             .arg("-e")
             .arg(
@@ -974,7 +970,17 @@ impl App {
     }
 
     #[cfg(target_os = "windows")]
-    fn convert_pptx_to_pdf_inner(&self, pptx_path: &PathBuf, pdf_path: &PathBuf) -> Result<()> {
+    fn convert_docx_to_pdf_inner(&self, pptx_path: &Path, pdf_path: &Path) -> Result<()> {
+        Err(AppError::FunctionUnsupported)
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    fn convert_docx_to_pdf_inner(&self, _: &Path, _: &Path) -> Result<()> {
+        Err(AppError::FunctionUnsupported)
+    }
+
+    #[cfg(target_os = "windows")]
+    fn convert_pptx_to_pdf_inner(&self, pptx_path: &Path, pdf_path: &Path) -> Result<()> {
         process::Command::new("powershell.exe")
             .arg("-Command")
             .arg(format!(r#"$ppt_app = New-Object -ComObject PowerPoint.Application; $document = $ppt_app.Presentations.Open("{}"); $pdf_filename = "{}"; $opt= [Microsoft.Office.Interop.PowerPoint.PpSaveAsFileType]::ppSaveAsPDF; $document.SaveAs($pdf_filename, $opt); $document.Close(); $ppt_app.Quit();"#,
@@ -984,7 +990,7 @@ impl App {
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    fn convert_pptx_to_pdf_inner(&self, _: &PathBuf, _: &PathBuf) -> Result<()> {
+    fn convert_pptx_to_pdf_inner(&self, _: &Path, _: &Path) -> Result<()> {
         Err(AppError::FunctionUnsupported)
     }
 
