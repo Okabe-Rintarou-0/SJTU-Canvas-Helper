@@ -154,7 +154,7 @@ impl Client {
         course_id: i64,
     ) -> Result<Option<HashMap<String, String>>> {
         let url = format!(
-            "https://oc.sjtu.edu.cn/courses/{}/external_tools/8199",
+            "https://oc.sjtu.edu.cn/courses/{}/external_tools/8332",
             course_id
         );
         let response = self.cli.get(&url).send().await?;
