@@ -372,13 +372,14 @@ impl Client {
                     }
                     let bytes = response.bytes().await?;
                     let read_bytes = bytes.len() as u64;
-                    current_begin += read_bytes;
                     tracing::info!("read_bytes: {:?}", read_bytes);
                     {
                         let mut file = output_file.lock().await;
-                        write_file_at_offset(file.by_ref(), &bytes, begin)?;
+                        write_file_at_offset(file.by_ref(), &bytes, current_begin)?;
                         // release lock automatically after scope release
                     }
+
+                    current_begin += read_bytes;
 
                     let mut payload_guard = payload.lock().await;
                     payload_guard.processed += read_bytes;
