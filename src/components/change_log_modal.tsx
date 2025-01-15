@@ -11,6 +11,12 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v1.3.24 2025/1/15</Title>
+            <Paragraph>
+                <ul>
+                    <li>修复视频下载🎉 🎉 🎉 ，感谢 xeonliu！</li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v1.3.23 2024/12/28</Title>
             <Paragraph>
                 <ul>
