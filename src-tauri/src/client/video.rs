@@ -241,9 +241,9 @@ impl Client {
         // Submit Form to: https://v.sjtu.edu.cn/jy-application-canvas-sjtu/lti3/lti3Auth/ivs
         match resp.headers().get("location") {
             None => {
-                return Err(AppError::VideoDownloadError(
+                Err(AppError::VideoDownloadError(
                     "Redirect URL not found".to_string(),
-                ));
+                ))
             }
             Some(location_header) => {
                 // URL Example:
@@ -326,7 +326,7 @@ impl Client {
             .send()
             .await?;
         let body = resp.bytes().await?;
-        tracing::info!("body: {}", String::from_utf8_lossy(&body.to_vec()));
+        tracing::info!("body: {}", String::from_utf8_lossy(&body));
 
         let resp = utils::parse_json::<CanvasVideoResponse>(&body).unwrap();
         tracing::info!("resp: {:?}", resp);
