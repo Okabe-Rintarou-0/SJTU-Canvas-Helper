@@ -896,16 +896,15 @@ impl FoldersAndFiles {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CanvasVideoResponse {
-    pub code: i64,
-    pub desc: String,
-    pub body: Option<CanvasVideoResponseBody>,
+    pub code: String,
+    pub data: Option<CanvasVideoResponseBody>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CanvasVideoResponseBody {
-    pub page: CanvasVideoResponsePage,
-    pub list: Vec<CanvasVideo>,
+    // pub page: CanvasVideoResponsePage,
+    pub records: Vec<CanvasVideo>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -939,9 +938,9 @@ pub struct CanvasVideo {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetCanvasVideoInfoResponse {
-    pub code: i64,
-    pub desc: String,
-    pub body: VideoInfo,
+    pub code: String,
+    // pub desc: String,
+    pub data: VideoInfo,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]

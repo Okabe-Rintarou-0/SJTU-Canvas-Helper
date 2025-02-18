@@ -31,7 +31,8 @@ impl Client {
             .build()
             .unwrap();
         let base_url = RwLock::new(base_url.into());
-        Self { cli, jar, base_url }
+        let token = RwLock::new("".to_owned());
+        Self { cli, jar, base_url, token}
     }
 
     pub async fn set_base_url<S: Into<String>>(&self, base_url: S) -> bool {
