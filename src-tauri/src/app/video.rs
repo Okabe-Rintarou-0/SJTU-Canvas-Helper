@@ -83,6 +83,6 @@ impl App {
         canvas_course_id: i64,
     )-> Result<String>{
         let res = self.client.get_subtitle(canvas_course_id).await?;
-        return self.client.convert_to_srt(&res.before_assembly_list);
+        self.client.convert_to_srt(&res.before_assembly_list)
     }
 }

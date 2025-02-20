@@ -292,8 +292,8 @@ impl Client {
 
     async fn get_canvas_course_id_token(&self, course_id: i64) -> Result<(String, String)> {
         let (canvas_course_id, token_id) = self.get_canvas_course_id_token_id(course_id).await?;
-            let token = self.get_token_by_token_id(token_id.as_str()).await?;
-            return Ok((canvas_course_id, token));
+        let token = self.get_token_by_token_id(token_id.as_str()).await?;
+        Ok((canvas_course_id, token))
     }
 
     pub async fn get_canvas_videos(&self, course_id: i64) -> Result<Vec<CanvasVideo>> {
