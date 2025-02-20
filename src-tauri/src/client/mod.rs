@@ -13,4 +13,5 @@ pub struct Client {
     cli: reqwest::Client,
     jar: Arc<Jar>,
     base_url: RwLock<String>,
+    token: RwLock<String>,
 }

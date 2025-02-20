@@ -21,6 +21,7 @@ use select::{
     predicate::{Attr, Name},
 };
 use serde::{de::DeserializeOwned, Serialize};
+use serde_json::Value;
 use tauri::Url;
 use tokio::{sync::Mutex, task::JoinSet};
 
@@ -149,25 +150,20 @@ impl Client {
         self.get_page_items(&url).await
     }
 
-    async fn get_form_data_for_canvas_course_id(
+    // https://v.sjtu.edu.cn/jy-application-canvas-sjtu/lti3/getAccessTokenByTokenId?tokenId=
+
+    fn get_form_data_from_doc(
         &self,
-        course_id: i64,
+        document: Document,
+        action_url: &str,
     ) -> Result<Option<HashMap<String, String>>> {
-        let url = format!(
-            "https://oc.sjtu.edu.cn/courses/{}/external_tools/8332",
-            course_id
-        );
-        let response = self.cli.get(&url).send().await?;
-        let body = response.text().await?;
-        let document = Document::from(body.as_str());
-        // tracing::info!("resp: {:?}", body);
-        let form = document
-            .find(Attr("action", "https://courses.sjtu.edu.cn/lti/launch"))
-            .next();
+        // Find the from on this page
+        let form = document.find(Attr("action", action_url)).next();
 
         if form.is_none() {
-            return Ok(None);
+            return Err(AppError::VideoDownloadError("No Form Found".to_string()));
         }
+
         let form = form.unwrap();
 
         let mut data = HashMap::new();
@@ -181,54 +177,161 @@ impl Client {
         Ok(Some(data))
     }
 
-    async fn to_canvas_course_id(&self, course_id: i64) -> Result<Option<String>> {
+    /**
+     * Parse the form
+     */
+    async fn get_form_data_for_canvas_course_id(
+        &self,
+        course_id: i64,
+    ) -> Result<Option<HashMap<String, String>>> {
+        // New Course Video
+        let url = format!(
+            "https://oc.sjtu.edu.cn/courses/{}/external_tools/8329",
+            course_id
+        );
+        let response = self.cli.get(&url).send().await?;
+        let body = response.text().await?;
+        let document = Document::from(body.as_str());
+
+        self.get_form_data_from_doc(
+            document,
+            "https://v.sjtu.edu.cn/jy-application-canvas-sjtu/oidc/login_initiations",
+        )
+    }
+
+    async fn get_canvas_course_id_token_id(
+        &self,
+        course_id: i64,
+    ) -> Result<(Option<String>, Option<String>)> {
         let data = match self.get_form_data_for_canvas_course_id(course_id).await? {
             Some(data) => data,
-            None => return Ok(None),
+            None => return Ok((None, None)),
         };
 
-        // cancel redirection
-        let client = reqwest::Client::builder()
-            .redirect(Policy::none())
-            .cookie_provider(self.jar.clone())
-            .build()?;
-        let resp = client
-            .post("https://courses.sjtu.edu.cn/lti/launch")
+        // Submit the form
+        let resp = self
+            .cli
+            .post("https://v.sjtu.edu.cn/jy-application-canvas-sjtu/oidc/login_initiations")
             .form(&data)
             .send()
             .await?;
 
-        let location_header = resp.headers().get("location");
-        if location_header.is_none() {
-            return Ok(None);
+        let body = resp.text().await?;
+        let document = Document::from(body.as_str());
+
+        // Get another form
+        let data = self.get_form_data_from_doc(
+            document,
+            "https://v.sjtu.edu.cn/jy-application-canvas-sjtu/lti3/lti3Auth/ivs",
+        )?;
+
+        // Cancel Redirect
+        let client = reqwest::Client::builder()
+            .redirect(Policy::none())
+            .cookie_provider(self.jar.clone())
+            .build()?;
+
+        // Submit Another Form
+        let resp = client
+            .post("https://v.sjtu.edu.cn/jy-application-canvas-sjtu/lti3/lti3Auth/ivs")
+            .form(&data)
+            .send()
+            .await?;
+
+        // Submit Form to: https://v.sjtu.edu.cn/jy-application-canvas-sjtu/lti3/lti3Auth/ivs
+        match resp.headers().get("location") {
+            None => {
+                Err(AppError::VideoDownloadError(
+                    "Redirect URL not found".to_string(),
+                ))
+            }
+            Some(location_header) => {
+                // URL Example:
+                // https://v.sjtu.edu.cn/jy-application-canvas-sjtu-ui/#/ivsModules/index
+                // ?tokenId=
+                // &isAdmin=0
+                // &clientId=
+                // &courId=
+                // &ltiCourseId=
+                // &courseName=
+                tracing::info!("Header: {:?}", location_header);
+                let params: Vec<_> = location_header.to_str()?.split(&['&', '?'][..]).collect();
+                let canvas_course_id = params.iter().find_map(|s| s.strip_prefix("courId="));
+                // tokenId
+                let token_id = params.iter().find_map(|s| s.strip_prefix("tokenId="));
+                tracing::info!("Course Id: {:?}", canvas_course_id);
+                tracing::info!("Token Id: {:?}", token_id);
+                Ok((
+                    canvas_course_id.map(|s| s.to_owned()),
+                    token_id.map(|s| s.to_owned()),
+                ))
+            }
         }
-        let location_header = location_header.unwrap();
-        let canvas_course_id = location_header.to_str()?.split("?canvasCourseId=").nth(1);
-        Ok(canvas_course_id.map(|id| id.to_owned()))
     }
 
     pub async fn get_canvas_videos(&self, course_id: i64) -> Result<Vec<CanvasVideo>> {
-        let canvas_course_id = self.to_canvas_course_id(course_id).await?;
+        let (canvas_course_id, token_id) = self.get_canvas_course_id_token_id(course_id).await?;
         if canvas_course_id.is_none() {
-            return Ok(vec![]);
+            return Err(AppError::VideoDownloadError(String::from(
+                "Canvas Course Id Error",
+            )));
         }
-        // tracing::info!("canvas_course_id: {:?}", canvas_course_id);
+        if token_id.is_none() {
+            return Err(AppError::VideoDownloadError(String::from("Token Id Error")));
+        }
+
+        tracing::info!("canvas_course_id: {:?}", canvas_course_id);
+        tracing::info!("token_id: {:?}", token_id);
+
+        // Get Token from token_id
+        // https://v.sjtu.edu.cn/jy-application-canvas-sjtu/lti3/getAccessTokenByTokenId?tokenId=
+        let token_id = token_id.unwrap();
+        let url = format!(
+            "https://v.sjtu.edu.cn/jy-application-canvas-sjtu/lti3/getAccessTokenByTokenId?tokenId={}",
+            token_id
+        );
+
+        let resp = self.cli.get(&url).send().await?;
+        let body = resp.text().await?;
+        tracing::info!("body: {}", body);
+
+        let json: Value = serde_json::from_str(&body)?;
+        let token = json["data"]["token"]
+            .as_str()
+            .ok_or(AppError::VideoDownloadError(String::from(
+                "Token not found",
+            )))?;
+
+        tracing::info!("token: {}", token);
+
         let canvas_course_id = canvas_course_id.unwrap();
-        let url = "https://courses.sjtu.edu.cn/lti/vodVideo/findVodVideoList";
+        let url =
+            "https://v.sjtu.edu.cn/jy-application-canvas-sjtu/directOnDemandPlay/findVodVideoList";
         let mut data = HashMap::new();
-        data.insert("pageIndex", "1");
-        data.insert("pageSize", "1000");
+        // data.insert("pageIndex", "1");
+        // data.insert("pageSize", "1000");
         data.insert("canvasCourseId", canvas_course_id.as_str());
 
+        *self.token.write().await = token.to_owned();
+
         let resp = self
-            .post_form(url, None::<&str>, &data)
-            .await?
-            .error_for_status()?;
+            .cli
+            .post(url)
+            .header(
+                REFERER,
+                "https://v.sjtu.edu.cn/jy-application-canvas-sjtu-ui/",
+            )
+            .header("token", token)
+            .json(&data)
+            .send()
+            .await?;
         let body = resp.bytes().await?;
-        // tracing::info!("body: {}", String::from_utf8_lossy(&body.to_vec()));
-        let resp = utils::parse_json::<CanvasVideoResponse>(&body)?;
-        let videos = match resp.body {
-            Some(body) => body.list,
+        tracing::info!("body: {}", String::from_utf8_lossy(&body));
+
+        let resp = utils::parse_json::<CanvasVideoResponse>(&body).unwrap();
+        tracing::info!("resp: {:?}", resp);
+        let videos = match resp.data {
+            Some(body) => body.records,
             None => vec![],
         };
         Ok(videos)
@@ -397,17 +500,23 @@ impl Client {
 
     pub async fn get_canvas_video_info(&self, video_id: &str) -> Result<VideoInfo> {
         let mut form_data = HashMap::new();
-        let url = "https://courses.sjtu.edu.cn/lti/vodVideo/getVodVideoInfos";
+        let url =
+            "https://v.sjtu.edu.cn/jy-application-canvas-sjtu/directOnDemandPlay/getVodVideoInfos";
         form_data.insert("playTypeHls", "true");
         form_data.insert("id", video_id);
         form_data.insert("isAudit", "true");
+        tracing::info!("{:?}", form_data);
         let resp = self
-            .post_form(url, None::<&str>, &form_data)
+            .cli
+            .post(url)
+            .form(&form_data)
+            .header("token", self.token.read().await.as_str())
+            .send()
             .await?
             .error_for_status()?;
         let bytes = resp.bytes().await?;
         let resp = utils::parse_json::<GetCanvasVideoInfoResponse>(&bytes)?;
-        Ok(resp.body)
+        Ok(resp.data)
     }
 
     pub async fn get_video_info(
