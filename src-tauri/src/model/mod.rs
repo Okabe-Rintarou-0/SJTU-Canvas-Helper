@@ -1023,6 +1023,7 @@ pub struct AnnualReport {
 pub struct CanvasVideoSubTitleResponse {
     pub code: String,
     pub data: Option<CanvasVideoSubTitleResponseBody>,
+    pub status: u64,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

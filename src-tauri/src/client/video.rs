@@ -552,7 +552,7 @@ impl Client {
 
     // TODO: Download Subtitles
     // https://v.sjtu.edu.cn/jy-application-canvas-sjtu/transfer/translate/2070965
-    async fn get_subtitle(&self, canvas_course_id: i64) -> Result<CanvasVideoSubTitleResponseBody> {
+    pub async fn get_subtitle(&self, canvas_course_id: i64) -> Result<CanvasVideoSubTitleResponseBody> {
         // TODO: Save Token
         let url = format!("https://v.sjtu.edu.cn/jy-application-canvas-sjtu/transfer/translate/{}", canvas_course_id);
         let resp = self
@@ -574,7 +574,7 @@ impl Client {
     // 2. Original + Eng
     // 3. Eng
     // 4. Eng + Translated Chs
-    fn convert_to_srt(
+    pub fn convert_to_srt(
         &self,
         subtitle: &Vec<CanvasVideoSubTitle>,
     ) -> Result<String> {
@@ -583,7 +583,12 @@ impl Client {
             // Start time & End time in milliseconds
             // Convert to SRT format: HH:MM:SS,ms --> HH:MM:SS,ms
             let start_time = format_time(item.bg);
-            let end_time = format_time(item.ed);
+            let end_time = if i == subtitle.len()-1 {
+                format_time(item.ed)
+            } else {
+                format_time(subtitle[i + 1].bg)
+            };
+
             let text = item.res.clone();
             srt.push_str(&format!("{}\n", i + 1));
             srt.push_str(&format!("{} --> {}\n", start_time, end_time));

@@ -77,4 +77,12 @@ impl App {
     ) -> Result<Option<VideoCourse>> {
         self.client.get_video_course(subject_id, tecl_id).await
     }
+
+    pub async fn get_subtitle(
+        &self,
+        canvas_course_id: i64,
+    )-> Result<String>{
+        let res = self.client.get_subtitle(canvas_course_id).await?;
+        return self.client.convert_to_srt(&res.before_assembly_list);
+    }
 }

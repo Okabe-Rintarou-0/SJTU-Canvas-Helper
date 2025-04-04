@@ -142,6 +142,27 @@ export default function VideoPage() {
         }
     }
 
+    const handleDownloadSubtitle = async () => {
+        if (!selectedVideo) {
+            messageApi.warning("请先选择一个视频！");
+            return;
+        }
+        try {
+            let videoInfo = await invoke("get_canvas_video_info", { videoId: selectedVideo.videoId }) as VideoInfo;
+            const subtitle = await invoke("get_subtitle", { canvasCourseId: videoInfo.courId }) as string;
+            const blob = new Blob([subtitle], { type: "text/plain;charset=utf-8" });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${selectedVideo.videoName}.srt`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+            messageApi.success("字幕下载成功🎉！");
+        } catch (e) {
+            messageApi.error(`下载字幕时发生错误🙅：${e}`);
+        }
+    };
+
     const handleRemoveTask = async (taskToRemove: VideoDownloadTask) => {
         setDownloadTasks(tasks => tasks.filter(task => task.key !== taskToRemove.key));
         try {
@@ -343,6 +364,11 @@ export default function VideoPage() {
                             value: video.videoId,
                         }))}
                     />
+                    <Space>
+                        <Button onClick={handleDownloadSubtitle} disabled={!selectedVideo}>
+                            下载字幕
+                        </Button>
+                    </Space>
                 </Space>
                 <Table style={{ width: "100%" }} columns={columns} dataSource={plays} pagination={false} />
                 <Space direction="vertical">
