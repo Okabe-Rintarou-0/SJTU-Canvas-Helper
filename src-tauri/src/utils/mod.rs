@@ -94,6 +94,14 @@ pub fn get_file_name(file_path: &str) -> String {
         .to_owned()
 }
 
+pub fn format_time(milliseconds: u64) -> String {
+    let hours = milliseconds / 3_600_000;
+    let minutes = (milliseconds % 3_600_000) / 60_000;
+    let seconds = (milliseconds % 60_000) / 1_000;
+    let millis = milliseconds % 1_000;
+    format!("{:02}:{:02}:{:02},{:03}", hours, minutes, seconds, millis)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
