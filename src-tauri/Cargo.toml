@@ -40,6 +40,7 @@ chrono = "0.4.38"
 bytes = "1.6.0"
 bardecoder = "0.5.0"
 image = "0.24"
+printpdf = {version = "0.8.2", features= ["jpeg"] }
 [dependencies.uuid]
 version = "1.8.0"
 features = [

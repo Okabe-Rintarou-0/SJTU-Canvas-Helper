@@ -551,6 +551,19 @@ async fn get_subtitle(canvas_course_id: i64) -> Result<String> {
     APP.get_subtitle(canvas_course_id).await
 }
 
+#[tauri::command]
+async fn download_ppt<R: Runtime>(
+    window: Window<R>,
+    course_id: i64,
+    save_name: String,
+) -> Result<()> {
+    let window = Arc::new(window);
+    APP.download_ppt(course_id, &save_name, move |progress| {
+        let _ = window.clone().emit("ppt_download://progress", progress);
+    })
+    .await
+}
+
 // Apis for jbox
 #[tauri::command]
 async fn login_jbox() -> Result<()> {
@@ -699,6 +712,7 @@ async fn main() -> Result<()> {
             prepare_proxy,
             stop_proxy,
             get_subtitle,
+            download_ppt,
             // Apis for jbox
             login_jbox,
             upload_file,

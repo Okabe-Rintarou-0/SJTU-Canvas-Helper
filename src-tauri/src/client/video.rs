@@ -1,9 +1,35 @@
 use std::{
-    collections::HashMap, fs::File, io::Write, sync::Arc, time::{SystemTime, UNIX_EPOCH}
+    collections::HashMap,
+    fs::File,
+    io::Write,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
+use super::{
+    constants::{
+        AUTH_URL, CANVAS_LOGIN_URL, EXPRESS_LOGIN_URL, MY_SJTU_URL, VIDEO_BASE_URL,
+        VIDEO_LOGIN_URL, VIDEO_OAUTH_KEY_URL,
+    },
+    Client,
+};
+use crate::{
+    client::constants::{
+        OAUTH_PATH, OAUTH_RANDOM, OAUTH_RANDOM_P1, OAUTH_RANDOM_P1_VAL, OAUTH_RANDOM_P2,
+        OAUTH_RANDOM_P2_VAL, VIDEO_CHUNK_SIZE, VIDEO_INFO_URL,
+    },
+    error::{AppError, Result},
+    model::{
+        CanvasVideo, CanvasVideoPPT, CanvasVideoPPTResponse, CanvasVideoResponse,
+        CanvasVideoSubTitle, CanvasVideoSubTitleResponse, CanvasVideoSubTitleResponseBody,
+        GetCanvasVideoInfoResponse, ItemPage, ProgressPayload, Subject, VideoCourse, VideoInfo,
+        VideoPlayInfo,
+    },
+    utils::{self, format_time, get_file_name, write_file_at_offset},
+};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use md5::{Digest, Md5};
+use printpdf::*;
 use regex::Regex;
 use reqwest::{
     cookie::CookieStore,
@@ -20,25 +46,6 @@ use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use tauri::Url;
 use tokio::{sync::Mutex, task::JoinSet};
-
-use super::{
-    constants::{
-        AUTH_URL, CANVAS_LOGIN_URL, EXPRESS_LOGIN_URL, MY_SJTU_URL, VIDEO_BASE_URL,
-        VIDEO_LOGIN_URL, VIDEO_OAUTH_KEY_URL,
-    },
-    Client,
-};
-use crate::{
-    client::constants::{
-        OAUTH_PATH, OAUTH_RANDOM, OAUTH_RANDOM_P1, OAUTH_RANDOM_P1_VAL, OAUTH_RANDOM_P2,
-        OAUTH_RANDOM_P2_VAL, VIDEO_CHUNK_SIZE, VIDEO_INFO_URL,
-    },
-    error::{AppError, Result},
-    model::{
-        CanvasVideo, CanvasVideoResponse, CanvasVideoSubTitle, CanvasVideoSubTitleResponse, CanvasVideoSubTitleResponseBody, GetCanvasVideoInfoResponse, ItemPage, ProgressPayload, Subject, VideoCourse, VideoInfo, VideoPlayInfo
-    },
-    utils::{self, write_file_at_offset, format_time},
-};
 
 // Apis here are for course video
 // We take references from: https://github.com/prcwcy/sjtu-canvas-video-download/blob/master/sjtu_canvas_video.py
@@ -194,15 +201,14 @@ impl Client {
         )
     }
 
-    async fn get_canvas_course_id_token_id(
-        &self,
-        course_id: i64,
-    ) -> Result<(String, String)> {
+    async fn get_canvas_course_id_token_id(&self, course_id: i64) -> Result<(String, String)> {
         let data = match self.get_form_data_for_canvas_course_id(course_id).await? {
             Some(data) => data,
-            None => return Err(AppError::VideoDownloadError(
-                "No Form Data Found".to_string(),
-            )),
+            None => {
+                return Err(AppError::VideoDownloadError(
+                    "No Form Data Found".to_string(),
+                ))
+            }
         };
 
         // Submit the form
@@ -237,11 +243,9 @@ impl Client {
 
         // Submit Form to: https://v.sjtu.edu.cn/jy-application-canvas-sjtu/lti3/lti3Auth/ivs
         match resp.headers().get("location") {
-            None => {
-                Err(AppError::VideoDownloadError(
-                    "Redirect URL not found".to_string(),
-                ))
-            }
+            None => Err(AppError::VideoDownloadError(
+                "Redirect URL not found".to_string(),
+            )),
             Some(location_header) => {
                 // URL Example:
                 // https://v.sjtu.edu.cn/jy-application-canvas-sjtu-ui/#/ivsModules/index
@@ -253,19 +257,24 @@ impl Client {
                 // &courseName=
                 tracing::info!("Header: {:?}", location_header);
                 let params: Vec<_> = location_header.to_str()?.split(&['&', '?'][..]).collect();
-                let canvas_course_id = params.iter().find_map(|s| s.strip_prefix("courId=")).ok_or(AppError::VideoDownloadError(
-                    "Canvas Course Id not found".to_string(),
-                ))?.to_owned();
+                let canvas_course_id = params
+                    .iter()
+                    .find_map(|s| s.strip_prefix("courId="))
+                    .ok_or(AppError::VideoDownloadError(
+                        "Canvas Course Id not found".to_string(),
+                    ))?
+                    .to_owned();
                 // tokenId
-                let token_id = params.iter().find_map(|s| s.strip_prefix("tokenId=")).ok_or(AppError::VideoDownloadError(
-                    "Token Id not found".to_string(),
-                ))?.to_owned();
+                let token_id = params
+                    .iter()
+                    .find_map(|s| s.strip_prefix("tokenId="))
+                    .ok_or(AppError::VideoDownloadError(
+                        "Token Id not found".to_string(),
+                    ))?
+                    .to_owned();
                 tracing::info!("Course Id: {:?}", canvas_course_id);
                 tracing::info!("Token Id: {:?}", token_id);
-                Ok((
-                    canvas_course_id,
-                    token_id,
-                ))
+                Ok((canvas_course_id, token_id))
             }
         }
     }
@@ -273,7 +282,6 @@ impl Client {
     // Get Token from token_id
     // https://v.sjtu.edu.cn/jy-application-canvas-sjtu/lti3/getAccessTokenByTokenId?tokenId=
     async fn get_token_by_token_id(&self, token_id: &str) -> Result<String> {
-
         let url = format!(
             "https://v.sjtu.edu.cn/jy-application-canvas-sjtu/lti3/getAccessTokenByTokenId?tokenId={}",
             token_id
@@ -298,7 +306,7 @@ impl Client {
 
     pub async fn get_canvas_videos(&self, course_id: i64) -> Result<Vec<CanvasVideo>> {
         let (canvas_course_id, token) = self.get_canvas_course_id_token(course_id).await?;
-        
+
         let url =
             "https://v.sjtu.edu.cn/jy-application-canvas-sjtu/directOnDemandPlay/findVodVideoList";
         let mut data = HashMap::new();
@@ -552,9 +560,15 @@ impl Client {
 
     // TODO: Download Subtitles
     // https://v.sjtu.edu.cn/jy-application-canvas-sjtu/transfer/translate/2070965
-    pub async fn get_subtitle(&self, canvas_course_id: i64) -> Result<CanvasVideoSubTitleResponseBody> {
+    pub async fn get_subtitle(
+        &self,
+        canvas_course_id: i64,
+    ) -> Result<CanvasVideoSubTitleResponseBody> {
         // TODO: Save Token
-        let url = format!("https://v.sjtu.edu.cn/jy-application-canvas-sjtu/transfer/translate/{}", canvas_course_id);
+        let url = format!(
+            "https://v.sjtu.edu.cn/jy-application-canvas-sjtu/transfer/translate/{}",
+            canvas_course_id
+        );
         let resp = self
             .cli
             .get(url)
@@ -574,16 +588,13 @@ impl Client {
     // 2. Original + Eng
     // 3. Eng
     // 4. Eng + Translated Chs
-    pub fn convert_to_srt(
-        &self,
-        subtitle: &[CanvasVideoSubTitle],
-    ) -> Result<String> {
+    pub fn convert_to_srt(&self, subtitle: &[CanvasVideoSubTitle]) -> Result<String> {
         let mut srt = String::new();
         for (i, item) in subtitle.iter().enumerate() {
             // Start time & End time in milliseconds
             // Convert to SRT format: HH:MM:SS,ms --> HH:MM:SS,ms
             let start_time = format_time(item.bg);
-            let end_time = if i == subtitle.len()-1 {
+            let end_time = if i == subtitle.len() - 1 {
                 format_time(item.ed)
             } else {
                 format_time(subtitle[i + 1].bg)
@@ -595,6 +606,100 @@ impl Client {
             srt.push_str(&format!("{}\n\n", text));
         }
         Ok(srt)
+    }
+
+    // https://v.sjtu.edu.cn/jy-application-canvas-sjtu/directOnDemandPlay/vod-analysis/query-ppt-slice-es?ivsVideoId=${courId}
+    pub async fn get_ppt(&self, canvas_course_id: i64) -> Result<Vec<CanvasVideoPPT>> {
+        // TODO: Save Token
+        let url = format!("https://v.sjtu.edu.cn/jy-application-canvas-sjtu/directOnDemandPlay/vod-analysis/query-ppt-slice-es?ivsVideoId={}", canvas_course_id);
+        let resp = self
+            .cli
+            .get(url)
+            .header("token", self.token.read().await.as_str())
+            .send()
+            .await?
+            .error_for_status()?;
+        let bytes = resp.bytes().await?;
+        let resp = utils::parse_json::<CanvasVideoPPTResponse>(&bytes)?;
+        resp.data
+            .ok_or(AppError::VideoDownloadError("No PPT Found".to_string()))
+    }
+
+    /// Downloads PPT images and converts them to a PDF document
+    pub async fn download_ppt_pdf<F: Fn(ProgressPayload) + Send + 'static>(
+        self: Arc<Self>,
+        ppts: &[CanvasVideoPPT],
+        save_path: &str,
+        progress_handler: F,
+    ) -> Result<()> {
+        let total = ppts.len() as u64;
+        let mut total_processed = 0;
+        let mut warning: Vec<PdfWarnMsg> = Vec::new();
+        // extract savename from save_path
+        let save_name = get_file_name(save_path);
+        
+        let mut images: Vec<RawImage> = Vec::new();
+        // Process each PPT slide
+        for (index, ppt) in ppts.iter().enumerate() {
+            // Download image with error handling
+            let image_data = match self.cli.get(&ppt.ppt_img_url).send().await {
+                Ok(response) => response.bytes().await?,
+                Err(e) => {
+                    return Err(AppError::VideoDownloadError(
+                        format!("Failed to download PPT image {}: {}", index, e).into(),
+                    ))
+                }
+            };
+
+            tracing::info!(
+                "Downloaded image {}: {} bytes",
+                index,
+                image_data.len()
+            );
+
+            // TODO: Add To PDF
+            let image = RawImage::decode_from_bytes(&image_data, &mut warning).unwrap();
+            images.push(image.clone());
+
+            // Report progress
+            total_processed += 1;
+            progress_handler(ProgressPayload {
+                uuid: format!("ppt-{}", save_name),
+                processed: total_processed,
+                total,
+            });
+        }
+
+        // TODO: Create A PDF Document
+        let mut doc = PdfDocument::new(save_path);
+        let mut pages: Vec<PdfPage> = Vec::new();
+
+        for image in images {
+            let dpi = 300.0; // 假设默认 96 DPI
+            let conversion_factor = 25.4 / dpi;
+            let width = Mm(image.width as f32 * conversion_factor);
+            let height = Mm(image.height as f32 * conversion_factor);
+            let image_xobject_id = doc.add_image(&image);
+            let page_contents = vec![Op::UseXobject {
+                id: image_xobject_id.clone(),
+                transform: XObjectTransform::default(),
+            }];
+            let page = PdfPage::new(width, height, page_contents); // Adjust page size dynamically
+            pages.push(page);
+        }
+
+        // TODO: Save PDF
+        let pdf_bytes: Vec<u8> = doc
+            .with_pages(pages)
+            .save(&PdfSaveOptions::default(), &mut warning);
+
+        let mut file = File::create(save_path)?;
+        file.write_all(&pdf_bytes)?;
+        file.flush()?;
+        tracing::info!("PDF saved to {}", save_path);
+        tracing::info!("PDF warnings: {:?}", warning);
+
+        Ok(())
     }
 }
 

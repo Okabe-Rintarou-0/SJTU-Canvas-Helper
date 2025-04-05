@@ -2,11 +2,12 @@ import { invoke } from "@tauri-apps/api";
 import { useEffect, useRef, useState } from "react";
 import BasicLayout from "../components/layout";
 import { SwapOutlined } from '@ant-design/icons';
-import { VideoInfo, VideoPlayInfo, VideoDownloadTask, CanvasVideo, LOG_LEVEL_ERROR } from "../lib/model";
+import { VideoInfo, VideoPlayInfo, VideoDownloadTask, CanvasVideo, LOG_LEVEL_ERROR, DownloadTask } from "../lib/model";
 import useMessage from "antd/es/message/useMessage";
 import { getConfig, saveConfig } from "../lib/store";
 import { Button, Checkbox, Divider, Select, Space, Table } from "antd";
 import VideoDownloadTable from "../components/video_download_table";
+import PPTDownloadTable from "../components/ppt_download_table";
 import videoStyles from "../css/video_player.module.css";
 import { LoginAlert } from "../components/login_alert";
 import { useCourses, useQRCode } from "../lib/hooks";
@@ -17,7 +18,8 @@ import VideoAggregator from "../components/video_aggregator";
 import { consoleLog } from "../lib/utils";
 
 export default function VideoPage() {
-    const [downloadTasks, setDownloadTasks] = useState<VideoDownloadTask[]>([]);
+    const [videoDownloadTasks, setVideoDownloadTasks] = useState<VideoDownloadTask[]>([]);
+    const [pptDownloadTasks, setPPTDownloadTasks] = useState<DownloadTask[]>([]);
     const [operating, setOperating] = useState<boolean>(false);
     const courses = useCourses();
     const [messageApi, contextHolder] = useMessage();
@@ -128,8 +130,8 @@ export default function VideoPage() {
 
     const handleDownloadVideo = (video: VideoPlayInfo) => {
         let videoId = video.id + "";
-        if (!downloadTasks.find(task => task.key === videoId)) {
-            setDownloadTasks(tasks => [...tasks, {
+        if (!videoDownloadTasks.find(task => task.key === videoId)) {
+            setVideoDownloadTasks(tasks => [...tasks, {
                 key: videoId,
                 video,
                 video_name: video.name,
@@ -163,10 +165,52 @@ export default function VideoPage() {
         }
     };
 
+    const handleDownloadPPT = async (videoId: string, saveName: string) => {
+        let videoInfo = await invoke("get_canvas_video_info", { videoId: videoId }) as VideoInfo;
+        let courseId = videoInfo.courId;
+
+        let taskKey = `ppt_${saveName}`;
+        if (!pptDownloadTasks.find(task => task.key === taskKey)) {
+            setPPTDownloadTasks(tasks => [...tasks, {
+                key: taskKey,
+                name: saveName,
+                progress: 0,
+                state: "downloading"
+            } as DownloadTask]);
+            invoke("download_ppt", { courseId, saveName })
+                .then(() => {
+                    setPPTDownloadTasks(tasks => tasks.map(task =>
+                        task.key === taskKey ? { ...task, state: "completed", progress: 100 } : task
+                    ));
+                    messageApi.success("PPT下载成功🎉！");
+                })
+                .catch(e => {
+                    setPPTDownloadTasks(tasks => tasks.map(task =>
+                        task.key === taskKey ? { ...task, state: "fail" } : task
+                    ));
+                    messageApi.error(`下载PPT时发生错误🙅：${e}`);
+                });
+        } else {
+            messageApi.warning("请勿重复添加任务！");
+        }
+    };
+
     const handleRemoveTask = async (taskToRemove: VideoDownloadTask) => {
-        setDownloadTasks(tasks => tasks.filter(task => task.key !== taskToRemove.key));
+        setVideoDownloadTasks(tasks => tasks.filter(task => task.key !== taskToRemove.key));
         try {
             await invoke("delete_file_with_name", { name: taskToRemove.video.name });
+        } catch (e) {
+            if (taskToRemove.state !== "fail") {
+                // no need to show error message for already failed tasks
+                messageApi.error(e as string);
+            }
+        }
+    }
+
+    const handleRemovePPTTask = async (taskToRemove: DownloadTask) => {
+        setPPTDownloadTasks(tasks => tasks.filter(task => task.key !== taskToRemove.key));
+        try {
+            await invoke("delete_file_with_name", { name: taskToRemove.name });
         } catch (e) {
             if (taskToRemove.state !== "fail") {
                 // no need to show error message for already failed tasks
@@ -368,6 +412,9 @@ export default function VideoPage() {
                         <Button onClick={handleDownloadSubtitle} disabled={!selectedVideo}>
                             下载字幕
                         </Button>
+                        <Button onClick={() => handleDownloadPPT(selectedVideo?.videoId || "", `${selectedVideo?.videoName}.pdf`)} disabled={!selectedVideo}>
+                            下载PPT
+                        </Button>
                     </Space>
                 </Space>
                 <Table style={{ width: "100%" }} columns={columns} dataSource={plays} pagination={false} />
@@ -393,7 +440,8 @@ export default function VideoPage() {
                         ref={getVideoRef(playURL)}
                         controls={playURL === mainPlayURL} autoPlay={false} src={playURL} muted={playURL === mutedPlayURL} />)}
                 </div>
-                <VideoDownloadTable tasks={downloadTasks} handleRemoveTask={handleRemoveTask} />
+                <VideoDownloadTable tasks={videoDownloadTasks} handleRemoveTask={handleRemoveTask} />
+                <PPTDownloadTable tasks={pptDownloadTasks} handleRemoveTask={handleRemovePPTTask} />
             </>}
             <Divider orientation="left">视频合并</Divider>
             <VideoAggregator />
