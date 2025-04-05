@@ -633,14 +633,13 @@ impl Client {
         progress_handler: F,
     ) -> Result<()> {
         let total = ppts.len() as u64;
-        let mut total_processed = 0;
         let mut warning: Vec<PdfWarnMsg> = Vec::new();
         // extract savename from save_path
         let save_name = get_file_name(save_path);
         
         let mut images: Vec<RawImage> = Vec::new();
         // Process each PPT slide
-        for (index, ppt) in ppts.iter().enumerate() {
+        for (total_processed, (index, ppt)) in ppts.iter().enumerate().enumerate() {
             // Download image with error handling
             let image_data = match self.cli.get(&ppt.ppt_img_url).send().await {
                 Ok(response) => response.bytes().await?,
@@ -662,10 +661,9 @@ impl Client {
             images.push(image.clone());
 
             // Report progress
-            total_processed += 1;
             progress_handler(ProgressPayload {
                 uuid: format!("ppt_{}", save_name),
-                processed: total_processed,
+                processed: total_processed as u64,
                 total,
             });
         }
