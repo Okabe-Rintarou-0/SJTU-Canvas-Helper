@@ -239,7 +239,7 @@ export interface DownloadTask {
     key: string;
     name: string;
     progress: number;
-    state: "downloading" | "completed" | "fail";
+    state: "downloading" | "completed" | "fail" | "merging";
 }
 
 export type DownloadState = "downloading" | "succeed" | "fail" | "wait_retry";

@@ -646,7 +646,7 @@ impl Client {
                 Ok(response) => response.bytes().await?,
                 Err(e) => {
                     return Err(AppError::VideoDownloadError(
-                        format!("Failed to download PPT image {}: {}", index, e).into(),
+                        format!("Failed to download PPT image {}: {}", index, e),
                     ))
                 }
             };
@@ -664,7 +664,7 @@ impl Client {
             // Report progress
             total_processed += 1;
             progress_handler(ProgressPayload {
-                uuid: format!("ppt-{}", save_name),
+                uuid: format!("ppt_{}", save_name),
                 processed: total_processed,
                 total,
             });

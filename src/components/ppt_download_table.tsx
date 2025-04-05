@@ -13,6 +13,7 @@ export default function PPTDownloadTable({ tasks, handleRemoveTask }: PPTDownloa
 
     useEffect(() => {
         let unlisten = appWindow.listen<ProgressPayload>("ppt_download://progress", ({ payload }) => {
+            console.log("Received progress update:", payload);
             updateTaskProgress(payload.uuid, payload.processed, payload.total);
         });
         return () => {
@@ -26,10 +27,17 @@ export default function PPTDownloadTable({ tasks, handleRemoveTask }: PPTDownloa
 
     const updateTaskProgress = (id: string, processed: number, total: number) => {
         setCurrentTasks(tasks => {
+            console.log("Updating task progress:", id, processed, total);
+            console.log("Current tasks:", tasks);
             let task = tasks.find(task => task.key === id);
+            if (!task) {
+                console.error("Task not found:", id);
+                return tasks;
+            }
             if (task) {
                 task.progress = Math.ceil((processed / total) * 100);
-                task.state = task.progress === 100 ? "completed" : "downloading";
+                task.state = task.progress === 100 ? "merging" : "downloading";
+                console.log("Updated task:", task);
             }
             return [...tasks];
         });
@@ -59,6 +67,8 @@ export default function PPTDownloadTable({ tasks, handleRemoveTask }: PPTDownloa
                         return "已完成";
                     case "fail":
                         return "失败";
+                    case "merging":
+                        return "合并中";
                     default:
                         return "未知";
                 }
