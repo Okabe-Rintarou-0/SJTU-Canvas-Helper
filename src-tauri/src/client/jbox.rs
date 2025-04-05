@@ -72,7 +72,7 @@ impl Client {
             "{}/api/v1/file/{}/{}/{}?multipart=null&conflict_resolution_strategy=rename&access_token={}",
             JBOX_BASE_URL, info.library_id, info.space_id, path, info.access_token
         );
-        let chunks: Vec<_> = (1..=chunk_count).map(usize::from).collect();
+        let chunks: Vec<_> = (1..=chunk_count).collect();
         let data = json!({"partNumberRange": chunks}).to_string();
         let result = self
             .post_request::<StartChunkUploadContext, _>(&url, data)

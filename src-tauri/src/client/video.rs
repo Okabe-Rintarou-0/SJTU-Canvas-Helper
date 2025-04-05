@@ -1,9 +1,5 @@
 use std::{
-    collections::HashMap,
-    fs::File,
-    io::Write,
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    collections::HashMap, fs::File, io::Write, sync::Arc, time::{SystemTime, UNIX_EPOCH}
 };
 
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -39,10 +35,9 @@ use crate::{
     },
     error::{AppError, Result},
     model::{
-        CanvasVideo, CanvasVideoResponse, GetCanvasVideoInfoResponse, ItemPage, ProgressPayload,
-        Subject, VideoCourse, VideoInfo, VideoPlayInfo,
+        CanvasVideo, CanvasVideoResponse, CanvasVideoSubTitle, CanvasVideoSubTitleResponse, CanvasVideoSubTitleResponseBody, GetCanvasVideoInfoResponse, ItemPage, ProgressPayload, Subject, VideoCourse, VideoInfo, VideoPlayInfo
     },
-    utils::{self, write_file_at_offset},
+    utils::{self, write_file_at_offset, format_time},
 };
 
 // Apis here are for course video
@@ -202,10 +197,12 @@ impl Client {
     async fn get_canvas_course_id_token_id(
         &self,
         course_id: i64,
-    ) -> Result<(Option<String>, Option<String>)> {
+    ) -> Result<(String, String)> {
         let data = match self.get_form_data_for_canvas_course_id(course_id).await? {
             Some(data) => data,
-            None => return Ok((None, None)),
+            None => return Err(AppError::VideoDownloadError(
+                "No Form Data Found".to_string(),
+            )),
         };
 
         // Submit the form
@@ -256,55 +253,52 @@ impl Client {
                 // &courseName=
                 tracing::info!("Header: {:?}", location_header);
                 let params: Vec<_> = location_header.to_str()?.split(&['&', '?'][..]).collect();
-                let canvas_course_id = params.iter().find_map(|s| s.strip_prefix("courId="));
+                let canvas_course_id = params.iter().find_map(|s| s.strip_prefix("courId=")).ok_or(AppError::VideoDownloadError(
+                    "Canvas Course Id not found".to_string(),
+                ))?.to_owned();
                 // tokenId
-                let token_id = params.iter().find_map(|s| s.strip_prefix("tokenId="));
+                let token_id = params.iter().find_map(|s| s.strip_prefix("tokenId=")).ok_or(AppError::VideoDownloadError(
+                    "Token Id not found".to_string(),
+                ))?.to_owned();
                 tracing::info!("Course Id: {:?}", canvas_course_id);
                 tracing::info!("Token Id: {:?}", token_id);
                 Ok((
-                    canvas_course_id.map(|s| s.to_owned()),
-                    token_id.map(|s| s.to_owned()),
+                    canvas_course_id,
+                    token_id,
                 ))
             }
         }
     }
 
-    pub async fn get_canvas_videos(&self, course_id: i64) -> Result<Vec<CanvasVideo>> {
-        let (canvas_course_id, token_id) = self.get_canvas_course_id_token_id(course_id).await?;
-        if canvas_course_id.is_none() {
-            return Err(AppError::VideoDownloadError(String::from(
-                "Canvas Course Id Error",
-            )));
-        }
-        if token_id.is_none() {
-            return Err(AppError::VideoDownloadError(String::from("Token Id Error")));
-        }
+    // Get Token from token_id
+    // https://v.sjtu.edu.cn/jy-application-canvas-sjtu/lti3/getAccessTokenByTokenId?tokenId=
+    async fn get_token_by_token_id(&self, token_id: &str) -> Result<String> {
 
-        tracing::info!("canvas_course_id: {:?}", canvas_course_id);
-        tracing::info!("token_id: {:?}", token_id);
-
-        // Get Token from token_id
-        // https://v.sjtu.edu.cn/jy-application-canvas-sjtu/lti3/getAccessTokenByTokenId?tokenId=
-        let token_id = token_id.unwrap();
         let url = format!(
             "https://v.sjtu.edu.cn/jy-application-canvas-sjtu/lti3/getAccessTokenByTokenId?tokenId={}",
             token_id
         );
-
         let resp = self.cli.get(&url).send().await?;
         let body = resp.text().await?;
         tracing::info!("body: {}", body);
-
         let json: Value = serde_json::from_str(&body)?;
         let token = json["data"]["token"]
             .as_str()
             .ok_or(AppError::VideoDownloadError(String::from(
                 "Token not found",
             )))?;
+        Ok(token.to_owned())
+    }
 
-        tracing::info!("token: {}", token);
+    async fn get_canvas_course_id_token(&self, course_id: i64) -> Result<(String, String)> {
+        let (canvas_course_id, token_id) = self.get_canvas_course_id_token_id(course_id).await?;
+        let token = self.get_token_by_token_id(token_id.as_str()).await?;
+        Ok((canvas_course_id, token))
+    }
 
-        let canvas_course_id = canvas_course_id.unwrap();
+    pub async fn get_canvas_videos(&self, course_id: i64) -> Result<Vec<CanvasVideo>> {
+        let (canvas_course_id, token) = self.get_canvas_course_id_token(course_id).await?;
+        
         let url =
             "https://v.sjtu.edu.cn/jy-application-canvas-sjtu/directOnDemandPlay/findVodVideoList";
         let mut data = HashMap::new();
@@ -554,6 +548,53 @@ impl Client {
         let bytes = response.bytes().await?;
         let video = utils::parse_json(&bytes)?;
         Ok(video)
+    }
+
+    // TODO: Download Subtitles
+    // https://v.sjtu.edu.cn/jy-application-canvas-sjtu/transfer/translate/2070965
+    pub async fn get_subtitle(&self, canvas_course_id: i64) -> Result<CanvasVideoSubTitleResponseBody> {
+        // TODO: Save Token
+        let url = format!("https://v.sjtu.edu.cn/jy-application-canvas-sjtu/transfer/translate/{}", canvas_course_id);
+        let resp = self
+            .cli
+            .get(url)
+            .header("token", self.token.read().await.as_str())
+            .send()
+            .await?
+            .error_for_status()?;
+        let bytes = resp.bytes().await?;
+        let resp = utils::parse_json::<CanvasVideoSubTitleResponse>(&bytes)?;
+        resp.data.ok_or(AppError::VideoDownloadError(
+            "No Subtitle Found".to_string(),
+        ))
+    }
+
+    // TODO: Choose a Version & Convert to SRT
+    // 1. Original
+    // 2. Original + Eng
+    // 3. Eng
+    // 4. Eng + Translated Chs
+    pub fn convert_to_srt(
+        &self,
+        subtitle: &[CanvasVideoSubTitle],
+    ) -> Result<String> {
+        let mut srt = String::new();
+        for (i, item) in subtitle.iter().enumerate() {
+            // Start time & End time in milliseconds
+            // Convert to SRT format: HH:MM:SS,ms --> HH:MM:SS,ms
+            let start_time = format_time(item.bg);
+            let end_time = if i == subtitle.len()-1 {
+                format_time(item.ed)
+            } else {
+                format_time(subtitle[i + 1].bg)
+            };
+
+            let text = item.res.clone();
+            srt.push_str(&format!("{}\n", i + 1));
+            srt.push_str(&format!("{} --> {}\n", start_time, end_time));
+            srt.push_str(&format!("{}\n\n", text));
+        }
+        Ok(srt)
     }
 }
 

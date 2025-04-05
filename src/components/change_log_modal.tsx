@@ -11,6 +11,18 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v1.3.26 2025/4/5</Title>
+            <Paragraph>
+                <ul>
+                    <li>新增SRT字幕下载功能</li>
+                </ul>
+            </Paragraph>
+            <Title level={4}>v1.3.25 2025/2/20</Title>
+            <Paragraph>
+                <ul>
+                    <li>采用新版“课堂视频”视频下载API</li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v1.3.24 2025/1/15</Title>
             <Paragraph>
                 <ul>
