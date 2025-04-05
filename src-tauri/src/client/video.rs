@@ -576,7 +576,7 @@ impl Client {
     // 4. Eng + Translated Chs
     pub fn convert_to_srt(
         &self,
-        subtitle: &Vec<CanvasVideoSubTitle>,
+        subtitle: &[CanvasVideoSubTitle],
     ) -> Result<String> {
         let mut srt = String::new();
         for (i, item) in subtitle.iter().enumerate() {

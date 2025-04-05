@@ -503,7 +503,7 @@ impl App {
             contents: vec![],
         };
         let supported_formats = ["jpg", "jpeg", "png"];
-        let ext = file.display_name.split('.').last().unwrap_or_default();
+        let ext = file.display_name.split('.').next_back().unwrap_or_default();
         if !supported_formats.contains(&ext) {
             return Ok(scan_result);
         }
