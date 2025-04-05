@@ -11,6 +11,12 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v1.3.27 2025/4/5</Title>
+            <Paragraph>
+                <ul>
+                    <li>新增PDF课件下载功能</li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v1.3.26 2025/4/5</Title>
             <Paragraph>
                 <ul>
