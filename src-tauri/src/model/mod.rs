@@ -1017,3 +1017,37 @@ pub struct AnnualReport {
     pub year: i32,
     pub course_to_statistic: HashMap<i64, AnnualCourseStatistic>,
 }
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasVideoSubTitleResponse {
+    pub code: String,
+    pub data: Option<CanvasVideoSubTitleResponseBody>,
+    pub status: u64,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasVideoSubTitleResponseBody {
+    pub after_assembly_list: Vec<CanvasVideoSubTitle>,
+    pub before_assembly_list: Vec<CanvasVideoSubTitle>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasVideoSubTitle {
+    // Begin
+    pub bg: u64,
+    pub course_id: i64,
+    // End
+    pub ed: u64,
+    // English Translation
+    pub en: String,
+    // TODO: `id` in "Before Assembly"
+    // Original Recognition Result
+    pub res: String,
+    // TODO: Tenant Organization Code in "Before Assembly"
+    pub video_id: i64,
+    // Translated from English Version
+    pub zh: String,
+}
