@@ -636,7 +636,7 @@ impl Client {
         let mut warning: Vec<PdfWarnMsg> = Vec::new();
         // extract savename from save_path
         let save_name = get_file_name(save_path);
-        
+
         let mut images: Vec<RawImage> = Vec::new();
         // Process each PPT slide
         for (total_processed, (index, ppt)) in ppts.iter().enumerate().enumerate() {
@@ -644,17 +644,14 @@ impl Client {
             let image_data = match self.cli.get(&ppt.ppt_img_url).send().await {
                 Ok(response) => response.bytes().await?,
                 Err(e) => {
-                    return Err(AppError::VideoDownloadError(
-                        format!("Failed to download PPT image {}: {}", index, e),
-                    ))
+                    return Err(AppError::VideoDownloadError(format!(
+                        "Failed to download PPT image {}: {}",
+                        index, e
+                    )))
                 }
             };
 
-            tracing::info!(
-                "Downloaded image {}: {} bytes",
-                index,
-                image_data.len()
-            );
+            tracing::info!("Downloaded image {}: {} bytes", index, image_data.len());
 
             // TODO: Add To PDF
             let image = RawImage::decode_from_bytes(&image_data, &mut warning).unwrap();
