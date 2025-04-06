@@ -1051,3 +1051,25 @@ pub struct CanvasVideoSubTitle {
     // Translated from English Version
     pub zh: String,
 }
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasVideoPPTResponse {
+    pub code: String,
+    pub data: Option<Vec<CanvasVideoPPT>>,
+    pub status: u64,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasVideoPPT {
+    pub create_sec: String,
+    pub ocr: Vec<CanvasVideoPPTOcr>,
+    pub ppt_img_url: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasVideoPPTOcr {
+    pub word: String,
+}
