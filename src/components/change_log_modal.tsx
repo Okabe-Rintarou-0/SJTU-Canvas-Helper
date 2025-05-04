@@ -11,6 +11,12 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v1.3.28 2025/5/4</Title>
+            <Paragraph>
+                <ul>
+                    <li>修复字幕下载中字段为空时解析出错的问题</li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v1.3.27 2025/4/5</Title>
             <Paragraph>
                 <ul>
