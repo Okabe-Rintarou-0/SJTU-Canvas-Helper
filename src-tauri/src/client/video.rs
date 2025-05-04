@@ -670,7 +670,7 @@ impl Client {
         let mut pages: Vec<PdfPage> = Vec::new();
 
         for image in images {
-            let dpi = 300.0; // 假设默认 96 DPI
+            let dpi = 300.0; // 假设默认 300 DPI
             let conversion_factor = 25.4 / dpi;
             let width = Mm(image.width as f32 * conversion_factor);
             let height = Mm(image.height as f32 * conversion_factor);

@@ -1042,14 +1042,14 @@ pub struct CanvasVideoSubTitle {
     // End
     pub ed: u64,
     // English Translation
-    pub en: String,
+    pub en: Option<String>,
     // TODO: `id` in "Before Assembly"
     // Original Recognition Result
     pub res: String,
     // TODO: Tenant Organization Code in "Before Assembly"
     pub video_id: i64,
     // Translated from English Version
-    pub zh: String,
+    pub zh: Option<String>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
