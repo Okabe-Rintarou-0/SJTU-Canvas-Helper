@@ -65,7 +65,7 @@ impl LLMClient for DeepSeekClient {
             .choices
             .into_iter()
             .next()
-            .and_then(|choice| Some(choice.message.content))
+            .map(|choice| choice.message.content)
             .unwrap_or_default();
         Ok(content)
     }

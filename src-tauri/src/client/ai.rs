@@ -16,7 +16,7 @@ impl Client {
         let resp = self.get_request(&file.url, None::<&str>).await?;
         let data = resp.bytes().await?;
         let text = self.file_parser.parse(data, ext).await?;
-        return Ok(text);
+        Ok(text)
     }
 
     pub async fn explain_file(&self, file: &File) -> Result<String> {
