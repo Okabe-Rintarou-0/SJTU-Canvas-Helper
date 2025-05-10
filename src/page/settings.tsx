@@ -1,15 +1,15 @@
-import { Button, Form, Image, Input, InputNumber, Select, Space, Tour } from "antd";
-import BasicLayout from "../components/layout";
-import { useEffect, useRef, useState } from "react";
-import { AccountInfo, AppConfig, LOG_LEVEL_INFO, User } from "../lib/model";
 import { invoke } from "@tauri-apps/api";
-import useMessage from "antd/es/message/useMessage";
-import { getConfig, saveConfig } from "../lib/store";
 import type { InputRef, TourProps } from 'antd';
-import { PathSelector } from "../components/path_selector";
-import { consoleLog, savePathValidator } from "../lib/utils";
+import { Button, Form, Image, Input, InputNumber, Select, Space, Tour } from "antd";
+import useMessage from "antd/es/message/useMessage";
+import { useEffect, useRef, useState } from "react";
 import ReactJson from "react-json-view-ts";
+import BasicLayout from "../components/layout";
 import LogModal from "../components/log_modal";
+import { PathSelector } from "../components/path_selector";
+import { AccountInfo, AppConfig, LOG_LEVEL_INFO, User } from "../lib/model";
+import { getConfig, saveConfig } from "../lib/store";
+import { consoleLog, savePathValidator } from "../lib/utils";
 
 const { Password } = Input;
 
@@ -97,6 +97,22 @@ export default function SettingsPage() {
             messageApi.success(`👋你好，${me.name}。欢迎使用 SJTU Canvas Helper👏`, 2);
         } catch (e) {
             messageApi.error(`Token 无效🥹！`);
+        }
+    }
+
+    const handleTestApiKey = async () => {
+        try {
+            messageApi.open({
+                key: "testing",
+                type: "loading",
+                content: "正在等待 LLM 答复😄...",
+                duration: 0,
+            })
+            let resp = await invoke("chat", { prompt: "你好！" });
+            messageApi.destroy("testing")
+            messageApi.success(`来自 LLM 的回复：${resp}`);
+        } catch (e) {
+            messageApi.error(`API KEY 无效🥹！`);
         }
     }
 
@@ -207,6 +223,9 @@ export default function SettingsPage() {
                         <Select.Option value="JI">密院</Select.Option>
                     </Select>
                 </Form.Item>
+                <Form.Item name="llm_api_key" label="大模型（目前只接入了 DeepSeek）的 API KEY">
+                    <Input />
+                </Form.Item>
                 <Form.Item name="save_path" label="下载保存目录" required rules={[{ validator: savePathValidator }]}>
                     <PathSelector />
                 </Form.Item>
@@ -216,7 +235,7 @@ export default function SettingsPage() {
                 <Form.Item name="serve_as_plaintext" label="以纯文本显示的文件拓展名">
                     <Input placeholder="请输入文件拓展名，以英文逗号隔开" />
                 </Form.Item>
-                <Space>
+                <Space wrap>
                     <Form.Item>
                         <Button ref={saveButtonRef} type="primary" htmlType="submit">
                             保存
@@ -225,6 +244,11 @@ export default function SettingsPage() {
                     <Form.Item>
                         <Button onClick={handleTestToken}>
                             测试 Token
+                        </Button>
+                    </Form.Item>
+                    <Form.Item>
+                        <Button onClick={handleTestApiKey}>
+                            测试 API KEY
                         </Button>
                     </Form.Item>
                     <Form.Item>

@@ -1,15 +1,18 @@
-import { Button, Checkbox, CheckboxProps, Divider, Input, Space, Table, Tabs, TabsProps, message } from "antd";
-import BasicLayout from "../components/layout";
-import { useEffect, useMemo, useState } from "react";
-import { Course, Entry, entryName, File, FileDownloadTask, Folder, isFile, LOG_LEVEL_ERROR } from "../lib/model";
+import { ExclamationCircleFilled, FolderOutlined, HomeOutlined, LeftOutlined } from "@ant-design/icons";
 import { invoke } from "@tauri-apps/api";
+import { Button, Checkbox, CheckboxProps, Divider, Input, Space, Table, Tabs, TabsProps, message } from "antd";
 import useMessage from "antd/es/message/useMessage";
+import confirm from "antd/es/modal/confirm";
+import { useEffect, useMemo, useState } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from 'remark-gfm';
 import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
-import { useBaseURL, useCourses, useLoginModal, useMerger, usePreview } from "../lib/hooks";
-import { FolderOutlined, HomeOutlined, LeftOutlined } from "@ant-design/icons"
-import { scrollToTop, getFileIcon, consoleLog, isMergableFileType } from "../lib/utils";
 import FileOrderSelectModal from "../components/file_order_select_modal";
+import BasicLayout from "../components/layout";
+import { useBaseURL, useCourses, useLoginModal, useMerger, usePreview } from "../lib/hooks";
+import { Course, Entry, File, FileDownloadTask, Folder, LOG_LEVEL_ERROR, LOG_LEVEL_INFO, entryName, isFile } from "../lib/model";
+import { consoleLog, getFileIcon, isMergableFileType, scrollToTop } from "../lib/utils";
 
 interface DownloadInfo {
     course?: Course;
@@ -18,6 +21,16 @@ interface DownloadInfo {
 
 const COURSE_FILES = "course files";
 const MY_FILES = "my files";
+const EXPLAINABLE_FILE_EXTS = [".pdf", ".docx"];
+
+function isExplainableFile(file: File) {
+    let dotPos = file.display_name.lastIndexOf(".");
+    if (dotPos === -1) {
+        return false;
+    }
+    let ext = file.display_name.slice(dotPos);
+    return EXPLAINABLE_FILE_EXTS.indexOf(ext) != -1;
+}
 
 export default function FilesPage() {
     const [section, setSection] = useState<string>(COURSE_FILES);
@@ -63,6 +76,36 @@ export default function FilesPage() {
             }
         }
     }, [section]);
+
+    const handleExplainFile = async (file: File) => {
+        try {
+            messageApi.open({
+                key: "waiting_response",
+                type: "loading",
+                content: "正在等待 LLM 答复😄...",
+                duration: 0,
+            });
+            let resp = await invoke("explain_file", { file }) as string;
+            consoleLog(LOG_LEVEL_INFO, resp);
+            confirm({
+                style: {
+                    minWidth: "80%", maxWidth: "80%",
+                    maxHeight: "80%",
+                },
+                styles: {
+                    body: { overflow: "scroll", }
+                },
+                title: 'AI 总结',
+                icon: <ExclamationCircleFilled />,
+                content: <Markdown remarkPlugins={[remarkGfm]}>
+                    {resp}
+                </Markdown>,
+            });
+            messageApi.destroy("waiting_response");
+        } catch (e) {
+            messageApi.error(`总结出错！${e}`)
+        }
+    }
 
     const handleLoginJbox = async () => {
         try {
@@ -140,7 +183,8 @@ export default function FilesPage() {
                                 e.preventDefault();
                                 setPreviewEntry(file);
                             }}>预览</a>
-                        </Space>
+                            {isExplainableFile(file) && <a onClick={() => handleExplainFile(file)}>AI 总结</a>}
+                        </Space >
                     );
                 }
                 else {

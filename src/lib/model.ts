@@ -254,6 +254,7 @@ export interface AppConfig {
     proxy_port: number;
     course_assignment_file_bindings: Record<number, File[]>;
     show_alert_map: Record<string, boolean>;
+    llm_api_key: string;
 }
 
 export interface AccountInfo {

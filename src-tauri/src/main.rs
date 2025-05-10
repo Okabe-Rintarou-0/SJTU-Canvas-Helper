@@ -208,6 +208,16 @@ fn check_path(path: String) -> bool {
 }
 
 #[tauri::command]
+async fn chat(prompt: String) -> Result<String> {
+    APP.chat(prompt).await
+}
+
+#[tauri::command]
+async fn explain_file(file: File) -> Result<String> {
+    APP.explain_file(&file).await
+}
+
+#[tauri::command]
 async fn export_users(users: Vec<User>, save_name: String) -> Result<()> {
     APP.export_users(&users, &save_name).await
 }
@@ -718,6 +728,9 @@ async fn main() -> Result<()> {
             upload_file,
             // Annual Report
             generate_annual_report,
+            // LLM
+            chat,
+            explain_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

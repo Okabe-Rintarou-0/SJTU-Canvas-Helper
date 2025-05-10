@@ -191,7 +191,7 @@ impl App {
         let config = App::read_config_from_file(&config_path).unwrap_or_default();
 
         let base_url = Self::get_base_url(&config.account_type);
-        let client = Client::with_base_url(base_url);
+        let client = Client::new(base_url, &config.llm_api_key);
 
         Self {
             client: Arc::new(client),
@@ -810,8 +810,17 @@ impl App {
         if self.client.set_base_url(base_url).await {
             self.invalidate_cache()?;
         }
+        self.client.set_llm_api_key(&config.llm_api_key).await;
         *self.config.write().await = config;
         Ok(())
+    }
+
+    pub async fn chat<S: Into<String>>(&self, prompt: S) -> Result<String> {
+        self.client.chat(prompt).await
+    }
+
+    pub async fn explain_file(&self, file: &File) -> Result<String> {
+        self.client.explain_file(file).await
     }
 
     pub fn check_path(path: &str) -> bool {

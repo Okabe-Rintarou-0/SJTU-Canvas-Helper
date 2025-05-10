@@ -706,7 +706,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_uuid() -> Result<()> {
-        let cli = Client::new();
+        let cli = Client::default();
         let uuid = cli.get_uuid().await?;
         assert!(uuid.is_some());
         let uuid: String = uuid.unwrap();
@@ -716,7 +716,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_video() -> Result<()> {
-        let cli = Arc::new(Client::new());
+        let cli = Arc::new(Client::default());
         // let video_url = "https://www.w3schools.com/html/mov_bbb.mp4";
         // a bigger one, more than one video block
         let video_url = "https://download.samplelib.com/mp4/sample-10s.mp4";
@@ -745,7 +745,7 @@ mod tests {
 
     #[test]
     fn test_get_oauth_signature() -> Result<()> {
-        let cli = Client::new();
+        let cli = Client::default();
         let oauth_nonce = "1709784720392";
         let id = 3601811;
         let oauth_consumer_key = "DADD2CA9923D5E31331C4B79B39A1E4B";

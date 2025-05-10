@@ -1,4 +1,4 @@
-use super::{constants::BASE_URL, Client};
+use super::{constants::BASE_URL, file_parser, llm, Client};
 use ::bytes::Bytes;
 use reqwest::{cookie, multipart};
 use serde::de::DeserializeOwned;
@@ -20,11 +20,11 @@ use crate::{
 // Apis here are for canvas
 impl Client {
     #[allow(dead_code)]
-    pub fn new() -> Self {
-        Self::with_base_url(BASE_URL.to_owned())
+    pub fn default() -> Self {
+        Self::new(BASE_URL, "")
     }
 
-    pub fn with_base_url<S: Into<String>>(base_url: S) -> Self {
+    pub fn new<S: Into<String>>(base_url: S, llm_api_key: S) -> Self {
         let jar = Arc::new(cookie::Jar::default());
         let cli = reqwest::Client::builder()
             .cookie_provider(jar.clone())
@@ -32,7 +32,20 @@ impl Client {
             .unwrap();
         let base_url = RwLock::new(base_url.into());
         let token = RwLock::new("".to_owned());
-        Self { cli, jar, base_url, token}
+        let llm_cli = llm::chat::new_llm_client(llm_api_key.into()).unwrap();
+        let file_parser = file_parser::new_generic_file_reader();
+        Self {
+            cli,
+            jar,
+            base_url,
+            token,
+            llm_cli,
+            file_parser,
+        }
+    }
+
+    pub async fn set_llm_api_key<S: Into<String>>(&self, api_key: S) {
+        self.llm_cli.set_api_key(api_key.into()).await;
     }
 
     pub async fn set_base_url<S: Into<String>>(&self, base_url: S) -> bool {
@@ -908,7 +921,7 @@ mod test {
     async fn test_get_me() -> Result<()> {
         let token = get_token_from_env();
         assert!(!token.is_empty());
-        let cli = Client::new();
+        let cli = Client::default();
         let me = cli.get_me(&token).await?;
         assert!(me.id > 0);
         assert!(!me.name.is_empty());
@@ -919,7 +932,7 @@ mod test {
     async fn test_list_courses() -> Result<()> {
         let token = get_token_from_env();
         assert!(!token.is_empty());
-        let cli = Client::new();
+        let cli = Client::default();
 
         let courses = cli.list_courses(&token).await?;
         assert!(!courses.is_empty());
@@ -941,7 +954,7 @@ mod test {
         tracing_subscriber::fmt::init();
         let token = get_token_from_env();
         assert!(!token.is_empty());
-        let cli = Client::new();
+        let cli = Client::default();
         let courses = cli.list_courses(&token).await?;
         for course in courses {
             let assignments = cli.list_course_assignments(course.id, &token).await?;
@@ -965,7 +978,7 @@ mod test {
     async fn test_list_users() -> Result<()> {
         let token = get_token_from_env();
         assert!(!token.is_empty());
-        let cli = Client::new();
+        let cli = Client::default();
         let courses = cli.list_courses(&token).await?;
         for course in courses {
             let term = &course.term;
@@ -998,7 +1011,7 @@ mod test {
     async fn test_list_submissions() -> Result<()> {
         let token = get_token_from_env();
         assert!(!token.is_empty());
-        let cli = Client::new();
+        let cli = Client::default();
         let courses = cli.list_courses(&token).await?;
         for course in courses {
             let is_ta = is_ta(&course);
@@ -1025,7 +1038,7 @@ mod test {
     async fn test_list_colors() -> Result<()> {
         let token = get_token_from_env();
         assert!(!token.is_empty());
-        let cli = Client::new();
+        let cli = Client::default();
         cli.get_colors(&token).await?;
         Ok(())
     }

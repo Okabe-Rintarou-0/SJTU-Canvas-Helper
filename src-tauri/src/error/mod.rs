@@ -46,6 +46,12 @@ pub enum AppError {
     OpenStderrError,
     #[error("Failed to download video {0}")]
     VideoDownloadError(String),
+    #[error("Unsupported file extension {0}")]
+    UnsupportedFileExtensionError(String),
+    #[error("PDF extract output error: {0}")]
+    PDFOutputError(#[from] pdf_extract::OutputError),
+    #[error("Docx reader error: {0}")]
+    DocxReaderError(#[from] docx_rs::ReaderError),
 }
 
 impl serde::Serialize for AppError {

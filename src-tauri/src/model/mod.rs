@@ -137,6 +137,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub serve_as_plaintext: String,
     #[serde(default)]
+    pub llm_api_key: String,
+    #[serde(default)]
     pub ja_auth_cookie: String,
     #[serde(default)]
     pub video_cookies: String,
@@ -166,6 +168,7 @@ impl Default for AppConfig {
             jbox_login_info: Default::default(),
             course_assignment_file_bindings: Default::default(),
             show_alert_map: Default::default(),
+            llm_api_key: Default::default(),
         }
     }
 }
