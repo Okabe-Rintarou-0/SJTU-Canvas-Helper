@@ -1,17 +1,17 @@
-import React, { useEffect, useState } from 'react';
-import { FileOutlined, SettingOutlined, UserOutlined, VideoCameraOutlined, FormOutlined, CalendarOutlined, CloudDownloadOutlined } from '@ant-design/icons';
+import { CalendarOutlined, CloudDownloadOutlined, FileOutlined, FormOutlined, SettingOutlined, UserOutlined, VideoCameraOutlined } from '@ant-design/icons';
+import { getVersion } from "@tauri-apps/api/app";
 import { Layout, Menu, Space, theme } from 'antd';
+import useMessage from 'antd/es/message/useMessage';
+import React, { useEffect, useState } from 'react';
+import { BsQrCode } from 'react-icons/bs';
+import { FaPeopleGroup } from "react-icons/fa6";
+import { GoDiscussionOutdated } from 'react-icons/go';
+import { LuBookOpenCheck } from 'react-icons/lu';
 import { TbReportAnalytics } from "react-icons/tb";
 import { Link, useLocation } from 'react-router-dom';
-import { getVersion } from "@tauri-apps/api/app";
-import { BsQrCode } from 'react-icons/bs';
-import { GoDiscussionOutdated } from 'react-icons/go';
-import { ChangeLogModal } from './change_log_modal';
-import { LuBookOpenCheck } from 'react-icons/lu';
 import { useKeyPress } from '../lib/hooks';
-import { FaPeopleGroup } from "react-icons/fa6";
 import { checkForUpdates } from '../lib/utils';
-import useMessage from 'antd/es/message/useMessage';
+import { ChangeLogModal } from './change_log_modal';
 const { Content, Footer, Sider } = Layout;
 
 export default function BasicLayout({ children }: React.PropsWithChildren) {

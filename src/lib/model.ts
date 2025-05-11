@@ -5,6 +5,8 @@ export const LOG_LEVEL_ERROR = 3;
 
 export type LogLevel = number;
 
+export type Option<T> = T | null | undefined;
+
 export interface Course {
     id: number;
     uuid: string;
@@ -243,6 +245,7 @@ export interface DownloadTask {
 }
 
 export type DownloadState = "downloading" | "succeed" | "fail" | "wait_retry";
+export type Theme = "light" | "dark";
 
 export interface AppConfig {
     token: string;
@@ -255,6 +258,9 @@ export interface AppConfig {
     course_assignment_file_bindings: Record<number, File[]>;
     show_alert_map: Record<string, boolean>;
     llm_api_key: string;
+    theme: Option<Theme>;
+    compact_mode: boolean;
+    color_primary: Option<string>;
 }
 
 export interface AccountInfo {

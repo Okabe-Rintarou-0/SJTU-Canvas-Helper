@@ -1,14 +1,16 @@
-import { CSSProperties, Dispatch, ReactNode, SetStateAction, useEffect, useState } from "react";
-import PreviewModal from "../components/preview_modal";
-import { AnnualReport, Assignment, Course, Entry, File, Folder, isFile, LOG_LEVEL_ERROR, LOG_LEVEL_INFO, LoginMessage, RelationshipTopo, User, UserSubmissions } from "./model";
-import PDFMerger from 'pdf-merger-js/browser';
+import { invoke } from "@tauri-apps/api";
 import { Button, Input, Progress, Space, message } from "antd";
 import dayjs from "dayjs";
-import { invoke } from "@tauri-apps/api";
-import { getConfig, saveConfig } from "./store";
+import PDFMerger from 'pdf-merger-js/browser';
+import { CSSProperties, Dispatch, ReactNode, SetStateAction, useEffect, useState } from "react";
+import { TypedUseSelectorHook, useDispatch, useSelector } from 'react-redux';
 import useWebSocket, { ReadyState } from "react-use-websocket";
 import { LoginAlertModal } from "../components/login_alert_modal";
+import PreviewModal from "../components/preview_modal";
+import { getConfig, saveConfig } from "./config";
 import { BASE_URL, JI_BASE_URL } from "./constants";
+import { AnnualReport, Assignment, Course, Entry, File, Folder, LOG_LEVEL_ERROR, LOG_LEVEL_INFO, LoginMessage, RelationshipTopo, User, UserSubmissions, isFile } from "./model";
+import { ConfigDispatch, ConfigState } from "./store";
 import { consoleLog, isMergableFileType } from "./utils";
 
 const UPDATE_QRCODE_MESSAGE = "{ \"type\": \"UPDATE_QR_CODE\" }";
@@ -537,3 +539,6 @@ export const useAnnualReport = (year: number) => {
     }, [year]);
     return useData<AnnualReport>("generate_annual_report", true, args);
 }
+
+export const useConfigDispatch: () => ConfigDispatch = useDispatch
+export const useConfigSelector: TypedUseSelectorHook<ConfigState> = useSelector

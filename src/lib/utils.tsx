@@ -1,13 +1,13 @@
-import { decode } from "js-base64";
-import { getConfig } from "./store";
-import dayjs, { Dayjs } from "dayjs"
-import { checkUpdate } from '@tauri-apps/api/updater';
-import { Assignment, AssignmentDate, Attachment, File as FileModel, LogLevel } from "./model";
-import { PiMicrosoftExcelLogoFill, PiMicrosoftPowerpointLogoFill, PiMicrosoftWordLogoFill } from "react-icons/pi";
-import { FaRegFilePdf, FaImage, FaFileCsv, FaRegFileArchive, FaRegFileVideo, FaRegFileAudio } from "react-icons/fa";
-import { FileOutlined } from "@ant-design/icons"
+import { FileOutlined } from "@ant-design/icons";
 import { invoke } from "@tauri-apps/api";
+import { checkUpdate } from '@tauri-apps/api/updater';
 import { MessageInstance } from "antd/es/message/interface";
+import dayjs, { Dayjs } from "dayjs";
+import { decode } from "js-base64";
+import { FaFileCsv, FaImage, FaRegFileArchive, FaRegFileAudio, FaRegFilePdf, FaRegFileVideo } from "react-icons/fa";
+import { PiMicrosoftExcelLogoFill, PiMicrosoftPowerpointLogoFill, PiMicrosoftWordLogoFill } from "react-icons/pi";
+import { getConfig } from "./config";
+import { Assignment, AssignmentDate, Attachment, File as FileModel, LogLevel } from "./model";
 
 export function isMergableFileType(fileType: string): boolean {
     for (let ext of ["pptx", "pdf", "docx"]) {

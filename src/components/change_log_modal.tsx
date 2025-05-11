@@ -15,6 +15,7 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
             <Paragraph>
                 <ul>
                     <li>AI 解释文档（WIP👷）</li>
+                    <li>支持切换前端主题，见设置</li>
                     <li>优化 PDF renderer（见 issue https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/issues/19）</li>
                 </ul>
             </Paragraph>

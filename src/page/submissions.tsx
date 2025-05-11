@@ -1,21 +1,21 @@
+import { WarningOutlined } from "@ant-design/icons";
+import { invoke } from "@tauri-apps/api";
+import type { SelectProps } from 'antd';
 import { Button, Input, Popconfirm, Select, Space, Table, Tag } from "antd";
-import BasicLayout from "../components/layout";
 import useMessage from "antd/es/message/useMessage";
 import { ReactNode, useEffect, useMemo, useState } from "react";
-import { Assignment, Attachment, File, FileDownloadTask, GradeStatistic, LOG_LEVEL_ERROR, Submission, User } from "../lib/model";
-import { invoke } from "@tauri-apps/api";
-import { assignmentIsNotUnlocked, attachmentToFile, consoleLog, formatDate } from "../lib/utils";
+import ClosableAlert from "../components/closable_alert";
+import CommentPanel from "../components/comment_panel";
+import CourseFileSelector from "../components/course_file_selector";
 import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
 import GradeStatisticChart from "../components/grade_statistic";
-import { useBaseURL, useMe, usePreview, useTAOrTeacherCourses } from "../lib/hooks";
-import CommentPanel from "../components/comment_panel";
-import { WarningOutlined } from "@ant-design/icons"
-import CourseFileSelector from "../components/course_file_selector";
-import { getConfig, saveConfig } from "../lib/store";
-import type { SelectProps } from 'antd';
-import ClosableAlert from "../components/closable_alert";
+import BasicLayout from "../components/layout";
+import { getConfig, saveConfig } from "../lib/config";
 import { SUBMISSION_PAGE_HINT_ALERT_KEY } from "../lib/constants";
+import { useBaseURL, useMe, usePreview, useTAOrTeacherCourses } from "../lib/hooks";
+import { Assignment, Attachment, File, FileDownloadTask, GradeStatistic, LOG_LEVEL_ERROR, Submission, User } from "../lib/model";
+import { assignmentIsNotUnlocked, attachmentToFile, consoleLog, formatDate } from "../lib/utils";
 
 
 export default function SubmissionsPage() {

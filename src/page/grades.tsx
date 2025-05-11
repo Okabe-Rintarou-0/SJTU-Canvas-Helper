@@ -1,16 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
-import BasicLayout from "../components/layout";
-import { useAssignments, useStudents, useTAOrTeacherCourses, useUserSubmissions } from "../lib/hooks";
-import CourseSelect from "../components/course_select";
-import { Assignment, Course, GradeStatistic, LOG_LEVEL_ERROR, Submission, User } from "../lib/model";
-import { Button, Empty, Form, Input, Space, Spin, Table, Tabs, TabsProps, Tag } from "antd";
-import { assignmentIsEnded, consoleLog } from "../lib/utils";
-import GradeStatisticChart from "../components/grade_statistic";
-import useMessage from "antd/es/message/useMessage";
 import { invoke } from "@tauri-apps/api";
+import { Button, Empty, Form, Input, Space, Spin, Table, Tabs, TabsProps, Tag } from "antd";
 import { useForm } from "antd/es/form/Form";
+import useMessage from "antd/es/message/useMessage";
+import { useEffect, useMemo, useState } from "react";
+import CourseSelect from "../components/course_select";
+import GradeStatisticChart from "../components/grade_statistic";
+import BasicLayout from "../components/layout";
 import { PathSelector } from "../components/path_selector";
-import { getConfig } from "../lib/store";
+import { getConfig } from "../lib/config";
+import { useAssignments, useStudents, useTAOrTeacherCourses, useUserSubmissions } from "../lib/hooks";
+import { Assignment, Course, GradeStatistic, LOG_LEVEL_ERROR, Submission, User } from "../lib/model";
+import { assignmentIsEnded, consoleLog } from "../lib/utils";
 
 interface DetailedGradeStatistic {
     eachAssignments: [Assignment, GradeStatistic][],

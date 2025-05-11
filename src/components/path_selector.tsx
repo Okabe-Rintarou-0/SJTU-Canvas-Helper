@@ -1,7 +1,7 @@
+import { open } from '@tauri-apps/api/dialog';
 import { Button, Input, InputRef, Space } from "antd";
 import React, { useEffect, useState } from "react";
-import { open } from '@tauri-apps/api/dialog';
-import { getConfig } from "../lib/store";
+import { getConfig } from "../lib/config";
 
 interface PathSelectorProps {
     value?: string,

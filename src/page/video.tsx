@@ -1,20 +1,20 @@
-import { invoke } from "@tauri-apps/api";
-import { useEffect, useRef, useState } from "react";
-import BasicLayout from "../components/layout";
 import { SwapOutlined } from '@ant-design/icons';
-import { VideoInfo, VideoPlayInfo, VideoDownloadTask, CanvasVideo, LOG_LEVEL_ERROR, DownloadTask } from "../lib/model";
-import useMessage from "antd/es/message/useMessage";
-import { getConfig, saveConfig } from "../lib/store";
+import { invoke } from "@tauri-apps/api";
 import { Button, Checkbox, Divider, Select, Space, Table } from "antd";
-import VideoDownloadTable from "../components/video_download_table";
-import PPTDownloadTable from "../components/ppt_download_table";
-import videoStyles from "../css/video_player.module.css";
-import { LoginAlert } from "../components/login_alert";
-import { useCourses, useQRCode } from "../lib/hooks";
-import CourseSelect from "../components/course_select";
+import useMessage from "antd/es/message/useMessage";
+import { useEffect, useRef, useState } from "react";
 import ClosableAlert from "../components/closable_alert";
-import { VIDEO_PAGE_HINT_ALERT_KEY } from "../lib/constants";
+import CourseSelect from "../components/course_select";
+import BasicLayout from "../components/layout";
+import { LoginAlert } from "../components/login_alert";
+import PPTDownloadTable from "../components/ppt_download_table";
 import VideoAggregator from "../components/video_aggregator";
+import VideoDownloadTable from "../components/video_download_table";
+import videoStyles from "../css/video_player.module.css";
+import { getConfig, saveConfig } from "../lib/config";
+import { VIDEO_PAGE_HINT_ALERT_KEY } from "../lib/constants";
+import { useCourses, useQRCode } from "../lib/hooks";
+import { CanvasVideo, DownloadTask, LOG_LEVEL_ERROR, VideoDownloadTask, VideoInfo, VideoPlayInfo } from "../lib/model";
 import { consoleLog } from "../lib/utils";
 
 export default function VideoPage() {

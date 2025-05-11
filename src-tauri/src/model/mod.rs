@@ -126,6 +126,14 @@ pub enum AccountType {
     JI,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Theme {
+    #[default]
+    Light,
+    Dark,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
@@ -152,6 +160,12 @@ pub struct AppConfig {
     pub course_assignment_file_bindings: HashMap<i64, Vec<File>>,
     #[serde(default)]
     pub show_alert_map: HashMap<String, bool>,
+    #[serde(default)]
+    pub theme: Theme,
+    #[serde(default)]
+    pub compact_mode: bool,
+    #[serde(default)]
+    pub color_primary: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -169,6 +183,9 @@ impl Default for AppConfig {
             course_assignment_file_bindings: Default::default(),
             show_alert_map: Default::default(),
             llm_api_key: Default::default(),
+            theme: Default::default(),
+            compact_mode: Default::default(),
+            color_primary: Default::default(),
         }
     }
 }

@@ -1,14 +1,14 @@
 import { invoke } from "@tauri-apps/api";
 import type { InputRef, TourProps } from 'antd';
-import { Button, Form, Image, Input, InputNumber, Select, Space, Tour } from "antd";
+import { Button, ColorPicker, Form, Image, Input, Select, Space, Tour } from "antd";
 import useMessage from "antd/es/message/useMessage";
 import { useEffect, useRef, useState } from "react";
 import ReactJson from "react-json-view-ts";
 import BasicLayout from "../components/layout";
 import LogModal from "../components/log_modal";
 import { PathSelector } from "../components/path_selector";
+import { getConfig, saveConfig } from "../lib/config";
 import { AccountInfo, AppConfig, LOG_LEVEL_INFO, User } from "../lib/model";
-import { getConfig, saveConfig } from "../lib/store";
 import { consoleLog, savePathValidator } from "../lib/utils";
 
 const { Password } = Input;
@@ -69,7 +69,7 @@ export default function SettingsPage() {
                 config.proxy_port = 3030;
             }
             form.setFieldsValue(config);
-            consoleLog(LOG_LEVEL_INFO, "init config: ", config)
+            consoleLog(LOG_LEVEL_INFO, "init config: ", config);
             if (config.token.length === 0) {
                 setOpenTour(true);
             }
@@ -125,11 +125,11 @@ export default function SettingsPage() {
         }
     }
 
-    const proxyPortValidator = async (_: any, port: number) => {
-        // 0---65535
-        const valid = 0 <= port && port <= 65535;
-        return valid ? Promise.resolve() : Promise.reject(new Error("端口必须是 0 - 65535 之间的数字"));
-    }
+    // const proxyPortValidator = async (_: any, port: number) => {
+    //     // 0---65535
+    //     const valid = 0 <= port && port <= 65535;
+    //     return valid ? Promise.resolve() : Promise.reject(new Error("端口必须是 0 - 65535 之间的数字"));
+    // }
 
     const handleCreateAccount = async () => {
         try {
@@ -224,18 +224,29 @@ export default function SettingsPage() {
                         <Select.Option value="JI">密院</Select.Option>
                     </Select>
                 </Form.Item>
-                <Form.Item name="llm_api_key" label="大模型（目前只接入了 DeepSeek）的 API KEY">
-                    <Input />
-                </Form.Item>
                 <Form.Item name="save_path" label="下载保存目录" required rules={[{ validator: savePathValidator }]}>
                     <PathSelector />
                 </Form.Item>
-                <Form.Item name="proxy_port" label="反向代理本地端口" rules={[{ validator: proxyPortValidator }]}>
+                <Form.Item name="theme" label="UI 主题" >
+                    <Select>
+                        <Select.Option value="light">明亮主题</Select.Option>
+                        <Select.Option value="dark">深色主题</Select.Option>
+                    </Select>
+                </Form.Item>
+                <Form.Item name="color_primary" label="主色调" getValueFromEvent={(color) => {
+                    return color.toHex();
+                }} >
+                    <ColorPicker onChange={e => consoleLog(LOG_LEVEL_INFO, e)} format="hex" />
+                </Form.Item>
+                <Form.Item name="llm_api_key" label="大模型（目前只接入了 DeepSeek）的 API KEY">
+                    <Input />
+                </Form.Item>
+                {/* <Form.Item name="proxy_port" label="反向代理本地端口" rules={[{ validator: proxyPortValidator }]}>
                     <InputNumber placeholder="请输入反向代理本地端口" />
-                </Form.Item>
-                <Form.Item name="serve_as_plaintext" label="以纯文本显示的文件拓展名">
+                </Form.Item> */}
+                {/* <Form.Item name="serve_as_plaintext" label="以纯文本显示的文件拓展名">
                     <Input placeholder="请输入文件拓展名，以英文逗号隔开" />
-                </Form.Item>
+                </Form.Item> */}
                 <Space wrap>
                     <Form.Item>
                         <Button ref={saveButtonRef} type="primary" htmlType="submit">

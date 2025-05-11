@@ -1,8 +1,8 @@
 import { Alert, Radio, Space } from "antd";
 import { ReactNode, useEffect, useState } from "react";
-import { getConfig, saveConfig } from "../lib/store";
-import { consoleLog } from "../lib/utils";
+import { getConfig, saveConfig } from "../lib/config";
 import { LOG_LEVEL_INFO } from "../lib/model";
+import { consoleLog } from "../lib/utils";
 
 export interface ClosableAlertProps {
     // The "not-show-again" option will be persisted in the config with a given key

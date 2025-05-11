@@ -1,16 +1,27 @@
-import { invoke } from "@tauri-apps/api";
+import { PayloadAction, configureStore, createSlice } from "@reduxjs/toolkit";
 import { AppConfig } from "./model";
 
-let CONFIG: AppConfig | null = null;
+const configInitialState: {
+    data: AppConfig | null
+} = {
+    data: null,
+}
 
-export async function getConfig(revalidate = false) {
-    if (!CONFIG || revalidate) {
-        CONFIG = await invoke("get_config") as AppConfig;
+export const configSlice = createSlice({
+    name: 'config',
+    initialState: configInitialState,
+    reducers: {
+        updateConfig: (state, action: PayloadAction<AppConfig>) => {
+            state.data = action.payload;
+        },
     }
-    return CONFIG;
-}
+});
 
-export async function saveConfig(config: AppConfig) {
-    await invoke("save_config", { config });
-    CONFIG = config;
-}
+export const configStore = configureStore({
+    reducer: {
+        config: configSlice.reducer,
+    },
+});
+
+export type ConfigState = ReturnType<typeof configStore.getState>
+export type ConfigDispatch = typeof configStore.dispatch
