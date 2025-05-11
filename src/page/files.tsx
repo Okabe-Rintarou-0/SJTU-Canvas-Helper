@@ -23,6 +23,14 @@ const COURSE_FILES = "course files";
 const MY_FILES = "my files";
 const EXPLAINABLE_FILE_EXTS = [".pdf", ".docx"];
 
+function LinkRenderer(props: any) {
+    return (
+        <a href={props.href} target="_blank" rel="noreferrer">
+            {props.children}
+        </a>
+    );
+}
+
 function isExplainableFile(file: File) {
     let dotPos = file.display_name.lastIndexOf(".");
     if (dotPos === -1) {
@@ -95,15 +103,16 @@ export default function FilesPage() {
                 styles: {
                     body: { overflow: "scroll", }
                 },
-                title: 'AI 总结',
+                title: '🤖AI 总结',
                 icon: <ExclamationCircleFilled />,
-                content: <Markdown remarkPlugins={[remarkGfm]}>
+                content: <Markdown remarkPlugins={[remarkGfm]} components={{ a: LinkRenderer }}>
                     {resp}
                 </Markdown>,
             });
             messageApi.destroy("waiting_response");
         } catch (e) {
-            messageApi.error(`总结出错！${e}`)
+            messageApi.destroy("waiting_response");
+            messageApi.error(`总结出错！${e}，请前往设置查看 API KEY 是否设置正确！`)
         }
     }
 

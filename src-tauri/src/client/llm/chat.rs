@@ -1,10 +1,9 @@
-use crate::error::Result;
+use super::model::{ChatCompletionRequest, ChatCompletionResponse, Message};
+use crate::{error::Result, utils};
 use async_trait::async_trait;
 use reqwest::Client;
 use std::time::Duration;
 use tokio::sync::RwLock;
-
-use super::model::{ChatCompletionRequest, ChatCompletionResponse, Message};
 
 #[async_trait]
 pub trait LLMClient: Send + Sync {
@@ -60,7 +59,7 @@ impl LLMClient for DeepSeekClient {
             .await?;
 
         let data = response.bytes().await?;
-        let chat_resp = serde_json::from_slice::<ChatCompletionResponse>(&data)?;
+        let chat_resp = utils::parse_json::<ChatCompletionResponse>(&data)?;
         let content = chat_resp
             .choices
             .into_iter()

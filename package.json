@@ -12,6 +12,8 @@
   "dependencies": {
     "@antv/g6": "^4.8.24",
     "@cyntler/react-doc-viewer": "^1.14.1",
+    "@react-pdf-viewer/core": "3.12.0",
+    "@react-pdf-viewer/default-layout": "^3.12.0",
     "@tauri-apps/api": "^1",
     "@tauri-apps/plugin-updater": "^2.0.0-beta.2",
     "@types/react-beautiful-dnd": "^13.1.8",

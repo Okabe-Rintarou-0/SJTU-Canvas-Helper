@@ -109,9 +109,10 @@ export default function SettingsPage() {
                 duration: 0,
             })
             let resp = await invoke("chat", { prompt: "你好！" });
-            messageApi.destroy("testing")
+            messageApi.destroy("testing");
             messageApi.success(`来自 LLM 的回复：${resp}`);
         } catch (e) {
+            messageApi.destroy("testing");
             messageApi.error(`API KEY 无效🥹！`);
         }
     }
