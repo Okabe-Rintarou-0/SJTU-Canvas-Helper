@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api";
-import { AppConfig } from "./model";
+import { AppConfig, LOG_LEVEL_INFO } from "./model";
 import { configSlice, configStore } from "./store";
+import { consoleLog } from "./utils";
 
 export const { updateConfig } = configSlice.actions
 
@@ -9,6 +10,7 @@ let CONFIG: AppConfig | null = null;
 // TODO: change it to redux
 export async function getConfig(revalidate = false) {
     if (!CONFIG || revalidate) {
+        consoleLog(LOG_LEVEL_INFO, "called get config");
         CONFIG = await invoke("get_config") as AppConfig;
         configStore.dispatch(updateConfig(CONFIG));
     }

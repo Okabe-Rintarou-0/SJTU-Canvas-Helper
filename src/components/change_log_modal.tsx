@@ -11,11 +11,16 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v1.3.30 2025/5/11</Title>
+            <Paragraph>
+                <ul>
+                    <li>支持切换前端主题，见设置</li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v1.3.29 2025/5/11</Title>
             <Paragraph>
                 <ul>
                     <li>AI 解释文档（WIP👷）</li>
-                    <li>支持切换前端主题，见设置</li>
                     <li>优化 PDF renderer（见 issue https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/issues/19）</li>
                 </ul>
             </Paragraph>

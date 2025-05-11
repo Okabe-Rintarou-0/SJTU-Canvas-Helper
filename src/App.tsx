@@ -4,8 +4,6 @@ import { useMemo } from 'react';
 import AppRouter from "./components/router";
 import "./css/global.css";
 import { useConfigSelector } from './lib/hooks';
-import { LOG_LEVEL_INFO } from './lib/model';
-import { consoleLog } from './lib/utils';
 
 const {
   compactAlgorithm,
@@ -17,6 +15,10 @@ function App() {
   const config = useConfigSelector(state => state.config.data);
 
   const algorithms = useMemo(() => {
+    if (!config) {
+      return undefined;
+    }
+
     const theme = config?.theme;
     const compactMode = config?.compact_mode ?? false;
     const algorithms = [];
@@ -24,16 +26,13 @@ function App() {
       algorithms.push(compactAlgorithm);
     }
     algorithms.push(theme === "light" ? defaultAlgorithm : darkAlgorithm);
-    consoleLog(LOG_LEVEL_INFO, algorithms);
     return algorithms;
   }, [config?.theme]);
-
-  consoleLog(LOG_LEVEL_INFO, algorithms);
 
   return <ConfigProvider locale={zhCN} theme={{
     algorithm: algorithms,
     token: {
-      colorPrimary: config?.color_primary ?? undefined,
+      colorPrimary: config?.color_primary ?? "#00b96b",
     },
   }}>
     <AppRouter />

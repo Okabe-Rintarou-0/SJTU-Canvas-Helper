@@ -234,7 +234,7 @@ export default function SettingsPage() {
                     </Select>
                 </Form.Item>
                 <Form.Item name="color_primary" label="主色调" getValueFromEvent={(color) => {
-                    return color.toHex();
+                    return '#' + color.toHex();
                 }} >
                     <ColorPicker onChange={e => consoleLog(LOG_LEVEL_INFO, e)} format="hex" />
                 </Form.Item>
