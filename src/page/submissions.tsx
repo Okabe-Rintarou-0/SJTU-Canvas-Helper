@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api";
 import type { SelectProps } from 'antd';
 import { Button, Input, Popconfirm, Select, Space, Table, Tag } from "antd";
 import useMessage from "antd/es/message/useMessage";
+import { DefaultOptionType } from "antd/es/select";
+import { pinyin } from "pinyin-pro";
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import ClosableAlert from "../components/closable_alert";
 import CommentPanel from "../components/comment_panel";
@@ -16,7 +18,6 @@ import { SUBMISSION_PAGE_HINT_ALERT_KEY } from "../lib/constants";
 import { useBaseURL, useMe, usePreview, useTAOrTeacherCourses } from "../lib/hooks";
 import { Assignment, Attachment, File, FileDownloadTask, GradeStatistic, LOG_LEVEL_ERROR, Submission, User } from "../lib/model";
 import { assignmentIsNotUnlocked, attachmentToFile, consoleLog, formatDate } from "../lib/utils";
-
 
 export default function SubmissionsPage() {
     const [messageApi, contextHolder] = useMessage();
@@ -374,7 +375,8 @@ export default function SubmissionsPage() {
     }));
 
     const shouldShow = (attachment: Attachment) => {
-        return attachment.user && (keywords.length == 0 || keywords[0] === "" || keywords.includes(attachment.user));
+        const showAll = keywords.length == 0 || keywords[0] === "";
+        return attachment.user && (showAll || keywords.includes(attachment.user));
     }
 
     const handleDownloadFile = async (file: File) => {
@@ -399,6 +401,20 @@ export default function SubmissionsPage() {
     }
 
     const showShowAttachments = attachments.filter(attachment => shouldShow(attachment));
+
+    const filterSelectorOptions = (input: string, option: DefaultOptionType | undefined) => {
+        const name = (option?.label as string | undefined) ?? "";
+        const matchFullname = name.includes(input);
+        if (matchFullname) {
+            return true;
+        }
+        const py = pinyin(name, { type: "array" });
+        let fc = "";
+        for (let i = 0; i < py.length; i++) {
+            fc += py[i].charAt(0);
+        }
+        return fc.includes(input) || input.includes(name);
+    }
 
     return <BasicLayout>
         {contextHolder}
@@ -453,7 +469,11 @@ export default function SubmissionsPage() {
             }
             {statistic && <GradeStatisticChart statistic={statistic} />}
             {/* <Input.Search placeholder="输入学生姓名关键词" onSearch={setKeyword} /> */}
-            <Select mode="multiple" allowClear style={{ width: '100%' }} placeholder="请选择学生" onChange={(value) => { setKeywords(value) }} options={options} />
+            <Select mode="multiple" allowClear style={{ width: '100%' }}
+                placeholder="请选择学生"
+                onChange={setKeywords}
+                filterOption={filterSelectorOptions}
+                options={options} />
             <Table style={{ width: "100%" }}
                 columns={columns}
                 loading={baseURL.isLoading || loading}

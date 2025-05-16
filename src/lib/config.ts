@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api";
+import { cloneDeep } from 'lodash';
 import { AppConfig, LOG_LEVEL_INFO } from "./model";
 import { configSlice, configStore } from "./store";
 import { consoleLog } from "./utils";
@@ -10,9 +11,9 @@ let CONFIG: AppConfig | null = null;
 // TODO: change it to redux
 export async function getConfig(revalidate = false) {
     if (!CONFIG || revalidate) {
-        consoleLog(LOG_LEVEL_INFO, "called get config");
         CONFIG = await invoke("get_config") as AppConfig;
-        configStore.dispatch(updateConfig(CONFIG));
+        consoleLog(LOG_LEVEL_INFO, "get config", CONFIG);
+        configStore.dispatch(updateConfig(cloneDeep(CONFIG)));
     }
     return CONFIG;
 }
@@ -21,7 +22,7 @@ export async function getConfig(revalidate = false) {
 export async function saveConfig(config: AppConfig) {
     await invoke("save_config", { config });
     CONFIG = config;
-    configStore.dispatch(updateConfig(CONFIG));
+    configStore.dispatch(updateConfig(cloneDeep(CONFIG)));
 }
 
 
