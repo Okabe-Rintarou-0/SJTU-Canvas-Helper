@@ -7,7 +7,7 @@ import { decode } from "js-base64";
 import { FaFileCsv, FaImage, FaRegFileArchive, FaRegFileAudio, FaRegFilePdf, FaRegFileVideo } from "react-icons/fa";
 import { PiMicrosoftExcelLogoFill, PiMicrosoftPowerpointLogoFill, PiMicrosoftWordLogoFill } from "react-icons/pi";
 import { getConfig } from "./config";
-import { Assignment, AssignmentDate, Attachment, File as FileModel, LogLevel } from "./model";
+import { Assignment, AssignmentDate, Attachment, File as FileModel, LogLevel, Option } from "./model";
 
 export function isMergableFileType(fileType: string): boolean {
     for (let ext of ["pptx", "pdf", "docx"]) {
@@ -18,7 +18,7 @@ export function isMergableFileType(fileType: string): boolean {
     return false;
 }
 
-export function formatDate(inputDate: string | undefined | null): string {
+export function formatDate(inputDate: Option<string>): string {
     if (!inputDate) {
         return "";
     }

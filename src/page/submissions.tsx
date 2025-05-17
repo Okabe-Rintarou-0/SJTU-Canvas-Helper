@@ -4,7 +4,7 @@ import type { SelectProps } from 'antd';
 import { Button, Input, Popconfirm, Select, Space, Table, Tag } from "antd";
 import useMessage from "antd/es/message/useMessage";
 import { DefaultOptionType } from "antd/es/select";
-import { pinyin } from "pinyin-pro";
+import { html, pinyin } from "pinyin-pro";
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import ClosableAlert from "../components/closable_alert";
 import CommentPanel from "../components/comment_panel";
@@ -164,6 +164,7 @@ export default function SubmissionsPage() {
         title: '学生',
         dataIndex: 'user',
         key: 'user',
+        render: (user: string) => <div dangerouslySetInnerHTML={{ __html: html(user) }} />
     }, {
         title: '分数',
         dataIndex: 'grade',

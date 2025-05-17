@@ -11,7 +11,7 @@ import FileDownloadTable from "../components/file_download_table";
 import FileOrderSelectModal from "../components/file_order_select_modal";
 import BasicLayout from "../components/layout";
 import { useBaseURL, useCourses, useLoginModal, useMerger, usePreview } from "../lib/hooks";
-import { Course, Entry, File, FileDownloadTask, Folder, LOG_LEVEL_ERROR, LOG_LEVEL_INFO, entryName, isFile } from "../lib/model";
+import { Course, Entry, File, FileDownloadTask, Folder, LOG_LEVEL_ERROR, LOG_LEVEL_INFO, Option, entryName, isFile } from "../lib/model";
 import { consoleLog, getFileIcon, isMergableFileType, scrollToTop } from "../lib/utils";
 
 interface DownloadInfo {
@@ -53,8 +53,8 @@ export default function FilesPage() {
     const [operating, setOperating] = useState<boolean>(false);
     const [loading, setLoading] = useState<boolean>(false);
     const [currentFolderId, setCurrentFolderId] = useState(0);
-    const [currentFolderFullName, setCurrentFolderFullName] = useState<string | undefined>('');
-    const [parentFolderId, setParentFolderId] = useState<number | undefined | null>(null);
+    const [currentFolderFullName, setCurrentFolderFullName] = useState<Option<string>>('');
+    const [parentFolderId, setParentFolderId] = useState<Option<number>>(null);
     const [keyword, setKeyword] = useState<string>("");
     const [openFileOrderSelectModal, setOpenFileOrderSelectModal] = useState<boolean>(false);
     const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry, setEntries } = usePreview();
