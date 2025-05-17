@@ -58,7 +58,7 @@ fn locate_failed_json_field(e: &serde_json::Error, json_str: &str) -> String {
 
     let error_line = lines[line - 1];
 
-    let start_idx = if column > 20 { column - 20 } else { 0 };
+    let start_idx = column.saturating_sub(20);
     let end_idx = if column + 20 < error_line.len() {
         column + 20
     } else {
