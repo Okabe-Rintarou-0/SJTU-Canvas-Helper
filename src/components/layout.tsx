@@ -4,7 +4,6 @@ import { Layout, Menu, Space, theme } from 'antd';
 import useMessage from 'antd/es/message/useMessage';
 import React, { useEffect, useState } from 'react';
 import { BsQrCode } from 'react-icons/bs';
-import { FaPeopleGroup } from "react-icons/fa6";
 import { GoDiscussionOutdated } from 'react-icons/go';
 import { LuBookOpenCheck } from 'react-icons/lu';
 import { TbReportAnalytics } from "react-icons/tb";
@@ -58,10 +57,6 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
         key: 'qrcode',
         icon: <BsQrCode />,
         label: <Link to={'/qrcode'}>二维码</Link>,
-    }, {
-        key: 'relationship',
-        icon: <FaPeopleGroup />,
-        label: <Link to={'/relationship'}>人际关系图(beta)</Link>,
     }, {
         key: 'annual',
         icon: <TbReportAnalytics />,
