@@ -34,6 +34,12 @@ cd /Applications
 sudo xattr -r -d com.apple.quarantine /Applications/SJTU\ Canvas\ Helper.app SJTU\ Canvas\ Helper.app
 ```
 
+### Arch Linux 安装方式  
+通过 [yay](https://github.com/Jguer/yay) 从 AUR 安装：  
+```bash  
+yay -S sjtu-canvas-helper
+```
+
 ## 致谢
 
 感谢以下用户为本仓库做出的贡献：
