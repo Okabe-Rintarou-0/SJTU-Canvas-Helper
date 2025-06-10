@@ -1085,7 +1085,7 @@ pub struct CanvasVideoPPTResponse {
 pub struct CanvasVideoPPT {
     pub create_sec: String,
     pub ocr: Vec<CanvasVideoPPTOcr>,
-    pub ppt_img_url: String,
+    pub ppt_img_url: Option<String>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

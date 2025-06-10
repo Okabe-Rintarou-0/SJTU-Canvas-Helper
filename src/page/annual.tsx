@@ -1,11 +1,10 @@
 import { InputNumber, Space, Spin, Typography } from "antd";
-import BasicLayout from "../components/layout";
-import { useState } from "react";
-import { AnnualReport } from "../lib/model";
-import { useAnnualReport } from "../lib/hooks";
-import Paragraph from "antd/lib/typography/Paragraph";
 import Title from "antd/lib/typography/Title";
 import ReactEcharts from "echarts-for-react";
+import { useState } from "react";
+import BasicLayout from "../components/layout";
+import { useAnnualReport } from "../lib/hooks";
+import { AnnualReport } from "../lib/model";
 // import ReactJson from "react-json-view-ts";
 
 interface BarChartProps {
@@ -156,16 +155,16 @@ export default function AnnualPage() {
                     <Title level={2}>
                         {selectedYear}年年度总结
                     </Title>
-                    <Paragraph>
+                    <div>
                         在过去的一年里，你有{dayCount}次在白天提交作业，{nightCount}次在晚上提交作业，
                         {dayCount > nightCount && "看来你更喜欢在白天出没。"}
                         {nightCount > dayCount && "或许你是妥妥的夜猫子？"}
                         {nightCount === dayCount && "看来你是折衷主义者。"}
-                    </Paragraph>
+                    </div>
                     <BarChart data={hourCountMap} xAxisData={Array.from({ length: 24 }, (_, i) => `${i}:00`)} />
-                    <Paragraph>
+                    <div>
                         你最忙碌的月份是{maxMonth}月，你倾注的汗水一定有所回报。
-                    </Paragraph>
+                    </div>
                     <BarChart data={monthCountMap} xAxisData={Array.from({ length: 12 }, (_, i) => `${i + 1}月`)} />
                 </Typography>}
             </Spin>

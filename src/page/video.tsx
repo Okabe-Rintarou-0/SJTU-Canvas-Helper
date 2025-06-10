@@ -65,7 +65,7 @@ export default function VideoPage() {
         let config = await getConfig(true);
         let success = await handleLoginWebsite();
         if (!success) {
-            config.ja_auth_cookie = ""
+            config.ja_auth_cookie = "";
             await saveConfig(config);
             showQRCode();
         } else if (!retry) {

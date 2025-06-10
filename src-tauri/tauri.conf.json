@@ -7,7 +7,7 @@
   },
   "package": {
     "productName": "SJTU Canvas Helper",
-    "version": "1.3.30"
+    "version": "1.3.31"
   },
   "tauri": {
     "allowlist": {

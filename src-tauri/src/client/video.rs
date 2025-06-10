@@ -640,8 +640,12 @@ impl Client {
         let mut images: Vec<RawImage> = Vec::new();
         // Process each PPT slide
         for (total_processed, (index, ppt)) in ppts.iter().enumerate().enumerate() {
+            if ppt.ppt_img_url.is_none() {
+                continue;
+            }
+            let ppt_img_url = ppt.ppt_img_url.clone().unwrap();
             // Download image with error handling
-            let image_data = match self.cli.get(&ppt.ppt_img_url).send().await {
+            let image_data = match self.cli.get(&ppt_img_url).send().await {
                 Ok(response) => response.bytes().await?,
                 Err(e) => {
                     return Err(AppError::VideoDownloadError(format!(
