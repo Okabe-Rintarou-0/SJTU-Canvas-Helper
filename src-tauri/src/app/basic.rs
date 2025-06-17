@@ -2,6 +2,7 @@
 use std::process;
 
 use error::{AppError, Result};
+use reqwest::StatusCode;
 use std::{
     fs,
     io::Write,
@@ -15,8 +16,10 @@ use tokio::{io::AsyncReadExt, process::Command as TokioCommand};
 use tokio::{sync::RwLock, task::JoinSet};
 use uuid::Uuid;
 use warp::{hyper::Response, Filter};
-use warp_reverse_proxy::reverse_proxy_filter;
 use xlsxwriter::Workbook;
+use std::convert::Infallible;
+use warp::filters::query::raw as query_raw;
+use futures::StreamExt;
 
 use crate::{
     client::{
@@ -223,10 +226,12 @@ impl App {
         loop {
             let response = reqwest::get(&url).await?;
             if response.status() == 200 {
+                tracing::info!("Proxy ready check success");
                 break Ok(true);
             }
             cnt += 1;
             if cnt >= timeout_cnt {
+                tracing::info!("Proxy ready check timeout");
                 break Ok(false);
             }
             tokio::time::sleep(Duration::from_millis(500)).await;
@@ -238,13 +243,57 @@ impl App {
             return Ok(true);
         }
         let proxy_port = self.config.read().await.proxy_port;
-        let proxy = warp::get()
-            .and(warp::path!("vod" / ..))
-            .and(reverse_proxy_filter(
-                "".to_string(),
-                "https://live.sjtu.edu.cn/".to_string(),
-            ));
 
+        // Proxy Endpoint: /vod/*
+        let proxy = warp::get()
+            .and(warp::path("vod").and(warp::path::tail()))
+            .and(query_raw().or(warp::any().map(|| "".to_string())).unify())
+            .and(warp::header::headers_cloned())
+            .and_then(|tail: warp::path::Tail, query: String, headers: warp::http::HeaderMap| async move {
+                let range_value = headers
+                    .get("Range")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("")
+                    .to_string();
+
+                let mut url = format!("https://live.sjtu.edu.cn/vod/{}", tail.as_str());
+                if !query.is_empty() {
+                    url.push('?');
+                    url.push_str(&query);
+                }
+
+                let client = reqwest::Client::new();
+                let mut req = client.get(&url)
+                    .header("Referer", "https://courses.sjtu.edu.cn"); // 你原本的Referer
+                if !range_value.is_empty() {
+                    req = req.header("Range", range_value.clone());
+                }
+                tracing::info!("req: {:?}", req);
+                let resp = req.send().await;
+
+                match resp {
+                    Ok(resp) => {
+                        tracing::info!("resp: {:?}", resp);
+                        let status = resp.status();
+                        let mut builder = Response::builder().status(status);
+                        for (k, v) in resp.headers() {
+                            builder = builder.header(k, v);
+                        }
+                        let stream = resp.bytes_stream().map(|chunk| chunk.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e)));
+                        let body = warp::hyper::Body::wrap_stream(stream);
+                        Ok::<warp::http::Response<warp::hyper::Body>, Infallible>(
+                            builder.body(body).unwrap()
+                        )
+                    }
+                    Err(e) => {
+                        Ok(Response::builder()
+                            .status(StatusCode::INTERNAL_SERVER_ERROR)
+                            .body(format!("Error downloading video: {}", e).into())
+                            .unwrap())
+                    }
+                }
+            });
+        // Ready Check Endpoint: /ready
         let ready_check = warp::path!("ready").map(|| Response::builder().body(""));
 
         let handle =
