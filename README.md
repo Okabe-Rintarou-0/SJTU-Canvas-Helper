@@ -47,6 +47,13 @@ yay -S sjtu-canvas-helper
 <!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
 <!-- prettier-ignore-start -->
 <!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="http://okabe-rintarou-0.github.io"><img src="https://avatars.githubusercontent.com/u/58595459?v=4?s=100" width="100px;" alt="Zihong Lin"/><br /><sub><b>Zihong Lin</b></sub></a><br /><a href="#maintenance-okabe-rintarou-0" title="Maintenance">🚧</a></td>
+    </tr>
+  </tbody>
+</table>
 
 <!-- markdownlint-restore -->
 <!-- prettier-ignore-end -->
