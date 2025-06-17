@@ -1233,6 +1233,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "futures"
+version = "0.3.30"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "645c6916888f6cb6350d2550b80fb63e734897a8498abe35cfb732b6487804b0"
+dependencies = [
+ "futures-channel",
+ "futures-core",
+ "futures-executor",
+ "futures-io",
+ "futures-sink",
+ "futures-task",
+ "futures-util",
+]
+
+[[package]]
 name = "futures-channel"
 version = "0.3.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1294,6 +1309,7 @@ version = "0.3.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d6401deb83407ab3da39eba7e33987a73c3df0c82b4bb5813ee871c19c41d48"
 dependencies = [
+ "futures-channel",
  "futures-core",
  "futures-io",
  "futures-macro",
@@ -4185,6 +4201,7 @@ dependencies = [
  "bytes",
  "chrono",
  "docx-rs",
+ "futures",
  "image 0.24.9",
  "lazy_static",
  "md-5",
@@ -4205,7 +4222,6 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "warp",
- "warp-reverse-proxy",
  "xlsxwriter",
 ]
 
@@ -5476,20 +5492,6 @@ dependencies = [
  "tokio-util",
  "tower-service",
  "tracing",
-]
-
-[[package]]
-name = "warp-reverse-proxy"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "948552bbb7a5fb4ba3169fd09b6c1ab53c1b2fdd82603295df550f7a1ec644c0"
-dependencies = [
- "hyper",
- "once_cell",
- "reqwest",
- "thiserror 1.0.61",
- "unicase",
- "warp",
 ]
 
 [[package]]

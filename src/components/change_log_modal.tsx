@@ -11,6 +11,12 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v1.3.32 2025/6/17</Title>
+            <Paragraph>
+                <ul>
+                    <li>修复视频无法正常回放的问题</li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v1.3.31 2025/5/11</Title>
             <Paragraph>
                 <ul>

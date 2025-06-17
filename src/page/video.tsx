@@ -249,26 +249,26 @@ export default function VideoPage() {
         }
     }
 
-    // const handlePlay = async (play: VideoPlayInfo) => {
-    //     let config = await getConfig();
-    //     let playURL = getVidePlayURL(play, config.proxy_port);
-    //     if (playURLs.find(URL => URL === playURL)) {
-    //         messageApi.warning("已经在播放啦😁");
-    //         return;
-    //     }
-    //     if (playURLs.length === 2) {
-    //         messageApi.error("☹️目前只支持双屏观看");
-    //         return;
-    //     }
-    //     await checkOrStartProxy();
-    //     if (playURLs.length === 0) {
-    //         setMainPlayURL(playURL);
-    //     }
-    //     if (play.index !== 0) {
-    //         setMutedPlayURL(playURL);
-    //     }
-    //     setPlayURLs(playURLs => [...playURLs, playURL]);
-    // }
+    const handlePlay = async (play: VideoPlayInfo) => {
+        let config = await getConfig();
+        let playURL = getVidePlayURL(play, config.proxy_port);
+        if (playURLs.find(URL => URL === playURL)) {
+            messageApi.warning("已经在播放啦😁");
+            return;
+        }
+        if (playURLs.length === 2) {
+            messageApi.error("☹️目前只支持双屏观看");
+            return;
+        }
+        await checkOrStartProxy();
+        if (playURLs.length === 0) {
+            setMainPlayURL(playURL);
+        }
+        if (play.index !== 0) {
+            setMutedPlayURL(playURL);
+        }
+        setPlayURLs(playURLs => [...playURLs, playURL]);
+    }
 
     const handlePlayAll = async () => {
         if (playURLs.length === 2) {
@@ -309,10 +309,10 @@ export default function VideoPage() {
                         e.preventDefault();
                         handleDownloadVideo(play);
                     }}>下载</a>
-                    {/* <a onClick={e => {
+                     <a onClick={e => {
                         e.preventDefault();
                         handlePlay(play);
-                    }}>播放</a> */}
+                    }}>播放</a>
                 </Space>
             ),
         }
@@ -391,7 +391,7 @@ export default function VideoPage() {
         {contextHolder}
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
             <ClosableAlert alertType="info" message={"提示"} configKey={VIDEO_PAGE_HINT_ALERT_KEY}
-                description="由于 canvas 启用新版视频系统，目前只恢复了下载功能，暂不支持播放。总体功能尚不稳定，待进一步修复。" />
+                description="依次点击主屏幕和副屏幕的播放按钮以开启双窗口模式" />
             {shouldShowAlert && <LoginAlert qrcode={qrcode} refreshQRCode={refreshQRCode} />}
             {!notLogin && <>
                 <CourseSelect courses={courses.data} onChange={handleSelectCourse}></CourseSelect>
