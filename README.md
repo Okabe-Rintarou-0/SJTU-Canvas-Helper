@@ -47,6 +47,13 @@ yay -S sjtu-canvas-helper
 <!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
 <!-- prettier-ignore-start -->
 <!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/xeonliu"><img src="https://avatars.githubusercontent.com/u/62530004?v=4?s=100" width="100px;" alt="xeonliu"/><br /><sub><b>xeonliu</b></sub></a><br /><a href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/commits?author=xeonliu" title="Code">💻</a></td>
+    </tr>
+  </tbody>
+</table>
 
 <!-- markdownlint-restore -->
 <!-- prettier-ignore-end -->
