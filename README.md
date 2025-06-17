@@ -44,34 +44,14 @@ yay -S sjtu-canvas-helper
 
 感谢以下用户为本仓库做出的贡献：
 
-<table>
-  <tr>
-    <td align="center">
-      <a href="https://github.com/creeper12356" style="display:inline-block;width:80px">
-        <img src="https://github.com/creeper12356.png" width="64px;" alt="creeper12356"/><br/>
-        <sub><b>creeper12356</b></sub>
-      </a>
-    </td>
-    <td align="center">
-      <a href="https://github.com/pangbo13" style="display:inline-block;width:80px">
-        <img src="https://github.com/pangbo13.png" width="64px;" alt="pangbo13"/><br/>
-        <sub><b>pangbo13</b></sub>
-      </a>
-    </td>
-    <td align="center">
-      <a href="https://github.com/wytili" style="display:inline-block;width:80px">
-        <img src="https://github.com/wytili.png" width="64px;" alt="wytili"/><br/>
-        <sub><b>wytili</b></sub>
-      </a>
-    </td>
-    <td align="center">
-      <a href="https://github.com/xeonliu" style="display:inline-block;width:80px">
-        <img src="https://github.com/xeonliu.png" width="64px;" alt="xeonliu"/><br/>
-        <sub><b>xeonliu</b></sub>
-      </a>
-    </td>
-  </tr>
-</table>
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
+<!-- ALL-CONTRIBUTORS-LIST:END -->
 
 ## Main Features
 + [x] 文件下载 / 预览(免下载) / PDF & PPTX 混合合并(免下载)

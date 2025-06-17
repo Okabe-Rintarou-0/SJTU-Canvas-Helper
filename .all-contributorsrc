@@ -1,0 +1,14 @@
+{
+    "projectName": "SJTU-Canvas-Helper",
+    "projectOwner": "Okabe-Rintarou-0",
+    "files": [
+        "README.md"
+    ],
+    "imageSize": 100,
+    "repoType": "github",
+    "contributorsPerLine": 7,
+    "repoHost": "https://github.com",
+    "commitConvention": "angular",
+    "skipCi": true,
+    "commitType": "docs"
+}
