@@ -279,7 +279,7 @@ impl App {
                         for (k, v) in resp.headers() {
                             builder = builder.header(k, v);
                         }
-                        let stream = resp.bytes_stream().map(|chunk| chunk.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e)));
+                        let stream = resp.bytes_stream().map(|chunk| chunk.map_err(std::io::Error::other));
                         let body = warp::hyper::Body::wrap_stream(stream);
                         Ok::<warp::http::Response<warp::hyper::Body>, Infallible>(
                             builder.body(body).unwrap()
