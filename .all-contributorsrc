@@ -1,14 +1,25 @@
 {
-    "projectName": "SJTU-Canvas-Helper",
-    "projectOwner": "Okabe-Rintarou-0",
-    "files": [
-        "README.md"
-    ],
-    "imageSize": 100,
-    "repoType": "github",
-    "contributorsPerLine": 7,
-    "repoHost": "https://github.com",
-    "commitConvention": "angular",
-    "skipCi": true,
-    "commitType": "docs"
+  "projectName": "SJTU-Canvas-Helper",
+  "projectOwner": "Okabe-Rintarou-0",
+  "files": [
+    "README.md"
+  ],
+  "imageSize": 100,
+  "repoType": "github",
+  "contributorsPerLine": 7,
+  "repoHost": "https://github.com",
+  "commitConvention": "angular",
+  "skipCi": true,
+  "commitType": "docs",
+  "contributors": [
+    {
+      "login": "pangbo13",
+      "name": "PangBo",
+      "avatar_url": "https://avatars.githubusercontent.com/u/51732678?v=4",
+      "profile": "https://github.com/pangbo13",
+      "contributions": [
+        "code"
+      ]
+    }
+  ]
 }
