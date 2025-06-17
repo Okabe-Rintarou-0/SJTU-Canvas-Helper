@@ -47,6 +47,13 @@ yay -S sjtu-canvas-helper
 <!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
 <!-- prettier-ignore-start -->
 <!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/creeper12356"><img src="https://avatars.githubusercontent.com/u/138413915?v=4?s=100" width="100px;" alt="creeper12356"/><br /><sub><b>creeper12356</b></sub></a><br /><a href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/commits?author=creeper12356" title="Code">💻</a></td>
+    </tr>
+  </tbody>
+</table>
 
 <!-- markdownlint-restore -->
 <!-- prettier-ignore-end -->
