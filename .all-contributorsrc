@@ -1,14 +1,25 @@
 {
-    "projectName": "SJTU-Canvas-Helper",
-    "projectOwner": "Okabe-Rintarou-0",
-    "files": [
-        "README.md"
-    ],
-    "imageSize": 100,
-    "repoType": "github",
-    "contributorsPerLine": 7,
-    "repoHost": "https://github.com",
-    "commitConvention": "angular",
-    "skipCi": true,
-    "commitType": "docs"
+  "projectName": "SJTU-Canvas-Helper",
+  "projectOwner": "Okabe-Rintarou-0",
+  "files": [
+    "README.md"
+  ],
+  "imageSize": 100,
+  "repoType": "github",
+  "contributorsPerLine": 7,
+  "repoHost": "https://github.com",
+  "commitConvention": "angular",
+  "skipCi": true,
+  "commitType": "docs",
+  "contributors": [
+    {
+      "login": "okabe-rintarou-0",
+      "name": "Zihong Lin",
+      "avatar_url": "https://avatars.githubusercontent.com/u/58595459?v=4",
+      "profile": "http://okabe-rintarou-0.github.io",
+      "contributions": [
+        "maintenance"
+      ]
+    }
+  ]
 }
