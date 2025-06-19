@@ -44,34 +44,24 @@ yay -S sjtu-canvas-helper
 
 感谢以下用户为本仓库做出的贡献：
 
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
 <table>
-  <tr>
-    <td align="center">
-      <a href="https://github.com/creeper12356" style="display:inline-block;width:80px">
-        <img src="https://github.com/creeper12356.png" width="64px;" alt="creeper12356"/><br/>
-        <sub><b>creeper12356</b></sub>
-      </a>
-    </td>
-    <td align="center">
-      <a href="https://github.com/pangbo13" style="display:inline-block;width:80px">
-        <img src="https://github.com/pangbo13.png" width="64px;" alt="pangbo13"/><br/>
-        <sub><b>pangbo13</b></sub>
-      </a>
-    </td>
-    <td align="center">
-      <a href="https://github.com/wytili" style="display:inline-block;width:80px">
-        <img src="https://github.com/wytili.png" width="64px;" alt="wytili"/><br/>
-        <sub><b>wytili</b></sub>
-      </a>
-    </td>
-    <td align="center">
-      <a href="https://github.com/xeonliu" style="display:inline-block;width:80px">
-        <img src="https://github.com/xeonliu.png" width="64px;" alt="xeonliu"/><br/>
-        <sub><b>xeonliu</b></sub>
-      </a>
-    </td>
-  </tr>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/xeonliu"><img src="https://avatars.githubusercontent.com/u/62530004?v=4?s=100" width="100px;" alt="xeonliu"/><br /><sub><b>xeonliu</b></sub></a><br /><a href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/commits?author=xeonliu" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/creeper12356"><img src="https://avatars.githubusercontent.com/u/138413915?v=4?s=100" width="100px;" alt="creeper12356"/><br /><sub><b>creeper12356</b></sub></a><br /><a href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/commits?author=creeper12356" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/pangbo13"><img src="https://avatars.githubusercontent.com/u/51732678?v=4?s=100" width="100px;" alt="PangBo"/><br /><sub><b>PangBo</b></sub></a><br /><a href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/commits?author=pangbo13" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/wytili"><img src="https://avatars.githubusercontent.com/u/61528682?v=4?s=100" width="100px;" alt="Yiting Wang"/><br /><sub><b>Yiting Wang</b></sub></a><br /><a href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/commits?author=wytili" title="Code">💻</a></td>
+    </tr>
+  </tbody>
 </table>
+
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
+<!-- ALL-CONTRIBUTORS-LIST:END -->
 
 ## Main Features
 + [x] 文件下载 / 预览(免下载) / PDF & PPTX 混合合并(免下载)

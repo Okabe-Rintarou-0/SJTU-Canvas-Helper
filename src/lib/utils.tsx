@@ -272,3 +272,9 @@ export function consoleLog(logLevel: LogLevel, ...messages: any[]) {
     invoke("console_log", { logLevel, context, message });
     console.log(message);
 }
+
+export function srtToVtt(srt: string) {
+    return 'WEBVTT\n\n' + srt
+        .replace(/(\d+)\n(\d{2}:\d{2}:\d{2}),(\d{3}) --> (\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1\n$2.$3 --> $4.$5')
+        .replace(/\r/g, '');
+}

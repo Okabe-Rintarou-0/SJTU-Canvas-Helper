@@ -1,6 +1,6 @@
 import { SwapOutlined } from '@ant-design/icons';
 import { invoke } from "@tauri-apps/api";
-import { Button, Checkbox, Divider, Select, Space, Table } from "antd";
+import { Button, Checkbox, Divider, Select, Space, Table, Slider } from "antd";
 import useMessage from "antd/es/message/useMessage";
 import { useEffect, useRef, useState } from "react";
 import ClosableAlert from "../components/closable_alert";
@@ -15,7 +15,9 @@ import { getConfig, saveConfig } from "../lib/config";
 import { VIDEO_PAGE_HINT_ALERT_KEY } from "../lib/constants";
 import { useCourses, useQRCode } from "../lib/hooks";
 import { CanvasVideo, DownloadTask, LOG_LEVEL_ERROR, VideoDownloadTask, VideoInfo, VideoPlayInfo } from "../lib/model";
-import { consoleLog } from "../lib/utils";
+import { consoleLog, srtToVtt } from "../lib/utils";
+import Draggable from 'react-draggable';
+import type { DraggableEvent, DraggableData } from 'react-draggable';
 
 export default function VideoPage() {
     const [videoDownloadTasks, setVideoDownloadTasks] = useState<VideoDownloadTask[]>([]);
@@ -33,6 +35,9 @@ export default function VideoPage() {
     const [mutedPlayURL, setMutedPlayURL] = useState<string>("");
     const [syncPlay, setSyncPlay] = useState<boolean>(true);
     const [subVideoSize, setSubVideoSize] = useState<number>(25);
+    const [subVideoOpacity, setSubVideoOpacity] = useState(0.8);
+    const [subVideoPos, setSubVideoPos] = useState({ x: 100, y: 100 });
+    const [subtitleUrl, setSubtitleUrl] = useState<string | undefined>(undefined);
     const mainVideoRef = useRef<HTMLVideoElement>(null);
     const subVideoRef = useRef<HTMLVideoElement>(null);
     const firstPlay = useRef<boolean>(true);
@@ -309,7 +314,7 @@ export default function VideoPage() {
                         e.preventDefault();
                         handleDownloadVideo(play);
                     }}>下载</a>
-                     <a onClick={e => {
+                    <a onClick={e => {
                         e.preventDefault();
                         handlePlay(play);
                     }}>播放</a>
@@ -327,13 +332,45 @@ export default function VideoPage() {
         return { width: videoURL === mainPlayURL ? "100%" : subVideoSize + "%" };
     }
 
-    const getVideoRef = (videoURL: string) => {
-        return videoURL === mainPlayURL ? mainVideoRef : subVideoRef;
-    }
-
     const handleSwapVideo = () => {
-        if (playURLs.length === 2 && mainPlayURL) {
-            setMainPlayURL(playURLs.find(URL => URL !== mainPlayURL)!);
+        if (playURLs.length === 2 && mainPlayURL && mutedPlayURL) {
+            // 记录当前状态
+            const mainVideo = mainVideoRef.current;
+            const subVideo = subVideoRef.current;
+            if (!mainVideo || !subVideo) return;
+
+            const mainState = {
+                currentTime: mainVideo.currentTime,
+                paused: mainVideo.paused,
+                playbackRate: mainVideo.playbackRate,
+            };
+            const subState = {
+                currentTime: subVideo.currentTime,
+                paused: subVideo.paused,
+                playbackRate: subVideo.playbackRate,
+            };
+
+            // 交换URL
+            setMainPlayURL(mutedPlayURL);
+            setMutedPlayURL(mainPlayURL);
+
+            // 等待URL切换后再同步状态
+            setTimeout(() => {
+                const newMain = mainVideoRef.current;
+                const newSub = subVideoRef.current;
+                if (newMain && newSub) {
+                    // 恢复进度和速度
+                    newMain.currentTime = subState.currentTime;
+                    newMain.playbackRate = subState.playbackRate;
+                    newSub.currentTime = mainState.currentTime;
+                    newSub.playbackRate = mainState.playbackRate;
+                    // 恢复播放状态
+                    if (!subState.paused) newMain.play();
+                    else newMain.pause();
+                    if (!mainState.paused) newSub.play();
+                    else newSub.pause();
+                }
+            }, 200); // 适当延迟，确保URL已切换
         }
     }
 
@@ -387,6 +424,29 @@ export default function VideoPage() {
         }
     }, [mainPlayURL]);
 
+    useEffect(() => {
+        const fetchSubtitle = async () => {
+            if (!selectedVideo || !mainPlayURL) {
+                setSubtitleUrl(undefined);
+                return;
+            }
+            try {
+                let videoInfo = await invoke("get_canvas_video_info", { videoId: selectedVideo.videoId }) as VideoInfo;
+                const srt = await invoke('get_subtitle', { canvasCourseId: videoInfo.courId }) as string;
+                const vtt = srtToVtt(srt);
+
+                const blob = new Blob([vtt], { type: 'text/vtt' });
+                const url = URL.createObjectURL(blob);
+                setSubtitleUrl(url);
+            } catch (e) {
+                console.log('字幕获取失败', e);
+                setSubtitleUrl(undefined);
+            }
+        };
+        fetchSubtitle();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [mainPlayURL, selectedVideo]);
+
     return <BasicLayout>
         {contextHolder}
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
@@ -434,12 +494,85 @@ export default function VideoPage() {
                                 value: size
                             }))} />
                     </Space>
+                    {/* 副屏透明度调节 */}
+                    {!noSubVideo && (
+                        <div style={{ width: 240, margin: '8px 0', display: 'flex', alignItems: 'center' }}>
+                            <span style={{ width: 72, textAlign: 'right', marginRight: 8 }}>副屏透明度</span>
+                            <Slider
+                                min={0.1}
+                                max={1}
+                                step={0.05}
+                                value={subVideoOpacity}
+                                onChange={setSubVideoOpacity}
+                                style={{ width: 120, marginRight: 8 }}
+                                disabled={noSubVideo}
+                            />
+                            {/* <span style={{ width: 32, textAlign: 'left' }}>{Math.round(subVideoOpacity * 100)}%</span> */}
+                        </div>
+                    )}
                 </Space>
-                <div className={videoStyles.videoPlayerContainer}>
-                    {playURLs.map(playURL => <video className={getVideoClassName(playURL)} key={playURL} style={getVideoStyle(playURL)}
-                        ref={getVideoRef(playURL)}
-                        controls={playURL === mainPlayURL} autoPlay={false} src={playURL} muted={playURL === mutedPlayURL} />)}
+                <div className={videoStyles.videoPlayerContainer} style={{ position: 'relative' }}>
+                    {/* 主屏视频 */}
+                    {mainPlayURL && (
+                        <video
+                            className={getVideoClassName(mainPlayURL)}
+                            style={getVideoStyle(mainPlayURL)}
+                            ref={mainVideoRef}
+                            controls
+                            autoPlay={false}
+                            src={mainPlayURL}
+                            muted={mainPlayURL === mutedPlayURL}
+                            width="100%"
+                        >
+                            {(() => { console.log('渲染track, subtitleUrl:', subtitleUrl); return null; })()}
+                            {subtitleUrl && (
+                                <track
+                                    label="字幕"
+                                    kind="subtitles"
+                                    src={subtitleUrl}
+                                    srcLang="zh"
+                                    default
+                                    onLoad={() => { console.log('字幕track已挂载', subtitleUrl); }}
+                                />
+                            )}
+                        </video>
+                    )}
+                    {/* 副屏视频（可拖动+透明度） */}
+                    {!noSubVideo && mutedPlayURL && (
+                        <Draggable
+                            position={subVideoPos}
+                            onStop={(_: DraggableEvent, data: DraggableData) => setSubVideoPos({ x: data.x, y: data.y })}
+                            disabled={noSubVideo}
+                        >
+                            <div
+                                style={{
+                                    position: 'fixed',
+                                    zIndex: 1000,
+                                    opacity: subVideoOpacity,
+                                    pointerEvents: noSubVideo ? 'none' : 'auto',
+                                    width: subVideoSize + '%',
+                                    right: 40,
+                                    top: 120,
+                                    display: playURLs.length >= 2 ? 'block' : 'none',
+                                    boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                                    borderRadius: 8,
+                                    background: '#000',
+                                }}
+                            >
+                                <video
+                                    className={videoStyles.subVideo}
+                                    ref={subVideoRef}
+                                    controls
+                                    autoPlay={false}
+                                    src={mutedPlayURL}
+                                    muted
+                                    style={{ width: '100%', borderRadius: 8 }}
+                                />
+                            </div>
+                        </Draggable>
+                    )}
                 </div>
+
                 <VideoDownloadTable tasks={videoDownloadTasks} handleRemoveTask={handleRemoveTask} />
                 <PPTDownloadTable tasks={pptDownloadTasks} handleRemoveTask={handleRemovePPTTask} />
             </>}
