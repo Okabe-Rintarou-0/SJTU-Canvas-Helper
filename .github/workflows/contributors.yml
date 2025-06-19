@@ -1,0 +1,18 @@
+# .github/workflows/contributors.yml
+jobs:
+    contributors:
+      permissions: write-all
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v3
+        - uses: JoshuaKGoldberg/all-contributors-auto-action@v0.3.2
+
+name: Contributors
+
+on:
+    push:
+        branches:
+        - main
+
+env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
