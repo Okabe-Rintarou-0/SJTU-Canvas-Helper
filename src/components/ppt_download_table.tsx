@@ -1,7 +1,8 @@
 import { Table, Progress, Button, Space } from "antd";
 import { DownloadTask, ProgressPayload } from "../lib/model";
-import { appWindow } from "@tauri-apps/api/window";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useEffect, useState } from "react";
+const appWindow = getCurrentWebviewWindow()
 
 interface PPTDownloadTableProps {
     tasks: DownloadTask[];

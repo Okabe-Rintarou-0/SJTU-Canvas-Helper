@@ -1,8 +1,11 @@
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use std::process;
 
+use dirs::config_dir;
 use error::{AppError, Result};
+use futures::StreamExt;
 use reqwest::StatusCode;
+use std::convert::Infallible;
 use std::{
     fs,
     io::Write,
@@ -11,15 +14,13 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tauri::{api::path::config_dir, Runtime, Window};
+use tauri::{Emitter, Runtime, Window};
 use tokio::{io::AsyncReadExt, process::Command as TokioCommand};
 use tokio::{sync::RwLock, task::JoinSet};
 use uuid::Uuid;
+use warp::filters::query::raw as query_raw;
 use warp::{hyper::Response, Filter};
 use xlsxwriter::Workbook;
-use std::convert::Infallible;
-use warp::filters::query::raw as query_raw;
-use futures::StreamExt;
 
 use crate::{
     client::{
@@ -249,50 +250,53 @@ impl App {
             .and(warp::path("vod").and(warp::path::tail()))
             .and(query_raw().or(warp::any().map(|| "".to_string())).unify())
             .and(warp::header::headers_cloned())
-            .and_then(|tail: warp::path::Tail, query: String, headers: warp::http::HeaderMap| async move {
-                let range_value = headers
-                    .get("Range")
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or("")
-                    .to_string();
+            .and_then(
+                |tail: warp::path::Tail, query: String, headers: warp::http::HeaderMap| async move {
+                    let range_value = headers
+                        .get("Range")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("")
+                        .to_string();
 
-                let mut url = format!("https://live.sjtu.edu.cn/vod/{}", tail.as_str());
-                if !query.is_empty() {
-                    url.push('?');
-                    url.push_str(&query);
-                }
-
-                let client = reqwest::Client::new();
-                let mut req = client.get(&url)
-                    .header("Referer", "https://courses.sjtu.edu.cn"); // 你原本的Referer
-                if !range_value.is_empty() {
-                    req = req.header("Range", range_value.clone());
-                }
-                tracing::info!("req: {:?}", req);
-                let resp = req.send().await;
-
-                match resp {
-                    Ok(resp) => {
-                        tracing::info!("resp: {:?}", resp);
-                        let status = resp.status();
-                        let mut builder = Response::builder().status(status);
-                        for (k, v) in resp.headers() {
-                            builder = builder.header(k, v);
-                        }
-                        let stream = resp.bytes_stream().map(|chunk| chunk.map_err(std::io::Error::other));
-                        let body = warp::hyper::Body::wrap_stream(stream);
-                        Ok::<warp::http::Response<warp::hyper::Body>, Infallible>(
-                            builder.body(body).unwrap()
-                        )
+                    let mut url = format!("https://live.sjtu.edu.cn/vod/{}", tail.as_str());
+                    if !query.is_empty() {
+                        url.push('?');
+                        url.push_str(&query);
                     }
-                    Err(e) => {
-                        Ok(Response::builder()
+
+                    let client = reqwest::Client::new();
+                    let mut req = client
+                        .get(&url)
+                        .header("Referer", "https://courses.sjtu.edu.cn"); // 你原本的Referer
+                    if !range_value.is_empty() {
+                        req = req.header("Range", range_value.clone());
+                    }
+                    tracing::info!("req: {:?}", req);
+                    let resp = req.send().await;
+
+                    match resp {
+                        Ok(resp) => {
+                            tracing::info!("resp: {:?}", resp);
+                            let status = resp.status();
+                            let mut builder = Response::builder().status(status);
+                            for (k, v) in resp.headers() {
+                                builder = builder.header(k, v);
+                            }
+                            let stream = resp
+                                .bytes_stream()
+                                .map(|chunk| chunk.map_err(std::io::Error::other));
+                            let body = warp::hyper::Body::wrap_stream(stream);
+                            Ok::<warp::http::Response<warp::hyper::Body>, Infallible>(
+                                builder.body(body).unwrap(),
+                            )
+                        }
+                        Err(e) => Ok(Response::builder()
                             .status(StatusCode::INTERNAL_SERVER_ERROR)
                             .body(format!("Error downloading video: {}", e).into())
-                            .unwrap())
+                            .unwrap()),
                     }
-                }
-            });
+                },
+            );
         // Ready Check Endpoint: /ready
         let ready_check = warp::path!("ready").map(|| Response::builder().body(""));
 
