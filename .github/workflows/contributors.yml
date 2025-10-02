@@ -1,11 +1,16 @@
 # .github/workflows/contributors.yml
 jobs:
     contributors:
-      permissions: write-all
+      # permissions: write-all
+      permissions:
+        issues: write
+        pull-requests: write
       runs-on: ubuntu-latest
       steps:
-        - uses: actions/checkout@v3
-        - uses: JoshuaKGoldberg/all-contributors-auto-action@v0.3.2
+        - uses: actions/checkout@v4
+          with:
+            persist-credentials: false
+        - uses: JoshuaKGoldberg/all-contributors-auto-action@944abe4387e751b5bbb38616cb25cf4a4ca998f2 # v0.5.0
 
 name: Contributors
 

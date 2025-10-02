@@ -927,22 +927,22 @@ pub struct CanvasVideoResponseBody {
     pub records: Vec<CanvasVideo>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CanvasVideoResponsePage {
-    pub page_index: i64,
-    pub page_size: i64,
-    pub page_count: i64,
-    pub page_first: i64,
-    pub page_last: i64,
-    pub page_next: i64,
-    pub page_prev: i64,
-    pub page_show_begin: i64,
-    pub page_show_end: i64,
-    pub page_show_count: i64,
-    pub row_count: i64,
-    pub row_begin: i64,
-}
+// #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+// #[serde(rename_all = "camelCase")]
+// pub struct CanvasVideoResponsePage {
+//     pub page_index: i64,
+//     pub page_size: i64,
+//     pub page_count: i64,
+//     pub page_first: i64,
+//     pub page_last: i64,
+//     pub page_next: i64,
+//     pub page_prev: i64,
+//     pub page_show_begin: i64,
+//     pub page_show_end: i64,
+//     pub page_show_count: i64,
+//     pub row_count: i64,
+//     pub row_begin: i64,
+// }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
