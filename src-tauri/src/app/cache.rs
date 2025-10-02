@@ -69,6 +69,7 @@ mod tests {
     use serde::Deserialize;
 
     #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+    #[allow(dead_code)] // only for test
     struct Person {
         age: usize,
         gender: String,
@@ -76,6 +77,7 @@ mod tests {
     }
 
     #[derive(Serialize, Deserialize)]
+    #[allow(dead_code)] // only for test
     struct Pet {
         name: String,
         owner: String,

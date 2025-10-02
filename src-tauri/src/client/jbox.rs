@@ -95,7 +95,7 @@ impl Client {
     }
 
     pub fn compute_chunk_size(&self, file_size: usize) -> usize {
-        if file_size % JBOX_UPLOAD_CHUNK_SIZE == 0 {
+        if file_size.is_multiple_of(JBOX_UPLOAD_CHUNK_SIZE) {
             file_size / JBOX_UPLOAD_CHUNK_SIZE
         } else {
             file_size / JBOX_UPLOAD_CHUNK_SIZE + 1
