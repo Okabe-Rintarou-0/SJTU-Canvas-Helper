@@ -1,0 +1,7 @@
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        actions/checkout: ref-pin
+        dtolnay/rust-toolchain: ref-pin # stable
+        taiki-e/install-action: ref-pin # nextest
