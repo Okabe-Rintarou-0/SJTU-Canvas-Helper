@@ -1,8 +1,12 @@
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use std::process;
 
+use dirs::config_dir;
 use error::{AppError, Result};
+use futures::StreamExt;
 use reqwest::StatusCode;
+use rust_xlsxwriter::Workbook;
+use std::convert::Infallible;
 use std::{
     fs,
     io::Write,
@@ -11,15 +15,12 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tauri::{api::path::config_dir, Runtime, Window};
+use tauri::{Emitter, Runtime, Window};
 use tokio::{io::AsyncReadExt, process::Command as TokioCommand};
 use tokio::{sync::RwLock, task::JoinSet};
 use uuid::Uuid;
-use warp::{hyper::Response, Filter};
-use xlsxwriter::Workbook;
-use std::convert::Infallible;
 use warp::filters::query::raw as query_raw;
-use futures::StreamExt;
+use warp::{hyper::Response, Filter};
 
 use crate::{
     client::{
@@ -249,50 +250,53 @@ impl App {
             .and(warp::path("vod").and(warp::path::tail()))
             .and(query_raw().or(warp::any().map(|| "".to_string())).unify())
             .and(warp::header::headers_cloned())
-            .and_then(|tail: warp::path::Tail, query: String, headers: warp::http::HeaderMap| async move {
-                let range_value = headers
-                    .get("Range")
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or("")
-                    .to_string();
+            .and_then(
+                |tail: warp::path::Tail, query: String, headers: warp::http::HeaderMap| async move {
+                    let range_value = headers
+                        .get("Range")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("")
+                        .to_string();
 
-                let mut url = format!("https://live.sjtu.edu.cn/vod/{}", tail.as_str());
-                if !query.is_empty() {
-                    url.push('?');
-                    url.push_str(&query);
-                }
-
-                let client = reqwest::Client::new();
-                let mut req = client.get(&url)
-                    .header("Referer", "https://courses.sjtu.edu.cn"); // 你原本的Referer
-                if !range_value.is_empty() {
-                    req = req.header("Range", range_value.clone());
-                }
-                tracing::info!("req: {:?}", req);
-                let resp = req.send().await;
-
-                match resp {
-                    Ok(resp) => {
-                        tracing::info!("resp: {:?}", resp);
-                        let status = resp.status();
-                        let mut builder = Response::builder().status(status);
-                        for (k, v) in resp.headers() {
-                            builder = builder.header(k, v);
-                        }
-                        let stream = resp.bytes_stream().map(|chunk| chunk.map_err(std::io::Error::other));
-                        let body = warp::hyper::Body::wrap_stream(stream);
-                        Ok::<warp::http::Response<warp::hyper::Body>, Infallible>(
-                            builder.body(body).unwrap()
-                        )
+                    let mut url = format!("https://live.sjtu.edu.cn/vod/{}", tail.as_str());
+                    if !query.is_empty() {
+                        url.push('?');
+                        url.push_str(&query);
                     }
-                    Err(e) => {
-                        Ok(Response::builder()
+
+                    let client = reqwest::Client::new();
+                    let mut req = client
+                        .get(&url)
+                        .header("Referer", "https://courses.sjtu.edu.cn"); // 你原本的Referer
+                    if !range_value.is_empty() {
+                        req = req.header("Range", range_value.clone());
+                    }
+                    tracing::info!("req: {:?}", req);
+                    let resp = req.send().await;
+
+                    match resp {
+                        Ok(resp) => {
+                            tracing::info!("resp: {:?}", resp);
+                            let status = resp.status();
+                            let mut builder = Response::builder().status(status);
+                            for (k, v) in resp.headers() {
+                                builder = builder.header(k, v);
+                            }
+                            let stream = resp
+                                .bytes_stream()
+                                .map(|chunk| chunk.map_err(std::io::Error::other));
+                            let body = warp::hyper::Body::wrap_stream(stream);
+                            Ok::<warp::http::Response<warp::hyper::Body>, Infallible>(
+                                builder.body(body).unwrap(),
+                            )
+                        }
+                        Err(e) => Ok(Response::builder()
                             .status(StatusCode::INTERNAL_SERVER_ERROR)
                             .body(format!("Error downloading video: {}", e).into())
-                            .unwrap())
+                            .unwrap()),
                     }
-                }
-            });
+                },
+            );
         // Ready Check Endpoint: /ready
         let ready_check = warp::path!("ready").map(|| Response::builder().body(""));
 
@@ -929,14 +933,14 @@ impl App {
         folder_path: &str,
     ) -> Result<()> {
         let path = Path::new(folder_path).join(file_name);
-        let workbook = Workbook::new(path.to_str().unwrap())?;
-        let mut sheet = workbook.add_worksheet(None)?;
+        let mut workbook = Workbook::new();
+        let sheet = workbook.add_worksheet();
         for (row, row_data) in data.iter().enumerate() {
             for (col, col_data) in row_data.iter().enumerate() {
-                sheet.write_string(row as u32, col as u16, col_data, None)?;
+                sheet.write_string(row as u32, col as u16, col_data)?;
             }
         }
-        workbook.close()?;
+        workbook.save(path)?;
         Ok(())
     }
 
@@ -944,29 +948,29 @@ impl App {
         let save_path = self.config.read().await.save_path.clone();
         let path = Path::new(&save_path).join(save_name);
 
-        let workbook = Workbook::new(path.to_str().unwrap())?;
-        let mut sheet = workbook.add_worksheet(None)?;
+        let mut workbook = Workbook::new();
+        let sheet = workbook.add_worksheet();
 
         // setup headers
-        sheet.write_string(0, 0, "id", None)?;
-        sheet.write_string(0, 1, "name", None)?;
-        sheet.write_string(0, 2, "email", None)?;
-        sheet.write_string(0, 3, "created_at", None)?;
-        sheet.write_string(0, 4, "sortable_name", None)?;
-        sheet.write_string(0, 5, "short_name", None)?;
-        sheet.write_string(0, 6, "login_id", None)?;
+        sheet.write_string(0, 0, "id")?;
+        sheet.write_string(0, 1, "name")?;
+        sheet.write_string(0, 2, "email")?;
+        sheet.write_string(0, 3, "created_at")?;
+        sheet.write_string(0, 4, "sortable_name")?;
+        sheet.write_string(0, 5, "short_name")?;
+        sheet.write_string(0, 6, "login_id")?;
 
         for (row, user) in users.iter().enumerate() {
             let row = row as u32 + 1;
-            sheet.write_string(row, 0, &user.id.to_string(), None)?;
-            sheet.write_string(row, 1, &user.name, None)?;
-            sheet.write_string(row, 2, &user.email.clone().unwrap_or_default(), None)?;
-            sheet.write_string(row, 3, &user.created_at, None)?;
-            sheet.write_string(row, 4, &user.sortable_name, None)?;
-            sheet.write_string(row, 5, &user.short_name, None)?;
-            sheet.write_string(row, 6, &user.login_id, None)?;
+            sheet.write_string(row, 0, user.id.to_string())?;
+            sheet.write_string(row, 1, &user.name)?;
+            sheet.write_string(row, 2, user.email.clone().unwrap_or_default())?;
+            sheet.write_string(row, 3, &user.created_at)?;
+            sheet.write_string(row, 4, &user.sortable_name)?;
+            sheet.write_string(row, 5, &user.short_name)?;
+            sheet.write_string(row, 6, &user.login_id)?;
         }
-        workbook.close()?;
+        workbook.save(path)?;
         Ok(())
     }
 

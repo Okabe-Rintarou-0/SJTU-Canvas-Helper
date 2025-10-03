@@ -20,7 +20,7 @@ jobs:
             target: aarch64-apple-darwin
           - os: macos-latest
             target: x86_64-apple-darwin
-          - os: ubuntu-22.04
+          - os: ubuntu-latest
           - os: windows-latest
             target: x86_64-pc-windows-msvc
           - os: windows-latest
@@ -29,9 +29,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 20
           cache: 'yarn'
@@ -40,24 +42,26 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Rust cache
-        uses: swatinem/rust-cache@v2
+        uses: swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
           workspaces: "./src-tauri -> target"
           key: ${{ matrix.os }}-${{ matrix.target }}
+          lookup-only: true
 
       - if: matrix.target
         run: rustup target add ${{ matrix.target }}
 
       - name: install dependencies (ubuntu only)
-        if: matrix.os == 'ubuntu-22.04'
+        if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev patchelf
+          # NOTE: libappindicator3-dev and librsvg2-dev are unused
 
       - name: install frontend dependencies
         run: yarn install # change this to npm or pnpm depending on which one you use
 
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@e834788a94591d81e3ae0bd9ec06366f5afb8994 # v0.5.23
         env:
           NODE_OPTIONS: "--max_old_space_size=4096"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -84,7 +88,7 @@ jobs:
           TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
 
       - name: update release
-        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # 2.2.2
+        uses: softprops/action-gh-release@6cbd405e2c4e67a21c47fa9e383d020e4e28b836 # 2.3.3
         with:
           files: latest.json
           tag_name: latest

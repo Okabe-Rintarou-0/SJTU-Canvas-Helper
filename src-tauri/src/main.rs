@@ -11,7 +11,9 @@ use model::{
     VideoCourse, VideoInfo, VideoPlayInfo,
 };
 
-use tauri::{api::path::config_dir, Runtime, Window};
+use dirs::config_dir;
+
+use tauri::{Emitter, Runtime, Window};
 use tracing::Level;
 use tracing_subscriber::{
     fmt::{self, writer::MakeWriterExt},
@@ -643,6 +645,10 @@ async fn main() -> Result<()> {
     setup_log()?;
     APP.init().await?;
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             read_log_content,
             console_log,

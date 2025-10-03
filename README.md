@@ -54,6 +54,7 @@ yay -S sjtu-canvas-helper
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/creeper12356"><img src="https://avatars.githubusercontent.com/u/138413915?v=4?s=100" width="100px;" alt="creeper12356"/><br /><sub><b>creeper12356</b></sub></a><br /><a href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/commits?author=creeper12356" title="Code">💻</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/pangbo13"><img src="https://avatars.githubusercontent.com/u/51732678?v=4?s=100" width="100px;" alt="PangBo"/><br /><sub><b>PangBo</b></sub></a><br /><a href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/commits?author=pangbo13" title="Code">💻</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/wytili"><img src="https://avatars.githubusercontent.com/u/61528682?v=4?s=100" width="100px;" alt="Yiting Wang"/><br /><sub><b>Yiting Wang</b></sub></a><br /><a href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/commits?author=wytili" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://blog.a-stable.com"><img src="https://avatars.githubusercontent.com/u/66514911?v=4?s=100" width="100px;" alt="Yuxuan Sun"/><br /><sub><b>Yuxuan Sun</b></sub></a><br /><a href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/commits?author=definfo" title="Code">💻</a></td>
     </tr>
   </tbody>
 </table>
@@ -71,7 +72,7 @@ yay -S sjtu-canvas-helper
 + [x] 查看/提交作业
 + [x] 批改作业/修改作业 DDL
 + [x] 支持密院和本部 canvas 系统
-+ [x] ~~视频下载/播放~~ (由于视频网站变动，该功能暂不支持)
++ [x] 视频下载/播放/字幕下载/截图抓取合成PDF
 + [x] 自动更新 
 
 ### 文件下载/预览

@@ -1,4 +1,4 @@
-import { open } from '@tauri-apps/api/dialog';
+import { open } from '@tauri-apps/plugin-dialog';
 import { Button, Input, InputRef, Space } from "antd";
 import React, { useEffect, useState } from "react";
 import { getConfig } from "../lib/config";

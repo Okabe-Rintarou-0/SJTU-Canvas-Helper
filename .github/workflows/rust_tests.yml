@@ -5,9 +5,14 @@ on:
     branches: [main, dev]
   # pull_request:
   #   branches: ["**"]
+permissions:
+  contents: read
+  actions: write
 
 jobs:
   test:
+    permissions:
+      contents: read
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -20,27 +25,29 @@ jobs:
             target: aarch64-apple-darwin
           - os: macos-latest
             target: x86_64-apple-darwin
-          - os: ubuntu-22.04
+          - os: ubuntu-latest
           - os: windows-latest
             target: x86_64-pc-windows-msvc
           - os: windows-latest
             target: i686-pc-windows-msvc
 
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@stable
-      - uses: actions/checkout@v4
-      - uses: swatinem/rust-cache@v2
+      - uses: swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
           workspaces: "./src-tauri -> target"
           key: ${{ matrix.os }}-${{ matrix.target }}
       - name: Install nextest
         uses: taiki-e/install-action@nextest
       - name: install dependencies (ubuntu only)
-        if: matrix.os == 'ubuntu-22.04'
+        if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev patchelf
       - name: Build
         run: cargo build --tests --workspace
       - name: Run tests
@@ -49,7 +56,7 @@ jobs:
         env:
           CANVAS_TOKEN: ${{ secrets.CANVAS_TOKEN }}
       - name: Upload test report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: junit-${{ matrix.os }}.xml
           path: target/nextest/ci/junit.xml

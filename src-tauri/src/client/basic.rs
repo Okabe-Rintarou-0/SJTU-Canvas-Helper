@@ -480,7 +480,7 @@ impl Client {
     ) -> Result<Vec<CalendarEvent>> {
         const BATCH_SIZE: usize = 10;
         let n_codes = context_codes.len();
-        let n_batches = if n_codes % BATCH_SIZE == 0 {
+        let n_batches = if n_codes.is_multiple_of(BATCH_SIZE) {
             n_codes / BATCH_SIZE
         } else {
             n_codes / BATCH_SIZE + 1
@@ -597,7 +597,7 @@ impl Client {
     ) -> Result<Vec<UserSubmissions>> {
         const STUDENT_PER_PARITION: usize = 50;
         let num_students = student_ids.len();
-        let num_partitions = if num_students % STUDENT_PER_PARITION == 0 {
+        let num_partitions = if num_students.is_multiple_of(STUDENT_PER_PARITION) {
             num_students / STUDENT_PER_PARITION
         } else {
             num_students / STUDENT_PER_PARITION + 1

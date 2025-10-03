@@ -11,6 +11,12 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v2.0.0 2025/10/2</Title>
+            <Paragraph>
+                <ul>
+                    <li>迁移至 Tauri v2</li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v1.3.33 2025/6/19</Title>
             <Paragraph>
                 <ul>
