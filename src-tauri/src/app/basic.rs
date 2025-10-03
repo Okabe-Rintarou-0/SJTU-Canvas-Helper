@@ -962,9 +962,9 @@ impl App {
 
         for (row, user) in users.iter().enumerate() {
             let row = row as u32 + 1;
-            sheet.write_string(row, 0, &user.id.to_string())?;
+            sheet.write_string(row, 0, user.id.to_string())?;
             sheet.write_string(row, 1, &user.name)?;
-            sheet.write_string(row, 2, &user.email.clone().unwrap_or_default())?;
+            sheet.write_string(row, 2, user.email.clone().unwrap_or_default())?;
             sheet.write_string(row, 3, &user.created_at)?;
             sheet.write_string(row, 4, &user.sortable_name)?;
             sheet.write_string(row, 5, &user.short_name)?;
