@@ -61,7 +61,7 @@ jobs:
       - name: install frontend dependencies
         run: yarn install # change this to npm or pnpm depending on which one you use
 
-      - uses: tauri-apps/tauri-action@e834788a94591d81e3ae0bd9ec06366f5afb8994 # v0.5.23
+      - uses: tauri-apps/tauri-action@v0
         env:
           NO_STRIP: true
           NODE_OPTIONS: "--max_old_space_size=4096"
