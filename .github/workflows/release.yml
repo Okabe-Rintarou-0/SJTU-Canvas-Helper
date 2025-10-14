@@ -36,7 +36,7 @@ jobs:
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 20
-          cache: 'yarn'
+          cache: "yarn"
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -61,12 +61,13 @@ jobs:
       - name: install frontend dependencies
         run: yarn install # change this to npm or pnpm depending on which one you use
 
-      - uses: tauri-apps/tauri-action@e834788a94591d81e3ae0bd9ec06366f5afb8994 # v0.5.23
+      - uses: tauri-apps/tauri-action@v0
         env:
+          NO_STRIP: true
           NODE_OPTIONS: "--max_old_space_size=4096"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
         with:
           includeUpdaterJson: true
           tagName: app-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version
@@ -81,11 +82,11 @@ jobs:
         uses: ./.github/workflows/windows-portable
         with:
           target: ${{ matrix.target }}
-          version-template: 'app-v__VERSION__'
+          version-template: "app-v__VERSION__"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
 
       - name: update release
         uses: softprops/action-gh-release@6cbd405e2c4e67a21c47fa9e383d020e4e28b836 # 2.3.3
