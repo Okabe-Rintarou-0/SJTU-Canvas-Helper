@@ -37,6 +37,7 @@ use reqwest::{
     redirect::Policy,
     Response, StatusCode,
 };
+use urlencoding::encode;
 use select::{
     document::Document,
     node::Node,
@@ -201,7 +202,7 @@ impl Client {
         )
     }
 
-    async fn get_canvas_course_id_token_id(&self, course_id: i64) -> Result<(String, String)> {
+    async fn get_token_id(&self, course_id: i64) -> Result<String> {
         let data = match self.get_form_data_for_canvas_course_id(course_id).await? {
             Some(data) => data,
             None => {
@@ -250,21 +251,8 @@ impl Client {
                 // URL Example:
                 // https://v.sjtu.edu.cn/jy-application-canvas-sjtu-ui/#/ivsModules/index
                 // ?tokenId=
-                // &isAdmin=0
-                // &clientId=
-                // &courId=
-                // &ltiCourseId=
-                // &courseName=
                 tracing::info!("Header: {:?}", location_header);
                 let params: Vec<_> = location_header.to_str()?.split(&['&', '?'][..]).collect();
-                let canvas_course_id = params
-                    .iter()
-                    .find_map(|s| s.strip_prefix("courId="))
-                    .ok_or(AppError::VideoDownloadError(
-                        "Canvas Course Id not found".to_string(),
-                    ))?
-                    .to_owned();
-                // tokenId
                 let token_id = params
                     .iter()
                     .find_map(|s| s.strip_prefix("tokenId="))
@@ -272,16 +260,15 @@ impl Client {
                         "Token Id not found".to_string(),
                     ))?
                     .to_owned();
-                tracing::info!("Course Id: {:?}", canvas_course_id);
                 tracing::info!("Token Id: {:?}", token_id);
-                Ok((canvas_course_id, token_id))
+                Ok(token_id)
             }
         }
     }
 
-    // Get Token from token_id
+    // Get token and canvas_course_id from token_id
     // https://v.sjtu.edu.cn/jy-application-canvas-sjtu/lti3/getAccessTokenByTokenId?tokenId=
-    async fn get_token_by_token_id(&self, token_id: &str) -> Result<String> {
+    async fn get_canvas_course_id_token_by_token_id(&self, token_id: &str) -> Result<(String, String)> {
         let url = format!(
             "https://v.sjtu.edu.cn/jy-application-canvas-sjtu/lti3/getAccessTokenByTokenId?tokenId={}",
             token_id
@@ -295,12 +282,17 @@ impl Client {
             .ok_or(AppError::VideoDownloadError(String::from(
                 "Token not found",
             )))?;
-        Ok(token.to_owned())
+        let canvas_course_id = json["data"]["params"]["courId"]
+            .as_str()
+            .ok_or(AppError::VideoDownloadError(String::from(
+                "Canvas Course Id not found",
+            )))?;
+        Ok((canvas_course_id.to_owned(), token.to_owned()))
     }
 
     async fn get_canvas_course_id_token(&self, course_id: i64) -> Result<(String, String)> {
-        let (canvas_course_id, token_id) = self.get_canvas_course_id_token_id(course_id).await?;
-        let token = self.get_token_by_token_id(token_id.as_str()).await?;
+        let token_id = self.get_token_id(course_id).await?;
+        let (canvas_course_id, token) = self.get_canvas_course_id_token_by_token_id(token_id.as_str()).await?;
         Ok((canvas_course_id, token))
     }
 
@@ -312,7 +304,7 @@ impl Client {
         let mut data = HashMap::new();
         // data.insert("pageIndex", "1");
         // data.insert("pageSize", "1000");
-        data.insert("canvasCourseId", canvas_course_id.as_str());
+        data.insert("canvasCourseId", encode(canvas_course_id.as_str()).into_owned());
 
         *self.token.write().await = token.to_owned();
 
@@ -327,7 +319,9 @@ impl Client {
             .json(&data)
             .send()
             .await?;
+        
         let body = resp.bytes().await?;
+
         tracing::info!("body: {}", String::from_utf8_lossy(&body));
 
         let resp = utils::parse_json::<CanvasVideoResponse>(&body).unwrap();
