@@ -553,20 +553,22 @@ impl Client {
     }
 
     // TODO: Download Subtitles
-    // https://v.sjtu.edu.cn/jy-application-canvas-sjtu/transfer/translate/2070965
+    // https://v.sjtu.edu.cn/jy-application-canvas-sjtu/transfer/translate/detail
     pub async fn get_subtitle(
         &self,
         canvas_course_id: i64,
     ) -> Result<CanvasVideoSubTitleResponseBody> {
         // TODO: Save Token
-        let url = format!(
-            "https://v.sjtu.edu.cn/jy-application-canvas-sjtu/transfer/translate/{}",
-            canvas_course_id
-        );
+        let mut data = HashMap::new();
+        data.insert("courseId", canvas_course_id.to_string());
+        // data.insert("platform", "1".to_string());
+
+        let url = "https://v.sjtu.edu.cn/jy-application-canvas-sjtu/transfer/translate/detail";
         let resp = self
             .cli
-            .get(url)
+            .post(url)
             .header("token", self.token.read().await.as_str())
+            .json(&data)
             .send()
             .await?
             .error_for_status()?;
