@@ -624,7 +624,9 @@ fn console_log(log_level: i32, message: String, context: String) {
     };
 }
 
-fn setup_log() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
+    // set up logger
     let appender = tracing_appender::rolling::never(App::config_dir()?, "app.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(appender);
     let subscriber = tracing_subscriber::registry()
@@ -637,12 +639,7 @@ fn setup_log() -> Result<()> {
     tracing::subscriber::set_global_default(subscriber)
         .expect("Unable to set a tracing subscriber");
     tracing::info!("log setup, path: {:?}", config_dir());
-    Ok(())
-}
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    setup_log()?;
     APP.init().await?;
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())

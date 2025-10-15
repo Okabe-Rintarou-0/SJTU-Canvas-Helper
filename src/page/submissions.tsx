@@ -38,6 +38,39 @@ import {
   formatDate,
 } from "../lib/utils";
 
+interface SubmissionGradeProps {
+  gradingType: string;
+  key: number | string | null,
+  disabled: boolean,
+  defaultValue: string;
+  onSubmit: (grade: string) => void;
+}
+
+function SubmissionGrade(props: SubmissionGradeProps) {
+  const {
+    gradingType, key, disabled, defaultValue, onSubmit
+  } = props;
+  if (gradingType === "pass_fail") {
+    return <Select defaultValue={defaultValue}
+      style={{ width: "100px" }}
+      onChange={grade => onSubmit(grade)}
+    >
+      <Select.Option value="complete">完成</Select.Option>
+      <Select.Option value="incomplete">未完成</Select.Option>
+    </Select>
+  } else {
+    return <Input
+      key={key}
+      disabled={disabled}
+      defaultValue={defaultValue}
+      placeholder="输入成绩并按下回车以打分"
+      onPressEnter={(ev) =>
+        onSubmit(ev.currentTarget.value)
+      }
+    />
+  }
+}
+
 export default function SubmissionsPage() {
   const [messageApi, contextHolder] = useMessage();
   const [operating, setOperating] = useState<boolean>(false);
@@ -128,14 +161,10 @@ export default function SubmissionsPage() {
       >
         <Space>
           打分：
-          <Input
-            key={previewedAttachement.id}
-            disabled={readonlyGrade}
+          <SubmissionGrade key={previewedAttachement.id}
+            gradingType={selectedAssignment.grading_type} disabled={readonlyGrade}
             defaultValue={previewedAttachement.grade ?? ""}
-            placeholder="输入成绩并按下回车以打分"
-            onPressEnter={(ev) =>
-              handleGrade(ev.currentTarget.value, previewedAttachement)
-            }
+            onSubmit={grade => handleGrade(grade, previewedAttachement)}
           />
         </Space>
         <CommentPanel
@@ -164,20 +193,6 @@ export default function SubmissionsPage() {
     }
   }, [attachments]);
 
-  const validateGrade = (grade: string) => {
-    if (grade.length === 0) {
-      return true;
-    }
-    let maxGrade = selectedAssignment?.points_possible;
-    let gradeNumber;
-    try {
-      gradeNumber = Number.parseFloat(grade);
-    } catch (_) {
-      return false;
-    }
-    return 0 <= gradeNumber && (!maxGrade || gradeNumber <= maxGrade);
-  };
-
   const gatherGrades = (attachments: Attachment[]): [number[], number] => {
     let grades = [];
     let visitSet = new Set<number>();
@@ -202,12 +217,6 @@ export default function SubmissionsPage() {
   };
 
   const handleGrade = async (grade: string, attachment: Attachment) => {
-    if (!validateGrade(grade)) {
-      messageApi.error(
-        "请输入正确格式的评分（不超过上限的正数或空字符串）！🙅🙅🙅"
-      );
-      return;
-    }
     try {
       await invoke("update_grade", {
         courseId: selectedCourseId,
@@ -245,12 +254,11 @@ export default function SubmissionsPage() {
       dataIndex: "grade",
       key: "grade",
       render: (grade: string | null, attachment: Attachment) => (
-        <Input
-          key={grade}
+        <SubmissionGrade key={grade}
+          gradingType={"pass_fail"}
           disabled={readonlyGrade}
           defaultValue={grade ?? ""}
-          placeholder="输入成绩并按下回车以打分"
-          onPressEnter={(ev) => handleGrade(ev.currentTarget.value, attachment)}
+          onSubmit={grade => handleGrade(grade, attachment)}
         />
       ),
     },

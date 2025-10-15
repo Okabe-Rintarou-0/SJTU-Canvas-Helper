@@ -238,6 +238,18 @@ pub struct CalendarEvent {
     pub important_dates: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum GradingType {
+    PassFail,
+    Percent,
+    LetterGrade,
+    GpaScale,
+    #[default]
+    Points,
+    NotGraded,
+}
+
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Assignment {
     pub id: i64,
@@ -270,6 +282,8 @@ pub struct Assignment {
     pub all_dates: Vec<AssignmentDate>,
     #[serde(default)]
     pub score_statistics: Option<ScoreStatistics>,
+    #[serde(default)]
+    pub grading_type: GradingType,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

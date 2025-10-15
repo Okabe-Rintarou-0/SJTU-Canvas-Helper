@@ -148,6 +148,7 @@ export interface Assignment {
     overrides: AssignmentOverride[];
     all_dates: AssignmentDate[];
     score_statistics: ScoreStatistic | null
+    grading_type: string;
 }
 
 export interface AssignmentDate {
