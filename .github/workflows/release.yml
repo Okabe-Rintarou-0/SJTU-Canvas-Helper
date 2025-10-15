@@ -75,7 +75,7 @@ jobs:
           releaseBody: "See the assets to download this version and install."
           releaseDraft: false
           prerelease: false
-          args: ${{ matrix.target && format('--target {0}', matrix.target) }}
+          args: ${{ matrix.target && format('--target {0}', matrix.target) }} --verbose
 
       - name: Portable Bundle
         if: matrix.os == 'windows-latest'
