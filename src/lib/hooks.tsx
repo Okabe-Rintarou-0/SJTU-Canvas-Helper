@@ -8,6 +8,7 @@ import {
   ReactNode,
   SetStateAction,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
@@ -26,13 +27,14 @@ import {
   LOG_LEVEL_ERROR,
   LOG_LEVEL_INFO,
   LoginMessage,
+  ModuleItem,
   RelationshipTopo,
   User,
   UserSubmissions,
   isFile,
 } from "./model";
 import { ConfigDispatch, ConfigState } from "./store";
-import { consoleLog, isMergableFileType } from "./utils";
+import { consoleLog, isMergableFileType, moduleItem2File } from "./utils";
 
 const UPDATE_QRCODE_MESSAGE = '{ "type": "UPDATE_QR_CODE" }';
 const SEND_INTERVAL = 1000 * 50;
@@ -483,6 +485,7 @@ export function useData<T>(command: string, shouldFetch: boolean, args?: any) {
       setData(data);
     } catch (e) {
       consoleLog(LOG_LEVEL_ERROR, e);
+      message.error(e as string);
       setError(e);
     }
     setIsLoading(false);
@@ -534,7 +537,7 @@ export function useCurrentTermCourses() {
     return (
       now.isBefore(courseEnd) ||
       course.enrollments.find((enroll) => enroll.role === "TaEnrollment") !=
-        undefined
+      undefined
     );
   });
   return courses;
@@ -663,3 +666,26 @@ export const useAnnualReport = (year: number) => {
 
 export const useConfigDispatch: () => ConfigDispatch = useDispatch;
 export const useConfigSelector: TypedUseSelectorHook<ConfigState> = useSelector;
+
+export function useExternalFiles(courseId?: number) {
+  const [args, setArgs] = useState<any>({ courseId });
+  useEffect(() => {
+    setArgs({ courseId });
+  }, [courseId]);
+  const shouldFetch = courseId !== undefined && courseId !== -1;
+  const { data,
+    isLoading,
+    error,
+    mutate } = useData<ModuleItem[]>("list_external_module_items", shouldFetch, args);
+  const externalFiles = useMemo(() =>
+    data?.map(item => moduleItem2File(item))
+      .filter(item => item.external_type === "File"),
+    [data]);
+
+  return {
+    data: externalFiles ?? [],
+    isLoading,
+    error,
+    mutate,
+  };
+}

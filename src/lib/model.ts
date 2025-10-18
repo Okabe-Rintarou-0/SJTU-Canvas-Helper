@@ -64,6 +64,8 @@ export interface File {
     mime_class: string;
     "content-type": string;
     size: number;
+    external_type?: "File" | "Link";
+    external_title?: string;
 }
 
 export interface Folder {
@@ -555,4 +557,45 @@ export interface AnnualCourseStatistic {
 export interface AnnualReport {
     year: number;
     courseToStatistic: Record<number, AnnualCourseStatistic>;
+}
+
+export interface CompletionRequirement {
+    type: string;
+    min_score?: number;
+    completed: boolean;
+}
+
+export interface ContentDetails {
+    points_possible?: number;
+    due_at?: string;
+    unlock_at?: string;
+    lock_at?: string;
+}
+
+export type ModuleItemType =
+    | 'File'
+    | 'Page'
+    | 'Discussion'
+    | 'Assignment'
+    | 'Quiz'
+    | 'SubHeader'
+    | 'ExternalUrl'
+    | 'ExternalTool';
+
+export interface ModuleItem {
+    id: number;
+    module_id: number;
+    position: number;
+    title: string;
+    indent: number;
+    type: ModuleItemType;
+    content_id?: number;
+    html_url: string;
+    url?: string;
+    page_url?: string;
+    external_url?: string;
+    new_tab?: boolean;
+    completion_requirement?: CompletionRequirement;
+    content_details?: ContentDetails;
+    published?: boolean;
 }

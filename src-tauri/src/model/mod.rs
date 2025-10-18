@@ -1,6 +1,5 @@
-use std::collections::HashMap;
-
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Course {
@@ -1106,4 +1105,81 @@ pub struct CanvasVideoPPT {
 #[serde(rename_all = "camelCase")]
 pub struct CanvasVideoPPTOcr {
     pub word: String,
+}
+
+// check https://developerdocs.instructure.com/services/canvas/resources/modules
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModuleState {
+    Locked,
+    Unlocked,
+    Started,
+    Completed,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "PascalCase")]
+pub enum ModuleItemType {
+    File,
+    Page,
+    Discussion,
+    Assignment,
+    Quiz,
+    SubHeader,
+    ExternalUrl,
+    ExternalTool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CompletionRequirement {
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub min_score: Option<u32>,
+    pub completed: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ContentDetails {
+    pub points_possible: Option<f64>,
+    pub due_at: Option<String>,
+    pub unlock_at: Option<String>,
+    pub lock_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ModuleItem {
+    pub id: i64,
+    pub module_id: u64,
+    pub position: u32,
+    pub title: String,
+    pub indent: u32,
+    #[serde(rename = "type")]
+    pub type_: ModuleItemType,
+    pub content_id: Option<u64>,
+    pub html_url: String,
+    pub url: Option<String>,
+    pub page_url: Option<String>,
+    pub external_url: Option<String>,
+    pub new_tab: Option<bool>,
+    pub completion_requirement: Option<CompletionRequirement>,
+    pub content_details: Option<ContentDetails>,
+    pub published: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct Module {
+    pub id: i64,
+    pub position: u32,
+    pub name: String,
+    pub unlock_at: Option<String>,
+    pub require_sequential_progress: bool,
+    pub prerequisite_module_ids: Vec<u64>,
+    pub items_count: u32,
+    pub items_url: String,
+    pub items: Option<Vec<ModuleItem>>,
+    pub state: Option<ModuleState>,
+    pub completed_at: Option<String>,
+    pub publish_final_grade: Option<bool>,
+    pub published: Option<bool>,
 }

@@ -41,7 +41,7 @@ impl Client {
         };
 
         let code = m.as_str().to_owned();
-        let next_url = format!("{}{}", JBOX_LOGIN_URL2, code);
+        let next_url = format!("{JBOX_LOGIN_URL2}{code}");
         let login_result = self
             .post_request::<JboxLoginResult, _>(&next_url, "")
             .await?;
@@ -53,7 +53,7 @@ impl Client {
     }
 
     pub async fn get_user_space_info(&self, user_token: &str) -> Result<PersonalSpaceInfo> {
-        let url = format!("{}?user_token={}", JBOX_USER_SPACE_URL, user_token);
+        let url = format!("{JBOX_USER_SPACE_URL}?user_token={user_token}");
         let info = self.post_request::<PersonalSpaceInfo, _>(&url, "").await?;
         if info.status != 0 {
             tracing::error!("{}", info.message);

@@ -82,7 +82,7 @@ mod test {
         let api_key = env::var("API_KEY").unwrap_or_default();
         let cli = chat::new_llm_client(api_key)?;
         let resp = cli.chat("你好！".into()).await?;
-        println!("resp: {}", resp);
+        println!("resp: {resp}");
         Ok(())
     }
 }

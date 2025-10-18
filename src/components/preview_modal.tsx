@@ -3,10 +3,10 @@ import { Modal } from "antd";
 import { File } from "../lib/model";
 
 // fix https://github.com/wojtekmaj/react-pdf/issues/991
+import { CSSProperties, ReactNode, useEffect, useMemo, useState } from "react";
 import { pdfjs } from "react-pdf";
 import { getFileType } from "../lib/utils";
 import { BasicRenderers } from "./renderers";
-import { CSSProperties, ReactNode, useEffect, useMemo, useState } from "react";
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.js`;
 
 export default function PreviewModal({ open, files, handleCancelPreview, title, footer, bodyStyle }: {

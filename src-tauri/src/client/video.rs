@@ -37,7 +37,6 @@ use reqwest::{
     redirect::Policy,
     Response, StatusCode,
 };
-use urlencoding::encode;
 use select::{
     document::Document,
     node::Node,
@@ -47,6 +46,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use tauri::Url;
 use tokio::{sync::Mutex, task::JoinSet};
+use urlencoding::encode;
 
 // Apis here are for course video
 // We take references from: https://github.com/prcwcy/sjtu-canvas-video-download/blob/master/sjtu_canvas_video.py
@@ -75,7 +75,7 @@ impl Client {
     }
 
     pub async fn express_login(&self, uuid: &str) -> Result<Option<String>> {
-        let url = format!("{}?uuid={}", EXPRESS_LOGIN_URL, uuid);
+        let url = format!("{EXPRESS_LOGIN_URL}?uuid={uuid}");
         self.cli.get(&url).send().await?.error_for_status()?;
         let domain = Url::parse(AUTH_URL).unwrap();
         if let Some(value) = self.jar.cookies(&domain) {
@@ -131,7 +131,7 @@ impl Client {
         let mut all_items = vec![];
 
         loop {
-            let paged_url = format!("{}pageSize=100&pageIndex={}", url, page_index);
+            let paged_url = format!("{url}pageSize=100&pageIndex={page_index}");
             let item_page = self
                 .get_json_with_cookie::<_, ItemPage<T>>(&paged_url, None::<&str>)
                 .await?;
@@ -146,10 +146,7 @@ impl Client {
     }
 
     pub async fn get_subjects(&self) -> Result<Vec<Subject>> {
-        let url = format!(
-            "{}/system/course/subject/findSubjectVodList?",
-            VIDEO_BASE_URL
-        );
+        let url = format!("{VIDEO_BASE_URL}/system/course/subject/findSubjectVodList?");
         self.get_page_items(&url).await
     }
 
@@ -188,10 +185,7 @@ impl Client {
         course_id: i64,
     ) -> Result<Option<HashMap<String, String>>> {
         // New Course Video
-        let url = format!(
-            "https://oc.sjtu.edu.cn/courses/{}/external_tools/8329",
-            course_id
-        );
+        let url = format!("https://oc.sjtu.edu.cn/courses/{course_id}/external_tools/8329",);
         let response = self.cli.get(&url).send().await?;
         let body = response.text().await?;
         let document = Document::from(body.as_str());
@@ -268,10 +262,12 @@ impl Client {
 
     // Get token and canvas_course_id from token_id
     // https://v.sjtu.edu.cn/jy-application-canvas-sjtu/lti3/getAccessTokenByTokenId?tokenId=
-    async fn get_canvas_course_id_token_by_token_id(&self, token_id: &str) -> Result<(String, String)> {
+    async fn get_canvas_course_id_token_by_token_id(
+        &self,
+        token_id: &str,
+    ) -> Result<(String, String)> {
         let url = format!(
-            "https://v.sjtu.edu.cn/jy-application-canvas-sjtu/lti3/getAccessTokenByTokenId?tokenId={}",
-            token_id
+            "https://v.sjtu.edu.cn/jy-application-canvas-sjtu/lti3/getAccessTokenByTokenId?tokenId={token_id}",
         );
         let resp = self.cli.get(&url).send().await?;
         let body = resp.text().await?;
@@ -282,17 +278,20 @@ impl Client {
             .ok_or(AppError::VideoDownloadError(String::from(
                 "Token not found",
             )))?;
-        let canvas_course_id = json["data"]["params"]["courId"]
-            .as_str()
-            .ok_or(AppError::VideoDownloadError(String::from(
-                "Canvas Course Id not found",
-            )))?;
+        let canvas_course_id =
+            json["data"]["params"]["courId"]
+                .as_str()
+                .ok_or(AppError::VideoDownloadError(String::from(
+                    "Canvas Course Id not found",
+                )))?;
         Ok((canvas_course_id.to_owned(), token.to_owned()))
     }
 
     async fn get_canvas_course_id_token(&self, course_id: i64) -> Result<(String, String)> {
         let token_id = self.get_token_id(course_id).await?;
-        let (canvas_course_id, token) = self.get_canvas_course_id_token_by_token_id(token_id.as_str()).await?;
+        let (canvas_course_id, token) = self
+            .get_canvas_course_id_token_by_token_id(token_id.as_str())
+            .await?;
         Ok((canvas_course_id, token))
     }
 
@@ -304,7 +303,10 @@ impl Client {
         let mut data = HashMap::new();
         // data.insert("pageIndex", "1");
         // data.insert("pageSize", "1000");
-        data.insert("canvasCourseId", encode(canvas_course_id.as_str()).into_owned());
+        data.insert(
+            "canvasCourseId",
+            encode(canvas_course_id.as_str()).into_owned(),
+        );
 
         *self.token.write().await = token.to_owned();
 
@@ -319,7 +321,7 @@ impl Client {
             .json(&data)
             .send()
             .await?;
-        
+
         let body = resp.bytes().await?;
 
         tracing::info!("body: {}", String::from_utf8_lossy(&body));
@@ -357,8 +359,7 @@ impl Client {
         tecl_id: i64,
     ) -> Result<Option<VideoCourse>> {
         let url = format!(
-            "{}/system/resource/vodVideo/getCourseListBySubject?orderField=courTimes&subjectId={}&teclId={}&",
-            VIDEO_BASE_URL, subject_id, tecl_id
+            "{VIDEO_BASE_URL}/system/resource/vodVideo/getCourseListBySubject?orderField=courTimes&subjectId={subject_id}&teclId={tecl_id}&",
         );
         let mut courses = self.get_page_items(&url).await?;
         Ok(courses.remove(0))
@@ -370,10 +371,9 @@ impl Client {
         oauth_nonce: &str,
         oauth_consumer_key: &str,
     ) -> String {
-        let signature_string = format!("/app/system/resource/vodVideo/getvideoinfos?id={}&oauth-consumer-key={}&oauth-nonce={}&oauth-path={}&{}&playTypeHls=true",
-        video_id, oauth_consumer_key, oauth_nonce, OAUTH_PATH, OAUTH_RANDOM);
+        let signature_string = format!("/app/system/resource/vodVideo/getvideoinfos?id={video_id}&oauth-consumer-key={oauth_consumer_key}&oauth-nonce={oauth_nonce}&oauth-path={OAUTH_PATH}&{OAUTH_RANDOM}&playTypeHls=true");
         let md5 = Md5::digest(signature_string);
-        format!("{:x}", md5)
+        format!("{md5:x}")
     }
 
     fn get_oauth_nonce(&self) -> String {
@@ -383,7 +383,7 @@ impl Client {
     }
 
     async fn download_video_partial(&self, url: &str, begin: u64, end: u64) -> Result<Response> {
-        let range_value = HeaderValue::from_str(&format!("bytes={}-{}", begin, end)).unwrap();
+        let range_value = HeaderValue::from_str(&format!("bytes={begin}-{end}")).unwrap();
         let response = self
             .cli
             .get(url)
@@ -598,8 +598,8 @@ impl Client {
 
             let text = item.res.clone();
             srt.push_str(&format!("{}\n", i + 1));
-            srt.push_str(&format!("{} --> {}\n", start_time, end_time));
-            srt.push_str(&format!("{}\n\n", text));
+            srt.push_str(&format!("{start_time} --> {end_time}\n"));
+            srt.push_str(&format!("{text}\n\n"));
         }
         Ok(srt)
     }
@@ -607,7 +607,7 @@ impl Client {
     // https://v.sjtu.edu.cn/jy-application-canvas-sjtu/directOnDemandPlay/vod-analysis/query-ppt-slice-es?ivsVideoId=${courId}
     pub async fn get_ppt(&self, canvas_course_id: i64) -> Result<Vec<CanvasVideoPPT>> {
         // TODO: Save Token
-        let url = format!("https://v.sjtu.edu.cn/jy-application-canvas-sjtu/directOnDemandPlay/vod-analysis/query-ppt-slice-es?ivsVideoId={}", canvas_course_id);
+        let url = format!("https://v.sjtu.edu.cn/jy-application-canvas-sjtu/directOnDemandPlay/vod-analysis/query-ppt-slice-es?ivsVideoId={canvas_course_id}");
         let resp = self
             .cli
             .get(url)
@@ -645,8 +645,7 @@ impl Client {
                 Ok(response) => response.bytes().await?,
                 Err(e) => {
                     return Err(AppError::VideoDownloadError(format!(
-                        "Failed to download PPT image {}: {}",
-                        index, e
+                        "Failed to download PPT image {index}: {e}"
                     )))
                 }
             };
@@ -659,7 +658,7 @@ impl Client {
 
             // Report progress
             progress_handler(ProgressPayload {
-                uuid: format!("ppt_{}", save_name),
+                uuid: format!("ppt_{save_name}"),
                 processed: total_processed as u64,
                 total,
             });

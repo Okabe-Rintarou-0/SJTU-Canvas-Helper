@@ -23,7 +23,9 @@ import {
   AssignmentDate,
   Attachment,
   File as FileModel,
+  LOG_LEVEL_ERROR,
   LogLevel,
+  ModuleItem,
   Option,
 } from "./model";
 
@@ -186,7 +188,7 @@ export function assignmentNotNeedSubmit(assignment: Assignment) {
 }
 
 export function getFileIcon(file: FileModel) {
-  const name = file.display_name;
+  const name = file.filename;
   const mime_class = file.mime_class;
   if (name.endsWith(".pdf")) {
     return <FaRegFilePdf style={{ fontSize: "22px" }} />;
@@ -331,4 +333,40 @@ export function srtToVtt(srt: string) {
       )
       .replace(/\r/g, "")
   );
+}
+
+function detectExternalType(item: ModuleItem) {
+  const supportedExt = [".pdf", ".doc", ".docx", ".pptx", ".txt", ".zip", ".7z", ".tar"];
+  if (!item.external_url) return ["", undefined];
+  let idx = item.external_url.lastIndexOf('/');
+  let fileName = item.external_url.slice(idx + 1);
+  idx = fileName.lastIndexOf('.');
+  if (idx == -1) {
+    return [fileName, "Link"];
+  }
+  const ext = fileName.slice(idx);
+  consoleLog(LOG_LEVEL_ERROR, "ext", ext);
+  if (supportedExt.indexOf(ext) !== -1) {
+    return [fileName, "File"];
+  }
+  return [fileName, "Link"];
+}
+
+export function moduleItem2File(item: ModuleItem): FileModel {
+  const [fileName, externalType] = detectExternalType(item);
+  return {
+    key: item.id.toString(),
+    id: item.id,
+    uuid: item.id.toString(),
+    folder_id: 0,
+    url: item.external_url,
+    display_name: fileName,
+    locked: false,
+    filename: fileName,
+    mime_class: "",
+    "content-type": "",
+    size: 0,
+    external_type: externalType,
+    external_title: item.title,
+  } as FileModel;
 }

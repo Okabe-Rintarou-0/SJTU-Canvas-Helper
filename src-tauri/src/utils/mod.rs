@@ -67,7 +67,7 @@ fn locate_failed_json_field(e: &serde_json::Error, json_str: &str) -> String {
 
     let context = &error_line[start_idx..end_idx];
 
-    format!("...{}...", context)
+    format!("...{context}...")
 }
 
 pub fn parse_json<T: DeserializeOwned>(bytes: &[u8]) -> Result<T> {
@@ -99,7 +99,7 @@ pub fn format_time(milliseconds: u64) -> String {
     let minutes = (milliseconds % 3_600_000) / 60_000;
     let seconds = (milliseconds % 60_000) / 1_000;
     let millis = milliseconds % 1_000;
-    format!("{:02}:{:02}:{:02},{:03}", hours, minutes, seconds, millis)
+    format!("{hours:02}:{minutes:02}:{seconds:02},{millis:03}")
 }
 
 #[cfg(test)]
@@ -125,21 +125,21 @@ mod tests {
         let result = parse_json::<Person>(json.as_bytes());
         assert!(result.is_err());
         let err = result.unwrap_err();
-        println!("{}", err);
+        println!("{err}");
 
         // EOF
         json = r#""#;
         let result = parse_json::<Person>(json.as_bytes());
         assert!(result.is_err());
         let err = result.unwrap_err();
-        println!("{}", err);
+        println!("{err}");
 
         // Invalid json syntax
         json = r#"{123: "233}"#;
         let result = parse_json::<Person>(json.as_bytes());
         assert!(result.is_err());
         let err = result.unwrap_err();
-        println!("{}", err);
+        println!("{err}");
 
         Ok(())
     }

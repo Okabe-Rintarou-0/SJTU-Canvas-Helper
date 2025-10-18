@@ -29,6 +29,7 @@ import BasicLayout from "../components/layout";
 import {
   useBaseURL,
   useCourses,
+  useExternalFiles,
   useLoginModal,
   useMerger,
   usePreview,
@@ -86,6 +87,7 @@ export default function FilesPage() {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [allFolders, setAllFolders] = useState<Folder[]>([]);
   const [downloadableOnly, setDownloadableOnly] = useState<boolean>(true);
+  const [showExternal, setShowExternal] = useState<boolean>(false);
   const [downloadTasks, setDownloadTasks] = useState<FileDownloadTask[]>([]);
   const [messageApi, contextHolder] = useMessage();
   const [operating, setOperating] = useState<boolean>(false);
@@ -107,6 +109,7 @@ export default function FilesPage() {
   const courses = useCourses();
   const baseURL = useBaseURL();
   const downloadInfoMap = useMemo(() => new Map<number, DownloadInfo>(), []);
+  const externalFiles = useExternalFiles(showExternal ? selectedCourseId : -1);
 
   useEffect(() => {
     setEntries(files);
@@ -193,16 +196,21 @@ export default function FilesPage() {
         if (isFile(entry)) {
           const file = entry as File;
           const displayName = file.display_name;
+          const external_type = file.external_type;
+          const href = external_type ?
+            file.url :
+            `${baseURL.data}/courses/${selectedCourseId}/files?preview=${file.id}`;
+          const filePrefix = file.external_title ? "[外部文件]" : "";
           return (
             <Space>
               {getFileIcon(file)}
               <a
                 target="_blank"
-                href={`${baseURL.data}/courses/${selectedCourseId}/files?preview=${file.id}`}
+                href={href}
                 onMouseEnter={() => onHoverEntry(entry)}
                 onMouseLeave={onLeaveEntry}
               >
-                {displayName}
+                {filePrefix}{displayName}
               </a>
             </Space>
           );
@@ -392,9 +400,16 @@ export default function FilesPage() {
   };
 
   const getFolderPath = (file: File) => {
-    let folderPath = allFolders
-      .find((folder) => folder.id === file.folder_id)
-      ?.full_name.slice(section.length + 1);
+    let folderPath = undefined;
+    if (file.external_type) {
+      folderPath = allFolders
+        .find((folder) => folder.name === section)
+        ?.full_name.slice(section.length + 1);
+    } else {
+      folderPath = allFolders
+        .find((folder) => folder.id === file.folder_id)
+        ?.full_name.slice(section.length + 1);
+    }
     return folderPath;
   };
 
@@ -411,6 +426,7 @@ export default function FilesPage() {
       }
     } catch (e) {
       messageApi.error(e as string);
+      consoleLog(LOG_LEVEL_ERROR, e);
     }
   };
 
@@ -544,6 +560,10 @@ export default function FilesPage() {
     setDownloadableOnly(e.target.checked);
   };
 
+  const handleSetShowExternalFiles: CheckboxProps["onChange"] = (e) => {
+    setShowExternal(e.target.checked);
+  };
+
   const handleEntrySelect = (_: React.Key[], selectedEntries: Entry[]) => {
     setSelectedEntries(selectedEntries);
   };
@@ -640,6 +660,12 @@ export default function FilesPage() {
           >
             只显示可下载文件
           </Checkbox>
+          <Checkbox
+            disabled={operating}
+            onChange={handleSetShowExternalFiles}
+          >
+            显示外部文件
+          </Checkbox>
           <Input.Search placeholder="输入文件关键词" onSearch={setKeyword} />
         </Space>
         <Space>
@@ -664,11 +690,10 @@ export default function FilesPage() {
         <Table
           style={{ width: "100%" }}
           columns={fileColumns}
-          loading={baseURL.isLoading || loading}
+          loading={baseURL.isLoading || externalFiles.isLoading || loading}
           pagination={false}
-          dataSource={[...(folders as Entry[]), ...(files as Entry[])].filter(
-            shouldShow
-          )}
+          dataSource={[...(folders as Entry[]), ...(files as Entry[]), ...externalFiles.data]
+            .filter(shouldShow)}
           rowSelection={{
             onChange: handleEntrySelect,
             selectedRowKeys: selectedEntries.map((entry) => entry.key),

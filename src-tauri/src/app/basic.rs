@@ -221,7 +221,7 @@ impl App {
     }
 
     async fn wait_proxy_ready(&self, proxy_port: u16) -> Result<bool> {
-        let url = format!("http://localhost:{}/ready", proxy_port);
+        let url = format!("http://localhost:{proxy_port}/ready");
         let timeout_cnt = 10;
         let mut cnt = 0;
         loop {
@@ -292,7 +292,7 @@ impl App {
                         }
                         Err(e) => Ok(Response::builder()
                             .status(StatusCode::INTERNAL_SERVER_ERROR)
-                            .body(format!("Error downloading video: {}", e).into())
+                            .body(format!("Error downloading video: {e}").into())
                             .unwrap()),
                     }
                 },
@@ -326,9 +326,9 @@ impl App {
         let config_dir = App::config_dir().unwrap();
         let mut config_file_name = "sjtu_canvas_helper_config".to_owned();
         if let Account::Custom(name) = account {
-            config_file_name += &format!("_{}", name);
+            config_file_name += &format!("_{name}");
         }
-        let config_path = format!("{}/{}.json", config_dir, config_file_name);
+        let config_path = format!("{config_dir}/{config_file_name}.json");
         config_path
     }
 
@@ -397,6 +397,24 @@ impl App {
                 &self.config.read().await.token,
             )
             .await
+    }
+
+    pub async fn list_external_module_items(&self, course_id: i64) -> Result<Vec<ModuleItem>> {
+        let token = self.config.read().await.token.clone();
+        let modules = self.client.list_modules(course_id, &token).await?;
+        let mut ret = vec![];
+        for module in modules {
+            let items = self
+                .client
+                .list_module_items(course_id, module.id, &token)
+                .await?;
+            for item in items {
+                if item.type_ == ModuleItemType::ExternalUrl {
+                    ret.push(item);
+                }
+            }
+        }
+        Ok(ret)
     }
 
     pub async fn update_grade(
@@ -1108,8 +1126,8 @@ impl App {
         params: &VideoAggregateParams,
     ) -> Result<i32> {
         let scale_percentage = params.sub_video_size_percentage as f64 / 100.0;
-        let scale_width = format!("iw*{}", scale_percentage);
-        let scale_height = format!("ih*{}", scale_percentage);
+        let scale_width = format!("iw*{scale_percentage}");
+        let scale_height = format!("ih*{scale_percentage}");
 
         let alpha_value = params.sub_video_alpha as f64 / 100.0;
         let output_path = format!("{}/{}", params.output_dir, params.output_name);
@@ -1122,8 +1140,7 @@ impl App {
                 &params.sub_video_path,
                 "-filter_complex",
                 &format!(
-                    "[1:v]scale={}:{}[overlay];[0:v][overlay]overlay=W-w:H-h:format=auto:alpha={}",
-                    scale_width, scale_height, alpha_value
+                    "[1:v]scale={scale_width}:{scale_height}[overlay];[0:v][overlay]overlay=W-w:H-h:format=auto:alpha={alpha_value}"
                 ),
                 "-c:a",
                 "copy",

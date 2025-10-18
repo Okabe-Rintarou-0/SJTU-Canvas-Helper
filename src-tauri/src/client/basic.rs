@@ -10,9 +10,9 @@ use crate::{
     error::{AppError, Result},
     model::{
         Assignment, CalendarEvent, Colors, Course, DiscussionTopic, File, Folder, FoldersAndFiles,
-        FullDiscussion, ProgressPayload, RelationshipEdge, RelationshipNode, RelationshipNodeType,
-        RelationshipTopo, Submission, SubmissionUploadResult, SubmissionUploadSuccessResponse,
-        User, UserSubmissions,
+        FullDiscussion, Module, ModuleItem, ProgressPayload, RelationshipEdge, RelationshipNode,
+        RelationshipNodeType, RelationshipTopo, Submission, SubmissionUploadResult,
+        SubmissionUploadSuccessResponse, User, UserSubmissions,
     },
     utils::{self, get_file_name},
 };
@@ -76,7 +76,7 @@ impl Client {
         );
         self.cli
             .delete(url)
-            .header("Authorization", format!("Bearer {}", token))
+            .header("Authorization", format!("Bearer {token}"))
             .send()
             .await?
             .error_for_status()?;
@@ -100,10 +100,10 @@ impl Client {
         );
         let form = match comment {
             Some(comment) => vec![
-                (format!("grade_data[{}][posted_grade]", student_id), grade),
-                (format!("grade_data[{}][text_comment]", student_id), comment),
+                (format!("grade_data[{student_id}][posted_grade]"), grade),
+                (format!("grade_data[{student_id}][text_comment]"), comment),
             ],
-            None => vec![(format!("grade_data[{}][posted_grade]", student_id), grade)],
+            None => vec![(format!("grade_data[{student_id}][posted_grade]"), grade)],
         };
         self.post_form_with_token(&url, None::<&str>, &form, token)
             .await?
@@ -137,6 +137,27 @@ impl Client {
         .await?
         .error_for_status()?;
         Ok(())
+    }
+
+    pub async fn list_modules(&self, course_id: i64, token: &str) -> Result<Vec<Module>> {
+        let url = format!(
+            "{}/api/v1/courses/{course_id}/modules",
+            self.base_url.read().await
+        );
+        self.list_items(&url, token).await
+    }
+
+    pub async fn list_module_items(
+        &self,
+        course_id: i64,
+        module_id: i64,
+        token: &str,
+    ) -> Result<Vec<ModuleItem>> {
+        let url = format!(
+            "{}/api/v1/courses/{course_id}/modules/{module_id}/items",
+            self.base_url.read().await
+        );
+        self.list_items(&url, token).await
     }
 
     pub async fn modify_assignment_ddl_override(
@@ -185,7 +206,7 @@ impl Client {
         );
         self.cli
             .delete(url)
-            .header("Authorization", format!("Bearer {}", token))
+            .header("Authorization", format!("Bearer {token}"))
             .send()
             .await?
             .error_for_status()?;
@@ -458,8 +479,8 @@ impl Client {
     ) -> Result<Vec<CalendarEvent>> {
         let context_codes = context_codes
             .iter()
-            .map(|context_code| format!("context_codes[]={}", context_code))
-            .reduce(|c1, c2| format!("{}&{}", c1, c2))
+            .map(|context_code| format!("context_codes[]={context_code}"))
+            .reduce(|c1, c2| format!("{c1}&{c2}"))
             .unwrap_or_default();
         let url = format!(
             "{}/api/v1/calendar_events?type=assignment&{}&start_date={}&end_date={}",
@@ -572,7 +593,7 @@ impl Client {
             course_id
         );
         for student_id in student_ids {
-            url += &format!("&student_ids[]={}", student_id);
+            url += &format!("&student_ids[]={student_id}");
         }
         url
     }
@@ -698,7 +719,7 @@ impl Client {
         );
         let metadata = fs::metadata(file_path)?;
         if !metadata.is_file() {
-            let error_message = format!("{} is not a valid file!", file_path);
+            let error_message = format!("{file_path} is not a valid file!");
             return Err(AppError::SubmissionUpload(error_message));
         }
 

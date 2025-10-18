@@ -17,7 +17,7 @@ impl Client {
         let mut req = self
             .cli
             .get(url)
-            .header("Authorization", format!("Bearer {}", token));
+            .header("Authorization", format!("Bearer {token}"));
 
         if let Some(query) = query {
             req = req.query(query)
@@ -51,7 +51,7 @@ impl Client {
         let mut request = self
             .cli
             .post(url)
-            .header("Authorization".to_owned(), format!("Bearer {}", token))
+            .header("Authorization".to_owned(), format!("Bearer {token}"))
             .form(form);
         if let Some(query) = query {
             request = request.query(query);
@@ -70,7 +70,7 @@ impl Client {
         let mut request = self
             .cli
             .put(url)
-            .header("Authorization".to_owned(), format!("Bearer {}", token))
+            .header("Authorization".to_owned(), format!("Bearer {token}"))
             .form(form);
         if let Some(query) = query {
             request = request.query(query);

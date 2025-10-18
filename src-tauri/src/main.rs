@@ -6,7 +6,7 @@ use std::sync::Arc;
 use error::Result;
 use model::{
     Account, AccountInfo, AnnualReport, AppConfig, Assignment, CalendarEvent, CanvasVideo, Colors,
-    Course, DiscussionTopic, File, Folder, FullDiscussion, LogLevel, QRCodeScanResult,
+    Course, DiscussionTopic, File, Folder, FullDiscussion, LogLevel, ModuleItem, QRCodeScanResult,
     RelationshipTopo, Subject, Submission, User, UserSubmissions, VideoAggregateParams,
     VideoCourse, VideoInfo, VideoPlayInfo,
 };
@@ -624,6 +624,11 @@ fn console_log(log_level: i32, message: String, context: String) {
     };
 }
 
+#[tauri::command]
+async fn list_external_module_items(course_id: i64) -> Result<Vec<ModuleItem>> {
+    APP.list_external_module_items(course_id).await
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // set up logger
@@ -726,6 +731,7 @@ async fn main() -> Result<()> {
             stop_proxy,
             get_subtitle,
             download_ppt,
+            list_external_module_items,
             // Apis for jbox
             login_jbox,
             upload_file,
