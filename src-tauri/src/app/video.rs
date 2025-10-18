@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{fs, path::Path};
 
 use super::App;
 use crate::{
@@ -78,9 +78,12 @@ impl App {
         self.client.get_video_course(subject_id, tecl_id).await
     }
 
-    pub async fn get_subtitle(&self, canvas_course_id: i64) -> Result<String> {
+    pub async fn download_subtitle(&self, canvas_course_id: i64, save_name: &str) -> Result<()> {
         let res = self.client.get_subtitle(canvas_course_id).await?;
-        self.client.convert_to_srt(&res.before_assembly_list)
+        let sub_title = self.client.convert_to_srt(&res.before_assembly_list)?;
+        let save_path = Path::new(&self.config.read().await.save_path).join(save_name);
+        fs::write(save_path, sub_title)?;
+        Ok(())
     }
 
     pub async fn download_ppt<F: Fn(ProgressPayload) + Send + 'static>(

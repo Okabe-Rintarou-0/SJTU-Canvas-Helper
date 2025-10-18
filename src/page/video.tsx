@@ -1,8 +1,10 @@
 import { SwapOutlined } from "@ant-design/icons";
 import { invoke } from "@tauri-apps/api/core";
-import { Button, Checkbox, Divider, Select, Space, Table, Slider } from "antd";
+import { Button, Checkbox, Divider, Select, Slider, Space, Table } from "antd";
 import useMessage from "antd/es/message/useMessage";
 import { useEffect, useRef, useState } from "react";
+import type { DraggableData, DraggableEvent } from "react-draggable";
+import Draggable from "react-draggable";
 import ClosableAlert from "../components/closable_alert";
 import CourseSelect from "../components/course_select";
 import BasicLayout from "../components/layout";
@@ -20,11 +22,9 @@ import {
   LOG_LEVEL_ERROR,
   VideoDownloadTask,
   VideoInfo,
-  VideoPlayInfo,
+  VideoPlayInfo
 } from "../lib/model";
 import { consoleLog, srtToVtt } from "../lib/utils";
-import Draggable from "react-draggable";
-import type { DraggableEvent, DraggableData } from "react-draggable";
 
 export default function VideoPage() {
   const [videoDownloadTasks, setVideoDownloadTasks] = useState<
@@ -174,17 +174,11 @@ export default function VideoPage() {
       let videoInfo = (await invoke("get_canvas_video_info", {
         videoId: selectedVideo.videoId,
       })) as VideoInfo;
-      const subtitle = (await invoke("get_subtitle", {
+      await invoke("download_subtitle", {
         canvasCourseId: videoInfo.courId,
-      })) as string;
-      const blob = new Blob([subtitle], { type: "text/plain;charset=utf-8" });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${selectedVideo.videoName}.srt`;
-      a.click();
-      window.URL.revokeObjectURL(url);
-      messageApi.success("字幕下载成功🎉！");
+        savePath: `${selectedVideo.videoName}.srt`,
+      });
+      messageApi.success("字幕下载成功🎉！（请前往保存目录查看）");
     } catch (e) {
       messageApi.error(`下载字幕时发生错误🙅：${e}`);
     }

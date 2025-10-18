@@ -559,8 +559,8 @@ async fn download_video<R: Runtime>(
 }
 
 #[tauri::command]
-async fn get_subtitle(canvas_course_id: i64) -> Result<String> {
-    APP.get_subtitle(canvas_course_id).await
+async fn download_subtitle(canvas_course_id: i64, save_path: String) -> Result<()> {
+    APP.download_subtitle(canvas_course_id, &save_path).await
 }
 
 #[tauri::command]
@@ -729,7 +729,7 @@ async fn main() -> Result<()> {
             login_video_website,
             prepare_proxy,
             stop_proxy,
-            get_subtitle,
+            download_subtitle,
             download_ppt,
             list_external_module_items,
             // Apis for jbox
