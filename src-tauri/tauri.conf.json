@@ -19,15 +19,13 @@
   },
   "productName": "SJTU Canvas Helper",
   "mainBinaryName": "SJTU Canvas Helper",
-  "version": "2.0.3",
+  "version": "2.0.2",
   "identifier": "com.okabe.sjtu.canvas",
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlBNDQ2MDFFNDc4Qzk5RTEKUldUaG1ZeEhIbUJFbW9BMk85WFQrYzBTclZKNHdsS2xDYWp6M1h0MjRWR0hGWE5LOXgwdW9XWFQK",
-      "windows": {
-        "installMode": "passive",
-        "installerArgs": []
-      },
+      "active": true,
+      "dialog": true,
       "endpoints": [
         "https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases/download/latest/latest.json"
       ]

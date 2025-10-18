@@ -1,5 +1,6 @@
 import { FileOutlined } from "@ant-design/icons";
 import { invoke } from "@tauri-apps/api/core";
+import { relaunch } from '@tauri-apps/plugin-process';
 import { check } from "@tauri-apps/plugin-updater";
 import { MessageInstance } from "antd/es/message/interface";
 import dayjs, { Dayjs } from "dayjs";
@@ -301,10 +302,30 @@ export async function checkForUpdates(messageApi: MessageInstance) {
     messageApi.destroy(messageKey);
     if (!update) {
       messageApi.warning("已经是最新版，无需更新😁");
+    } else {
+      let downloaded = 0;
+      let contentLength: undefined | number = 0;
+      // alternatively we could also call update.download() and update.install() separately
+      await update.downloadAndInstall((event) => {
+        switch (event.event) {
+          case 'Started':
+            contentLength = event.data.contentLength;
+            console.log(`started downloading ${event.data.contentLength} bytes`);
+            break;
+          case 'Progress':
+            downloaded += event.data.chunkLength;
+            console.log(`downloaded ${downloaded} from ${contentLength}`);
+            break;
+          case 'Finished':
+            console.log('download finished');
+            break;
+        }
+      });
     }
   } catch (error) {
     messageApi.error("🥹出现错误：" + error);
   }
+  await relaunch();
 }
 
 export function consoleLog(logLevel: LogLevel, ...messages: any[]) {

@@ -5332,7 +5332,7 @@ checksum = "56199f7ddabf13fe5074ce809e7d3f42b42ae711800501b5b16ea82ad029c39d"
 
 [[package]]
 name = "sjtu_canvas_helper"
-version = "2.0.3"
+version = "2.0.2"
 dependencies = [
  "async-trait",
  "bardecoder",
