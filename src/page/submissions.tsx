@@ -54,6 +54,7 @@ function SubmissionGrade(props: SubmissionGradeProps) {
     return <Select defaultValue={defaultValue}
       style={{ width: "100px" }}
       onChange={grade => onSubmit(grade)}
+      disabled={disabled}
     >
       <Select.Option value="complete">完成</Select.Option>
       <Select.Option value="incomplete">未完成</Select.Option>
@@ -255,7 +256,7 @@ export default function SubmissionsPage() {
       key: "grade",
       render: (grade: string | null, attachment: Attachment) => (
         <SubmissionGrade key={grade}
-          gradingType={"pass_fail"}
+          gradingType={selectedAssignment?.grading_type ?? "points"}
           disabled={readonlyGrade}
           defaultValue={grade ?? ""}
           onSubmit={grade => handleGrade(grade, attachment)}
