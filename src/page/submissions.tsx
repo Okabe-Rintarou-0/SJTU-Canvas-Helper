@@ -28,6 +28,7 @@ import {
   FileDownloadTask,
   GradeStatistic,
   LOG_LEVEL_ERROR,
+  Option,
   Submission,
   User,
 } from "../lib/model";
@@ -40,7 +41,7 @@ import {
 
 interface SubmissionGradeProps {
   gradingType: string;
-  key: number | string | null,
+  key: Option<number | string>,
   disabled: boolean,
   defaultValue: string;
   onSubmit: (grade: string) => void;
@@ -148,10 +149,10 @@ export default function SubmissionsPage() {
       setPreviewFooter(undefined);
       return;
     }
-    const previewedAttachement = attachments.find(
+    const previewedAttachment = attachments.find(
       (attachment) => attachment.id === previewEntry.id
     );
-    if (!previewedAttachement || !selectedAssignment) {
+    if (!previewedAttachment || !selectedAssignment) {
       return;
     }
     const footer = (
@@ -162,10 +163,10 @@ export default function SubmissionsPage() {
       >
         <Space>
           打分：
-          <SubmissionGrade key={previewedAttachement.id}
+          <SubmissionGrade key={previewedAttachment.id}
             gradingType={selectedAssignment.grading_type} disabled={readonlyGrade}
-            defaultValue={previewedAttachement.grade ?? ""}
-            onSubmit={grade => handleGrade(grade, previewedAttachement)}
+            defaultValue={previewedAttachment.grade ?? ""}
+            onSubmit={grade => handleGrade(grade, previewedAttachment)}
           />
         </Space>
         <CommentPanel
@@ -173,7 +174,7 @@ export default function SubmissionsPage() {
           onRefresh={refreshSubmission}
           onFocus={() => setCommentingWhilePreviewing(true)}
           onBlur={() => setCommentingWhilePreviewing(false)}
-          attachment={previewedAttachement}
+          attachment={previewedAttachment}
           assignmentId={selectedAssignment.id}
           courseId={selectedCourseId}
           showInput={true}

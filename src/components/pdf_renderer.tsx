@@ -9,8 +9,11 @@ export default function PdfRenderer(props: DocRendererProps) {
     let currentDocument = props.mainState.currentDocument;
     if (!currentDocument || currentDocument.fileData === undefined) return null;
     const data = base64ToBuffer(getBase64Data(currentDocument.fileData as string));
-
-    return <Viewer fileUrl={data} />
+    return <div style={{
+        minWidth: 1080
+    }}>
+        <Viewer fileUrl={data} />
+    </div>
 }
 
 PdfRenderer.fileTypes = ['pdf'];

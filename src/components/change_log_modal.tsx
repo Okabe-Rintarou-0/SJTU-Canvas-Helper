@@ -11,6 +11,12 @@ export function ChangeLogModal({ open, onCancel, onOk }: {
         overflow: "scroll",
     }}>
         <Typography>
+            <Title level={4}>v2.0.5 2025/12/6</Title>
+            <Paragraph>
+                <ul>
+                    <li>修复 pdf 渲染</li>
+                </ul>
+            </Paragraph>
             <Title level={4}>v2.0.3 2025/10/18</Title>
             <Paragraph>
                 <ul>
