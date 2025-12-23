@@ -893,6 +893,10 @@ impl App {
     pub async fn explain_file(&self, file: &File) -> Result<String> {
         self.client.explain_file(file).await
     }
+    
+    pub async fn summarize_subtitle(&self, canvas_course_id: i64) -> Result<String> {
+        self.client.summarize_subtitle(canvas_course_id).await
+    }
 
     pub fn check_path(path: &str) -> bool {
         let path = Path::new(path);
