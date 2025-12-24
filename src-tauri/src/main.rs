@@ -564,6 +564,11 @@ async fn download_subtitle(canvas_course_id: i64, save_path: String) -> Result<(
 }
 
 #[tauri::command]
+async fn summarize_subtitle(canvas_course_id: i64) -> Result<String> {
+    APP.summarize_subtitle(canvas_course_id).await
+}
+
+#[tauri::command]
 async fn download_ppt<R: Runtime>(
     window: Window<R>,
     course_id: i64,
@@ -739,7 +744,8 @@ async fn main() -> Result<()> {
             generate_annual_report,
             // LLM
             chat,
-            explain_file
+            explain_file,
+            summarize_subtitle
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

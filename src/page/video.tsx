@@ -1,7 +1,8 @@
-import { SwapOutlined } from "@ant-design/icons";
+import { ExclamationCircleFilled, SwapOutlined } from "@ant-design/icons";
 import { invoke } from "@tauri-apps/api/core";
 import { Button, Checkbox, Divider, Select, Slider, Space, Table } from "antd";
 import useMessage from "antd/es/message/useMessage";
+import confirm from "antd/es/modal/confirm";
 import { useEffect, useRef, useState } from "react";
 import type { DraggableData, DraggableEvent } from "react-draggable";
 import Draggable from "react-draggable";
@@ -25,6 +26,24 @@ import {
   VideoPlayInfo
 } from "../lib/model";
 import { consoleLog, srtToVtt } from "../lib/utils";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+
+function timestampToSeconds(timestamp: string): number {
+  const match = timestamp.match(
+    /^\[(\d{2}):(\d{2}):(\d{2}),(\d{1,3})\]$/
+  );
+  if (!match) {
+    return 0;
+  }
+
+  const [, hh, mm, ss, ms] = match;
+  return (
+    Number(hh) * 3600 +
+    Number(mm) * 60 +
+    Number(ss)
+  );
+}
 
 export default function VideoPage() {
   const [videoDownloadTasks, setVideoDownloadTasks] = useState<
@@ -50,6 +69,14 @@ export default function VideoPage() {
   const mainVideoRef = useRef<HTMLVideoElement>(null);
   const subVideoRef = useRef<HTMLVideoElement>(null);
   const firstPlay = useRef<boolean>(true);
+
+  function LinkRenderer(props: any) {
+    return (
+      <a target="_blank" rel="noreferrer" onClick={() => handleMainVideoJump(timestampToSeconds(props.children))}>
+        {props.children}
+      </a>
+    );
+  }
 
   const onScanSuccess = () => {
     loginAndCheck(true);
@@ -181,6 +208,53 @@ export default function VideoPage() {
       messageApi.success("字幕下载成功🎉！（请前往保存目录查看）");
     } catch (e) {
       messageApi.error(`下载字幕时发生错误🙅：${e}`);
+    }
+  };
+
+  const handleSummarizeSubtitle = async () => {
+    if (!selectedVideo) {
+      messageApi.warning("请先选择一个视频！");
+      return;
+    }
+    try {
+      let videoInfo = (await invoke("get_canvas_video_info", {
+        videoId: selectedVideo.videoId,
+      })) as VideoInfo;
+      messageApi.open({
+        key: 'waiting_response',
+        type: 'loading',
+        content: 'AI总结中',
+        duration: 0,
+      });
+      let summary = (await invoke("summarize_subtitle", {
+        canvasCourseId: videoInfo.courId,
+      })) as string;
+      messageApi.destroy('waiting_response');
+      messageApi.success("AI总结成功🎉！");
+      confirm({
+        style: {
+          minWidth: "80%",
+          maxWidth: "80%",
+          maxHeight: "80%",
+        },
+        styles: {
+          body: { overflow: "auto" },
+        },
+        title: "AI 总结",
+        okText: "关闭",
+        icon: <ExclamationCircleFilled />,
+        content: (
+          <Markdown
+            remarkPlugins={[remarkGfm]}
+            components={{ code: LinkRenderer }}
+          >
+            {summary}
+          </Markdown>
+        ),
+      });
+    } catch (e) {
+      messageApi.destroy('waiting_response');
+      messageApi.error(`AI总结时发生错误🙅：${e}`);
     }
   };
 
@@ -414,6 +488,14 @@ export default function VideoPage() {
     }
   };
 
+  const handleMainVideoJump = (time: number) => {
+    if (!mainVideoRef.current) {
+      messageApi.warning('当前未播放视频！');
+      return;
+    }
+    mainVideoRef.current.currentTime = time;
+  }
+
   const noSubVideo = playURLs.length < 2;
   const subVideoSizes = [0, 10, 20, 25, 33, 40, 50];
 
@@ -540,6 +622,12 @@ export default function VideoPage() {
                   disabled={!selectedVideo}
                 >
                   下载PPT
+                </Button>
+                <Button
+                  onClick={handleSummarizeSubtitle}
+                  disabled={!selectedVideo}
+                >
+                  AI总结
                 </Button>
               </Space>
             </Space>
