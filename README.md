@@ -87,6 +87,21 @@ https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/assets/58595459/7f05cabc-
 
 ![](./images/file.png)
 
+### 支持的文件预览格式
+
+| 文件类型 | 格式                                                 | 支持状态 |
+| -------- | ---------------------------------------------------- | -------- |
+| 文档     | PDF                                                  | ✅        |
+| 文档     | DOCX                                                 | ✅        |
+| 文档     | Markdown                                             | ✅        |
+| 表格     | XLSX                                                 | ✅        |
+| 代码     | 多种代码格式（见说明）                               | ✅        |
+| 图片     | PNG, JPG, JPEG, BMP, GIF, TIFF, SVG, ICO, WEBP, AVIF | ✅        |
+| 笔记本   | IPYNB (Jupyter Notebook)                             | ✅        |
+| 压缩包   | ZIP, RAR, 7Z 等主流压缩格式                          | ✅        |
+
+**代码文件支持说明：** 支持多种编程语言代码文件预览，包括但不限于：C/C++, Java, Python, JavaScript, TypeScript, Go, Rust, PHP, Ruby, Swift, Kotlin 等。详细支持列表请参考 [highlight.js 支持的语言](https://github.com/highlightjs/highlight.js/blob/main/SUPPORTED_LANGUAGES.md)。
+
 ### 文件一键上传交大云盘
 
 ![](./images/jbox.png)

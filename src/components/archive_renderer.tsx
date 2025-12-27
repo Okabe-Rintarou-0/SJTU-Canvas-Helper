@@ -1,16 +1,13 @@
-import DocViewer, {
-  DocRendererProps,
-  IDocument,
-} from "@cyntler/react-doc-viewer";
-import { Button, Space, Tree, TreeDataNode, TreeProps } from "antd";
-import { useEffect, useState } from "react";
 import { DownOutlined } from "@ant-design/icons";
+import DocViewer, { DocRendererProps, IDocument } from "@cyntler/react-doc-viewer";
+import { invoke } from "@tauri-apps/api/core";
+import { Button, Empty, Space, Tree, TreeDataNode, TreeProps } from "antd";
 import useMessage from "antd/es/message/useMessage";
+import { Archive } from "libarchive.js";
+import { useEffect, useRef, useState } from "react";
+import { LOG_LEVEL_ERROR } from "../lib/model";
 import { consoleLog, dataURLtoFile, getFileType } from "../lib/utils";
 import { ArchiveSupportedRenderers } from "./renderers";
-import { Archive } from "libarchive.js";
-import { invoke } from "@tauri-apps/api/core";
-import { LOG_LEVEL_ERROR } from "../lib/model";
 
 interface BlackListEntry {
   name: string;
@@ -19,15 +16,6 @@ interface BlackListEntry {
 
 // WE DON'T WANT TO SEE 'node_modules' AT ALL!
 const BLACK_LIST: BlackListEntry[] = [{ name: "node_modules", dir: true }];
-
-const archiveWorkerUrl = new URL(
-  "libarchive.js/dist/worker-bundle.js",
-  import.meta.url
-).toString();
-
-Archive.init({
-  workerUrl: archiveWorkerUrl,
-});
 
 export default function ArchiveRenderer({
   mainState: { currentDocument },
@@ -38,10 +26,24 @@ export default function ArchiveRenderer({
   const [treeData, setTreeData] = useState<TreeDataNode | undefined>();
   const [fileMap, setFileMap] = useState<Map<string, any> | undefined>();
   const [selectedDoc, setSelectedDoc] = useState<IDocument | undefined>();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | undefined>();
+  const archiveInitializedRef = useRef(false);
+
+  const archiveWorkerUrl = new URL(
+    "libarchive.js/dist/worker-bundle.js",
+    import.meta.url
+  ).toString();
 
   useEffect(() => {
+    if (!archiveInitializedRef.current) {
+      Archive.init({
+        workerUrl: archiveWorkerUrl,
+      });
+      archiveInitializedRef.current = true;
+    }
     parse();
-  }, []);
+  }, [currentDocument]);
 
   const checkIsBanned = (fileName: string, isDir: boolean) => {
     if (
@@ -97,6 +99,12 @@ export default function ArchiveRenderer({
   };
 
   const parse = async () => {
+    setLoading(true);
+    setError(undefined);
+    setSelectedDoc((oldDoc) => setDocAndGC(oldDoc, undefined));
+    setSelectedPath("");
+    setTreeData(undefined);
+    setFileMap(undefined);
     try {
       let base64Content = currentDocument.fileData as string;
       let file = dataURLtoFile(
@@ -108,8 +116,12 @@ export default function ArchiveRenderer({
       let treeData = await parseArchiveStructureBFS(files);
       setTreeData(treeData);
     } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : String(e);
       consoleLog(LOG_LEVEL_ERROR, e);
-      messageApi.error(e as string);
+      messageApi.error(errorMsg);
+      setError(errorMsg);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -162,32 +174,64 @@ export default function ArchiveRenderer({
     }
   };
 
+  useEffect(() => {
+    return () => {
+      // 清理资源
+      if (selectedDoc) {
+        URL.revokeObjectURL(selectedDoc.uri);
+      }
+    };
+  }, [selectedDoc]);
+
   return (
     <>
       {contextHolder}
-      <Space align="start" size={"large"}>
-        <Space direction="vertical">
-          {selectedDoc && <Button onClick={handleDownloadSubFile}>下载</Button>}
-          <Tree
-            showLine
-            switcherIcon={<DownOutlined />}
-            onSelect={onSelect}
-            treeData={treeData?.children}
-          />
-        </Space>
-        {selectedDoc && (
-          <DocViewer
-            key={selectedDoc.uri}
-            config={{
-              header: {
-                disableHeader: true,
-                disableFileName: true,
-                retainURLParams: true,
-              },
-            }}
-            pluginRenderers={ArchiveSupportedRenderers}
-            documents={[selectedDoc]}
-          />
+      <Space direction="vertical" style={{ width: "100%", height: "100%" }}>
+        {loading ? (
+          <div style={{ textAlign: "center", padding: "20px" }}>
+            <h3>正在解析压缩包...</h3>
+          </div>
+        ) : error ? (
+          <div style={{ textAlign: "center", padding: "20px" }}>
+            <h3 style={{ color: "#ff4d4f" }}>解析失败</h3>
+            <p>{error}</p>
+          </div>
+        ) : (
+          <Space align="start" size={"large"} style={{ width: "100%", height: "100%" }}>
+            <Space direction="vertical" style={{ height: "100%" }}>
+              {selectedDoc && <Button onClick={handleDownloadSubFile}>下载</Button>}
+              {treeData?.children && treeData.children.length > 0 ? (
+                <Tree
+                  showLine
+                  switcherIcon={<DownOutlined />}
+                  onSelect={onSelect}
+                  treeData={treeData.children}
+                  style={{ width: 300, overflowY: "auto" }}
+                />
+              ) : (
+                <div style={{ textAlign: "center", padding: "20px" }}>
+                  <p>压缩包为空</p>
+                </div>
+              )}
+            </Space>
+            {selectedDoc ? (
+              <DocViewer
+                key={selectedDoc.uri}
+                config={{
+                  header: {
+                    disableHeader: true,
+                    disableFileName: true,
+                    retainURLParams: true,
+                  },
+                }}
+                pluginRenderers={ArchiveSupportedRenderers}
+                documents={[selectedDoc]}
+                style={{ flex: 1, height: "100%" }}
+              />
+            ) : (
+              <Empty />
+            )}
+          </Space>
         )}
       </Space>
     </>
