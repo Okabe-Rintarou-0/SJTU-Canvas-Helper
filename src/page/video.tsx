@@ -6,6 +6,8 @@ import confirm from "antd/es/modal/confirm";
 import { useEffect, useRef, useState } from "react";
 import type { DraggableData, DraggableEvent } from "react-draggable";
 import Draggable from "react-draggable";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import ClosableAlert from "../components/closable_alert";
 import CourseSelect from "../components/course_select";
 import BasicLayout from "../components/layout";
@@ -26,8 +28,6 @@ import {
   VideoPlayInfo
 } from "../lib/model";
 import { consoleLog, srtToVtt } from "../lib/utils";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 
 function timestampToSeconds(timestamp: string): number {
   const match = timestamp.match(
@@ -37,7 +37,7 @@ function timestampToSeconds(timestamp: string): number {
     return 0;
   }
 
-  const [, hh, mm, ss, ms] = match;
+  const [, hh, mm, ss, _] = match;
   return (
     Number(hh) * 3600 +
     Number(mm) * 60 +

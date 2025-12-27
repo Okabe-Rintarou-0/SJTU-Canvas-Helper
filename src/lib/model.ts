@@ -20,9 +20,9 @@ export interface Course {
 interface Term {
     id: number;
     name: string;
-    start_at?: string | null;
-    end_at?: string | null;
-    created_at?: string | null;
+    start_at: Option<string>;
+    end_at: Option<string>;
+    created_at: Option<string>;
     workflow_state: string;
 }
 
@@ -73,7 +73,7 @@ export interface Folder {
     id: number;
     name: string;
     full_name: string;
-    parent_folder_id?: number | null;
+    parent_folder_id: Option<number>;
     locked: boolean;
     folders_url: string;
     files_url: string;
@@ -102,12 +102,12 @@ export interface User {
     sortable_name: string;
     short_name: string;
     login_id: string;
-    email: string | null;
+    email: Option<string>;
 }
 
 export interface UserSubmissions {
     user_id: number;
-    username?: string;
+    username: Option<string>;
     submissions: Submission[]
 }
 
@@ -122,8 +122,8 @@ export interface CalendarEvent {
     type_field: string;
     assignment: Assignment;
     html_url: string;
-    end_at?: string | null;
-    start_at?: string | null;
+    end_at: Option<string>;
+    start_at: Option<string>;
     context_code: string;
     context_name: string;
     url: string;
@@ -133,12 +133,12 @@ export interface CalendarEvent {
 export interface Assignment {
     id: number;
     key: number;
-    needs_grading_count: number | null;
-    description: string | null;
-    due_at?: string | null;
-    unlock_at?: string;
-    lock_at?: string;
-    points_possible?: number;
+    needs_grading_count: Option<number>;
+    description: Option<string>;
+    due_at: Option<string>;
+    unlock_at: Option<string>;
+    lock_at: Option<string>;
+    points_possible: Option<number>;
     course_id: number;
     name: string;
     html_url: string;
@@ -146,10 +146,10 @@ export interface Assignment {
     allowed_extensions: string[];
     published: boolean;
     has_submitted_submissions: boolean;
-    submission?: Submission;
+    submission: Option<Submission>;
     overrides: AssignmentOverride[];
     all_dates: AssignmentDate[];
-    score_statistics: ScoreStatistic | null
+    score_statistics: Option<ScoreStatistic>;
     grading_type: string;
 }
 
@@ -157,9 +157,9 @@ export interface AssignmentDate {
     id: number;
     base: boolean;
     title: string;
-    due_at: string | null;
-    unlock_at: string | null;
-    lock_at: string | null;
+    due_at: Option<string>;
+    unlock_at: Option<string>;
+    lock_at: Option<string>;
 }
 
 export interface AssignmentOverride {
@@ -172,11 +172,11 @@ export interface AssignmentOverride {
     group_id: number;
     course_section_id: number;
     title: string;
-    due_at: string | null;
+    due_at: Option<string>;
     all_day: boolean;
     all_day_date: string;
-    unlock_at: string | null;
-    lock_at: string | null;
+    unlock_at: Option<string>;
+    lock_at: Option<string>;
 }
 
 export type WorkflowState = "submitted" | "unsubmitted" | "graded" | "pending_review";
@@ -184,8 +184,8 @@ export type WorkflowState = "submitted" | "unsubmitted" | "graded" | "pending_re
 export interface Submission {
     id: number;
     key: number;
-    grade: string | null;
-    submitted_at?: string;
+    grade: Option<string>;
+    submitted_at: Option<string>;
     assignment_id: number;
     user_id: number;
     late: boolean;
@@ -206,16 +206,16 @@ export interface ScoreStatistic {
 }
 
 export interface Attachment {
-    user?: string;
+    user: Option<string>;
     user_id: number;
-    submitted_at?: string;
-    grade: string | null;
+    submitted_at: Option<string>;
+    grade: Option<string>;
     id: number;
     key: React.Key;
     late: boolean;
     comments: SubmissionComment[];
     uuid: string;
-    folder_id: number | null;
+    folder_id: Option<number>;
     display_name: string;
     filename: string;
     "content-type": string;
@@ -429,7 +429,7 @@ export interface SubmissionComment {
     author_name: string;
     created_at: string;
     avatar_path: string;
-    media_comment?: MediaComment | null;
+    media_comment: Option<MediaComment>;
     attachments: Attachment[]
 }
 
@@ -447,41 +447,41 @@ export interface QRCodeScanResult {
 export interface DiscussionTopic {
     id: number;
     title: string;
-    last_reply_at: string | null;
-    created_at: string | null;
-    delayed_post_at: string | null;
-    posted_at: string | null;
-    user_name: string | null;
-    lock_at: string | null;
-    assignment_id: number | null;
-    podcast_has_student_posts: boolean | null;
+    last_reply_at: Option<string>;
+    created_at: Option<string>;
+    delayed_post_at: Option<string>;
+    posted_at: Option<string>;
+    user_name: Option<string>;
+    lock_at: Option<string>;
+    assignment_id: Option<number>;
+    podcast_has_student_posts: Option<boolean>;
     discussion_type: string;
-    allow_rating: boolean | null;
-    only_graders_can_rate: boolean | null;
-    sort_by_rating: boolean | null;
-    is_section_specific: boolean | null;
+    allow_rating: Option<boolean>;
+    only_graders_can_rate: Option<boolean>;
+    sort_by_rating: Option<boolean>;
+    is_section_specific: Option<boolean>;
     discussion_subentry_count: number;
     permissions: Permissions;
-    require_initial_post: boolean | null;
-    user_can_see_posts: boolean | null;
-    podcast_url: string | null;
+    require_initial_post: Option<boolean>;
+    user_can_see_posts: Option<boolean>;
+    podcast_url: Option<string>;
     read_state: string;
     unread_count: number;
-    subscribed: boolean | null;
+    subscribed: Option<boolean>;
     attachments: Attachment[];
-    published: boolean | null;
-    can_unpublish: boolean | null;
-    locked: boolean | null;
-    can_lock: boolean | null;
-    comments_disabled: boolean | null;
+    published: Option<boolean>;
+    can_unpublish: Option<boolean>;
+    locked: Option<boolean>;
+    can_lock: Option<boolean>;
+    comments_disabled: Option<boolean>;
     html_url: string;
     url: string;
-    pinned: boolean | null;
-    can_group: boolean | null;
-    locked_for_user: boolean | null;
+    pinned: Option<boolean>;
+    can_group: Option<boolean>;
+    locked_for_user: Option<boolean>;
     lock_explanation: string;
     message: string;
-    assignment: Assignment | null;
+    assignment: Option<Assignment>;
 }
 
 export interface Permissions {
@@ -508,15 +508,15 @@ export interface Participant {
 
 export interface DiscussionView {
     id: number;
-    parent_id: number | null;
-    created_at: string | null;
-    updated_at: string | null;
-    editor_id: number | null;
-    rating_count: number | null;
-    rating_sum: number | null;
-    deleted: boolean | null;
-    user_id: number | null;
-    message: string | null;
+    parent_id: Option<number>;
+    created_at: Option<string>;
+    updated_at: Option<string>;
+    editor_id: Option<number>;
+    rating_count: Option<number>;
+    rating_sum: Option<number>;
+    deleted: Option<boolean>;
+    user_id: Option<number>;
+    message: Option<string>;
     replies: Reply[];
 }
 
@@ -524,11 +524,11 @@ export interface Reply {
     id: number;
     user_id: number;
     parent_id: number;
-    created_at: string | null;
-    updated_at: string | null;
-    rating_count: number | null;
-    rating_sum: number | null;
-    message: string | null;
+    created_at: Option<string>;
+    updated_at: Option<string>;
+    rating_count: Option<number>;
+    rating_sum: Option<number>;
+    message: Option<string>;
 }
 
 export interface DraggableItem {
@@ -561,15 +561,15 @@ export interface AnnualReport {
 
 export interface CompletionRequirement {
     type: string;
-    min_score?: number;
+    min_score: Option<number>;
     completed: boolean;
 }
 
 export interface ContentDetails {
-    points_possible?: number;
-    due_at?: string;
-    unlock_at?: string;
-    lock_at?: string;
+    points_possible: Option<number>;
+    due_at: Option<string>;
+    unlock_at: Option<string>;
+    lock_at: Option<string>;
 }
 
 export type ModuleItemType =
@@ -589,13 +589,13 @@ export interface ModuleItem {
     title: string;
     indent: number;
     type: ModuleItemType;
-    content_id?: number;
+    content_id: Option<number>;
     html_url: string;
-    url?: string;
-    page_url?: string;
-    external_url?: string;
-    new_tab?: boolean;
-    completion_requirement?: CompletionRequirement;
-    content_details?: ContentDetails;
-    published?: boolean;
+    url: Option<string>;
+    page_url: Option<string>;
+    external_url: Option<string>;
+    new_tab: Option<boolean>;
+    completion_requirement: Option<CompletionRequirement>;
+    content_details: Option<ContentDetails>;
+    published: Option<boolean>;
 }
