@@ -16,6 +16,8 @@ SJTU Canvas 小帮手基于 [Tauri](https://tauri.app/) 开发，助您更便捷
 
 ## 安装指南
 
+![](./images/installation.png)
+
 ### 基础安装
 
 1. 前往 [Release](https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases) 页面下载并安装一次即可，后续主版本更新将自动拉取，无需重复下载
@@ -44,8 +46,6 @@ SJTU Canvas 小帮手基于 [Tauri](https://tauri.app/) 开发，助您更便捷
 安装完成后，请前往设置页面填写您的 `Canvas Token` 以及文件下载保存目录。
 
 ![](./images/settings.png)
-
-![](./images/installation.png)
 
 ## 致谢
 
