@@ -1,4 +1,9 @@
+// 外部库导入
 import { invoke } from "@tauri-apps/api/core";
+import { useCallback, useEffect, useRef, useState } from "react";
+import ReactJson from "react-json-view-ts";
+
+// Ant Design 组件和钩子
 import type { InputRef, TourProps } from "antd";
 import {
   Button,
@@ -11,11 +16,13 @@ import {
   Tour,
 } from "antd";
 import useMessage from "antd/es/message/useMessage";
-import { useEffect, useRef, useState } from "react";
-import ReactJson from "react-json-view-ts";
+
+// 内部组件
 import BasicLayout from "../components/layout";
 import LogModal from "../components/log_modal";
 import { PathSelector } from "../components/path_selector";
+
+// 内部工具函数和类型
 import { getConfig, saveConfig } from "../lib/config";
 import { AccountInfo, AppConfig, LOG_LEVEL_INFO, User } from "../lib/model";
 import { consoleLog, savePathValidator } from "../lib/utils";
@@ -67,10 +74,6 @@ export default function SettingsPage() {
     },
   ];
 
-  useEffect(() => {
-    initConfig();
-  }, []);
-
   const initAccounts = async () => {
     let accounts = (await invoke("list_accounts")) as string[];
     setAccounts(accounts);
@@ -95,7 +98,11 @@ export default function SettingsPage() {
     }
   };
 
-  const handleSaveConfig = async (config: AppConfig) => {
+  useEffect(() => {
+    initConfig();
+  }, []);
+
+  const handleSaveConfig = useCallback(async (config: AppConfig) => {
     try {
       await saveConfig(config);
       messageApi.success("保存成功！");
@@ -105,7 +112,7 @@ export default function SettingsPage() {
     } catch (e) {
       messageApi.error(e as string);
     }
-  };
+  }, [messageApi, rawConfig]);
 
   const handleTestToken = async () => {
     const token = form.getFieldValue("token");
@@ -145,20 +152,14 @@ export default function SettingsPage() {
     }
   };
 
-  // const proxyPortValidator = async (_: any, port: number) => {
-  //     // 0---65535
-  //     const valid = 0 <= port && port <= 65535;
-  //     return valid ? Promise.resolve() : Promise.reject(new Error("端口必须是 0 - 65535 之间的数字"));
-  // }
-
   const handleCreateAccount = async () => {
     try {
-      let account = createAccountInputRef.current?.input?.value;
-      if (!account) {
+      const accountName = createAccountInputRef.current?.input?.value;
+      if (!accountName) {
         messageApi.warning("账号名不得为空⚠️！");
         return;
       }
-      await invoke("create_account", { account });
+      await invoke("create_account", { account: accountName });
       await initAccounts();
       setAccountMode("select");
       messageApi.success("创建账号成功🎉！");
@@ -177,7 +178,7 @@ export default function SettingsPage() {
     }
   };
 
-  const handleDeleteAccount = async () => {
+  const handleDeleteAccount = useCallback(async () => {
     try {
       await invoke("delete_account", { account: currentAccount });
       initConfig();
@@ -185,7 +186,7 @@ export default function SettingsPage() {
     } catch (e) {
       messageApi.error(`删除账号失败😢：${e}`);
     }
-  };
+  }, [currentAccount]);
 
   const getRawConfig = async () => {
     try {
@@ -199,9 +200,11 @@ export default function SettingsPage() {
   return (
     <BasicLayout>
       {contextHolder}
+
       <Space direction="vertical" style={{ width: "100%" }}>
+        {/* 账号选择与管理 */}
         {accountMode === "select" && (
-          <Space>
+          <Space align="center">
             <span>选择账号：</span>
             <Select
               onChange={handleSwitchAccount}
@@ -222,8 +225,9 @@ export default function SettingsPage() {
             </Button>
           </Space>
         )}
+
         {accountMode === "create" && (
-          <Space>
+          <Space align="center">
             <span>新建账号：</span>
             <Input
               ref={createAccountInputRef}
@@ -234,6 +238,8 @@ export default function SettingsPage() {
             <Button onClick={() => setAccountMode("select")}>取消</Button>
           </Space>
         )}
+
+        {/* 设置表单 */}
         <Form
           form={form}
           layout="vertical"
@@ -272,7 +278,7 @@ export default function SettingsPage() {
             required
             rules={[{ validator: savePathValidator }]}
           >
-            <PathSelector />
+            <PathSelector ref={savePathRef} />
           </Form.Item>
           <Form.Item name="theme" label="UI 主题">
             <Select>
@@ -283,9 +289,7 @@ export default function SettingsPage() {
           <Form.Item
             name="color_primary"
             label="主色调"
-            getValueFromEvent={(color) => {
-              return "#" + color.toHex();
-            }}
+            getValueFromEvent={(color) => `#${color.toHex()}`}
           >
             <ColorPicker
               onChange={(e) => consoleLog(LOG_LEVEL_INFO, e)}
@@ -294,16 +298,11 @@ export default function SettingsPage() {
           </Form.Item>
           <Form.Item
             name="llm_api_key"
-            label="大模型（目前只接入了 DeepSeek）的 API KEY"
+            label="DeepSeek API KEY"
+            extra="用于接入大语言模型功能"
           >
-            <Input />
+            <Input placeholder="请输入 DeepSeek API KEY" />
           </Form.Item>
-          {/* <Form.Item name="proxy_port" label="反向代理本地端口" rules={[{ validator: proxyPortValidator }]}>
-                    <InputNumber placeholder="请输入反向代理本地端口" />
-                </Form.Item> */}
-          {/* <Form.Item name="serve_as_plaintext" label="以纯文本显示的文件拓展名">
-                    <Input placeholder="请输入文件拓展名，以英文逗号隔开" />
-                </Form.Item> */}
           <Space wrap>
             <Form.Item>
               <Button ref={saveButtonRef} type="primary" htmlType="submit">

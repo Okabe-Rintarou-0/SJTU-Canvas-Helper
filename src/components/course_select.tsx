@@ -22,7 +22,7 @@ export default function CourseSelect({ courses, disabled, onChange, value }: {
             ? teacherNames.join('、')
             : '未知教师';
 
-        return `${course.name}(${term}, ${teacherText})`;
+        return `${course.name} | ${term} | ${teacherText}`;
     };
 
     const formatCourses = (courses: Course[]) => {
