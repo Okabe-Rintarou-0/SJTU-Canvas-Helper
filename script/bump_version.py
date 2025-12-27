@@ -24,15 +24,33 @@ def update_cargo_toml(version):
     cargo_toml_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'src-tauri', 'Cargo.toml')
     
     with open(cargo_toml_path, 'r') as f:
-        content = f.read()
+        lines = f.readlines()
     
-    # Match version line in Cargo.toml
-    pattern = r'^version = "([^"]+)"$'
-    old_version = re.search(pattern, content, re.MULTILINE).group(1)
-    new_content = re.sub(pattern, f'version = "{version}"', content, flags=re.MULTILINE)
+    in_package_section = False
+    old_version = None
+    
+    for i, line in enumerate(lines):
+        # Check if we're entering the [package] section
+        if line.strip() == '[package]':
+            in_package_section = True
+            continue
+        
+        # Check if we're leaving the [package] section
+        if in_package_section and line.strip().startswith('['):
+            in_package_section = False
+            continue
+        
+        # Only update version in [package] section
+        if in_package_section and line.strip().startswith('version = '):
+            old_version = line.strip().split('"')[1]
+            lines[i] = f'version = "{version}"\n'
+            break
+    
+    if old_version is None:
+        raise Exception("Could not find version in [package] section of Cargo.toml")
     
     with open(cargo_toml_path, 'w') as f:
-        f.write(new_content)
+        f.writelines(lines)
     
     print(f"Updated src-tauri/Cargo.toml: {old_version} -> {version}")
 
