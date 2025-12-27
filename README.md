@@ -2,9 +2,9 @@
 
 ![](./images/logo.png)
 
-**还在为下载一堆学生上传的压缩包而苦恼吗？**
+**还在为下载学生上传的大量压缩包而苦恼吗？**
 
-SJTU Canvas 小帮手，帮助您更便捷地使用交大 Canvas。基于 [Tauri](https://tauri.app/) 开发。
+SJTU Canvas 小帮手基于 [Tauri](https://tauri.app/) 开发，助您更便捷地使用交大 Canvas。
 参与讨论：[水源社区](https://shuiyuan.sjtu.edu.cn/t/topic/245275)。
 
 <div align="center">
@@ -16,29 +16,36 @@ SJTU Canvas 小帮手，帮助您更便捷地使用交大 Canvas。基于 [Tauri
 
 ## 安装指南
 
-您只需要前往 [Release](https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases) 正确安装一次即可，后续如果主版本更新，您可以自动拉取更新，无需重复下载安装。
+### 基础安装
 
-如果您使用的是 Windows 系统，建议下载 `.msi` 安装包，以支持自动更新功能。
+1. 前往 [Release](https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases) 页面下载并安装一次即可，后续主版本更新将自动拉取，无需重复下载
 
-![](./images/installation.png)
+2. **Windows 系统**：
+   - 推荐下载 `.msi` 安装包，支持自动更新功能
+   - 也可选择免安装便携版：`SJTU.Canvas.Helper_v_x.x.x_x64_portable.zip`
 
-您还可以使用免安装便携版：SJTU.Canvas.Helper_v_x.x.x_x64_portable.zip(Windows 用户)。
+3. **MacOS 系统**：
+   - 下载对应版本安装包
+   - 若遇到打不开的问题，可参考 [在 Mac 上安全地打开 App](https://support.apple.com/zh-cn/102445)
+   - 若显示已损坏，尝试执行以下命令：
+     ```shell
+     cd /Applications 
+     sudo xattr -r -d com.apple.quarantine /Applications/SJTU\ Canvas\ Helper.app
+     ```
 
-在您安装完毕后，请前往设置页面填写您的 `Canvas Token` 以及您的文件下载保存目录。
+4. **Arch Linux 系统**：
+   通过 [yay](https://github.com/Jguer/yay) 从 AUR 安装：
+   ```bash
+   yay -S sjtu-canvas-helper
+   ```
+
+### 首次配置
+
+安装完成后，请前往设置页面填写您的 `Canvas Token` 以及文件下载保存目录。
 
 ![](./images/settings.png)
 
-MacOS 遇到打不开的问题，请看：[在 Mac 上安全地打开 App](https://support.apple.com/zh-cn/102445)。如果显示已损坏，请尝试执行以下命令：
-```shell
-cd /Applications 
-sudo xattr -r -d com.apple.quarantine /Applications/SJTU\ Canvas\ Helper.app SJTU\ Canvas\ Helper.app
-```
-
-### Arch Linux 安装方式  
-通过 [yay](https://github.com/Jguer/yay) 从 AUR 安装：  
-```bash  
-yay -S sjtu-canvas-helper
-```
+![](./images/installation.png)
 
 ## 致谢
 
@@ -79,7 +86,9 @@ yay -S sjtu-canvas-helper
 
 ### 文件下载/预览
 
-类似 macOS quick look，按下空格打开预览，再次按下空格关闭预览。
+采用类似 macOS Quick Look 的预览体验：
+- 按下空格打开预览
+- 再次按下空格关闭预览
 
 https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/assets/58595459/7f05cabc-7bf9-4f58-91ea-f3efed151733
 
@@ -87,7 +96,7 @@ https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/assets/58595459/7f05cabc-
 
 ![](./images/file.png)
 
-### 支持的文件预览格式
+#### 支持的文件预览格式
 
 | 文件类型 | 格式                                                 | 支持状态 |
 | -------- | ---------------------------------------------------- | -------- |
@@ -95,12 +104,12 @@ https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/assets/58595459/7f05cabc-
 | 文档     | DOCX                                                 | ✅        |
 | 文档     | Markdown                                             | ✅        |
 | 表格     | XLSX                                                 | ✅        |
-| 代码     | 多种代码格式（见说明）                               | ✅        |
+| 代码     | 多种编程语言代码（见说明）                           | ✅        |
 | 图片     | PNG, JPG, JPEG, BMP, GIF, TIFF, SVG, ICO, WEBP, AVIF | ✅        |
 | 笔记本   | IPYNB (Jupyter Notebook)                             | ✅        |
-| 压缩包   | ZIP, RAR, 7Z 等主流压缩格式                          | ✅        |
+| 压缩包   | ZIP, RAR, 7Z 等主流格式                              | ✅        |
 
-**代码文件支持说明：** 支持多种编程语言代码文件预览，包括但不限于：C/C++, Java, Python, JavaScript, TypeScript, Go, Rust, PHP, Ruby, Swift, Kotlin 等。详细支持列表请参考 [highlight.js 支持的语言](https://github.com/highlightjs/highlight.js/blob/main/SUPPORTED_LANGUAGES.md)。
+**代码文件支持说明：** 支持多种编程语言代码预览，包括但不限于：C/C++, Java, Python, JavaScript, TypeScript, Go, Rust, PHP, Ruby, Swift, Kotlin 等。详细支持列表请参考 [highlight.js 支持的语言](https://github.com/highlightjs/highlight.js/blob/main/SUPPORTED_LANGUAGES.md)。
 
 ### 文件一键上传交大云盘
 
@@ -124,13 +133,28 @@ https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/assets/58595459/7f05cabc-
 
 ![](images/arch.png)
 
-+ 下载 [Rust](https://www.rust-lang.org/tools/install)。Rust 快速学习：[Rust语言圣经(Rust Course)](https://course.rs/about-book.html)。
-+ 下载 [NodeJS](https://nodejs.org/en/download/current)，自带 `npm` 和 `yarn` 包管理器。
-+ 启动项目：
-  ```shell
-  yarn tauri dev
-  ```
-+ Tauri 基于 WebView ，所以你可以把它当成一个浏览器来 debug。MacOS 可以按下 `⌘command + ⌥option + i` 查看控制台；Windows 则为 `ctrl + shift + i `。
+### 开发环境搭建
+
+1. 安装 [Rust](https://www.rust-lang.org/tools/install) 开发环境
+   - Rust 快速学习资源：[Rust语言圣经(Rust Course)](https://course.rs/about-book.html)
+
+2. 安装 [NodeJS](https://nodejs.org/en/download/current)
+   - 安装后将自动包含 `npm` 和 `yarn` 包管理器
+
+### 启动项目
+
+```shell
+yarn tauri dev
+
+# 如果支持 make
+make dev
+```
+
+### 调试说明
+
+Tauri 基于 WebView 构建，可按以下方式打开开发者工具：
+- **MacOS**: 按下 `⌘ + ⌥ + i` 打开控制台
+- **Windows**: 按下 `Ctrl + Shift + i` 打开控制台
 
 ## Star History
 
