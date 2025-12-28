@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 import { expect } from "chai";
 import { spawn, spawnSync } from "child_process";
-import { Builder, By, Capabilities } from "selenium-webdriver";
+import { Builder, By, Capabilities, until } from "selenium-webdriver";
 import { fileURLToPath } from "url";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -81,51 +81,53 @@ describe("Settings Tour", () => {
     // Navigate to settings page
     await driver.get("http://tauri.localhost/settings");
 
-    driver.wait(async () => {
+    const isTourDisplayed = await driver.wait(async () => {
       try {
-        const tourElement = await driver.findElement(By.css(".ant-tour-content"));
+        const tourElement = await driver.wait(until.elementLocated(By.css(".ant-tour-content2")), 15000);
         return !(await tourElement.isDisplayed());
       } catch (error) {
         return false;
       }
     }, 10000, "Tour did not appear");
+
+    expect(isTourDisplayed).to.be.true;
   })
 
   it("should show first tour step about Canvas Token", async () => {
 
-    const img = await driver.findElement(By.css("img[src='help.png']"));
+    const img = await driver.wait(until.elementLocated(By.css("img[src='help.png']")), 15000);
     expect(img).to.not.be.null;
   });
 
   it("should navigate to next tour step", async () => {
     // Click next button
-    const nextButton = await driver.findElement(By.css(".ant-tour-next-btn"));
+    const nextButton = await driver.wait(until.elementLocated(By.css(".ant-tour-next-btn")), 15000);
     await nextButton.click();
 
     // Verify second step
-    const tourTitle = await driver.findElement(By.css(".ant-tour-title")).getText();
+    const tourTitle = await driver.wait(until.elementLocated(By.css(".ant-tour-title")), 15000).getText();
     expect(tourTitle).to.include("下载保存目录");
   });
 
   it("should navigate to final tour step", async () => {
     // Click next button again
-    const nextButton = await driver.findElement(By.css(".ant-tour-next-btn"));
+    const nextButton = await driver.wait(until.elementLocated(By.css(".ant-tour-next-btn")), 15000);
     await nextButton.click();
 
     // Verify third step
-    const tourTitle = await driver.findElement(By.css(".ant-tour-title")).getText();
+    const tourTitle = await driver.wait(until.elementLocated(By.css(".ant-tour-title")), 15000).getText();
     expect(tourTitle).to.include("保存");
   });
 
   it("should close the tour", async () => {
     // Click finish button
-    const finishButton = await driver.findElement(By.css(".ant-tour-next-btn"));
+    const finishButton = await driver.wait(until.elementLocated(By.css(".ant-tour-next-btn")), 15000);
     await finishButton.click();
 
     // Verify tour is closed
     await driver.wait(async () => {
       try {
-        const tourElement = await driver.findElement(By.css(".ant-tour-content"));
+        const tourElement = await driver.wait(until.elementLocated(By.css(".ant-tour-content")), 15000);
         return !(await tourElement.isDisplayed());
       } catch (error) {
         return true;
