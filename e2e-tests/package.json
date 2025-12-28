@@ -1,0 +1,16 @@
+{
+  "name": "canvas-e2e-tests",
+  "version": "1.0.0",
+  "description": "End-to-end tests for SJTU Canvas Helper",
+  "type": "module",
+  "scripts": {
+    "test": "npx mocha test/**/*.test.js --timeout 120000"
+  },
+  "dependencies": {
+    "chai": "^5.3.3",
+    "selenium-webdriver": "^4.23.0"
+  },
+  "devDependencies": {
+    "mocha": "^10.7.0"
+  }
+}

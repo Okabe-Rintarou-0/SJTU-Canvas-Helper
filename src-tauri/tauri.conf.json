@@ -33,14 +33,14 @@
   },
   "app": {
     "security": {
-      "csp": null
+      "csp": "default-src 'self' http: https: data: blob: 'unsafe-eval' 'unsafe-inline'"
     },
     "windows": [
       {
         "title": "SJTU Canvas Helper",
         "width": 800,
         "height": 600,
-        "useHttpsScheme": true
+        "useHttpsScheme": false
       }
     ]
   }
