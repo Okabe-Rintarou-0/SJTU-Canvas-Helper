@@ -34,6 +34,11 @@ jobs:
           & "$HOME/.cargo/bin/msedgedriver-tool.exe"
           $PWD.Path >> $env:GITHUB_PATH
 
+      - name: install Sjtu Canvas Helper deps
+        run: | 
+          yarn install
+          yarn tauri build --no-bundle
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           cache: false
