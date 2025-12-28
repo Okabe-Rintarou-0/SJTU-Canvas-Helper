@@ -69,12 +69,16 @@ before(async function () {
 
 after(async function () {
   // stop the webdriver session
-  await closeTauriDriver();
+  try {
+    await closeTauriDriver();
+  } catch (error) {
+    console.error("Error closing Tauri driver:", error);
+  }
 });
 
 describe("Settings Tour", () => {
-  it ("should open tour modal", async () => {
-        // Navigate to settings page
+  it("should open tour modal", async () => {
+    // Navigate to settings page
     await driver.get("http://tauri.localhost/settings");
 
     driver.wait(async () => {
@@ -86,7 +90,7 @@ describe("Settings Tour", () => {
       }
     }, 10000, "Tour did not appear");
   })
-  
+
   it("should show first tour step about Canvas Token", async () => {
 
     const img = await driver.findElement(By.css("img[src='help.png']"));
