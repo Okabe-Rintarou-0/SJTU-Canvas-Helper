@@ -27,7 +27,7 @@ import {
   LOG_LEVEL_ERROR,
   LogLevel,
   ModuleItem,
-  Option,
+  Option
 } from "./model";
 
 export function isMergableFileType(fileType: string): boolean {

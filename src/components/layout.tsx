@@ -44,7 +44,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
     }, {
         key: 'grades',
         icon: <LuBookOpenCheck />,
-        label: <Link to={'/grades'}>评分册(beta)</Link>,
+        label: <Link to={'/grades'}>评分册</Link>,
     }, {
         key: 'submissions',
         icon: <CloudDownloadOutlined />,
@@ -60,7 +60,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
     }, {
         key: 'annual',
         icon: <TbReportAnalytics />,
-        label: <Link to={'/annual'}>年度总结（新）</Link>,
+        label: <Link to={'/annual'}>年度总结</Link>,
     }, {
         key: 'settings',
         icon: <SettingOutlined />,
