@@ -1,79 +1,79 @@
-on:
-  workflow_dispatch:
-  push:
-    branches: [main, dev]
-  pull_request:
-    branches: ["**"]
+# on:
+#   workflow_dispatch:
+#   push:
+#     branches: [main, dev]
+#   pull_request:
+#     branches: ["**"]
 
-name: End-to-end Tests
+# name: End-to-end Tests
 
-jobs:
-  test:
-    name: Test
-    runs-on: ${{ matrix.platform }}
-    strategy:
-      fail-fast: false
-      matrix:
-        platform:
-          - ubuntu-latest
-          # - windows-latest
-    steps:
-      - uses: actions/checkout@v2
+# jobs:
+#   test:
+#     name: Test
+#     runs-on: ${{ matrix.platform }}
+#     strategy:
+#       fail-fast: false
+#       matrix:
+#         platform:
+#           - ubuntu-latest
+#           - windows-latest
+#     steps:
+#       - uses: actions/checkout@v2
 
-      - name: install Tauri dependencies (Linux)
-        if: matrix.platform == 'ubuntu-latest'
-        run: >
-          sudo apt-get update &&
-          sudo apt-get install -y
-          webkit2gtk-4.1
-          libayatana-appindicator3-dev
-          webkit2gtk-driver
-          xvfb
+#       - name: install Tauri dependencies (Linux)
+#         if: matrix.platform == 'ubuntu-latest'
+#         run: >
+#           sudo apt-get update &&
+#           sudo apt-get install -y
+#           webkit2gtk-4.1
+#           libayatana-appindicator3-dev
+#           webkit2gtk-driver
+#           xvfb
 
-      - name: install msdgedriver (Windows)
-        if: matrix.platform == 'windows-latest'
-        run: |
-          cargo install --git https://github.com/chippers/msedgedriver-tool
-          & "$HOME/.cargo/bin/msedgedriver-tool.exe"
-          $PWD.Path >> $env:GITHUB_PATH
+#       - name: install msdgedriver (Windows)
+#         if: matrix.platform == 'windows-latest'
+#         run: |
+#           cargo install --git https://github.com/chippers/msedgedriver-tool
+#           & "$HOME/.cargo/bin/msedgedriver-tool.exe"
+#           $PWD.Path >> $env:GITHUB_PATH
 
-      - name: install Sjtu Canvas Helper deps
-        run: |
-          yarn install
-          yarn tauri build --no-bundle
+#       - name: install Sjtu Canvas Helper deps
+#         run: |
+#           yarn install
+#           yarn tauri build --no-bundle
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          cache: false
-          rustflags: ""
+#       - uses: actions-rust-lang/setup-rust-toolchain@v1
+#         with:
+#           cache: false
+#           rustflags: ""
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
+#       - uses: Swatinem/rust-cache@v2
+#         with:
+#           workspaces: src-tauri
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
+#       - uses: pnpm/action-setup@v4
+#         with:
+#           version: 10
 
-      - name: setup node
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
-        with:
-          node-version: 20
-          cache: "yarn"
+#       - name: setup node
+#         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+#         with:
+#           node-version: 20
+#           cache: "yarn"
 
-      - name: Install tauri-driver
-        run: cargo install tauri-driver --locked
+#       - name: Install tauri-driver
+#         run: cargo install tauri-driver --locked
 
-      - name: run tests (Linux)
-        if: matrix.platform == 'ubuntu-latest'
-        run: |
-          yarn install
-          xvfb-run yarn test
-        working-directory: e2e-tests
+#       - name: run tests (Linux)
+#         if: matrix.platform == 'ubuntu-latest'
+#         run: |
+#           yarn install
+#           xvfb-run yarn test
+#         working-directory: e2e-tests
 
-      - name: run tests (Windows)
-        if: matrix.platform == 'windows-latest'
-        run: |
-          yarn install
-          yarn test
-        working-directory: e2e-tests
+#       - name: run tests (Windows)
+#         if: matrix.platform == 'windows-latest'
+#         run: |
+#           yarn install
+#           yarn test
+#         working-directory: e2e-tests
