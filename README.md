@@ -133,6 +133,8 @@ https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/assets/58595459/7f05cabc-
 
 ![](images/arch.png)
 
+配合 AI 理解项目框架：https://deepwiki.com/Okabe-Rintarou-0/SJTU-Canvas-Helper
+
 ### 开发环境搭建
 
 1. 安装 [Rust](https://www.rust-lang.org/tools/install) 开发环境
