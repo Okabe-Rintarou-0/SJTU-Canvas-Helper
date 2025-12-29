@@ -1,4 +1,5 @@
 on:
+  workflow_dispatch:
   push:
     branches: [main, dev]
   pull_request:
@@ -13,7 +14,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [windows-latest]
+        platform:
+          - ubuntu-latest
+          # - windows-latest
     steps:
       - uses: actions/checkout@v2
 
@@ -35,7 +38,7 @@ jobs:
           $PWD.Path >> $env:GITHUB_PATH
 
       - name: install Sjtu Canvas Helper deps
-        run: | 
+        run: |
           yarn install
           yarn tauri build --no-bundle
 
