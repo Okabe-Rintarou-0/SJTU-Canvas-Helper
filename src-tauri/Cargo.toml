@@ -38,7 +38,7 @@ bardecoder = "0.5.0"
 image = "0.24"
 printpdf = { version = "0.8.2", features = ["jpeg"] }
 async-trait = "0.1.88"
-pdf-extract = "0.9.0"
+pdf-extract = "0.10.0"
 docx-rs = "0.4.17"
 futures = "0.3"
 tauri-plugin-process = "2"
