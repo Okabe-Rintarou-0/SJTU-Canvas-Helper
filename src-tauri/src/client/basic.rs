@@ -319,7 +319,6 @@ impl Client {
 
         loop {
             let items = self.list_items_with_page(url, token, page).await?;
-            println!("get with page {}: {}", page, items.len());
             if items.is_empty() {
                 break;
             }
