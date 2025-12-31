@@ -897,6 +897,8 @@ impl Client {
 
 #[cfg(test)]
 mod test {
+    use injectorpp::interface::injector::InjectorPP;
+
     use crate::{
         client::Client,
         error::Result,
@@ -936,6 +938,24 @@ mod test {
             .filter(|enrollment| enrollment.role == EnrollmentRole::TaEnrollment)
             .collect();
         !filtered.is_empty()
+    }
+
+    #[tokio::test]
+    async fn test_list_items() -> Result<()> {
+        let cli = Client::default();
+        let mut injector = InjectorPP::new();
+        struct TestItem {
+            id: int,
+        };
+        injector
+            .when_called(injectorpp::func!(Client::list_items::<TestItem>))
+            .will_execute(injectorpp::fake!(
+                func_type: fn(f: &Foo, value: i32, item: &str) -> String,
+                when: f.value > 0 && item == "test",
+                returns: "Fake result".to_string(),
+                times: 1
+            ));
+        Ok(())
     }
 
     #[tokio::test]
