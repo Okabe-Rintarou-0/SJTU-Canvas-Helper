@@ -2558,15 +2558,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "injectorpp"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d377a64bbe42f7a086ed630fbc66d84b43944f278ef42de53af79aaec6c21687"
-dependencies = [
- "libc",
-]
-
-[[package]]
 name = "inout"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5302,7 +5293,6 @@ dependencies = [
  "docx-rs",
  "futures",
  "image 0.24.9",
- "injectorpp",
  "lazy_static",
  "md-5",
  "num_cpus",
