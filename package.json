@@ -45,7 +45,7 @@
     "react-icons": "^5.0.1",
     "react-ipynb-renderer": "^2.2.4",
     "react-json-view-ts": "^1.16.7",
-    "react-markdown": "^9.0.1",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^6.22.1",
     "react-syntax-highlighter": "^15.5.0",
     "react-use-websocket": "3.0.0",
