@@ -58,7 +58,7 @@
     "@tauri-apps/cli": "^2.0.0",
     "@types/react": "^18.2.15",
     "@types/react-dom": "^18.2.7",
-    "@vitejs/plugin-react": "^4.2.1",
+    "@vitejs/plugin-react": "^5.1.2",
     "adm-zip": "^0.5.10",
     "all-contributors-cli": "^6.26.1",
     "esbuild-plugin-react-virtualized": "^1.0.4",
