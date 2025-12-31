@@ -898,6 +898,7 @@ impl Client {
 #[cfg(test)]
 mod test {
     use injectorpp::interface::injector::InjectorPP;
+    use serde::{Deserialize, Serialize};
 
     use crate::{
         client::Client,
@@ -942,18 +943,20 @@ mod test {
 
     #[tokio::test]
     async fn test_list_items() -> Result<()> {
+        #[derive(Serialize, Deserialize)]
+        struct TestItem {
+            id: i32,
+        };
         let cli = Client::default();
         let mut injector = InjectorPP::new();
-        struct TestItem {
-            id: int,
-        };
         injector
-            .when_called(injectorpp::func!(Client::list_items::<TestItem>))
-            .will_execute(injectorpp::fake!(
-                func_type: fn(f: &Foo, value: i32, item: &str) -> String,
-                when: f.value > 0 && item == "test",
-                returns: "Fake result".to_string(),
-                times: 1
+            .when_called_async(injectorpp::async_func!(
+                cli.list_items::<TestItem>("", ""),
+                Result<Vec<TestItem>>
+            ))
+            .will_return_async(injectorpp::async_return!(
+                Ok(vec![TestItem { id: 1 }]),
+                Result<Vec<TestItem>>
             ));
         Ok(())
     }
