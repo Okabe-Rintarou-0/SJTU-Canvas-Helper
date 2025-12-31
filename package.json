@@ -28,7 +28,7 @@
     "dayjs": "^1.11.10",
     "docx-preview": "^0.3.0",
     "echarts": "^5.5.0",
-    "echarts-for-react": "^3.0.2",
+    "echarts-for-react": "^3.0.5",
     "js-base64": "^3.7.7",
     "jszip": "^3.10.1",
     "libarchive.js": "^2.0.2",

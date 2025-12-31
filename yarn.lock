@@ -2323,10 +2323,10 @@ dompurify@^3.2.3:
   optionalDependencies:
     "@types/trusted-types" "^2.0.7"
 
-echarts-for-react@^3.0.2:
-  version "3.0.2"
-  resolved "https://registry.yarnpkg.com/echarts-for-react/-/echarts-for-react-3.0.2.tgz#ac5859157048a1066d4553e34b328abb24f2b7c1"
-  integrity sha512-DRwIiTzx8JfwPOVgGttDytBqdp5VzCSyMRIxubgU/g2n9y3VLUmF2FK7Icmg/sNVkv4+rktmrLN9w22U2yy3fA==
+echarts-for-react@^3.0.5:
+  version "3.0.5"
+  resolved "https://registry.yarnpkg.com/echarts-for-react/-/echarts-for-react-3.0.5.tgz#87d55e3278dbf7b5a7926a08ac9a663b0351bbc2"
+  integrity sha512-YpEI5Ty7O/2nvCfQ7ybNa+S90DwE8KYZWacGvJW4luUqywP7qStQ+pxDlYOmr4jGDu10mhEkiAuMKcUlT4W5vg==
   dependencies:
     fast-deep-equal "^3.1.3"
     size-sensor "^1.0.1"
