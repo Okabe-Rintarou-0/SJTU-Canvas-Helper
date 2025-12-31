@@ -898,9 +898,6 @@ impl Client {
 
 #[cfg(test)]
 mod test {
-    use injectorpp::interface::injector::*;
-    use serde::{Deserialize, Serialize};
-
     use crate::{
         client::Client,
         error::Result,
