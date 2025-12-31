@@ -319,6 +319,7 @@ impl Client {
 
         loop {
             let items = self.list_items_with_page(url, token, page).await?;
+            println!("get with page {}: {}", page, items.len());
             if items.is_empty() {
                 break;
             }
@@ -897,7 +898,7 @@ impl Client {
 
 #[cfg(test)]
 mod test {
-    use injectorpp::interface::injector::InjectorPP;
+    use injectorpp::interface::injector::*;
     use serde::{Deserialize, Serialize};
 
     use crate::{
@@ -939,26 +940,6 @@ mod test {
             .filter(|enrollment| enrollment.role == EnrollmentRole::TaEnrollment)
             .collect();
         !filtered.is_empty()
-    }
-
-    #[tokio::test]
-    async fn test_list_items() -> Result<()> {
-        #[derive(Serialize, Deserialize)]
-        struct TestItem {
-            id: i32,
-        };
-        let cli = Client::default();
-        let mut injector = InjectorPP::new();
-        injector
-            .when_called_async(injectorpp::async_func!(
-                cli.list_items::<TestItem>("", ""),
-                Result<Vec<TestItem>>
-            ))
-            .will_return_async(injectorpp::async_return!(
-                Ok(vec![TestItem { id: 1 }]),
-                Result<Vec<TestItem>>
-            ));
-        Ok(())
     }
 
     #[tokio::test]
