@@ -4126,10 +4126,10 @@ pdf-lib@^1.17.1:
     pako "^1.0.11"
     tslib "^1.11.1"
 
-pdf-merger-js@^5.1.1:
-  version "5.1.1"
-  resolved "https://registry.yarnpkg.com/pdf-merger-js/-/pdf-merger-js-5.1.1.tgz#c2d7699d4b60551cf596821ce40cbeb97556bb0f"
-  integrity sha512-T0Ks/2eHXwEIs9W4n/LsJhQwU16J1wmviys4LyN581QBaKSF5U221+mDXnfQcNhKgIylyufbW5va3S3i6X8Smg==
+pdf-merger-js@^5.1.2:
+  version "5.1.2"
+  resolved "https://registry.yarnpkg.com/pdf-merger-js/-/pdf-merger-js-5.1.2.tgz#0e80e11bed11d0a3533024aaf99072b580b86959"
+  integrity sha512-RCBjLQILZ8UA4keO/Ip2/gjUuxigMMoK7mO5eJg6zjlnyymboFnRTgzKwOs/FiU9ornS2m72Qr95oARX1C24fw==
   dependencies:
     commander "^11.1.0"
     pdf-lib "^1.17.1"
