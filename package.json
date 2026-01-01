@@ -66,6 +66,6 @@
     "rollup-plugin-copy": "^3.5.0",
     "typescript": "^5.9.3",
     "vite": "^5.0.0",
-    "vite-plugin-static-copy": "^1.0.1"
+    "vite-plugin-static-copy": "^3.1.4"
   }
 }
