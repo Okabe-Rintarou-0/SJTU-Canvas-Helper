@@ -370,7 +370,7 @@ dependencies = [
  "image 0.24.9",
  "log",
  "newtype_derive",
- "thiserror 1.0.61",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -560,7 +560,7 @@ dependencies = [
  "glib",
  "libc",
  "once_cell",
- "thiserror 1.0.61",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -1209,7 +1209,7 @@ dependencies = [
  "image 0.24.9",
  "serde",
  "serde_json",
- "thiserror 1.0.61",
+ "thiserror 1.0.69",
  "xml-rs",
  "zip 0.6.6",
 ]
@@ -1836,7 +1836,7 @@ dependencies = [
  "once_cell",
  "pin-project-lite",
  "smallvec",
- "thiserror 1.0.61",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -1878,7 +1878,7 @@ dependencies = [
  "memchr",
  "once_cell",
  "smallvec",
- "thiserror 1.0.61",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -2644,7 +2644,7 @@ dependencies = [
  "combine",
  "jni-sys",
  "log",
- "thiserror 1.0.61",
+ "thiserror 1.0.69",
  "walkdir",
  "windows-sys 0.45.0",
 ]
@@ -2683,7 +2683,7 @@ dependencies = [
  "jsonptr",
  "serde",
  "serde_json",
- "thiserror 1.0.61",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -3172,7 +3172,7 @@ dependencies = [
  "ndk-sys",
  "num_enum",
  "raw-window-handle",
- "thiserror 1.0.61",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -4490,7 +4490,7 @@ checksum = "ba009ff324d1fc1b900bd1fdb31564febe58a8ccc8a6fdbb93b543d33b13ca43"
 dependencies = [
  "getrandom 0.2.15",
  "libredox",
- "thiserror 1.0.61",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -5308,7 +5308,7 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-shell",
  "tauri-plugin-updater",
- "thiserror 1.0.61",
+ "thiserror 2.0.12",
  "tokio",
  "tokio-util",
  "tracing",
@@ -6071,11 +6071,11 @@ checksum = "8eaa81235c7058867fa8c0e7314f33dcce9c215f535d1913822a2b3f5e289f3c"
 
 [[package]]
 name = "thiserror"
-version = "1.0.61"
+version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c546c80d6be4bc6a00c0f01730c08df82eaa7a7a61f11d656526506112cc1709"
+checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
 dependencies = [
- "thiserror-impl 1.0.61",
+ "thiserror-impl 1.0.69",
 ]
 
 [[package]]
@@ -6089,9 +6089,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.61"
+version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46c3384250002a6d5af4d114f2845d37b57521033f30d5c3f46c4d70e1197533"
+checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6425,7 +6425,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3566e8ce28cc0a3fe42519fc80e6b4c943cc4c8cef275620eb8dac2d3d4e06cf"
 dependencies = [
  "crossbeam-channel",
- "thiserror 1.0.61",
+ "thiserror 1.0.69",
  "time",
  "tracing-subscriber",
 ]
@@ -6533,7 +6533,7 @@ dependencies = [
  "log",
  "rand 0.8.5",
  "sha1",
- "thiserror 1.0.61",
+ "thiserror 1.0.69",
  "url",
  "utf-8",
 ]
