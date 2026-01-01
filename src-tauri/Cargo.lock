@@ -603,7 +603,7 @@ dependencies = [
  "semver 1.0.23",
  "serde",
  "serde_json",
- "thiserror 2.0.12",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -2886,7 +2886,7 @@ dependencies = [
  "nom 7.1.3",
  "nom_locate 4.2.0",
  "rangemap",
- "thiserror 2.0.12",
+ "thiserror 2.0.17",
  "time",
  "weezl",
 ]
@@ -2914,7 +2914,7 @@ dependencies = [
  "rangemap",
  "sha2",
  "stringprep",
- "thiserror 2.0.12",
+ "thiserror 2.0.17",
  "ttf-parser 0.25.1",
  "weezl",
 ]
@@ -3121,7 +3121,7 @@ dependencies = [
  "once_cell",
  "png",
  "serde",
- "thiserror 2.0.12",
+ "thiserror 2.0.17",
  "windows-sys 0.60.2",
 ]
 
@@ -3716,7 +3716,7 @@ dependencies = [
  "objc2-osa-kit",
  "serde",
  "serde_json",
- "thiserror 2.0.12",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -4298,7 +4298,7 @@ dependencies = [
  "rustc-hash 2.1.1",
  "rustls",
  "socket2 0.5.7",
- "thiserror 2.0.12",
+ "thiserror 2.0.17",
  "tokio",
  "tracing",
  "web-time",
@@ -4319,7 +4319,7 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "slab",
- "thiserror 2.0.12",
+ "thiserror 2.0.17",
  "tinyvec",
  "tracing",
  "web-time",
@@ -4524,7 +4524,7 @@ checksum = "a4e608c6638b9c18977b00b475ac1f28d14e84b27d8d42f70e0bf1e3dec127ac"
 dependencies = [
  "getrandom 0.2.15",
  "libredox",
- "thiserror 2.0.12",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -5331,7 +5331,7 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-shell",
  "tauri-plugin-updater",
- "thiserror 2.0.12",
+ "thiserror 2.0.17",
  "tokio",
  "tokio-util",
  "tracing",
@@ -5760,7 +5760,7 @@ dependencies = [
  "tauri-runtime",
  "tauri-runtime-wry",
  "tauri-utils",
- "thiserror 2.0.12",
+ "thiserror 2.0.17",
  "tokio",
  "tray-icon",
  "url",
@@ -5812,7 +5812,7 @@ dependencies = [
  "sha2",
  "syn 2.0.100",
  "tauri-utils",
- "thiserror 2.0.12",
+ "thiserror 2.0.17",
  "time",
  "url",
  "uuid",
@@ -5864,7 +5864,7 @@ dependencies = [
  "tauri",
  "tauri-plugin",
  "tauri-plugin-fs",
- "thiserror 2.0.12",
+ "thiserror 2.0.17",
  "url",
 ]
 
@@ -5885,7 +5885,7 @@ dependencies = [
  "tauri",
  "tauri-plugin",
  "tauri-utils",
- "thiserror 2.0.12",
+ "thiserror 2.0.17",
  "toml 0.9.5",
  "url",
 ]
@@ -5917,7 +5917,7 @@ dependencies = [
  "shared_child",
  "tauri",
  "tauri-plugin",
- "thiserror 2.0.12",
+ "thiserror 2.0.17",
  "tokio",
 ]
 
@@ -5945,7 +5945,7 @@ dependencies = [
  "tauri",
  "tauri-plugin",
  "tempfile",
- "thiserror 2.0.12",
+ "thiserror 2.0.17",
  "time",
  "tokio",
  "url",
@@ -5971,7 +5971,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tauri-utils",
- "thiserror 2.0.12",
+ "thiserror 2.0.17",
  "url",
  "webkit2gtk",
  "webview2-com",
@@ -6035,7 +6035,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "swift-rs",
- "thiserror 2.0.12",
+ "thiserror 2.0.17",
  "toml 0.9.5",
  "url",
  "urlpattern",
@@ -6108,11 +6108,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.12"
+version = "2.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "567b8a2dae586314f7be2a752ec7474332959c6460e02bde30d702a66d488708"
+checksum = "f63587ca0f12b72a0600bcba1d40081f830876000bb46dd2337a3051618f4fc8"
 dependencies = [
- "thiserror-impl 2.0.12",
+ "thiserror-impl 2.0.17",
 ]
 
 [[package]]
@@ -6128,9 +6128,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.12"
+version = "2.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f7cf42b4507d8ea322120659672cf1b9dbb93f8f2d4ecfd6e51350ff5b17a1d"
+checksum = "3ff15c8ecd7de3849db632e14d18d2571fa09dfc5ed93479bc4485c7a517c913"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6522,7 +6522,7 @@ dependencies = [
  "once_cell",
  "png",
  "serde",
- "thiserror 2.0.12",
+ "thiserror 2.0.17",
  "windows-sys 0.59.0",
 ]
 
@@ -7205,7 +7205,7 @@ version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "36695906a1b53a3bf5c4289621efedac12b73eeb0b89e7e1a89b517302d5d75c"
 dependencies = [
- "thiserror 2.0.12",
+ "thiserror 2.0.17",
  "windows",
  "windows-core 0.61.2",
 ]
@@ -7814,7 +7814,7 @@ dependencies = [
  "sha2",
  "soup3",
  "tao-macros",
- "thiserror 2.0.12",
+ "thiserror 2.0.17",
  "url",
  "webkit2gtk",
  "webkit2gtk-sys",
