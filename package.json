@@ -47,7 +47,7 @@
     "react-json-view-ts": "^1.16.7",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.11.0",
-    "react-syntax-highlighter": "^15.5.0",
+    "react-syntax-highlighter": "^16.1.0",
     "react-use-websocket": "3.0.0",
     "remark-gfm": "^4.0.0",
     "ts-md5": "^2.0.1",
