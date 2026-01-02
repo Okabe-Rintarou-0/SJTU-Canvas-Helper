@@ -87,7 +87,7 @@ impl Client {
         );
         let resp = self.cli.put(&url).send().await?;
         let bytes = resp.bytes().await?;
-        let result = utils::parse_json::<JBoxErrorMessage>(&bytes)?;
+        let result = utils::json::parse_json::<JBoxErrorMessage>(&bytes)?;
         if result.status != 0 && result.code != "SameNameDirectoryOrFileExists" {
             return Err(AppError::JBoxError(result.message));
         }

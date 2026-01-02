@@ -29,7 +29,7 @@ use crate::{
     },
     error,
     model::*,
-    utils::{self, TempFile},
+    utils::{self, file::TempFile},
 };
 
 use super::{
@@ -88,7 +88,7 @@ impl App {
         let account_path = format!("{}/{}", config_dir, "account.json");
         fs::metadata(&account_path)?;
         let content = fs::read(&account_path)?;
-        utils::parse_json(&content)
+        utils::json::parse_json(&content)
     }
 
     pub fn account_exists(account: &Account) -> Result<bool> {
@@ -318,7 +318,7 @@ impl App {
 
     fn read_config_from_file(config_path: &str) -> Result<AppConfig> {
         let content = fs::read(config_path)?;
-        let config = utils::parse_json(&content)?;
+        let config = utils::json::parse_json(&content)?;
         Ok(config)
     }
 

@@ -1,5 +1,5 @@
 use super::Client;
-use crate::{error::Result, model::{File, CanvasVideoSubTitle}, utils::format_time};
+use crate::{error::Result, model::{File, CanvasVideoSubTitle}, utils::time::format_time};
 use std::path::Path;
 
 impl Client {

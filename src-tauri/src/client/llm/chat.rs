@@ -59,7 +59,7 @@ impl LLMClient for DeepSeekClient {
             .await?;
 
         let data: bytes::Bytes = response.bytes().await?;
-        let chat_resp = utils::parse_json::<ChatCompletionResponse>(&data)?;
+        let chat_resp = utils::json::parse_json::<ChatCompletionResponse>(&data)?;
         let content = chat_resp
             .choices
             .into_iter()

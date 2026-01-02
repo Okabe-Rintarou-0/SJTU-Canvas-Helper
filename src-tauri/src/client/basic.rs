@@ -14,7 +14,7 @@ use crate::{
         RelationshipNodeType, RelationshipTopo, Submission, SubmissionUploadResult,
         SubmissionUploadSuccessResponse, User, UserSubmissions,
     },
-    utils::{self, get_file_name},
+    utils::{self, file::get_file_name},
 };
 
 // Apis here are for canvas
@@ -699,7 +699,7 @@ impl Client {
             .error_for_status()?;
 
         let bytes = resp.bytes().await?;
-        let file = utils::parse_json(&bytes)?;
+        let file = utils::json::parse_json(&bytes)?;
         Ok(file)
     }
 
@@ -728,7 +728,7 @@ impl Client {
             .post_form_with_token(&url, None::<&str>, &form, token)
             .await?;
         let bytes = resp.bytes().await?;
-        let result = match utils::parse_json::<SubmissionUploadResult>(&bytes)? {
+        let result = match utils::json::parse_json::<SubmissionUploadResult>(&bytes)? {
             SubmissionUploadResult::Success(success_response) => success_response,
             SubmissionUploadResult::Error(error_response) => {
                 return Err(AppError::SubmissionUpload(error_response.message))

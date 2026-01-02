@@ -4,7 +4,7 @@ use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{
     error::{AppError, Result},
-    utils::parse_json,
+    utils::json::parse_json,
 };
 
 #[derive(Debug, Default)]
