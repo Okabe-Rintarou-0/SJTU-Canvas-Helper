@@ -61,7 +61,7 @@
     "@vitejs/plugin-react": "^5.1.2",
     "adm-zip": "^0.5.10",
     "all-contributors-cli": "^6.26.1",
-    "esbuild-plugin-react-virtualized": "^1.0.4",
+    "esbuild-plugin-react-virtualized": "^1.0.5",
     "fs-extra": "^11.3.3",
     "rollup-plugin-copy": "^3.5.0",
     "typescript": "^5.9.3",

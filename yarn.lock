@@ -2361,10 +2361,10 @@ entities@^4.5.0:
   resolved "https://registry.yarnpkg.com/entities/-/entities-4.5.0.tgz#5d268ea5e7113ec74c4d033b79ea5a35a488fb48"
   integrity sha512-V0hjH4dGPh9Ao5p0MoRY6BVqtwCjhz6vI5LT8AJ55H+4g9/4vbHx1I54fS0XuclLhDHArPQCiMjDxjaL8fPxhw==
 
-esbuild-plugin-react-virtualized@^1.0.4:
-  version "1.0.4"
-  resolved "https://registry.yarnpkg.com/esbuild-plugin-react-virtualized/-/esbuild-plugin-react-virtualized-1.0.4.tgz#b8911ce8fae4636daa87cfa898752170f5d45609"
-  integrity sha512-/Y+82TBduHox0/uhJlTgUqi3ZWN+qZPF0xy9crkHQE2AOOdm76l6VY2F0Mdfvue9hqXz2FOlKHlHUVXNalHLzA==
+esbuild-plugin-react-virtualized@^1.0.5:
+  version "1.0.5"
+  resolved "https://registry.yarnpkg.com/esbuild-plugin-react-virtualized/-/esbuild-plugin-react-virtualized-1.0.5.tgz#bece18d8525814ab40b558d7bdd0bf6816e19d18"
+  integrity sha512-jJ/9tyYXCJ9oqvfABPNJ6pz0gkmEJNXKPf8tmuCmvwiBj+Lle71fh2s4PjhNvshoBTJWCSKpiXKsSHk4xx2pcg==
 
 esbuild@^0.20.1:
   version "0.20.2"
