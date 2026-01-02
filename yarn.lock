@@ -2301,10 +2301,10 @@ dir-glob@^3.0.1:
   dependencies:
     path-type "^4.0.0"
 
-docx-preview@^0.3.0:
-  version "0.3.0"
-  resolved "https://registry.yarnpkg.com/docx-preview/-/docx-preview-0.3.0.tgz#89c49b1b2eb6f74e973fe6ac36ad42f48b161e26"
-  integrity sha512-uLrLhytJkXe420Q0C/cyYuZYcKr+2bh7aXjwR/XclEIuGq9ifDRH1/GVqLBn7+ZX29CKC1bZovtjyfhETjdKKg==
+docx-preview@^0.3.7:
+  version "0.3.7"
+  resolved "https://registry.yarnpkg.com/docx-preview/-/docx-preview-0.3.7.tgz#15181817bca67c2137f4e4d46e01d9f570db340a"
+  integrity sha512-Lav69CTA/IYZPJTsKH7oYeoZjyg96N0wEJMNslGJnZJ+dMUZK85Lt5ASC79yUlD48ecWjuv+rkcmFt6EVPV0Xg==
   dependencies:
     jszip ">=3.0.0"
 
