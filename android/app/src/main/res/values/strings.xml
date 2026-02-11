@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SJTU Canvas Helper</string>
+    
+    <!-- Navigation -->
+    <string name="nav_courses">课程</string>
+    <string name="nav_assignments">作业</string>
+    <string name="nav_videos">视频</string>
+    <string name="nav_files">文件</string>
+    <string name="nav_calendar">日历</string>
+    <string name="nav_settings">设置</string>
+    
+    <!-- Login -->
+    <string name="login_title">登录</string>
+    <string name="login_canvas_token">Canvas Token</string>
+    <string name="login_button">登录</string>
+    <string name="login_hint">请输入您的 Canvas Token</string>
+    <string name="login_error">登录失败，请检查您的 Token</string>
+    
+    <!-- Courses -->
+    <string name="courses_title">我的课程</string>
+    <string name="courses_empty">暂无课程</string>
+    
+    <!-- Assignments -->
+    <string name="assignments_title">作业</string>
+    <string name="assignments_due">截止时间</string>
+    <string name="assignments_submit">提交作业</string>
+    <string name="assignments_submitted">已提交</string>
+    <string name="assignments_upload">上传文件</string>
+    
+    <!-- Videos -->
+    <string name="videos_title">视频</string>
+    <string name="videos_play">播放</string>
+    <string name="videos_download">下载</string>
+    
+    <!-- Settings -->
+    <string name="settings_title">设置</string>
+    <string name="settings_token">Canvas Token</string>
+    <string name="settings_theme">主题</string>
+    <string name="settings_theme_system">跟随系统</string>
+    <string name="settings_theme_light">浅色</string>
+    <string name="settings_theme_dark">深色</string>
+    <string name="settings_logout">退出登录</string>
+    
+    <!-- Common -->
+    <string name="ok">确定</string>
+    <string name="cancel">取消</string>
+    <string name="save">保存</string>
+    <string name="delete">删除</string>
+    <string name="refresh">刷新</string>
+    <string name="loading">加载中…</string>
+    <string name="error">错误</string>
+    <string name="retry">重试</string>
+</resources>
