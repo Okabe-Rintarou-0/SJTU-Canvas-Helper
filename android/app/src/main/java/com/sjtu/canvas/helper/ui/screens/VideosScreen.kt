@@ -64,7 +64,7 @@ fun VideosScreen(
                         .aspectRatio(16f / 9f)
                 )
                 
-                Divider(modifier = Modifier.padding(vertical = 8.dp))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             }
             
             // Video list

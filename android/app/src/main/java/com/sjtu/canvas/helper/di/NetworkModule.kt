@@ -5,11 +5,14 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import com.sjtu.canvas.helper.data.api.CanvasApi
+import com.sjtu.canvas.helper.util.UserPreferences
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -34,17 +37,24 @@ object NetworkModule {
     
     @Provides
     @Singleton
-    fun provideOkHttpClient(dataStore: DataStore<Preferences>): OkHttpClient {
+    fun provideOkHttpClient(userPreferences: UserPreferences): OkHttpClient {
         val loggingInterceptor = HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BODY
         }
         
         val authInterceptor = Interceptor { chain ->
             val request = chain.request()
-            // TODO: Read token from DataStore
-            val newRequest = request.newBuilder()
-                .addHeader("Authorization", "Bearer YOUR_TOKEN_HERE")
-                .build()
+            // Read token from DataStore synchronously in the interceptor
+            val token = runBlocking {
+                userPreferences.canvasToken.first()
+            }
+            val newRequest = if (!token.isNullOrBlank()) {
+                request.newBuilder()
+                    .addHeader("Authorization", "Bearer $token")
+                    .build()
+            } else {
+                request
+            }
             chain.proceed(newRequest)
         }
         

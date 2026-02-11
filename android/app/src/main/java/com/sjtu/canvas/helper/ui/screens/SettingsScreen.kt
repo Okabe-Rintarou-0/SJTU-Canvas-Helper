@@ -1,5 +1,6 @@
 package com.sjtu.canvas.helper.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -174,9 +175,4 @@ fun TokenDialog(
             }
         }
     )
-}
-
-@Composable
-fun Modifier.clickable(onClick: () -> Unit): Modifier {
-    return androidx.compose.foundation.clickable(onClick = onClick)
 }
