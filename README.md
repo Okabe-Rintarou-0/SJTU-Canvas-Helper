@@ -4,7 +4,10 @@
 
 **还在为下载学生上传的大量压缩包而苦恼吗？**
 
-SJTU Canvas 小帮手基于 [Tauri](https://tauri.app/) 开发，助您更便捷地使用交大 Canvas。
+SJTU Canvas 小帮手提供桌面版（基于 [Tauri](https://tauri.app/)）和 Android 版本，助您更便捷地使用交大 Canvas。
+
+**📱 Android 版本**: 采用 Material You 设计，支持手机和平板。查看 [Android README](./android/README.md) 了解详情。
+
 参与讨论：[水源社区](https://shuiyuan.sjtu.edu.cn/t/topic/245275)。
 
 <div align="center">
@@ -40,6 +43,10 @@ SJTU Canvas 小帮手基于 [Tauri](https://tauri.app/) 开发，助您更便捷
    ```bash
    yay -S sjtu-canvas-helper
    ```
+
+5. **Android 系统**：
+   - 查看 [Android 版本文档](./android/README.md)
+   - 下载 APK 或从应用商店安装（即将推出）
 
 ### 首次配置
 
