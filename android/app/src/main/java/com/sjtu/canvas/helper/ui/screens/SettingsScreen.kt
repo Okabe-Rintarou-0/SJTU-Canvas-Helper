@@ -46,7 +46,7 @@ fun SettingsScreen() {
                     onClick = { showTokenDialog = true }
                 )
                 
-                Divider(modifier = Modifier.padding(horizontal = 16.dp))
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                 
                 SettingsItem(
                     icon = Icons.Default.Logout,

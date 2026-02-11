@@ -11,8 +11,6 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "user_preferences")
-
 @Singleton
 class UserPreferences @Inject constructor(
     private val dataStore: DataStore<Preferences>
