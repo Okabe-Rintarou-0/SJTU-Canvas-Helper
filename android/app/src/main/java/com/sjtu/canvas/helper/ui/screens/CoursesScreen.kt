@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Book
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.*
@@ -27,6 +28,7 @@ import java.time.OffsetDateTime
 fun CoursesScreen(
     onAssignmentsClick: (Long) -> Unit,
     onVideosClick: (Long) -> Unit,
+    onFilesClick: (Long) -> Unit,
     viewModel: CoursesViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -99,7 +101,8 @@ fun CoursesScreen(
                                     CourseCard(
                                         course = course,
                                         onAssignmentsClick = { onAssignmentsClick(course.id) },
-                                        onVideosClick = { onVideosClick(course.id) }
+                                        onVideosClick = { onVideosClick(course.id) },
+                                        onFilesClick = { onFilesClick(course.id) }
                                     )
                                 }
                             }
@@ -116,7 +119,8 @@ fun CoursesScreen(
 fun CourseCard(
     course: Course,
     onAssignmentsClick: () -> Unit,
-    onVideosClick: () -> Unit
+    onVideosClick: () -> Unit,
+    onFilesClick: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -169,6 +173,11 @@ fun CourseCard(
                     Icon(Icons.Default.PlayArrow, contentDescription = null)
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(stringResource(R.string.nav_videos))
+                }
+                FilledTonalButton(onClick = onFilesClick) {
+                    Icon(Icons.Default.Folder, contentDescription = null)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(stringResource(R.string.nav_files))
                 }
             }
         }

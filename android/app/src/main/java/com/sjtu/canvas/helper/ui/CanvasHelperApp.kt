@@ -139,6 +139,9 @@ fun AppNavHost(
                 },
                 onVideosClick = { courseId ->
                     navController.navigate(Screen.Videos.createRoute(courseId))
+                },
+                onFilesClick = { courseId ->
+                    navController.navigate(Screen.Files.createRoute(courseId))
                 }
             )
         }
@@ -154,6 +157,14 @@ fun AppNavHost(
         composable(Screen.Videos.route) { backStackEntry ->
             val courseId = backStackEntry.arguments?.getString("courseId")?.toLongOrNull() ?: 0L
             VideosScreen(
+                courseId = courseId,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.Files.route) { backStackEntry ->
+            val courseId = backStackEntry.arguments?.getString("courseId")?.toLongOrNull() ?: 0L
+            CourseFilesScreen(
                 courseId = courseId,
                 onNavigateBack = { navController.popBackStack() }
             )

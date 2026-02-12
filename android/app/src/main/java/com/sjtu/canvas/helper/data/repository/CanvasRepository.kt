@@ -2,6 +2,8 @@ package com.sjtu.canvas.helper.data.repository
 
 import com.sjtu.canvas.helper.data.api.CanvasApi
 import com.sjtu.canvas.helper.data.model.Assignment
+import com.sjtu.canvas.helper.data.model.CanvasCourseFile
+import com.sjtu.canvas.helper.data.model.CanvasFolder
 import com.sjtu.canvas.helper.data.model.CourseVideo
 import com.sjtu.canvas.helper.data.model.Course
 import com.sjtu.canvas.helper.data.model.Submission
@@ -67,6 +69,93 @@ class CanvasRepository @Inject constructor(
         try {
             val assignments = api.getAssignments(courseId)
             Result.success(assignments)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getCourseFiles(courseId: Long): Result<List<CanvasCourseFile>> = withContext(Dispatchers.IO) {
+        try {
+            val allFiles = mutableListOf<CanvasCourseFile>()
+            var page = 1
+            while (true) {
+                val response = api.getCourseFilesPage(courseId = courseId, page = page)
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(
+                        IllegalStateException("获取课程文件失败: HTTP ${response.code()}")
+                    )
+                }
+                val pageFiles = response.body().orEmpty()
+                allFiles.addAll(pageFiles)
+                val linkHeader = response.headers()["Link"]
+                if (!hasNextPage(linkHeader) || pageFiles.isEmpty()) {
+                    break
+                }
+                page += 1
+            }
+            Result.success(allFiles.distinctBy { it.id })
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getCourseFolders(courseId: Long): Result<List<CanvasFolder>> = withContext(Dispatchers.IO) {
+        try {
+            Result.success(api.getCourseFolders(courseId))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun downloadCourseFileBytes(file: CanvasCourseFile): Result<ByteArray> = withContext(Dispatchers.IO) {
+        try {
+            val downloadUrl = file.url
+                ?: return@withContext Result.failure(IllegalStateException("文件无可下载链接: ${file.displayName}"))
+            val response = api.downloadFile(downloadUrl)
+            if (!response.isSuccessful) {
+                return@withContext Result.failure(
+                    IllegalStateException("下载失败: HTTP ${response.code()} (${file.displayName})")
+                )
+            }
+            val body = response.body()
+                ?: return@withContext Result.failure(IllegalStateException("下载失败: 响应体为空 (${file.displayName})"))
+            Result.success(body.bytes())
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun downloadCourseFileBytesWithProgress(
+        file: CanvasCourseFile,
+        onProgress: (processed: Long, total: Long) -> Unit
+    ): Result<ByteArray> = withContext(Dispatchers.IO) {
+        try {
+            val downloadUrl = file.url
+                ?: return@withContext Result.failure(IllegalStateException("文件无可下载链接: ${file.displayName}"))
+            val response = api.downloadFile(downloadUrl)
+            if (!response.isSuccessful) {
+                return@withContext Result.failure(
+                    IllegalStateException("下载失败: HTTP ${response.code()} (${file.displayName})")
+                )
+            }
+            val body = response.body()
+                ?: return@withContext Result.failure(IllegalStateException("下载失败: 响应体为空 (${file.displayName})"))
+
+            val total = body.contentLength().takeIf { it > 0 } ?: (file.size ?: -1L)
+            val input = body.byteStream()
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            val output = java.io.ByteArrayOutputStream()
+            var processed = 0L
+            onProgress(0L, total)
+            while (true) {
+                val read = input.read(buffer)
+                if (read == -1) break
+                output.write(buffer, 0, read)
+                processed += read
+                onProgress(processed, total)
+            }
+            input.close()
+            Result.success(output.toByteArray())
         } catch (e: Exception) {
             Result.failure(e)
         }

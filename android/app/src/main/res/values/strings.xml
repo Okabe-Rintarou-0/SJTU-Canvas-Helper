@@ -32,6 +32,9 @@
     <string name="videos_title">视频</string>
     <string name="videos_play">播放</string>
     <string name="videos_download">下载</string>
+
+    <!-- Files -->
+    <string name="files_title">课程文件</string>
     
     <!-- Settings -->
     <string name="settings_title">设置</string>

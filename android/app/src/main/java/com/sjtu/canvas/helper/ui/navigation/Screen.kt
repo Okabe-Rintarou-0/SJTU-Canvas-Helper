@@ -9,5 +9,8 @@ sealed class Screen(val route: String) {
     object Videos : Screen("videos/{courseId}") {
         fun createRoute(courseId: Long) = "videos/$courseId"
     }
+    object Files : Screen("files/{courseId}") {
+        fun createRoute(courseId: Long) = "files/$courseId"
+    }
     object Settings : Screen("settings")
 }

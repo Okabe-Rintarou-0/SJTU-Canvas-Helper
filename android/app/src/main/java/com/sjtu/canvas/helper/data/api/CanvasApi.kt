@@ -1,6 +1,8 @@
 package com.sjtu.canvas.helper.data.api
 
 import com.sjtu.canvas.helper.data.model.Assignment
+import com.sjtu.canvas.helper.data.model.CanvasCourseFile
+import com.sjtu.canvas.helper.data.model.CanvasFolder
 import com.sjtu.canvas.helper.data.model.CanvasMediaObject
 import com.sjtu.canvas.helper.data.model.Course
 import com.sjtu.canvas.helper.data.model.Submission
@@ -9,6 +11,7 @@ import com.sjtu.canvas.helper.data.model.UploadedCanvasFile
 import com.sjtu.canvas.helper.data.model.User
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
+import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.*
 
@@ -22,7 +25,7 @@ interface CanvasApi {
 
     @GET("api/v1/courses")
     suspend fun getCoursesPage(
-        @Query("include[]") include: String = "term",
+        @Query("include[]") include: List<String> = listOf("term", "teachers"),
         @Query("per_page") perPage: Int = 100,
         @Query("page") page: Int
     ): Response<List<Course>>
@@ -70,8 +73,22 @@ interface CanvasApi {
         @Path("courseId") courseId: Long
     ): List<CanvasMediaObject>
     
-    @GET("api/v1/users/self/courses/{courseId}/files")
-    suspend fun getCourseFiles(
-        @Path("courseId") courseId: Long
-    ): List<Any>
+    @GET("api/v1/courses/{courseId}/files")
+    suspend fun getCourseFilesPage(
+        @Path("courseId") courseId: Long,
+        @Query("per_page") perPage: Int = 100,
+        @Query("page") page: Int
+    ): Response<List<CanvasCourseFile>>
+
+    @GET("api/v1/courses/{courseId}/folders")
+    suspend fun getCourseFolders(
+        @Path("courseId") courseId: Long,
+        @Query("per_page") perPage: Int = 100
+    ): List<CanvasFolder>
+
+    @Streaming
+    @GET
+    suspend fun downloadFile(
+        @Url fileUrl: String
+    ): Response<ResponseBody>
 }

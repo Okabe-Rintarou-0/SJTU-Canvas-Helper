@@ -25,7 +25,15 @@ data class Course(
     val workflowState: String?,
 
     @SerializedName("term")
-    val term: CourseTerm?
+    val term: CourseTerm?,
+
+    @SerializedName("teachers")
+    val teachers: List<CourseTeacher>?
+)
+
+data class CourseTeacher(
+    @SerializedName("display_name")
+    val displayName: String?
 )
 
 data class CourseTerm(
@@ -40,6 +48,55 @@ data class CourseTerm(
 
     @SerializedName("end_at")
     val endAt: String?
+)
+
+data class CanvasFolder(
+    @SerializedName("id")
+    val id: Long,
+
+    @SerializedName("name")
+    val name: String?,
+
+    @SerializedName("full_name")
+    val fullName: String?,
+
+    @SerializedName("parent_folder_id")
+    val parentFolderId: Long?
+)
+
+data class CanvasCourseFile(
+    @SerializedName("id")
+    val id: Long,
+
+    @SerializedName("uuid")
+    val uuid: String?,
+
+    @SerializedName("display_name")
+    val displayName: String,
+
+    @SerializedName("filename")
+    val filename: String?,
+
+    @SerializedName("folder_id")
+    val folderId: Long?,
+
+    @SerializedName("url")
+    val url: String?,
+
+    @SerializedName("size")
+    val size: Long?,
+
+    @SerializedName("content-type")
+    val contentType: String?,
+
+    @SerializedName("created_at")
+    val createdAt: String?,
+
+    @SerializedName("updated_at")
+    val updatedAt: String?,
+
+    @SerializedName("modified_at")
+    val modifiedAt: String?
 )
 
 data class Assignment(

@@ -95,6 +95,9 @@ dependencies {
     // DataStore
     implementation("androidx.datastore:datastore-preferences:1.0.0")
 
+    // Storage Access Framework helpers
+    implementation("androidx.documentfile:documentfile:1.0.1")
+
     // ExoPlayer for video playback
     implementation("androidx.media3:media3-exoplayer:1.2.1")
     implementation("androidx.media3:media3-ui:1.2.1")
