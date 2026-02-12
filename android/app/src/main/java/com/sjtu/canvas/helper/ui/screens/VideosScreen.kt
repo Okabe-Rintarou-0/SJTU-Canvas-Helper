@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -18,19 +19,28 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Splitscreen
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -38,6 +48,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -53,6 +64,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -87,10 +101,31 @@ fun VideosScreen(
     val subtitlePath by videosViewModel.subtitlePath.collectAsState()
 
     var dualMode by remember { mutableStateOf(false) }
+    var fullscreen by remember { mutableStateOf(false) }
+
+    var primarySpeed by remember { mutableFloatStateOf(1.0f) }
+    var secondarySpeed by remember { mutableFloatStateOf(1.0f) }
+    var primaryMuted by remember { mutableStateOf(false) }
+    var secondaryMuted by remember { mutableStateOf(false) }
+    var primaryVolume by remember { mutableFloatStateOf(1.0f) }
+    var secondaryVolume by remember { mutableFloatStateOf(0.0f) }
+    var subtitleEnabled by remember { mutableStateOf(true) }
 
     LaunchedEffect(loginState) {
         if (loginState is VideoLoginState.LoggedIn) {
             videosViewModel.loadVideos()
+        }
+    }
+
+    LaunchedEffect(dualMode, videoInfo) {
+        if (dualMode && secondaryPlay == null) {
+            val candidates = videoInfo?.videoPlayResponseVoList.orEmpty()
+            val second = candidates.firstOrNull { it.id != primaryPlay?.id }
+            if (second != null) {
+                videosViewModel.toggleSecondary(second)
+                secondaryVolume = 0.0f
+                secondaryMuted = true
+            }
         }
     }
 
@@ -172,35 +207,38 @@ fun VideosScreen(
                             Switch(checked = dualMode, onCheckedChange = { dualMode = it })
                         }
 
-                        if (dualMode && secondaryPlay != null) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(320.dp)
-                                    .padding(horizontal = 8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                SjtuVideoPlayer(
-                                    playUrl = primaryPlay!!.rtmpUrlHdv,
-                                    subtitlePath = subtitlePath,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                SjtuVideoPlayer(
-                                    playUrl = secondaryPlay!!.rtmpUrlHdv,
-                                    subtitlePath = subtitlePath,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        } else {
-                            SjtuVideoPlayer(
-                                playUrl = primaryPlay!!.rtmpUrlHdv,
-                                subtitlePath = subtitlePath,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(360.dp)
-                                    .padding(horizontal = 8.dp)
-                            )
-                        }
+                        PlayerArea(
+                            primaryUrl = primaryPlay!!.rtmpUrlHdv,
+                            secondaryUrl = if (dualMode) secondaryPlay?.rtmpUrlHdv else null,
+                            subtitlePath = subtitlePath,
+                            subtitleEnabled = subtitleEnabled,
+                            primarySpeed = primarySpeed,
+                            secondarySpeed = secondarySpeed,
+                            primaryMuted = primaryMuted,
+                            secondaryMuted = secondaryMuted,
+                            primaryVolume = primaryVolume,
+                            secondaryVolume = secondaryVolume,
+                            onToggleFullscreen = { fullscreen = true },
+                            onSwap = {
+                                videosViewModel.swapPrimarySecondary()
+                                val tmpMuted = primaryMuted
+                                primaryMuted = secondaryMuted
+                                secondaryMuted = tmpMuted
+                                val tmpVol = primaryVolume
+                                primaryVolume = secondaryVolume
+                                secondaryVolume = tmpVol
+                                val tmpSpeed = primarySpeed
+                                primarySpeed = secondarySpeed
+                                secondarySpeed = tmpSpeed
+                            },
+                            onPrimaryMuteChange = { primaryMuted = it },
+                            onSecondaryMuteChange = { secondaryMuted = it },
+                            onPrimaryVolumeChange = { primaryVolume = it },
+                            onSecondaryVolumeChange = { secondaryVolume = it },
+                            onPrimarySpeedChange = { primarySpeed = it },
+                            onSecondarySpeedChange = { secondarySpeed = it },
+                            onSubtitleEnabledChange = { subtitleEnabled = it },
+                        )
 
                         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     }
@@ -243,6 +281,41 @@ fun VideosScreen(
                 }
             }
         }
+    }
+
+    if (fullscreen && primaryPlay != null) {
+        FullscreenPlayerDialog(
+            primaryUrl = primaryPlay!!.rtmpUrlHdv,
+            secondaryUrl = if (dualMode) secondaryPlay?.rtmpUrlHdv else null,
+            subtitlePath = subtitlePath,
+            subtitleEnabled = subtitleEnabled,
+            primarySpeed = primarySpeed,
+            secondarySpeed = secondarySpeed,
+            primaryMuted = primaryMuted,
+            secondaryMuted = secondaryMuted,
+            primaryVolume = primaryVolume,
+            secondaryVolume = secondaryVolume,
+            onDismiss = { fullscreen = false },
+            onSwap = {
+                videosViewModel.swapPrimarySecondary()
+                val tmpMuted = primaryMuted
+                primaryMuted = secondaryMuted
+                secondaryMuted = tmpMuted
+                val tmpVol = primaryVolume
+                primaryVolume = secondaryVolume
+                secondaryVolume = tmpVol
+                val tmpSpeed = primarySpeed
+                primarySpeed = secondarySpeed
+                secondarySpeed = tmpSpeed
+            },
+            onPrimaryMuteChange = { primaryMuted = it },
+            onSecondaryMuteChange = { secondaryMuted = it },
+            onPrimaryVolumeChange = { primaryVolume = it },
+            onSecondaryVolumeChange = { secondaryVolume = it },
+            onPrimarySpeedChange = { primarySpeed = it },
+            onSecondarySpeedChange = { secondarySpeed = it },
+            onSubtitleEnabledChange = { subtitleEnabled = it },
+        )
     }
 }
 
@@ -442,10 +515,174 @@ private fun PlaySourceRow(
 }
 
 @Composable
-private fun SjtuVideoPlayer(
+private fun PlayerArea(
+    primaryUrl: String,
+    secondaryUrl: String?,
+    subtitlePath: String?,
+    subtitleEnabled: Boolean,
+    primarySpeed: Float,
+    secondarySpeed: Float,
+    primaryMuted: Boolean,
+    secondaryMuted: Boolean,
+    primaryVolume: Float,
+    secondaryVolume: Float,
+    onToggleFullscreen: () -> Unit,
+    onSwap: () -> Unit,
+    onPrimaryMuteChange: (Boolean) -> Unit,
+    onSecondaryMuteChange: (Boolean) -> Unit,
+    onPrimaryVolumeChange: (Float) -> Unit,
+    onSecondaryVolumeChange: (Float) -> Unit,
+    onPrimarySpeedChange: (Float) -> Unit,
+    onSecondarySpeedChange: (Float) -> Unit,
+    onSubtitleEnabledChange: (Boolean) -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp)
+            .height(360.dp)
+    ) {
+        SjtuVideoPlayerSurface(
+            playUrl = primaryUrl,
+            subtitlePath = subtitlePath,
+            subtitleEnabled = subtitleEnabled,
+            speed = primarySpeed,
+            muted = primaryMuted,
+            volume = primaryVolume,
+            modifier = Modifier.fillMaxSize(),
+            roleLabel = "主",
+            onMuteChange = onPrimaryMuteChange,
+            onVolumeChange = onPrimaryVolumeChange,
+            onSpeedChange = onPrimarySpeedChange,
+            onSubtitleEnabledChange = onSubtitleEnabledChange,
+            onSwap = if (secondaryUrl != null) onSwap else null,
+            onFullscreen = onToggleFullscreen,
+        )
+
+        if (secondaryUrl != null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(10.dp)
+                    .width(180.dp)
+                    .aspectRatio(16f / 9f)
+            ) {
+                SjtuVideoPlayerSurface(
+                    playUrl = secondaryUrl,
+                    subtitlePath = subtitlePath,
+                    subtitleEnabled = subtitleEnabled,
+                    speed = secondarySpeed,
+                    muted = secondaryMuted,
+                    volume = secondaryVolume,
+                    modifier = Modifier.fillMaxSize(),
+                    roleLabel = "副",
+                    onMuteChange = onSecondaryMuteChange,
+                    onVolumeChange = onSecondaryVolumeChange,
+                    onSpeedChange = onSecondarySpeedChange,
+                    onSubtitleEnabledChange = onSubtitleEnabledChange,
+                    onSwap = onSwap,
+                    onFullscreen = null,
+                    compact = true,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FullscreenPlayerDialog(
+    primaryUrl: String,
+    secondaryUrl: String?,
+    subtitlePath: String?,
+    subtitleEnabled: Boolean,
+    primarySpeed: Float,
+    secondarySpeed: Float,
+    primaryMuted: Boolean,
+    secondaryMuted: Boolean,
+    primaryVolume: Float,
+    secondaryVolume: Float,
+    onDismiss: () -> Unit,
+    onSwap: () -> Unit,
+    onPrimaryMuteChange: (Boolean) -> Unit,
+    onSecondaryMuteChange: (Boolean) -> Unit,
+    onPrimaryVolumeChange: (Float) -> Unit,
+    onSecondaryVolumeChange: (Float) -> Unit,
+    onPrimarySpeedChange: (Float) -> Unit,
+    onSecondarySpeedChange: (Float) -> Unit,
+    onSubtitleEnabledChange: (Boolean) -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            SjtuVideoPlayerSurface(
+                playUrl = primaryUrl,
+                subtitlePath = subtitlePath,
+                subtitleEnabled = subtitleEnabled,
+                speed = primarySpeed,
+                muted = primaryMuted,
+                volume = primaryVolume,
+                modifier = Modifier.fillMaxSize(),
+                roleLabel = "主",
+                onMuteChange = onPrimaryMuteChange,
+                onVolumeChange = onPrimaryVolumeChange,
+                onSpeedChange = onPrimarySpeedChange,
+                onSubtitleEnabledChange = onSubtitleEnabledChange,
+                onSwap = if (secondaryUrl != null) onSwap else null,
+                onFullscreen = onDismiss,
+                fullscreen = true,
+            )
+
+            if (secondaryUrl != null) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(12.dp)
+                        .width(240.dp)
+                        .aspectRatio(16f / 9f)
+                ) {
+                    SjtuVideoPlayerSurface(
+                        playUrl = secondaryUrl,
+                        subtitlePath = subtitlePath,
+                        subtitleEnabled = subtitleEnabled,
+                        speed = secondarySpeed,
+                        muted = secondaryMuted,
+                        volume = secondaryVolume,
+                        modifier = Modifier.fillMaxSize(),
+                        roleLabel = "副",
+                        onMuteChange = onSecondaryMuteChange,
+                        onVolumeChange = onSecondaryVolumeChange,
+                        onSpeedChange = onSecondarySpeedChange,
+                        onSubtitleEnabledChange = onSubtitleEnabledChange,
+                        onSwap = onSwap,
+                        onFullscreen = null,
+                        compact = true,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SjtuVideoPlayerSurface(
     playUrl: String,
     subtitlePath: String?,
-    modifier: Modifier = Modifier
+    subtitleEnabled: Boolean,
+    speed: Float,
+    muted: Boolean,
+    volume: Float,
+    modifier: Modifier,
+    roleLabel: String,
+    onMuteChange: (Boolean) -> Unit,
+    onVolumeChange: (Float) -> Unit,
+    onSpeedChange: (Float) -> Unit,
+    onSubtitleEnabledChange: (Boolean) -> Unit,
+    onSwap: (() -> Unit)?,
+    onFullscreen: (() -> Unit)?,
+    compact: Boolean = false,
+    fullscreen: Boolean = false,
 ) {
     val context = LocalContext.current
     val effectiveUrl = remember(playUrl) {
@@ -453,8 +690,6 @@ private fun SjtuVideoPlayer(
             .replace("http://courses.sjtu.edu.cn", "https://courses.sjtu.edu.cn")
             .replace("http://live.sjtu.edu.cn", "https://live.sjtu.edu.cn")
     }
-    var speed by remember(playUrl) { mutableFloatStateOf(1.0f) }
-    var subtitleEnabled by remember(playUrl) { mutableStateOf(true) }
 
     val httpFactory = remember {
         DefaultHttpDataSource.Factory().setDefaultRequestProperties(
@@ -464,12 +699,11 @@ private fun SjtuVideoPlayer(
             )
         )
     }
-
     val mediaSourceFactory = remember { DefaultMediaSourceFactory(httpFactory) }
 
-    val mediaItem = remember(effectiveUrl, subtitlePath, subtitleEnabled) {
+    val mediaItem = remember(effectiveUrl, subtitlePath) {
         val builder = MediaItem.Builder().setUri(effectiveUrl)
-        if (subtitleEnabled && !subtitlePath.isNullOrBlank()) {
+        if (!subtitlePath.isNullOrBlank()) {
             builder.setSubtitleConfigurations(
                 listOf(
                     MediaItem.SubtitleConfiguration.Builder(
@@ -498,12 +732,21 @@ private fun SjtuVideoPlayer(
     LaunchedEffect(speed) {
         player.playbackParameters = PlaybackParameters(speed)
     }
+    LaunchedEffect(muted, volume) {
+        player.volume = if (muted) 0f else volume.coerceIn(0f, 1f)
+    }
+    LaunchedEffect(subtitleEnabled) {
+        player.trackSelectionParameters = player.trackSelectionParameters
+            .buildUpon()
+            .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, !subtitleEnabled)
+            .build()
+    }
 
     DisposableEffect(player) {
         onDispose { player.release() }
     }
 
-    Column(modifier = modifier) {
+    Box(modifier = modifier) {
         AndroidView(
             factory = { ctx ->
                 PlayerView(ctx).apply {
@@ -512,41 +755,142 @@ private fun SjtuVideoPlayer(
                 }
             },
             update = { it.player = player },
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
+            modifier = Modifier.fillMaxSize()
         )
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically
+        PlayerOverlayControls(
+            roleLabel = roleLabel,
+            speed = speed,
+            muted = muted,
+            volume = volume,
+            subtitleEnabled = subtitleEnabled,
+            subtitleAvailable = !subtitlePath.isNullOrBlank(),
+            onSpeedChange = onSpeedChange,
+            onMuteChange = onMuteChange,
+            onVolumeChange = onVolumeChange,
+            onSubtitleEnabledChange = onSubtitleEnabledChange,
+            onSwap = onSwap,
+            onFullscreen = onFullscreen,
+            compact = compact,
+            fullscreen = fullscreen,
+        )
+    }
+}
+
+@Composable
+private fun BoxScope.PlayerOverlayControls(
+    roleLabel: String,
+    speed: Float,
+    muted: Boolean,
+    volume: Float,
+    subtitleEnabled: Boolean,
+    subtitleAvailable: Boolean,
+    onSpeedChange: (Float) -> Unit,
+    onMuteChange: (Boolean) -> Unit,
+    onVolumeChange: (Float) -> Unit,
+    onSubtitleEnabledChange: (Boolean) -> Unit,
+    onSwap: (() -> Unit)?,
+    onFullscreen: (() -> Unit)?,
+    compact: Boolean,
+    fullscreen: Boolean,
+) {
+    var settingsOpen by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier
+            .align(Alignment.TopEnd)
+            .padding(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Surface(
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+            shape = MaterialTheme.shapes.small
         ) {
-            Text("倍速", style = MaterialTheme.typography.bodySmall)
-            listOf(0.5f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { value ->
-                FilterChip(
-                    selected = speed == value,
-                    onClick = { speed = value },
-                    label = { Text("${value}x") }
+            Row(
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(roleLabel, style = MaterialTheme.typography.labelSmall)
+            }
+        }
+
+        if (onSwap != null) {
+            IconButton(onClick = onSwap, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Default.SwapHoriz, contentDescription = null)
+            }
+        }
+
+        IconButton(
+            onClick = { onMuteChange(!muted) },
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(
+                imageVector = if (muted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
+                contentDescription = null
+            )
+        }
+
+        Box {
+            IconButton(onClick = { settingsOpen = true }, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Default.Settings, contentDescription = null)
+            }
+            DropdownMenu(expanded = settingsOpen, onDismissRequest = { settingsOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text("倍速") },
+                    onClick = {}
+                )
+                listOf(0.5f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { v ->
+                    DropdownMenuItem(
+                        text = { Text("倍速 ${v}x") },
+                        onClick = {
+                            onSpeedChange(v)
+                            settingsOpen = false
+                        },
+                        trailingIcon = {
+                            if (speed == v) {
+                                Icon(Icons.Default.Check, contentDescription = null)
+                            }
+                        }
+                    )
+                }
+
+                DropdownMenuItem(
+                    text = { Text("音量") },
+                    onClick = {}
+                )
+                DropdownMenuItem(
+                    text = {
+                        Slider(
+                            value = volume.coerceIn(0f, 1f),
+                            onValueChange = { onVolumeChange(it) },
+                            valueRange = 0f..1f
+                        )
+                    },
+                    onClick = {}
+                )
+
+                DropdownMenuItem(
+                    text = { Text("字幕") },
+                    onClick = {},
+                    trailingIcon = {
+                        Switch(
+                            checked = subtitleEnabled,
+                            onCheckedChange = { onSubtitleEnabledChange(it) },
+                            enabled = subtitleAvailable
+                        )
+                    }
                 )
             }
         }
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("字幕", style = MaterialTheme.typography.bodySmall)
-            Switch(
-                checked = subtitleEnabled,
-                onCheckedChange = { subtitleEnabled = it },
-                enabled = !subtitlePath.isNullOrBlank()
-            )
+        if (onFullscreen != null && !compact) {
+            IconButton(onClick = onFullscreen, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    imageVector = if (fullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                    contentDescription = null
+                )
+            }
         }
     }
 }

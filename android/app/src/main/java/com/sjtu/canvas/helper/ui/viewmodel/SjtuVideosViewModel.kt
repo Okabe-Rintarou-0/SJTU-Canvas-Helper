@@ -96,4 +96,13 @@ class SjtuVideosViewModel @Inject constructor(
     fun toggleSecondary(play: SjtuVideoPlayInfo) {
         _secondaryPlay.value = if (_secondaryPlay.value?.id == play.id) null else play
     }
+
+    fun swapPrimarySecondary() {
+        val p = _primaryPlay.value
+        val s = _secondaryPlay.value
+        if (p != null && s != null) {
+            _primaryPlay.value = s
+            _secondaryPlay.value = p
+        }
+    }
 }
