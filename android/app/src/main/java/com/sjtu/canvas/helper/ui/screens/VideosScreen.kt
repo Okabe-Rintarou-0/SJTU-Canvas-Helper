@@ -3,7 +3,9 @@ package com.sjtu.canvas.helper.ui.screens
 import android.app.Activity
 import android.content.res.Configuration
 import android.content.pm.ActivityInfo
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -86,6 +88,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
+import androidx.media3.common.C
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -261,7 +264,7 @@ fun VideosScreen(
                         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     }
 
-                    if (primaryPlay == null && !immersivePlayerMode) {
+                    if (primaryPlay == null) {
                         VideoSelectionList(
                             videos = state.videos,
                             selectedVideo = selectedVideo,
@@ -677,8 +680,8 @@ private fun PlayerArea(
             ) {
                 SjtuVideoPlayerSurface(
                     playUrl = secondaryUrl,
-                    subtitlePath = subtitlePath,
-                    subtitleEnabled = subtitleEnabled,
+                    subtitlePath = null,
+                    subtitleEnabled = false,
                     speed = speed,
                     muted = secondaryMuted,
                     volume = secondaryVolume,
@@ -689,7 +692,7 @@ private fun PlayerArea(
                     onMuteChange = onSecondaryMuteChange,
                     onVolumeChange = onSecondaryVolumeChange,
                     onSpeedChange = onSpeedChange,
-                    onSubtitleEnabledChange = onSubtitleEnabledChange,
+                    onSubtitleEnabledChange = { },
                     onPositionChange = { }, // Secondary does not report position
                     onPlayingChange = onPlayingChange,
                     onSwap = onSwap,
@@ -813,8 +816,8 @@ private fun FullscreenPlayerDialog(
                 ) {
                     SjtuVideoPlayerSurface(
                         playUrl = secondaryUrl,
-                        subtitlePath = subtitlePath,
-                        subtitleEnabled = subtitleEnabled,
+                        subtitlePath = null,
+                        subtitleEnabled = false,
                         speed = speed,
                         muted = secondaryMuted,
                         volume = secondaryVolume,
@@ -825,7 +828,7 @@ private fun FullscreenPlayerDialog(
                         onMuteChange = onSecondaryMuteChange,
                         onVolumeChange = onSecondaryVolumeChange,
                         onSpeedChange = onSpeedChange,
-                        onSubtitleEnabledChange = onSubtitleEnabledChange,
+                        onSubtitleEnabledChange = { },
                         onPositionChange = { }, // Secondary does not report position
                         onPlayingChange = onPlayingChange,
                         onSwap = onSwap,
@@ -866,6 +869,10 @@ private fun SjtuVideoPlayerSurface(
     fullscreen: Boolean = false,
 ) {
     val context = LocalContext.current
+    var holdSpeedBoost by remember { mutableStateOf(false) }
+    var draggingSeek by remember { mutableStateOf(false) }
+    var dragSeekPreviewMs by remember { mutableStateOf<Long?>(null) }
+    var dragSeekDeltaMs by remember { mutableStateOf(0L) }
     val effectiveUrl = remember(playUrl) {
         playUrl
             .replace("http://courses.sjtu.edu.cn", "https://courses.sjtu.edu.cn")
@@ -919,8 +926,9 @@ private fun SjtuVideoPlayerSurface(
             }
     }
 
-    LaunchedEffect(speed) {
-        player.playbackParameters = PlaybackParameters(speed)
+    LaunchedEffect(speed, holdSpeedBoost) {
+        val effectiveSpeed = if (holdSpeedBoost) kotlin.math.max(speed, 2.0f) else speed
+        player.playbackParameters = PlaybackParameters(effectiveSpeed)
     }
     LaunchedEffect(muted, volume) {
         player.volume = if (muted) 0f else volume.coerceIn(0f, 1f)
@@ -977,31 +985,188 @@ private fun SjtuVideoPlayerSurface(
         }
     }
 
-    // 监听播放器状态变化并报告
-    LaunchedEffect(player) {
-        if (roleLabel == "主") {
-            while (true) {
-                kotlinx.coroutines.delay(300)
-                onPlayingChange(player.playWhenReady && player.playbackState == androidx.media3.common.Player.STATE_READY)
+    // 监听播放意图变化，避免缓冲时错误回写暂停
+    DisposableEffect(player, roleLabel) {
+        if (roleLabel != "主") {
+            onDispose { }
+        } else {
+            val listener = object : Player.Listener {
+                override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                    onPlayingChange(playWhenReady)
+                }
             }
+            player.addListener(listener)
+            onPlayingChange(player.playWhenReady)
+            onDispose { player.removeListener(listener) }
         }
     }
 
     DisposableEffect(player) {
-        onDispose { player.release() }
+        onDispose {
+            holdSpeedBoost = false
+            draggingSeek = false
+            dragSeekPreviewMs = null
+            dragSeekDeltaMs = 0L
+            player.release()
+        }
     }
 
     Box(modifier = modifier) {
         AndroidView(
             factory = { ctx ->
+                val longPressTimeout = ViewConfiguration.getLongPressTimeout().toLong()
+                val touchSlop = ViewConfiguration.get(ctx).scaledTouchSlop.toFloat()
                 PlayerView(ctx).apply {
                     useController = true
                     this.player = player
+                    var longPressTriggered = false
+                    var dragStarted = false
+                    var downX = 0f
+                    var downY = 0f
+                    var basePositionMs = 0L
+                    val longPressRunnable = Runnable {
+                        if (dragStarted) return@Runnable
+                        longPressTriggered = true
+                        holdSpeedBoost = true
+                    }
+
+                    setOnTouchListener { _, event ->
+                        when (event.actionMasked) {
+                            MotionEvent.ACTION_DOWN -> {
+                                longPressTriggered = false
+                                dragStarted = false
+                                downX = event.x
+                                downY = event.y
+                                basePositionMs = player.currentPosition
+                                dragSeekPreviewMs = null
+                                dragSeekDeltaMs = 0L
+                                draggingSeek = false
+                                removeCallbacks(longPressRunnable)
+                                postDelayed(longPressRunnable, longPressTimeout)
+                            }
+
+                            MotionEvent.ACTION_MOVE -> {
+                                if (roleLabel != "主") {
+                                    return@setOnTouchListener false
+                                }
+
+                                val dx = event.x - downX
+                                val dy = event.y - downY
+                                if (!dragStarted && kotlin.math.abs(dx) > touchSlop && kotlin.math.abs(dx) > kotlin.math.abs(dy)) {
+                                    dragStarted = true
+                                    draggingSeek = true
+                                    holdSpeedBoost = false
+                                    removeCallbacks(longPressRunnable)
+                                    parent?.requestDisallowInterceptTouchEvent(true)
+                                }
+
+                                if (dragStarted) {
+                                    val duration = player.duration
+                                    val width = width.coerceAtLeast(1)
+                                    val deltaMs = if (duration > 0 && duration != C.TIME_UNSET) {
+                                        (dx / width) * duration.toFloat()
+                                    } else {
+                                        dx * 120f
+                                    }
+                                    val maxMs = if (duration > 0 && duration != C.TIME_UNSET) duration else Long.MAX_VALUE
+                                    val targetMs = (basePositionMs + deltaMs.toLong()).coerceIn(0L, maxMs)
+                                    dragSeekPreviewMs = targetMs
+                                    dragSeekDeltaMs = targetMs - basePositionMs
+                                    player.seekTo(targetMs)
+                                    onPositionChange(targetMs)
+                                    return@setOnTouchListener true
+                                }
+                            }
+
+                            MotionEvent.ACTION_UP,
+                            MotionEvent.ACTION_CANCEL -> {
+                                removeCallbacks(longPressRunnable)
+                                if (dragStarted) {
+                                    val targetMs = dragSeekPreviewMs ?: basePositionMs
+                                    player.seekTo(targetMs)
+                                    player.playWhenReady = true
+                                    onPositionChange(targetMs)
+                                    onPlayingChange(true)
+                                    draggingSeek = false
+                                    dragSeekPreviewMs = null
+                                    dragSeekDeltaMs = 0L
+                                    dragStarted = false
+                                    longPressTriggered = false
+                                    holdSpeedBoost = false
+                                    parent?.requestDisallowInterceptTouchEvent(false)
+                                    return@setOnTouchListener true
+                                }
+
+                                if (longPressTriggered) {
+                                    holdSpeedBoost = false
+                                    longPressTriggered = false
+                                }
+                                draggingSeek = false
+                                dragSeekPreviewMs = null
+                                dragSeekDeltaMs = 0L
+                                parent?.requestDisallowInterceptTouchEvent(false)
+                            }
+                        }
+                        false
+                    }
                 }
             },
-            update = { it.player = player },
+            update = {
+                it.player = player
+                if (!isPlaying && holdSpeedBoost) {
+                    holdSpeedBoost = false
+                }
+                if (!isPlaying && draggingSeek) {
+                    draggingSeek = false
+                    dragSeekPreviewMs = null
+                    dragSeekDeltaMs = 0L
+                }
+            },
             modifier = Modifier.fillMaxSize()
         )
+
+        if (holdSpeedBoost) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 12.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                shape = MaterialTheme.shapes.small
+            ) {
+                Text(
+                    text = "长按加速 2.0x",
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                )
+            }
+        }
+
+        if (draggingSeek && dragSeekPreviewMs != null) {
+            val duration = player.duration.takeIf { it > 0 && it != C.TIME_UNSET }
+            val sign = if (dragSeekDeltaMs >= 0) "+" else "-"
+            val deltaSeconds = kotlin.math.abs(dragSeekDeltaMs) / 1000
+            Surface(
+                modifier = Modifier.align(Alignment.Center),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+                shape = MaterialTheme.shapes.medium
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                    Text(
+                        text = if (duration != null) {
+                            "${formatPlaybackTime(dragSeekPreviewMs!!)} / ${formatPlaybackTime(duration)}"
+                        } else {
+                            formatPlaybackTime(dragSeekPreviewMs!!)
+                        },
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Text(
+                        text = "$sign${deltaSeconds}s",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
 
         PlayerOverlayControls(
             roleLabel = roleLabel,
@@ -1022,6 +1187,19 @@ private fun SjtuVideoPlayerSurface(
             compact = compact,
             fullscreen = fullscreen,
         )
+    }
+}
+
+private fun formatPlaybackTime(ms: Long): String {
+    val safeMs = ms.coerceAtLeast(0L)
+    val totalSeconds = safeMs / 1000
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    return if (hours > 0) {
+        String.format("%d:%02d:%02d", hours, minutes, seconds)
+    } else {
+        String.format("%02d:%02d", minutes, seconds)
     }
 }
 
@@ -1111,6 +1289,18 @@ private fun BoxScope.PlayerOverlayControls(
                 }
 
                 DropdownMenuItem(
+                    text = { Text("字幕") },
+                    onClick = {},
+                    trailingIcon = {
+                        Switch(
+                            checked = subtitleEnabled,
+                            onCheckedChange = { onSubtitleEnabledChange(it) },
+                            enabled = subtitleAvailable
+                        )
+                    }
+                )
+
+                DropdownMenuItem(
                     text = { Text("倍速") },
                     onClick = {}
                 )
@@ -1142,18 +1332,6 @@ private fun BoxScope.PlayerOverlayControls(
                         )
                     },
                     onClick = {}
-                )
-
-                DropdownMenuItem(
-                    text = { Text("字幕") },
-                    onClick = {},
-                    trailingIcon = {
-                        Switch(
-                            checked = subtitleEnabled,
-                            onCheckedChange = { onSubtitleEnabledChange(it) },
-                            enabled = subtitleAvailable
-                        )
-                    }
                 )
             }
         }
