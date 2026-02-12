@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.view.View
 import android.view.WindowManager
-import android.content.res.Configuration
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -69,7 +68,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
@@ -112,11 +110,9 @@ fun VideosScreen(
     val primaryPlay by videosViewModel.primaryPlay.collectAsState()
     val secondaryPlay by videosViewModel.secondaryPlay.collectAsState()
     val subtitlePath by videosViewModel.subtitlePath.collectAsState()
-    val configuration = LocalConfiguration.current
-    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-
     var dualMode by remember { mutableStateOf(false) }
     var fullscreen by remember { mutableStateOf(false) }
+    var selectorDialogOpen by remember { mutableStateOf(false) }
 
     var speed by remember { mutableFloatStateOf(1.0f) }
     var primaryMuted by remember { mutableStateOf(false) }
@@ -176,68 +172,6 @@ fun VideosScreen(
                 .fillMaxSize()
                 .padding(if (fullscreen) PaddingValues(0.dp) else paddingValues)
         ) {
-            if (fullscreen && primaryPlay != null && isLandscape) {
-                Row(modifier = Modifier.fillMaxSize()) {
-                    Box(
-                        modifier = Modifier
-                            .weight(1.6f)
-                            .fillMaxHeight()
-                    ) {
-                        PlayerArea(
-                            primaryUrl = primaryPlay!!.rtmpUrlHdv,
-                            secondaryUrl = if (dualMode) secondaryPlay?.rtmpUrlHdv else null,
-                            subtitlePath = subtitlePath,
-                            subtitleEnabled = subtitleEnabled,
-                            speed = speed,
-                            primaryMuted = primaryMuted,
-                            secondaryMuted = secondaryMuted,
-                            primaryVolume = primaryVolume,
-                            secondaryVolume = secondaryVolume,
-                            position = currentPosition,
-                            isPlaying = isPlaying,
-                            fullscreen = fullscreen,
-                            expanded = true,
-                            onToggleFullscreen = { fullscreen = !fullscreen },
-                            onSwap = {
-                                videosViewModel.swapPrimarySecondary()
-                                val tmpMuted = primaryMuted
-                                primaryMuted = secondaryMuted
-                                secondaryMuted = tmpMuted
-                                val tmpVol = primaryVolume
-                                primaryVolume = secondaryVolume
-                                secondaryVolume = tmpVol
-                            },
-                            onPrimaryMuteChange = { primaryMuted = it },
-                            onSecondaryMuteChange = { secondaryMuted = it },
-                            onPrimaryVolumeChange = { primaryVolume = it },
-                            onSecondaryVolumeChange = { secondaryVolume = it },
-                            onSpeedChange = { speed = it },
-                            onSubtitleEnabledChange = { subtitleEnabled = it },
-                            onPositionChange = { currentPosition = it },
-                            onPlayingChange = { isPlaying = it },
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                    ) {
-                        VideoSelectionList(
-                            videos = (uiState as? SjtuVideosUiState.Success)?.videos.orEmpty(),
-                            selectedVideo = selectedVideo,
-                            videoInfo = videoInfo,
-                            primaryPlay = primaryPlay,
-                            secondaryPlay = secondaryPlay,
-                            onSelectVideo = { videosViewModel.selectVideo(it) },
-                            onSetPrimary = { videosViewModel.setPrimary(it) },
-                            onToggleSecondary = { videosViewModel.toggleSecondary(it) },
-                        )
-                    }
-                }
-                return@Column
-            }
-
             when (loginState) {
                 is VideoLoginState.Idle,
                 is VideoLoginState.ShowQr,
@@ -303,7 +237,9 @@ fun VideosScreen(
                             position = currentPosition,
                             isPlaying = isPlaying,
                             fullscreen = fullscreen,
+                            expanded = fullscreen,
                             onToggleFullscreen = { fullscreen = !fullscreen },
+                            onOpenSelector = { selectorDialogOpen = true },
                             onSwap = {
                                 videosViewModel.swapPrimarySecondary()
                                 val tmpMuted = primaryMuted
@@ -327,13 +263,60 @@ fun VideosScreen(
                         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     }
 
+                    if (primaryPlay == null) {
+                        VideoSelectionList(
+                            videos = state.videos,
+                            selectedVideo = selectedVideo,
+                            videoInfo = videoInfo,
+                            primaryPlay = primaryPlay,
+                            secondaryPlay = secondaryPlay,
+                            onSelectVideo = { videosViewModel.selectVideo(it) },
+                            onSetPrimary = { videosViewModel.setPrimary(it) },
+                            onToggleSecondary = { videosViewModel.toggleSecondary(it) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (selectorDialogOpen) {
+        Dialog(
+            onDismissRequest = { selectorDialogOpen = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.88f)
+                    .padding(16.dp),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surface
+            ) {
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("选择视频与播放源", style = MaterialTheme.typography.titleMedium)
+                        FilledTonalButton(onClick = { selectorDialogOpen = false }) {
+                            Text("关闭")
+                        }
+                    }
+                    HorizontalDivider()
                     VideoSelectionList(
-                        videos = state.videos,
+                        videos = (uiState as? SjtuVideosUiState.Success)?.videos.orEmpty(),
                         selectedVideo = selectedVideo,
                         videoInfo = videoInfo,
                         primaryPlay = primaryPlay,
                         secondaryPlay = secondaryPlay,
-                        onSelectVideo = { videosViewModel.selectVideo(it) },
+                        onSelectVideo = {
+                            videosViewModel.selectVideo(it)
+                            selectorDialogOpen = false
+                        },
                         onSetPrimary = { videosViewModel.setPrimary(it) },
                         onToggleSecondary = { videosViewModel.toggleSecondary(it) },
                     )
@@ -628,6 +611,7 @@ private fun PlayerArea(
     fullscreen: Boolean,
     expanded: Boolean = false,
     onToggleFullscreen: () -> Unit,
+    onOpenSelector: (() -> Unit)? = null,
     onSwap: () -> Unit,
     onPrimaryMuteChange: (Boolean) -> Unit,
     onSecondaryMuteChange: (Boolean) -> Unit,
@@ -666,6 +650,7 @@ private fun PlayerArea(
             onPlayingChange = onPlayingChange,
             onSwap = if (secondaryUrl != null) onSwap else null,
             onFullscreen = onToggleFullscreen,
+            onOpenSelector = onOpenSelector,
             fullscreen = fullscreen,
         )
 
@@ -704,6 +689,7 @@ private fun PlayerArea(
                     onPlayingChange = onPlayingChange,
                     onSwap = onSwap,
                     onFullscreen = null,
+                    onOpenSelector = null,
                     compact = true,
                     fullscreen = fullscreen,
                 )
@@ -864,6 +850,7 @@ private fun SjtuVideoPlayerSurface(
     onPlayingChange: (Boolean) -> Unit,
     onSwap: (() -> Unit)?,
     onFullscreen: (() -> Unit)?,
+    onOpenSelector: (() -> Unit)? = null,
     compact: Boolean = false,
     fullscreen: Boolean = false,
 ) {
@@ -1018,6 +1005,7 @@ private fun SjtuVideoPlayerSurface(
             onSubtitleEnabledChange = onSubtitleEnabledChange,
             onSwap = onSwap,
             onFullscreen = onFullscreen,
+            onOpenSelector = onOpenSelector,
             compact = compact,
             fullscreen = fullscreen,
         )
@@ -1038,6 +1026,7 @@ private fun BoxScope.PlayerOverlayControls(
     onSubtitleEnabledChange: (Boolean) -> Unit,
     onSwap: (() -> Unit)?,
     onFullscreen: (() -> Unit)?,
+    onOpenSelector: (() -> Unit)?,
     compact: Boolean,
     fullscreen: Boolean,
 ) {
@@ -1083,6 +1072,16 @@ private fun BoxScope.PlayerOverlayControls(
                 Icon(Icons.Default.Settings, contentDescription = null)
             }
             DropdownMenu(expanded = settingsOpen, onDismissRequest = { settingsOpen = false }) {
+                if (onOpenSelector != null) {
+                    DropdownMenuItem(
+                        text = { Text("选择视频/播放源") },
+                        onClick = {
+                            onOpenSelector()
+                            settingsOpen = false
+                        }
+                    )
+                }
+
                 DropdownMenuItem(
                     text = { Text("倍速") },
                     onClick = {}
