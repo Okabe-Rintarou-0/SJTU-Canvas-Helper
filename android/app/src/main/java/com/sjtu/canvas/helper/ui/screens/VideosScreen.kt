@@ -1,6 +1,11 @@
 package com.sjtu.canvas.helper.ui.screens
 
+import android.app.Activity
+import android.content.pm.ActivityInfo
+import android.view.View
+import android.view.WindowManager
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,6 +16,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -60,9 +66,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.ui.window.Dialog
@@ -71,6 +79,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackParameters
+import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -103,13 +112,15 @@ fun VideosScreen(
     var dualMode by remember { mutableStateOf(false) }
     var fullscreen by remember { mutableStateOf(false) }
 
-    var primarySpeed by remember { mutableFloatStateOf(1.0f) }
-    var secondarySpeed by remember { mutableFloatStateOf(1.0f) }
+    var speed by remember { mutableFloatStateOf(1.0f) }
     var primaryMuted by remember { mutableStateOf(false) }
     var secondaryMuted by remember { mutableStateOf(false) }
     var primaryVolume by remember { mutableFloatStateOf(1.0f) }
     var secondaryVolume by remember { mutableFloatStateOf(0.0f) }
     var subtitleEnabled by remember { mutableStateOf(true) }
+    // 使用单一的播放位置状态来确保主副屏同步
+    var currentPosition by remember { mutableStateOf(0L) }
+    var isPlaying by remember { mutableStateOf(true) }
 
     LaunchedEffect(loginState) {
         if (loginState is VideoLoginState.LoggedIn) {
@@ -212,12 +223,13 @@ fun VideosScreen(
                             secondaryUrl = if (dualMode) secondaryPlay?.rtmpUrlHdv else null,
                             subtitlePath = subtitlePath,
                             subtitleEnabled = subtitleEnabled,
-                            primarySpeed = primarySpeed,
-                            secondarySpeed = secondarySpeed,
+                            speed = speed,
                             primaryMuted = primaryMuted,
                             secondaryMuted = secondaryMuted,
                             primaryVolume = primaryVolume,
                             secondaryVolume = secondaryVolume,
+                            position = currentPosition,
+                            isPlaying = isPlaying,
                             onToggleFullscreen = { fullscreen = true },
                             onSwap = {
                                 videosViewModel.swapPrimarySecondary()
@@ -227,17 +239,16 @@ fun VideosScreen(
                                 val tmpVol = primaryVolume
                                 primaryVolume = secondaryVolume
                                 secondaryVolume = tmpVol
-                                val tmpSpeed = primarySpeed
-                                primarySpeed = secondarySpeed
-                                secondarySpeed = tmpSpeed
+                                // 交换时不再交换播放位置，因为两者应该同步
                             },
                             onPrimaryMuteChange = { primaryMuted = it },
                             onSecondaryMuteChange = { secondaryMuted = it },
                             onPrimaryVolumeChange = { primaryVolume = it },
                             onSecondaryVolumeChange = { secondaryVolume = it },
-                            onPrimarySpeedChange = { primarySpeed = it },
-                            onSecondarySpeedChange = { secondarySpeed = it },
+                            onSpeedChange = { speed = it },
                             onSubtitleEnabledChange = { subtitleEnabled = it },
+                            onPositionChange = { currentPosition = it },
+                            onPlayingChange = { isPlaying = it },
                         )
 
                         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
@@ -289,12 +300,13 @@ fun VideosScreen(
             secondaryUrl = if (dualMode) secondaryPlay?.rtmpUrlHdv else null,
             subtitlePath = subtitlePath,
             subtitleEnabled = subtitleEnabled,
-            primarySpeed = primarySpeed,
-            secondarySpeed = secondarySpeed,
+            speed = speed,
             primaryMuted = primaryMuted,
             secondaryMuted = secondaryMuted,
             primaryVolume = primaryVolume,
             secondaryVolume = secondaryVolume,
+            position = currentPosition,
+            isPlaying = isPlaying,
             onDismiss = { fullscreen = false },
             onSwap = {
                 videosViewModel.swapPrimarySecondary()
@@ -304,17 +316,15 @@ fun VideosScreen(
                 val tmpVol = primaryVolume
                 primaryVolume = secondaryVolume
                 secondaryVolume = tmpVol
-                val tmpSpeed = primarySpeed
-                primarySpeed = secondarySpeed
-                secondarySpeed = tmpSpeed
             },
             onPrimaryMuteChange = { primaryMuted = it },
             onSecondaryMuteChange = { secondaryMuted = it },
             onPrimaryVolumeChange = { primaryVolume = it },
             onSecondaryVolumeChange = { secondaryVolume = it },
-            onPrimarySpeedChange = { primarySpeed = it },
-            onSecondarySpeedChange = { secondarySpeed = it },
+            onSpeedChange = { speed = it },
             onSubtitleEnabledChange = { subtitleEnabled = it },
+            onPositionChange = { currentPosition = it },
+            onPlayingChange = { isPlaying = it },
         )
     }
 }
@@ -520,22 +530,27 @@ private fun PlayerArea(
     secondaryUrl: String?,
     subtitlePath: String?,
     subtitleEnabled: Boolean,
-    primarySpeed: Float,
-    secondarySpeed: Float,
+    speed: Float,
     primaryMuted: Boolean,
     secondaryMuted: Boolean,
     primaryVolume: Float,
     secondaryVolume: Float,
+    position: Long,
+    isPlaying: Boolean,
     onToggleFullscreen: () -> Unit,
     onSwap: () -> Unit,
     onPrimaryMuteChange: (Boolean) -> Unit,
     onSecondaryMuteChange: (Boolean) -> Unit,
     onPrimaryVolumeChange: (Float) -> Unit,
     onSecondaryVolumeChange: (Float) -> Unit,
-    onPrimarySpeedChange: (Float) -> Unit,
-    onSecondarySpeedChange: (Float) -> Unit,
+    onSpeedChange: (Float) -> Unit,
     onSubtitleEnabledChange: (Boolean) -> Unit,
+    onPositionChange: (Long) -> Unit,
+    onPlayingChange: (Boolean) -> Unit,
 ) {
+    var secondaryOffsetX by remember { mutableFloatStateOf(0f) }
+    var secondaryOffsetY by remember { mutableFloatStateOf(0f) }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -546,15 +561,19 @@ private fun PlayerArea(
             playUrl = primaryUrl,
             subtitlePath = subtitlePath,
             subtitleEnabled = subtitleEnabled,
-            speed = primarySpeed,
+            speed = speed,
             muted = primaryMuted,
             volume = primaryVolume,
+            position = position,
+            isPlaying = isPlaying,
             modifier = Modifier.fillMaxSize(),
             roleLabel = "主",
             onMuteChange = onPrimaryMuteChange,
             onVolumeChange = onPrimaryVolumeChange,
-            onSpeedChange = onPrimarySpeedChange,
+            onSpeedChange = onSpeedChange,
             onSubtitleEnabledChange = onSubtitleEnabledChange,
+            onPositionChange = onPositionChange,
+            onPlayingChange = onPlayingChange,
             onSwap = if (secondaryUrl != null) onSwap else null,
             onFullscreen = onToggleFullscreen,
         )
@@ -563,23 +582,35 @@ private fun PlayerArea(
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
+                    .offset { IntOffset(secondaryOffsetX.toInt(), secondaryOffsetY.toInt()) }
                     .padding(10.dp)
                     .width(180.dp)
                     .aspectRatio(16f / 9f)
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            secondaryOffsetX += dragAmount.x
+                            secondaryOffsetY += dragAmount.y
+                        }
+                    }
             ) {
                 SjtuVideoPlayerSurface(
                     playUrl = secondaryUrl,
                     subtitlePath = subtitlePath,
                     subtitleEnabled = subtitleEnabled,
-                    speed = secondarySpeed,
+                    speed = speed,
                     muted = secondaryMuted,
                     volume = secondaryVolume,
+                    position = position, // Pass position for syncing
+                    isPlaying = isPlaying,
                     modifier = Modifier.fillMaxSize(),
                     roleLabel = "副",
                     onMuteChange = onSecondaryMuteChange,
                     onVolumeChange = onSecondaryVolumeChange,
-                    onSpeedChange = onSecondarySpeedChange,
+                    onSpeedChange = onSpeedChange,
                     onSubtitleEnabledChange = onSubtitleEnabledChange,
+                    onPositionChange = { }, // Secondary does not report position
+                    onPlayingChange = onPlayingChange,
                     onSwap = onSwap,
                     onFullscreen = null,
                     compact = true,
@@ -595,22 +626,62 @@ private fun FullscreenPlayerDialog(
     secondaryUrl: String?,
     subtitlePath: String?,
     subtitleEnabled: Boolean,
-    primarySpeed: Float,
-    secondarySpeed: Float,
+    speed: Float,
     primaryMuted: Boolean,
     secondaryMuted: Boolean,
     primaryVolume: Float,
     secondaryVolume: Float,
+    position: Long,
+    isPlaying: Boolean,
     onDismiss: () -> Unit,
     onSwap: () -> Unit,
     onPrimaryMuteChange: (Boolean) -> Unit,
     onSecondaryMuteChange: (Boolean) -> Unit,
     onPrimaryVolumeChange: (Float) -> Unit,
     onSecondaryVolumeChange: (Float) -> Unit,
-    onPrimarySpeedChange: (Float) -> Unit,
-    onSecondarySpeedChange: (Float) -> Unit,
+    onSpeedChange: (Float) -> Unit,
     onSubtitleEnabledChange: (Boolean) -> Unit,
+    onPositionChange: (Long) -> Unit,
+    onPlayingChange: (Boolean) -> Unit,
 ) {
+    var secondaryOffsetX by remember { mutableFloatStateOf(0f) }
+    var secondaryOffsetY by remember { mutableFloatStateOf(0f) }
+
+    val context = LocalContext.current
+    val activity = context as? Activity
+
+    // 进入全屏时设置横屏和隐藏系统UI
+    DisposableEffect(Unit) {
+        val originalOrientation = activity?.requestedOrientation
+        val window = activity?.window
+        val decorView = window?.decorView
+
+        // 设置横屏
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+
+        // 隐藏系统UI实现真正的全屏
+        decorView?.systemUiVisibility = (
+            View.SYSTEM_UI_FLAG_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        )
+
+        onDispose {
+            // 恢复原来的屏幕方向
+            if (originalOrientation != null) {
+                activity?.requestedOrientation = originalOrientation
+            } else {
+                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            }
+
+            // 恢复系统UI
+            decorView?.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+        }
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -620,15 +691,19 @@ private fun FullscreenPlayerDialog(
                 playUrl = primaryUrl,
                 subtitlePath = subtitlePath,
                 subtitleEnabled = subtitleEnabled,
-                speed = primarySpeed,
+                speed = speed,
                 muted = primaryMuted,
                 volume = primaryVolume,
+                position = position,
+                isPlaying = isPlaying,
                 modifier = Modifier.fillMaxSize(),
                 roleLabel = "主",
                 onMuteChange = onPrimaryMuteChange,
                 onVolumeChange = onPrimaryVolumeChange,
-                onSpeedChange = onPrimarySpeedChange,
+                onSpeedChange = onSpeedChange,
                 onSubtitleEnabledChange = onSubtitleEnabledChange,
+                onPositionChange = onPositionChange,
+                onPlayingChange = onPlayingChange,
                 onSwap = if (secondaryUrl != null) onSwap else null,
                 onFullscreen = onDismiss,
                 fullscreen = true,
@@ -638,23 +713,35 @@ private fun FullscreenPlayerDialog(
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
+                        .offset { IntOffset(secondaryOffsetX.toInt(), secondaryOffsetY.toInt()) }
                         .padding(12.dp)
                         .width(240.dp)
                         .aspectRatio(16f / 9f)
+                        .pointerInput(Unit) {
+                            detectDragGestures { change, dragAmount ->
+                                change.consume()
+                                secondaryOffsetX += dragAmount.x
+                                secondaryOffsetY += dragAmount.y
+                            }
+                        }
                 ) {
                     SjtuVideoPlayerSurface(
                         playUrl = secondaryUrl,
                         subtitlePath = subtitlePath,
                         subtitleEnabled = subtitleEnabled,
-                        speed = secondarySpeed,
+                        speed = speed,
                         muted = secondaryMuted,
                         volume = secondaryVolume,
+                        position = position, // Pass position for syncing
+                        isPlaying = isPlaying,
                         modifier = Modifier.fillMaxSize(),
                         roleLabel = "副",
                         onMuteChange = onSecondaryMuteChange,
                         onVolumeChange = onSecondaryVolumeChange,
-                        onSpeedChange = onSecondarySpeedChange,
+                        onSpeedChange = onSpeedChange,
                         onSubtitleEnabledChange = onSubtitleEnabledChange,
+                        onPositionChange = { }, // Secondary does not report position
+                        onPlayingChange = onPlayingChange,
                         onSwap = onSwap,
                         onFullscreen = null,
                         compact = true,
@@ -673,12 +760,16 @@ private fun SjtuVideoPlayerSurface(
     speed: Float,
     muted: Boolean,
     volume: Float,
+    position: Long,
+    isPlaying: Boolean,
     modifier: Modifier,
     roleLabel: String,
     onMuteChange: (Boolean) -> Unit,
     onVolumeChange: (Float) -> Unit,
     onSpeedChange: (Float) -> Unit,
     onSubtitleEnabledChange: (Boolean) -> Unit,
+    onPositionChange: (Long) -> Unit,
+    onPlayingChange: (Boolean) -> Unit,
     onSwap: (() -> Unit)?,
     onFullscreen: (() -> Unit)?,
     compact: Boolean = false,
@@ -724,6 +815,10 @@ private fun SjtuVideoPlayerSurface(
             .setMediaSourceFactory(mediaSourceFactory)
             .build().apply {
                 setMediaItem(mediaItem)
+                // 如果这是因为切换（url改变）导致重建，且有传入位置，则恢复位置
+                if (position > 0) {
+                    seekTo(position)
+                }
                 prepare()
                 playWhenReady = true
             }
@@ -740,6 +835,60 @@ private fun SjtuVideoPlayerSurface(
             .buildUpon()
             .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, !subtitleEnabled)
             .build()
+    }
+
+    // 同步播放/暂停状态
+    LaunchedEffect(isPlaying) {
+        player.playWhenReady = isPlaying
+    }
+
+    // 主屏使用listener和定期轮询双重机制报告播放位置
+    LaunchedEffect(roleLabel, player) {
+        if (roleLabel == "主") {
+            val listener = object : Player.Listener {
+                override fun onPositionDiscontinuity(
+                    oldPosition: Player.PositionInfo,
+                    newPosition: Player.PositionInfo,
+                    reason: Int
+                ) {
+                    // 用户手动拖动进度条或其他跳转操作，立即同步
+                    onPositionChange(player.currentPosition)
+                }
+            }
+            
+            player.addListener(listener)
+            
+            try {
+                // 定期轮询以确保连续同步
+                while (true) {
+                    kotlinx.coroutines.delay(200) // 从500ms降低到200ms以提高响应速度
+                    onPositionChange(player.currentPosition)
+                }
+            } finally {
+                player.removeListener(listener)
+            }
+        }
+    }
+
+    // 副屏监听position变化并同步
+    LaunchedEffect(position) {
+        if (roleLabel == "副" && position > 0) {
+            val diff = kotlin.math.abs(player.currentPosition - position)
+            // 差异大于500ms就同步，提高同步灵敏度
+            if (diff > 500) {
+                player.seekTo(position)
+            }
+        }
+    }
+
+    // 监听播放器状态变化并报告
+    LaunchedEffect(player) {
+        if (roleLabel == "主") {
+            while (true) {
+                kotlinx.coroutines.delay(300)
+                onPlayingChange(player.playWhenReady && player.playbackState == androidx.media3.common.Player.STATE_READY)
+            }
+        }
     }
 
     DisposableEffect(player) {
