@@ -5,4 +5,15 @@
             <certificates src="system" />
         </trust-anchors>
     </base-config>
+
+    <!-- Some SJTU video endpoints may return http:// URLs; permit cleartext only for these domains. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">courses.sjtu.edu.cn</domain>
+    </domain-config>
+
+    <!-- Local playback/proxy (if used) -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+    </domain-config>
 </network-security-config>

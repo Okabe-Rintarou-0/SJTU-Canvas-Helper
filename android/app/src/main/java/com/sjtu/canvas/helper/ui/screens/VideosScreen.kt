@@ -448,6 +448,11 @@ private fun SjtuVideoPlayer(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val effectiveUrl = remember(playUrl) {
+        playUrl
+            .replace("http://courses.sjtu.edu.cn", "https://courses.sjtu.edu.cn")
+            .replace("http://live.sjtu.edu.cn", "https://live.sjtu.edu.cn")
+    }
     var speed by remember(playUrl) { mutableFloatStateOf(1.0f) }
     var subtitleEnabled by remember(playUrl) { mutableStateOf(true) }
 
@@ -462,8 +467,8 @@ private fun SjtuVideoPlayer(
 
     val mediaSourceFactory = remember { DefaultMediaSourceFactory(httpFactory) }
 
-    val mediaItem = remember(playUrl, subtitlePath, subtitleEnabled) {
-        val builder = MediaItem.Builder().setUri(playUrl)
+    val mediaItem = remember(effectiveUrl, subtitlePath, subtitleEnabled) {
+        val builder = MediaItem.Builder().setUri(effectiveUrl)
         if (subtitleEnabled && !subtitlePath.isNullOrBlank()) {
             builder.setSubtitleConfigurations(
                 listOf(
@@ -480,7 +485,7 @@ private fun SjtuVideoPlayer(
         builder.build()
     }
 
-    val player = remember(playUrl, mediaItem) {
+    val player = remember(effectiveUrl, mediaItem) {
         ExoPlayer.Builder(context)
             .setMediaSourceFactory(mediaSourceFactory)
             .build().apply {
