@@ -163,21 +163,36 @@ fun CourseCard(
                 )
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(onClick = onAssignmentsClick) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilledTonalButton(
+                    onClick = onAssignmentsClick,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                ) {
                     Icon(Icons.Default.Upload, contentDescription = null)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(stringResource(R.string.nav_assignments))
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text(stringResource(R.string.nav_assignments), maxLines = 1)
                 }
-                Button(onClick = onVideosClick) {
+                Button(
+                    onClick = onVideosClick,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                ) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(stringResource(R.string.nav_videos))
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text(stringResource(R.string.nav_videos), maxLines = 1)
                 }
-                FilledTonalButton(onClick = onFilesClick) {
+                FilledTonalButton(
+                    onClick = onFilesClick,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                ) {
                     Icon(Icons.Default.Folder, contentDescription = null)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(stringResource(R.string.nav_files))
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text(stringResource(R.string.nav_files), maxLines = 1)
                 }
             }
         }

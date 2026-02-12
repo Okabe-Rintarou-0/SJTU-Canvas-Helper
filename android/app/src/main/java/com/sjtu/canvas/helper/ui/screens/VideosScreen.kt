@@ -341,7 +341,8 @@ private fun FullscreenSystemUiEffect(enabled: Boolean) {
             if (enabled) {
                 controller.hide(WindowInsetsCompat.Type.systemBars())
             } else {
-                controller.show(WindowInsetsCompat.Type.systemBars())
+                controller.show(WindowInsetsCompat.Type.navigationBars())
+                controller.hide(WindowInsetsCompat.Type.statusBars())
             }
         }
 
@@ -350,7 +351,8 @@ private fun FullscreenSystemUiEffect(enabled: Boolean) {
             if (window != null) {
                 val controller = WindowCompat.getInsetsController(window, window.decorView)
                 WindowCompat.setDecorFitsSystemWindows(window, true)
-                controller.show(WindowInsetsCompat.Type.systemBars())
+                controller.show(WindowInsetsCompat.Type.navigationBars())
+                controller.hide(WindowInsetsCompat.Type.statusBars())
             }
         }
     }
