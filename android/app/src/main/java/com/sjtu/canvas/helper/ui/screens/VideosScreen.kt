@@ -1,6 +1,7 @@
 package com.sjtu.canvas.helper.ui.screens
 
 import android.app.Activity
+import android.content.res.Configuration
 import android.content.pm.ActivityInfo
 import android.view.View
 import android.view.WindowManager
@@ -68,6 +69,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
@@ -76,6 +78,9 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -110,6 +115,7 @@ fun VideosScreen(
     val primaryPlay by videosViewModel.primaryPlay.collectAsState()
     val secondaryPlay by videosViewModel.secondaryPlay.collectAsState()
     val subtitlePath by videosViewModel.subtitlePath.collectAsState()
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     var dualMode by remember { mutableStateOf(false) }
     var fullscreen by remember { mutableStateOf(false) }
     var selectorDialogOpen by remember { mutableStateOf(false) }
@@ -123,6 +129,7 @@ fun VideosScreen(
     // 使用单一的播放位置状态来确保主副屏同步
     var currentPosition by remember { mutableStateOf(0L) }
     var isPlaying by remember { mutableStateOf(true) }
+    val immersivePlayerMode = fullscreen || isLandscape
 
     LaunchedEffect(loginState) {
         if (loginState is VideoLoginState.LoggedIn) {
@@ -142,11 +149,11 @@ fun VideosScreen(
         }
     }
 
-    FullscreenSystemUiEffect(enabled = fullscreen)
+    FullscreenSystemUiEffect(enabled = immersivePlayerMode)
 
     Scaffold(
         topBar = {
-            if (!fullscreen) {
+            if (!immersivePlayerMode) {
                 TopAppBar(
                     title = { Text(stringResource(R.string.videos_title)) },
                     navigationIcon = {
@@ -170,7 +177,7 @@ fun VideosScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(if (fullscreen) PaddingValues(0.dp) else paddingValues)
+                .padding(if (immersivePlayerMode) PaddingValues(0.dp) else paddingValues)
         ) {
             when (loginState) {
                 is VideoLoginState.Idle,
@@ -213,17 +220,6 @@ fun VideosScreen(
                     }
 
                     if (primaryPlay != null) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(text = "同屏播放", style = MaterialTheme.typography.titleSmall)
-                            Switch(checked = dualMode, onCheckedChange = { dualMode = it })
-                        }
-
                         PlayerArea(
                             primaryUrl = primaryPlay!!.rtmpUrlHdv,
                             secondaryUrl = if (dualMode) secondaryPlay?.rtmpUrlHdv else null,
@@ -237,9 +233,11 @@ fun VideosScreen(
                             position = currentPosition,
                             isPlaying = isPlaying,
                             fullscreen = fullscreen,
-                            expanded = fullscreen,
+                            expanded = immersivePlayerMode,
+                            dualMode = dualMode,
                             onToggleFullscreen = { fullscreen = !fullscreen },
                             onOpenSelector = { selectorDialogOpen = true },
+                            onDualModeChange = { dualMode = it },
                             onSwap = {
                                 videosViewModel.swapPrimarySecondary()
                                 val tmpMuted = primaryMuted
@@ -263,7 +261,7 @@ fun VideosScreen(
                         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     }
 
-                    if (primaryPlay == null) {
+                    if (primaryPlay == null && !immersivePlayerMode) {
                         VideoSelectionList(
                             videos = state.videos,
                             selectedVideo = selectedVideo,
@@ -332,22 +330,25 @@ private fun FullscreenSystemUiEffect(enabled: Boolean) {
     val activity = context as? Activity
 
     DisposableEffect(enabled) {
-        val decorView = activity?.window?.decorView
-        if (enabled) {
-            decorView?.systemUiVisibility = (
-                View.SYSTEM_UI_FLAG_FULLSCREEN
-                    or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                    or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                    or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                    or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                    or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-            )
-        } else {
-            decorView?.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+        val window = activity?.window
+        if (window != null) {
+            val controller = WindowCompat.getInsetsController(window, window.decorView)
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            WindowCompat.setDecorFitsSystemWindows(window, !enabled)
+            if (enabled) {
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+            } else {
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
         }
 
         onDispose {
-            decorView?.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+            val window = activity?.window
+            if (window != null) {
+                val controller = WindowCompat.getInsetsController(window, window.decorView)
+                WindowCompat.setDecorFitsSystemWindows(window, true)
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
         }
     }
 }
@@ -610,8 +611,10 @@ private fun PlayerArea(
     isPlaying: Boolean,
     fullscreen: Boolean,
     expanded: Boolean = false,
+    dualMode: Boolean,
     onToggleFullscreen: () -> Unit,
     onOpenSelector: (() -> Unit)? = null,
+    onDualModeChange: ((Boolean) -> Unit)? = null,
     onSwap: () -> Unit,
     onPrimaryMuteChange: (Boolean) -> Unit,
     onSecondaryMuteChange: (Boolean) -> Unit,
@@ -651,6 +654,8 @@ private fun PlayerArea(
             onSwap = if (secondaryUrl != null) onSwap else null,
             onFullscreen = onToggleFullscreen,
             onOpenSelector = onOpenSelector,
+            dualMode = dualMode,
+            onDualModeChange = onDualModeChange,
             fullscreen = fullscreen,
         )
 
@@ -690,6 +695,8 @@ private fun PlayerArea(
                     onSwap = onSwap,
                     onFullscreen = null,
                     onOpenSelector = null,
+                    dualMode = dualMode,
+                    onDualModeChange = null,
                     compact = true,
                     fullscreen = fullscreen,
                 )
@@ -784,6 +791,7 @@ private fun FullscreenPlayerDialog(
                 onPlayingChange = onPlayingChange,
                 onSwap = if (secondaryUrl != null) onSwap else null,
                 onFullscreen = onDismiss,
+                dualMode = secondaryUrl != null,
                 fullscreen = true,
             )
 
@@ -822,6 +830,7 @@ private fun FullscreenPlayerDialog(
                         onPlayingChange = onPlayingChange,
                         onSwap = onSwap,
                         onFullscreen = null,
+                        dualMode = true,
                         compact = true,
                     )
                 }
@@ -851,6 +860,8 @@ private fun SjtuVideoPlayerSurface(
     onSwap: (() -> Unit)?,
     onFullscreen: (() -> Unit)?,
     onOpenSelector: (() -> Unit)? = null,
+    dualMode: Boolean,
+    onDualModeChange: ((Boolean) -> Unit)? = null,
     compact: Boolean = false,
     fullscreen: Boolean = false,
 ) {
@@ -1006,6 +1017,8 @@ private fun SjtuVideoPlayerSurface(
             onSwap = onSwap,
             onFullscreen = onFullscreen,
             onOpenSelector = onOpenSelector,
+            dualMode = dualMode,
+            onDualModeChange = onDualModeChange,
             compact = compact,
             fullscreen = fullscreen,
         )
@@ -1027,6 +1040,8 @@ private fun BoxScope.PlayerOverlayControls(
     onSwap: (() -> Unit)?,
     onFullscreen: (() -> Unit)?,
     onOpenSelector: (() -> Unit)?,
+    dualMode: Boolean,
+    onDualModeChange: ((Boolean) -> Unit)?,
     compact: Boolean,
     fullscreen: Boolean,
 ) {
@@ -1078,6 +1093,19 @@ private fun BoxScope.PlayerOverlayControls(
                         onClick = {
                             onOpenSelector()
                             settingsOpen = false
+                        }
+                    )
+                }
+
+                if (onDualModeChange != null) {
+                    DropdownMenuItem(
+                        text = { Text("同屏播放") },
+                        onClick = {},
+                        trailingIcon = {
+                            Switch(
+                                checked = dualMode,
+                                onCheckedChange = { onDualModeChange(it) }
+                            )
                         }
                     )
                 }
