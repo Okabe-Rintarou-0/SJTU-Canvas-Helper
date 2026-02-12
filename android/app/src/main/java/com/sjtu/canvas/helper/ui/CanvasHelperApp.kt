@@ -134,8 +134,11 @@ fun AppNavHost(
         
         composable(Screen.Courses.route) {
             CoursesScreen(
-                onCourseClick = { courseId ->
+                onAssignmentsClick = { courseId ->
                     navController.navigate(Screen.Assignments.createRoute(courseId))
+                },
+                onVideosClick = { courseId ->
+                    navController.navigate(Screen.Videos.createRoute(courseId))
                 }
             )
         }

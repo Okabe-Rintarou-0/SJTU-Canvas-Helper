@@ -1,6 +1,5 @@
 package com.sjtu.canvas.helper.ui.viewmodel
 
-import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -59,13 +58,28 @@ class AssignmentsViewModel @Inject constructor(
         }
     }
     
-    fun uploadAssignment(assignmentId: Long, fileUri: Uri) {
+    fun uploadAssignment(
+        assignmentId: Long,
+        fileName: String,
+        fileBytes: ByteArray,
+        mimeType: String
+    ) {
         viewModelScope.launch {
             _uploadState.value = UploadState.Uploading
-            // TODO: Implement file upload with MultipartBody
-            // For now, just simulate success
-            kotlinx.coroutines.delay(1000)
-            _uploadState.value = UploadState.Success
+            repository.submitAssignment(
+                courseId = courseId,
+                assignmentId = assignmentId,
+                fileName = fileName,
+                fileBytes = fileBytes,
+                mimeType = mimeType
+            ).onSuccess {
+                _uploadState.value = UploadState.Success
+                loadAssignments()
+            }.onFailure { exception ->
+                _uploadState.value = UploadState.Error(
+                    exception.message ?: "上传失败"
+                )
+            }
         }
     }
     

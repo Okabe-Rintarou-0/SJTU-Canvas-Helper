@@ -22,7 +22,24 @@ data class Course(
     val enrollmentTermId: Long?,
     
     @SerializedName("workflow_state")
-    val workflowState: String?
+    val workflowState: String?,
+
+    @SerializedName("term")
+    val term: CourseTerm?
+)
+
+data class CourseTerm(
+    @SerializedName("id")
+    val id: Long?,
+
+    @SerializedName("name")
+    val name: String?,
+
+    @SerializedName("start_at")
+    val startAt: String?,
+
+    @SerializedName("end_at")
+    val endAt: String?
 )
 
 data class Assignment(
@@ -66,6 +83,100 @@ data class Video(
     
     @SerializedName("created_at")
     val createdAt: String?
+)
+
+data class User(
+    @SerializedName("id")
+    val id: Long,
+
+    @SerializedName("name")
+    val name: String,
+
+    @SerializedName("email")
+    val email: String?
+)
+
+data class SubmissionUploadPrepareResponse(
+    @SerializedName("upload_url")
+    val uploadUrl: String?,
+
+    @SerializedName("upload_params")
+    val uploadParams: Map<String, String>?,
+
+    @SerializedName("message")
+    val message: String?
+)
+
+data class UploadedCanvasFile(
+    @SerializedName("id")
+    val id: Long,
+
+    @SerializedName("display_name")
+    val displayName: String?
+)
+
+data class CanvasMediaObject(
+    @SerializedName("media_id")
+    val mediaId: String?,
+
+    @SerializedName("title")
+    val title: String?,
+
+    @SerializedName("duration")
+    val duration: Long?,
+
+    @SerializedName("created_at")
+    val createdAt: String?,
+
+    @SerializedName("media_sources")
+    val mediaSources: List<CanvasMediaSource>?,
+
+    @SerializedName("media_tracks")
+    val mediaTracks: List<CanvasMediaTrack>?
+)
+
+data class CanvasMediaSource(
+    @SerializedName("src")
+    val src: String?,
+
+    @SerializedName("url")
+    val url: String?,
+
+    @SerializedName("content_type")
+    val contentType: String?
+)
+
+data class CanvasMediaTrack(
+    @SerializedName("kind")
+    val kind: String?,
+
+    @SerializedName("src")
+    val src: String?,
+
+    @SerializedName("url")
+    val url: String?,
+
+    @SerializedName("srclang")
+    val srclang: String?,
+
+    @SerializedName("label")
+    val label: String?
+)
+
+data class CourseVideo(
+    val id: String,
+    val title: String,
+    val url: String,
+    val duration: Long?,
+    val createdAt: String?,
+    val subtitles: List<VideoSubtitle>
+)
+
+data class VideoSubtitle(
+    val label: String,
+    val language: String?,
+    val url: String,
+    val mimeType: String?
 )
 
 data class Submission(

@@ -24,6 +24,8 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:resizeableActivity="true"
+            android:supportsPictureInPicture="true"
             android:theme="@style/Theme.SJTUCanvasHelper"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>

@@ -1,5 +1,6 @@
 package com.sjtu.canvas.helper.ui.screens
 
+import android.provider.OpenableColumns
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -12,26 +13,35 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.sjtu.canvas.helper.R
 import com.sjtu.canvas.helper.data.model.Assignment
+import com.sjtu.canvas.helper.ui.viewmodel.AssignmentsUiState
+import com.sjtu.canvas.helper.ui.viewmodel.AssignmentsViewModel
+import com.sjtu.canvas.helper.ui.viewmodel.UploadState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AssignmentsScreen(
     courseId: Long,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    viewModel: AssignmentsViewModel = hiltViewModel()
 ) {
     var showUploadDialog by remember { mutableStateOf(false) }
     var selectedAssignment by remember { mutableStateOf<Assignment?>(null) }
-    
-    // Sample data
-    val assignments = remember {
-        listOf(
-            Assignment(1, "作业1：数据结构基础", "完成链表实现", "2024-03-15T23:59:00Z", 100.0, courseId, listOf("online_upload"), "published"),
-            Assignment(2, "作业2：树和图", "实现二叉搜索树", "2024-03-22T23:59:00Z", 100.0, courseId, listOf("online_upload"), "published")
-        )
+    val context = LocalContext.current
+    val uiState by viewModel.uiState.collectAsState()
+    val uploadState by viewModel.uploadState.collectAsState()
+
+    LaunchedEffect(uploadState) {
+        if (uploadState is UploadState.Success) {
+            showUploadDialog = false
+            selectedAssignment = null
+            viewModel.resetUploadState()
+        }
     }
     
     Scaffold(
@@ -50,21 +60,53 @@ fun AssignmentsScreen(
             )
         }
     ) { paddingValues ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(assignments) { assignment ->
-                AssignmentCard(
-                    assignment = assignment,
-                    onUploadClick = {
-                        selectedAssignment = assignment
-                        showUploadDialog = true
+        when (val state = uiState) {
+            is AssignmentsUiState.Loading -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
+
+            is AssignmentsUiState.Error -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(state.message)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(onClick = { viewModel.refresh() }) {
+                            Text(stringResource(R.string.retry))
+                        }
                     }
-                )
+                }
+            }
+
+            is AssignmentsUiState.Success -> {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(state.assignments) { assignment ->
+                        AssignmentCard(
+                            assignment = assignment,
+                            onUploadClick = {
+                                selectedAssignment = assignment
+                                showUploadDialog = true
+                            }
+                        )
+                    }
+                }
             }
         }
     }
@@ -75,14 +117,58 @@ fun AssignmentsScreen(
             onDismiss = {
                 showUploadDialog = false
                 selectedAssignment = null
+                viewModel.resetUploadState()
             },
             onUpload = { uri ->
-                // TODO: Implement upload logic
-                showUploadDialog = false
-                selectedAssignment = null
+                val fileBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                if (fileBytes == null) {
+                    viewModel.resetUploadState()
+                    return@UploadDialog
+                }
+                val fileName = context.resolveFileName(uri)
+                val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
+                viewModel.uploadAssignment(
+                    assignmentId = selectedAssignment!!.id,
+                    fileName = fileName,
+                    fileBytes = fileBytes,
+                    mimeType = mimeType
+                )
             }
         )
     }
+
+    if (uploadState is UploadState.Uploading) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator()
+        }
+    }
+
+    if (uploadState is UploadState.Error) {
+        val message = (uploadState as UploadState.Error).message
+        AlertDialog(
+            onDismissRequest = { viewModel.resetUploadState() },
+            title = { Text(stringResource(R.string.error)) },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.resetUploadState() }) {
+                    Text(stringResource(R.string.ok))
+                }
+            }
+        )
+    }
+}
+
+private fun android.content.Context.resolveFileName(uri: Uri): String {
+    contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        if (nameIndex >= 0 && cursor.moveToFirst()) {
+            return cursor.getString(nameIndex)
+        }
+    }
+    return uri.lastPathSegment ?: "upload_file"
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

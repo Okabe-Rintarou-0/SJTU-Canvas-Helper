@@ -12,16 +12,32 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.sjtu.canvas.helper.R
+import com.sjtu.canvas.helper.ui.viewmodel.LoginUiState
+import com.sjtu.canvas.helper.ui.viewmodel.LoginViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(
-    onLoginSuccess: () -> Unit
+    onLoginSuccess: () -> Unit,
+    viewModel: LoginViewModel = hiltViewModel()
 ) {
     var token by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
-    var isLoading by remember { mutableStateOf(false) }
+    val uiState by viewModel.uiState.collectAsState()
+
+    LaunchedEffect(Unit) {
+        viewModel.checkSavedLogin(onLoggedIn = onLoginSuccess)
+    }
+
+    LaunchedEffect(uiState) {
+        if (uiState is LoginUiState.Success) {
+            onLoginSuccess()
+        }
+    }
+
+    val isLoading = uiState is LoginUiState.Loading
     
     Scaffold(
         topBar = {
@@ -88,13 +104,20 @@ fun LoginScreen(
                     )
                     
                     Spacer(modifier = Modifier.height(24.dp))
+
+                    if (uiState is LoginUiState.Error) {
+                        Text(
+                            text = (uiState as LoginUiState.Error).message,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
                     
                     Button(
                         onClick = {
-                            isLoading = true
-                            // TODO: Implement actual login logic
-                            // For now, just navigate to courses
-                            onLoginSuccess()
+                            viewModel.login(token.trim())
                         },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = token.isNotBlank() && !isLoading
