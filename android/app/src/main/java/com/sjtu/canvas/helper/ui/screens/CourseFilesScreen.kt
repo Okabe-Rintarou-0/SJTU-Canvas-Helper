@@ -198,13 +198,15 @@ private fun CourseFileRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            if (progress != null && !progress.finished) {
+            if (progress != null) {
                 LinearProgressIndicator(
-                    progress = { progress.ratio },
+                    progress = { if (progress.finished) 1f else progress.ratio },
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text(
-                    text = if (progress.total > 0) {
+                    text = if (progress.finished) {
+                        "下载完成"
+                    } else if (progress.total > 0) {
                         "下载中：${formatSize(progress.processed)} / ${formatSize(progress.total)}"
                     } else {
                         "下载中：${formatSize(progress.processed)}"

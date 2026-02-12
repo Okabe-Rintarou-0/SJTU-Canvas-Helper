@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -146,12 +147,10 @@ class CourseFilesViewModel @Inject constructor(
                     val saved = writeBytesToFile(targetDir, file, bytes)
                     if (saved) {
                         val finalTotal = _downloadProgress.value[file.id]?.total ?: file.size ?: bytes.size.toLong()
-                        _downloadProgress.value = _downloadProgress.value + (
-                            file.id to DownloadProgress(
-                                processed = bytes.size.toLong(),
-                                total = if (finalTotal > 0) finalTotal else bytes.size.toLong(),
-                                finished = true
-                            )
+                        markProgressFinished(
+                            fileId = file.id,
+                            processed = bytes.size.toLong(),
+                            total = if (finalTotal > 0) finalTotal else bytes.size.toLong()
                         )
                         _events.emit(CourseFilesEvent.Message("已下载: ${file.displayName}"))
                     } else {
@@ -237,12 +236,10 @@ class CourseFilesViewModel @Inject constructor(
                             if (writeBytesToFile(targetDir, file, bytes)) {
                                 successCount += 1
                                 val finalTotal = _downloadProgress.value[file.id]?.total ?: file.size ?: bytes.size.toLong()
-                                _downloadProgress.value = _downloadProgress.value + (
-                                    file.id to DownloadProgress(
-                                        processed = bytes.size.toLong(),
-                                        total = if (finalTotal > 0) finalTotal else bytes.size.toLong(),
-                                        finished = true
-                                    )
+                                markProgressFinished(
+                                    fileId = file.id,
+                                    processed = bytes.size.toLong(),
+                                    total = if (finalTotal > 0) finalTotal else bytes.size.toLong()
                                 )
                             } else {
                                 _downloadProgress.value = _downloadProgress.value - file.id
@@ -355,5 +352,21 @@ class CourseFilesViewModel @Inject constructor(
                 os.write(bytes)
             } ?: error("无法写入文件")
         }.isSuccess
+    }
+
+    private fun markProgressFinished(fileId: Long, processed: Long, total: Long) {
+        val finishedProgress = DownloadProgress(
+            processed = processed,
+            total = total,
+            finished = true
+        )
+        _downloadProgress.value = _downloadProgress.value + (fileId to finishedProgress)
+        viewModelScope.launch {
+            delay(1500)
+            val current = _downloadProgress.value[fileId]
+            if (current == finishedProgress) {
+                _downloadProgress.value = _downloadProgress.value - fileId
+            }
+        }
     }
 }
