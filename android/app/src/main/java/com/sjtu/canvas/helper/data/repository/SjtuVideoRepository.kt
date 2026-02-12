@@ -1,5 +1,6 @@
 package com.sjtu.canvas.helper.data.repository
 
+import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.sjtu.canvas.helper.data.model.SjtuCanvasVideo
@@ -51,6 +52,9 @@ class SjtuVideoRepository @Inject constructor(
 
     @Volatile
     private var videoToken: String? = null
+
+    @Volatile
+    private var canvasCourseId: String? = null
 
     private suspend fun ensureJaAuthCookie(): String {
         val cookie = userPreferences.jaAuthCookie.first()
@@ -141,12 +145,14 @@ class SjtuVideoRepository @Inject constructor(
             loginCanvasAndVideoWebsites().getOrThrow()
 
             val tokenId = getTokenId(courseId)
-            val (canvasCourseId, token) = getCanvasCourseIdTokenByTokenId(tokenId)
+            val (resultCanvasCourseId, token) = getCanvasCourseIdTokenByTokenId(tokenId)
             videoToken = token
+            canvasCourseId = resultCanvasCourseId  // 存储未编码的原始值
 
             val url = "https://v.sjtu.edu.cn/jy-application-canvas-sjtu/directOnDemandPlay/findVodVideoList"
             val json = JsonObject().apply {
-                addProperty("canvasCourseId", java.net.URLEncoder.encode(canvasCourseId, "UTF-8"))
+                // 只在这个特定的请求中进行 URL 编码
+                addProperty("canvasCourseId", java.net.URLEncoder.encode(resultCanvasCourseId, "UTF-8"))
             }
             val reqBody = gson.toJson(json)
                 .toRequestBody("application/json; charset=utf-8".toMediaType())
@@ -162,6 +168,7 @@ class SjtuVideoRepository @Inject constructor(
             }
             val parsed = gson.fromJson(respText, SjtuCanvasVideoResponse::class.java)
             val records = parsed.data?.records ?: emptyList()
+            Log.d("SjtuVideoRepository", "成功加载 ${records.size} 个视频，canvasCourseId=$resultCanvasCourseId")
             Result.success(records)
         } catch (e: Exception) {
             Result.failure(e)
@@ -193,25 +200,51 @@ class SjtuVideoRepository @Inject constructor(
         }
     }
 
-    suspend fun getSubtitleVtt(canvasCourseId: Long): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun getSubtitleVtt(courId: Long): Result<String> = withContext(Dispatchers.IO) {
         try {
-            val token = videoToken ?: return@withContext Result.failure(IllegalStateException("视频 token 不存在，请先加载视频列表"))
-            val form = FormBody.Builder()
-                .add("courseId", canvasCourseId.toString())
-                .build()
+            val token = videoToken
+            val courseId = courId.toString()
+            
+            Log.d("SjtuVideoRepository", "准备获取字幕: token=${token?.take(20)}..., courseId=$courseId")
+            
+            if (token.isNullOrBlank()) {
+                return@withContext Result.failure(IllegalStateException("视频 token 不存在，请先加载视频列表"))
+            }
+            
+            val json = JsonObject().apply {
+                addProperty("courseId", courseId)
+            }
+            val jsonString = gson.toJson(json)
+            Log.d("SjtuVideoRepository", "发送的JSON体: $jsonString")
+            
+            val reqBody = jsonString.toRequestBody("application/json; charset=utf-8".toMediaType())
             val req = Request.Builder()
                 .url("https://v.sjtu.edu.cn/jy-application-canvas-sjtu/transfer/translate/detail")
                 .addHeader("token", token)
-                .post(form)
+                .addHeader("Content-Type", "application/json; charset=utf-8")
+                .post(reqBody)
                 .build()
 
+            Log.d("SjtuVideoRepository", "发送字幕请求，courseId=$courseId，使用 JSON 格式")
+            
             val respText = okHttpClient.newCall(req).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val errorBody = response.body?.string().orEmpty()
+                    Log.e("SjtuVideoRepository", "获取字幕失败: HTTP ${response.code}, body: $errorBody")
+                    return@withContext Result.failure(IllegalStateException("获取字幕失败: HTTP ${response.code}"))
+                }
                 response.body?.string().orEmpty()
             }
+            
+            Log.d("SjtuVideoRepository", "字幕响应: $respText")
+            
             val parsed = gson.fromJson(respText, SjtuSubtitleResponse::class.java)
-            val items = parsed.data?.beforeAssemblyList ?: parsed.data?.afterAssemblyList ?: emptyList()
+            Log.d("SjtuVideoRepository", "解析完成，parsed.data=${parsed.data}")
+            val items = (parsed.data?.afterAssemblyList ?: parsed.data?.beforeAssemblyList) ?: emptyList()
+            Log.d("SjtuVideoRepository", "解析字幕: afterAssemblyList=${parsed.data?.afterAssemblyList?.size ?: 0}, beforeAssemblyList=${parsed.data?.beforeAssemblyList?.size ?: 0}, 总计 ${items.size} 条字幕")
+            
             if (items.isEmpty()) {
-                return@withContext Result.failure(IllegalStateException("字幕为空"))
+                return@withContext Result.failure(IllegalStateException("字幕为空（接口返回空列表）"))
             }
             val vtt = buildWebVtt(
                 items.map { item ->
@@ -222,10 +255,12 @@ class SjtuVideoRepository @Inject constructor(
                     )
                 }
             )
-            val file = File(context.cacheDir, "subtitle_${canvasCourseId}.vtt")
+            val file = File(context.cacheDir, "subtitle_${courseId}.vtt")
             file.writeText(vtt)
+            Log.d("SjtuVideoRepository", "字幕已保存: ${file.absolutePath}")
             Result.success(file.absolutePath)
         } catch (e: Exception) {
+            Log.e("SjtuVideoRepository", "获取字幕调用异常: ${e.message}", e)
             Result.failure(e)
         }
     }

@@ -1,5 +1,6 @@
 package com.sjtu.canvas.helper.ui.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -46,10 +47,6 @@ class SjtuVideosViewModel @Inject constructor(
     private val _subtitlePath = MutableStateFlow<String?>(null)
     val subtitlePath: StateFlow<String?> = _subtitlePath.asStateFlow()
 
-    init {
-        loadVideos()
-    }
-
     fun loadVideos() {
         viewModelScope.launch {
             _uiState.value = SjtuVideosUiState.Loading
@@ -71,16 +68,27 @@ class SjtuVideosViewModel @Inject constructor(
         _subtitlePath.value = null
 
         viewModelScope.launch {
+            Log.d("SjtuVideosViewModel", "开始获取视频信息: ${video.videoId}")
             sjtuVideoRepository.getCanvasVideoInfo(video.videoId)
                 .onSuccess { info ->
+                    Log.d("SjtuVideosViewModel", "成功获取视频信息")
                     _videoInfo.value = info
                     _primaryPlay.value = info.videoPlayResponseVoList.firstOrNull()
+                    
+                    // 获取字幕
+                    Log.d("SjtuVideosViewModel", "开始获取字幕...")
                     sjtuVideoRepository.getSubtitleVtt(info.courId)
                         .onSuccess { path ->
+                            Log.d("SjtuVideosViewModel", "成功获取字幕: $path")
                             _subtitlePath.value = path
+                        }
+                        .onFailure { e ->
+                            _subtitlePath.value = null
+                            Log.e("SjtuVideosViewModel", "字幕下载失败: ${e.message}", e)
                         }
                 }
                 .onFailure { e ->
+                    Log.e("SjtuVideosViewModel", "获取视频信息失败: ${e.message}", e)
                     _uiState.value = SjtuVideosUiState.Error(e.message ?: "获取播放源失败")
                 }
         }

@@ -30,11 +30,37 @@ class CanvasRepository @Inject constructor(
 
     suspend fun getCourses(): Result<List<Course>> = withContext(Dispatchers.IO) {
         try {
-            val courses = api.getCourses()
-            Result.success(courses)
+            val allCourses = mutableListOf<Course>()
+            var page = 1
+            while (true) {
+                val response = api.getCoursesPage(page = page)
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(
+                        IllegalStateException("获取课程失败: HTTP ${response.code()}")
+                    )
+                }
+                val pageCourses = response.body().orEmpty()
+                allCourses.addAll(pageCourses)
+                val linkHeader = response.headers()["Link"]
+                if (!hasNextPage(linkHeader) || pageCourses.isEmpty()) {
+                    break
+                }
+                page += 1
+            }
+            Result.success(allCourses.distinctBy { it.id })
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    private fun hasNextPage(linkHeader: String?): Boolean {
+        if (linkHeader.isNullOrBlank()) return false
+        return linkHeader
+            .split(",")
+            .any { segment ->
+                val trimmed = segment.trim()
+                trimmed.contains("rel=\"next\"") || trimmed.contains("rel=next")
+            }
     }
     
     suspend fun getAssignments(courseId: Long): Result<List<Assignment>> = withContext(Dispatchers.IO) {

@@ -80,6 +80,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -555,7 +556,7 @@ private fun PlayerArea(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp)
-            .height(360.dp)
+            .aspectRatio(16f / 9f)
     ) {
         SjtuVideoPlayerSurface(
             playUrl = primaryUrl,
@@ -657,7 +658,7 @@ private fun FullscreenPlayerDialog(
         val decorView = window?.decorView
 
         // 设置横屏
-        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
 
         // 隐藏系统UI实现真正的全屏
         decorView?.systemUiVisibility = (
@@ -790,7 +791,10 @@ private fun SjtuVideoPlayerSurface(
             )
         )
     }
-    val mediaSourceFactory = remember { DefaultMediaSourceFactory(httpFactory) }
+    val dataSourceFactory = remember(context, httpFactory) {
+        DefaultDataSource.Factory(context, httpFactory)
+    }
+    val mediaSourceFactory = remember(dataSourceFactory) { DefaultMediaSourceFactory(dataSourceFactory) }
 
     val mediaItem = remember(effectiveUrl, subtitlePath) {
         val builder = MediaItem.Builder().setUri(effectiveUrl)
@@ -802,6 +806,8 @@ private fun SjtuVideoPlayerSurface(
                     )
                         .setMimeType(MimeTypes.TEXT_VTT)
                         .setLanguage("zh")
+                        .setSelectionFlags(androidx.media3.common.C.SELECTION_FLAG_DEFAULT)
+                        .setRoleFlags(androidx.media3.common.C.ROLE_FLAG_SUBTITLE)
                         .setLabel("字幕")
                         .build()
                 )
@@ -834,6 +840,7 @@ private fun SjtuVideoPlayerSurface(
         player.trackSelectionParameters = player.trackSelectionParameters
             .buildUpon()
             .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, !subtitleEnabled)
+            .setPreferredTextLanguage(if (subtitleEnabled) "zh" else null)
             .build()
     }
 

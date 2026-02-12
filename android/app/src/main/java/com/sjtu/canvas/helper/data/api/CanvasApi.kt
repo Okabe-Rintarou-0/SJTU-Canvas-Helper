@@ -9,6 +9,7 @@ import com.sjtu.canvas.helper.data.model.UploadedCanvasFile
 import com.sjtu.canvas.helper.data.model.User
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
+import retrofit2.Response
 import retrofit2.http.*
 
 interface CanvasApi {
@@ -18,6 +19,13 @@ interface CanvasApi {
     
     @GET("api/v1/courses?include[]=term")
     suspend fun getCourses(): List<Course>
+
+    @GET("api/v1/courses")
+    suspend fun getCoursesPage(
+        @Query("include[]") include: String = "term",
+        @Query("per_page") perPage: Int = 100,
+        @Query("page") page: Int
+    ): Response<List<Course>>
     
     @GET("api/v1/courses/{courseId}/assignments")
     suspend fun getAssignments(
