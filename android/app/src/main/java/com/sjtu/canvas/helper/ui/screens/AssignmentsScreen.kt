@@ -187,7 +187,7 @@ fun AssignmentCard(
                 .padding(16.dp)
         ) {
             Text(
-                text = assignment.name,
+                text = assignment.name?.takeIf { it.isNotBlank() } ?: "未命名作业",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -263,7 +263,7 @@ fun UploadDialog(
         title = { Text(stringResource(R.string.assignments_upload)) },
         text = {
             Column {
-                Text("作业: ${assignment.name}")
+                Text("作业: ${assignment.name?.takeIf { it.isNotBlank() } ?: "未命名作业"}")
                 Spacer(modifier = Modifier.height(16.dp))
                 
                 Button(

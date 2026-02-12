@@ -18,6 +18,7 @@ class UserPreferences @Inject constructor(
     companion object {
         private val CANVAS_TOKEN = stringPreferencesKey("canvas_token")
         private val THEME_MODE = stringPreferencesKey("theme_mode")
+        private val JA_AUTH_COOKIE = stringPreferencesKey("ja_auth_cookie")
     }
     
     val canvasToken: Flow<String?> = dataStore.data.map { preferences ->
@@ -26,6 +27,10 @@ class UserPreferences @Inject constructor(
     
     val themeMode: Flow<String> = dataStore.data.map { preferences ->
         preferences[THEME_MODE] ?: "system"
+    }
+
+    val jaAuthCookie: Flow<String?> = dataStore.data.map { preferences ->
+        preferences[JA_AUTH_COOKIE]
     }
     
     suspend fun saveCanvasToken(token: String) {
@@ -43,6 +48,18 @@ class UserPreferences @Inject constructor(
     suspend fun clearToken() {
         dataStore.edit { preferences ->
             preferences.remove(CANVAS_TOKEN)
+        }
+    }
+
+    suspend fun saveJaAuthCookie(cookie: String) {
+        dataStore.edit { preferences ->
+            preferences[JA_AUTH_COOKIE] = cookie
+        }
+    }
+
+    suspend fun clearJaAuthCookie() {
+        dataStore.edit { preferences ->
+            preferences.remove(JA_AUTH_COOKIE)
         }
     }
 }

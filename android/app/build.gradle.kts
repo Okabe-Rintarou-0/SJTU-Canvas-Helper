@@ -98,9 +98,16 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.2.1")
     implementation("androidx.media3:media3-ui:1.2.1")
     implementation("androidx.media3:media3-common:1.2.1")
+    implementation("androidx.media3:media3-datasource:1.2.1")
 
     // Coil for image loading
     implementation("io.coil-kt:coil-compose:2.5.0")
+
+    // HTML parsing (for SJTU video LTI form parsing)
+    implementation("org.jsoup:jsoup:1.17.2")
+
+    // QR code generation
+    implementation("com.google.zxing:core:3.5.3")
 
     // Testing
     testImplementation("junit:junit:4.13.2")

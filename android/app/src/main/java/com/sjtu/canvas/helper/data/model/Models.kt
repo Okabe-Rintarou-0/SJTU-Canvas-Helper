@@ -7,7 +7,7 @@ data class Course(
     val id: Long,
     
     @SerializedName("name")
-    val name: String,
+    val name: String?,
     
     @SerializedName("course_code")
     val courseCode: String?,
@@ -47,7 +47,7 @@ data class Assignment(
     val id: Long,
     
     @SerializedName("name")
-    val name: String,
+    val name: String?,
     
     @SerializedName("description")
     val description: String?,

@@ -149,7 +149,7 @@ fun CourseCard(
             
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = course.name,
+                    text = course.name?.takeIf { it.isNotBlank() } ?: "未命名课程",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
