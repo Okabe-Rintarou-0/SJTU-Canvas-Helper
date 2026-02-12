@@ -153,13 +153,6 @@ fun CourseCard(
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                course.courseCode?.let { code ->
-                    Text(
-                        text = code,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
