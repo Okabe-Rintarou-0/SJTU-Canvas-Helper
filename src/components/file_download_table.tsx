@@ -1,17 +1,50 @@
-import { Button, Progress, Space, Table, message } from "antd";
-import {
-  File,
-  DownloadState,
-  FileDownloadTask,
-  ProgressPayload,
-  LOG_LEVEL_ERROR,
-} from "../lib/model";
-import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import React, { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
+import FolderOpenRoundedIcon from "@mui/icons-material/FolderOpenRounded";
+import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
+import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
+import {
+  Box,
+  Button,
+  Checkbox,
+  Chip,
+  LinearProgress,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  Typography,
+} from "@mui/material";
+import { alpha, useTheme } from "@mui/material/styles";
+import { useEffect, useMemo, useState } from "react";
+
+import {
+  DownloadState,
+  File,
+  FileDownloadTask,
+  LOG_LEVEL_ERROR,
+  ProgressPayload,
+} from "../lib/model";
+import { useAppMessage } from "../lib/message";
 import { consoleLog, sleep } from "../lib/utils";
-import useMessage from "antd/es/message/useMessage";
+
 const appWindow = getCurrentWebviewWindow();
+
+function taskStateMeta(state: DownloadState) {
+  switch (state) {
+    case "fail":
+      return { label: "失败", color: "error" as const };
+    case "succeed":
+      return { label: "完成", color: "success" as const };
+    case "wait_retry":
+      return { label: "待重试", color: "warning" as const };
+    default:
+      return { label: "下载中", color: "info" as const };
+  }
+}
 
 export default function FileDownloadTable({
   tasks,
@@ -24,12 +57,22 @@ export default function FileDownloadTable({
   handleDownloadFile: (file: File) => Promise<void>;
   handleOpenTaskFile: (task: FileDownloadTask) => Promise<void>;
 }) {
+  const theme = useTheme();
+  const [messageApi, contextHolder] = useAppMessage();
   const [currentTasks, setCurrentTasks] = useState<FileDownloadTask[]>([]);
-  const taskSet = new Set<string>(currentTasks.map((task) => task.key));
-  const [messageApi, contextHolder] = useMessage();
+  const [selectedTaskKeys, setSelectedTaskKeys] = useState<string[]>([]);
+
+  const taskSet = useMemo(
+    () => new Set<string>(currentTasks.map((task) => task.key)),
+    [currentTasks]
+  );
+
+  const selectedTasks = currentTasks.filter((task) =>
+    selectedTaskKeys.includes(task.key)
+  );
 
   useEffect(() => {
-    let unlisten = appWindow.listen<ProgressPayload>(
+    const unlisten = appWindow.listen<ProgressPayload>(
       "download://progress",
       ({ payload }) => {
         updateTaskProgress(
@@ -39,18 +82,18 @@ export default function FileDownloadTable({
       }
     );
     return () => {
-      unlisten.then((f) => f());
+      unlisten.then((fn) => fn());
     };
   }, []);
 
   useEffect(() => {
     setCurrentTasks(tasks);
-    for (let task of tasks) {
+    for (const task of tasks) {
       if (!taskSet.has(task.key)) {
         taskSet.add(task.key);
-        downloadFile(task.file);
+        void downloadFile(task.file);
       } else if (task.state === "wait_retry") {
-        handleRetryTask(task);
+        void handleRetryTask(task);
       }
     }
   }, [tasks]);
@@ -65,11 +108,10 @@ export default function FileDownloadTable({
       try {
         await handleDownloadFile(file);
         updateTaskProgress(file.uuid, 100);
-        // messageApi.success("下载成功！", 0.5);
         break;
-      } catch (e) {
-        updateTaskProgress(file.uuid, undefined, e as string);
-        consoleLog(LOG_LEVEL_ERROR, e);
+      } catch (error) {
+        updateTaskProgress(file.uuid, undefined, error as string);
+        consoleLog(LOG_LEVEL_ERROR, error);
         retries += 1;
       }
       await sleep(1000 * backoffCoef);
@@ -77,33 +119,25 @@ export default function FileDownloadTable({
     }
   };
 
-  const handleRetryTask = (task: FileDownloadTask) => {
+  const handleRetryTask = async (task: FileDownloadTask) => {
     if (task.progress < 100 && task.state !== "fail") {
-      message.warning("任务正在下载中，请勿重试☹️");
+      messageApi.warning("任务正在下载中，请勿重试。");
       return;
     }
-    handleDownloadFile(task.file);
+    await downloadFile(task.file);
   };
 
   const handleRemoveTasks = () => {
-    for (let task of selectedTasks) {
-      taskSet.delete(task.key);
-      handleRemoveTask?.(task);
+    for (const task of selectedTasks) {
+      handleRemoveTask(task);
     }
-    setSelectedTasks([]);
+    setSelectedTaskKeys([]);
   };
 
   const handleRetryTasks = () => {
-    const tasks = selectedTasks.filter((task) => task.state === "fail");
-    for (let task of tasks) {
-      handleRetryTask(task);
-    }
-  };
-
-  const [selectedTasks, setSelectedTasks] = useState<FileDownloadTask[]>([]);
-
-  const handleSelect = (_: React.Key[], selectedTasks: FileDownloadTask[]) => {
-    setSelectedTasks(selectedTasks);
+    selectedTasks
+      .filter((task) => task.state === "fail")
+      .forEach((task) => void handleRetryTask(task));
   };
 
   const updateTaskProgress = (
@@ -111,120 +145,204 @@ export default function FileDownloadTable({
     progress?: number,
     error?: string
   ) => {
-    setCurrentTasks((tasks) => {
-      let task = tasks.find((task) => task.file.uuid === uuid);
-      let state: DownloadState = error
+    setCurrentTasks((prevTasks) => {
+      const nextTasks = [...prevTasks];
+      const task = nextTasks.find((item) => item.file.uuid === uuid);
+      const state: DownloadState = error
         ? "fail"
         : progress === 100
-        ? "succeed"
-        : "downloading";
+          ? "succeed"
+          : "downloading";
+
       if (task) {
-        if (progress) {
+        if (progress !== undefined) {
           task.progress = progress;
         }
         task.state = state;
       }
-      return [...tasks];
+      return nextTasks;
     });
   };
-
-  const columns = [
-    {
-      title: "文件名",
-      dataIndex: "file",
-      key: "file",
-      render: (_: any, task: FileDownloadTask) => task.file.display_name,
-    },
-    {
-      title: "进度条",
-      dataIndex: "progress",
-      render: (_: any, task: FileDownloadTask) => (
-        <Progress
-          percent={task.progress}
-          status={
-            task.state === "fail"
-              ? "exception"
-              : task.state === "downloading"
-              ? "active"
-              : "success"
-          }
-        />
-      ),
-    },
-    {
-      title: "操作",
-      dataIndex: "operation",
-      key: "operation",
-      render: (_: any, task: FileDownloadTask) => (
-        <Space size="middle">
-          <a
-            onClick={(e) => {
-              e.preventDefault();
-              handleOpenTaskFile?.(task);
-            }}
-          >
-            打开
-          </a>
-          <a
-            onClick={(e) => {
-              e.preventDefault();
-              handleRemoveTask?.(task);
-            }}
-          >
-            删除
-          </a>
-          <a
-            onClick={(e) => {
-              e.preventDefault();
-              handleRetryTask(task);
-            }}
-          >
-            重试
-          </a>
-        </Space>
-      ),
-    },
-  ];
 
   const handleOpenSaveDir = async () => {
     try {
       await invoke("open_save_dir");
-    } catch (e) {
-      messageApi.error(`打开目录失败🥹：${e}`);
+    } catch (error) {
+      messageApi.error(`打开目录失败：${error}`);
     }
   };
 
+  const allSelected =
+    currentTasks.length > 0 && selectedTaskKeys.length === currentTasks.length;
+
   return (
-    <Space direction="vertical" style={{ width: "100%" }}>
+    <Stack spacing={2} sx={{ width: "100%" }}>
       {contextHolder}
-      <Table
-        style={{ width: "100%" }}
-        columns={columns}
-        dataSource={currentTasks}
-        pagination={false}
-        rowSelection={{
-          onChange: handleSelect,
-          selectedRowKeys: selectedTasks.map((task) => task.key),
+
+      <Box
+        sx={{
+          borderRadius: "22px",
+          border: "1px solid",
+          borderColor: "divider",
+          overflow: "hidden",
         }}
-      />
-      <Space style={{ width: "100%", marginBottom: 30 }}>
-        <Button onClick={handleOpenSaveDir}>打开保存目录</Button>
+      >
+        <Table sx={{ minWidth: 720 }}>
+          <TableHead>
+            <TableRow
+              sx={{
+                bgcolor: alpha(theme.palette.primary.main, 0.05),
+              }}
+            >
+              <TableCell padding="checkbox">
+                <Checkbox
+                  checked={allSelected}
+                  indeterminate={
+                    selectedTaskKeys.length > 0 &&
+                    selectedTaskKeys.length < currentTasks.length
+                  }
+                  onChange={(event) =>
+                    setSelectedTaskKeys(
+                      event.target.checked
+                        ? currentTasks.map((task) => task.key)
+                        : []
+                    )
+                  }
+                />
+              </TableCell>
+              <TableCell>文件名</TableCell>
+              <TableCell width="34%">进度</TableCell>
+              <TableCell width="14%">状态</TableCell>
+              <TableCell align="right">操作</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {currentTasks.map((task) => {
+              const stateMeta = taskStateMeta(task.state);
+              const checked = selectedTaskKeys.includes(task.key);
+
+              return (
+                <TableRow key={task.key} hover selected={checked}>
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      checked={checked}
+                      onChange={(event) =>
+                        setSelectedTaskKeys((prev) =>
+                          event.target.checked
+                            ? [...prev, task.key]
+                            : prev.filter((key) => key !== task.key)
+                        )
+                      }
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      {task.file.display_name}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Stack spacing={0.75}>
+                      <LinearProgress
+                        variant="determinate"
+                        value={task.progress}
+                        color={stateMeta.color === "error" ? "error" : "primary"}
+                        sx={{
+                          height: 8,
+                          borderRadius: 999,
+                          bgcolor: alpha(theme.palette.primary.main, 0.08),
+                        }}
+                      />
+                      <Typography variant="caption" color="text.secondary">
+                        {task.progress}%
+                      </Typography>
+                    </Stack>
+                  </TableCell>
+                  <TableCell>
+                    <Chip
+                      size="small"
+                      label={stateMeta.label}
+                      color={stateMeta.color}
+                      variant={task.state === "downloading" ? "outlined" : "filled"}
+                    />
+                  </TableCell>
+                  <TableCell align="right">
+                    <Stack
+                      direction="row"
+                      justifyContent="flex-end"
+                      spacing={1}
+                      flexWrap="wrap"
+                      useFlexGap
+                    >
+                      <Button
+                        size="small"
+                        startIcon={<VisibilityRoundedIcon />}
+                        onClick={() => void handleOpenTaskFile(task)}
+                      >
+                        打开
+                      </Button>
+                      <Button
+                        size="small"
+                        startIcon={<DeleteOutlineRoundedIcon />}
+                        color="error"
+                        onClick={() => handleRemoveTask(task)}
+                      >
+                        删除
+                      </Button>
+                      <Button
+                        size="small"
+                        startIcon={<ReplayRoundedIcon />}
+                        onClick={() => void handleRetryTask(task)}
+                        disabled={task.state !== "fail"}
+                      >
+                        重试
+                      </Button>
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+
+            {currentTasks.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5}>
+                  <Box sx={{ py: 5, textAlign: "center" }}>
+                    <Typography variant="body2" color="text.secondary">
+                      暂无下载任务。
+                    </Typography>
+                  </Box>
+                </TableCell>
+              </TableRow>
+            ) : null}
+          </TableBody>
+        </Table>
+      </Box>
+
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} useFlexGap>
         <Button
+          variant="outlined"
+          startIcon={<FolderOpenRoundedIcon />}
+          onClick={handleOpenSaveDir}
+        >
+          打开保存目录
+        </Button>
+        <Button
+          variant="contained"
+          color="error"
+          startIcon={<DeleteOutlineRoundedIcon />}
           onClick={handleRemoveTasks}
-          type="primary"
           disabled={selectedTasks.length === 0}
         >
-          删除
+          删除所选
         </Button>
         <Button
+          variant="outlined"
+          startIcon={<ReplayRoundedIcon />}
           onClick={handleRetryTasks}
-          disabled={
-            selectedTasks.filter((task) => task.state === "fail").length === 0
-          }
+          disabled={selectedTasks.filter((task) => task.state === "fail").length === 0}
         >
-          重试
+          重试失败任务
         </Button>
-      </Space>
-    </Space>
+      </Stack>
+    </Stack>
   );
 }

@@ -1,24 +1,37 @@
 import { invoke } from "@tauri-apps/api/core";
+import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
+import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
 import {
+  Alert,
+  Box,
   Button,
-  Empty,
-  Form,
-  Input,
-  Space,
-  Spin,
+  Card,
+  CardContent,
+  Chip,
+  CircularProgress,
+  Divider,
+  InputAdornment,
+  Stack,
+  Tab,
   Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TablePagination,
+  TableRow,
   Tabs,
-  TabsProps,
-  Tag,
-} from "antd";
-import { useForm } from "antd/es/form/Form";
-import useMessage from "antd/es/message/useMessage";
+  TextField,
+  Typography,
+} from "@mui/material";
+import { alpha, useTheme } from "@mui/material/styles";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useEffect, useMemo, useState } from "react";
+
 import CourseSelect from "../components/course_select";
-import GradeStatisticChart from "../components/grade_statistic";
 import BasicLayout from "../components/layout";
-import { PathSelector } from "../components/path_selector";
+import GradeStatisticChart from "../components/grade_statistic";
 import { getConfig } from "../lib/config";
+import { useAppMessage } from "../lib/message";
 import {
   useAssignments,
   useStudents,
@@ -45,110 +58,54 @@ interface ExportInfo {
   folderPath: string;
 }
 
+const surfaceCardSx = {
+  borderRadius: "28px",
+  border: "1px solid",
+  borderColor: "divider",
+  boxShadow: "0 24px 60px rgba(15, 23, 42, 0.08)",
+  backgroundImage: "none",
+};
+
 export default function GradePage() {
-  const [selectedCourseId, setSelectedCourseId] = useState<
-    number | undefined
-  >();
+  const theme = useTheme();
+  const [selectedCourseId, setSelectedCourseId] = useState<number | undefined>();
   const [studentIds, setStudentIds] = useState<number[]>([]);
-  const courses = useTAOrTeacherCourses();
-  const students = useStudents(selectedCourseId);
-  const userSubmissions = useUserSubmissions(selectedCourseId, studentIds);
-  const assignments = useAssignments(selectedCourseId);
-  const [columns, setColumns] = useState<any[]>([]);
-  const [data, setData] = useState<any[]>([]);
-  const [currentView, setCurrentView] = useState<string>("overview");
-  const [messageApi, contextHolder] = useMessage();
+  const [currentView, setCurrentView] = useState("overview");
+  const [messageApi, contextHolder] = useAppMessage();
   const [statistics, setStatistics] = useState<DetailedGradeStatistic>({
     eachAssignments: [],
     total: {} as GradeStatistic,
   });
-  const [form] = useForm<ExportInfo>();
+  const [editingGrades, setEditingGrades] = useState<Record<string, string>>({});
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(20);
+  const [exportInfo, setExportInfo] = useState<ExportInfo>({
+    fileName: "",
+    folderPath: "",
+  });
 
-  const initForm = async (course: Course) => {
-    form.setFieldValue("fileName", `${course.name}_成绩`);
-    form.setFieldValue("folderPath", (await getConfig()).save_path);
-  };
+  const courses = useTAOrTeacherCourses();
+  const students = useStudents(selectedCourseId);
+  const userSubmissions = useUserSubmissions(selectedCourseId, studentIds);
+  const assignments = useAssignments(selectedCourseId);
+
+  const selectedCourse = courses.data.find(
+    (course) => course.id === selectedCourseId
+  );
 
   useEffect(() => {
-    const course = courses.data.find(
-      (course) => course.id === selectedCourseId
-    );
-    if (!course) {
-      return;
-    }
-    initForm(course);
-  }, [selectedCourseId]);
+    const initExportInfo = async (course: Course) => {
+      const config = await getConfig();
+      setExportInfo({
+        fileName: `${course.name}_成绩`,
+        folderPath: config.save_path,
+      });
+    };
 
-  useEffect(() => {
-    if (assignments.isLoading) {
-      return;
+    if (selectedCourse) {
+      void initExportInfo(selectedCourse);
     }
-    const m = new Map<number, User>();
-    students.data.map((student) => {
-      m.set(student.id, student);
-    });
-    userSubmissions.data.map((us) => (us.username = m.get(us.user_id)?.name));
-    const columns = [
-      {
-        title: "学生",
-        dataIndex: "username",
-        key: "username",
-        fixed: "left",
-      },
-      ...assignments.data.map((assignment) => {
-        const isEnded = assignmentIsEnded(assignment);
-        const readonlyGrade = assignment.needs_grading_count === null;
-        return {
-          title: assignment.name,
-          dataIndex: assignment.id,
-          key: assignment.id,
-          render: (submission: Submission | undefined, record: any) => {
-            const notSubmitted =
-              isEnded && submission?.workflow_state === "unsubmitted";
-            const grade = submission?.grade ?? "";
-            return (
-              <Space>
-                <Input
-                  defaultValue={grade}
-                  disabled={readonlyGrade}
-                  style={{ width: "100px" }}
-                  key={submission?.id}
-                  onPressEnter={(e) => {
-                    let userId = record["userId"];
-                    if (submission || userId) {
-                      handleGrade(
-                        e.currentTarget.value,
-                        assignment,
-                        submission?.user_id ?? userId
-                      );
-                    }
-                  }}
-                />
-                {submission?.late && <Tag color="geekblue">迟交</Tag>}
-                {notSubmitted && <Tag color="volcano">未提交</Tag>}
-              </Space>
-            );
-          },
-        };
-      }),
-    ];
-    setColumns(columns);
-    const data: any[] = [];
-    userSubmissions.data.map((us) => {
-      if (!us.username) {
-        return;
-      }
-      const record: Record<any, any> = {};
-      us.submissions.map(
-        (submission) => (record[submission.assignment_id] = submission)
-      );
-      record["username"] = us.username;
-      record["userId"] = us.user_id;
-      record["key"] = `${us.user_id}${selectedCourseId}`;
-      data.push(record);
-    });
-    setData(data);
-  }, [userSubmissions.data, assignments.data]);
+  }, [selectedCourse]);
 
   useEffect(() => {
     setStudentIds(students.data.map((student) => student.id));
@@ -159,66 +116,7 @@ export default function GradePage() {
       return;
     }
     setStatistics(computeGradeStatistics());
-  }, [currentView, userSubmissions.data]);
-
-  const computeGradeStatistics = () => {
-    const submissionMap = new Map<number, Submission[]>();
-    const studentsTotalGradesMap = new Map<number, number>();
-    userSubmissions.data.map((us) => {
-      us.submissions.map((submission) => {
-        const assignmentId = submission.assignment_id;
-        if (!submissionMap.has(assignmentId)) {
-          submissionMap.set(assignmentId, []);
-        }
-        submissionMap.get(assignmentId)!.push(submission);
-
-        if (!studentsTotalGradesMap.has(us.user_id)) {
-          studentsTotalGradesMap.set(us.user_id, 0);
-        }
-        const grade = Number.parseFloat(submission.grade ?? "");
-        if (!isNaN(grade)) {
-          studentsTotalGradesMap.set(
-            us.user_id,
-            studentsTotalGradesMap.get(us.user_id)! + grade
-          );
-        }
-      });
-    });
-    const eachAssignments = assignments.data
-      .filter((assignment) => submissionMap.has(assignment.id))
-      .map(
-        (assignment) =>
-          [assignment, gatherGrades(submissionMap.get(assignment.id)!)] as [
-            Assignment,
-            GradeStatistic
-          ]
-      )
-      .filter(([_, statistic]) => statistic.grades.length > 0);
-    const totalGrades: number[] = [];
-    studentsTotalGradesMap.forEach((grades) => totalGrades.push(grades));
-    const total = {
-      grades: totalGrades,
-      total: students.data.length,
-    } as GradeStatistic;
-    return {
-      eachAssignments,
-      total,
-    };
-  };
-
-  const gatherGrades = (submissions: Submission[]): GradeStatistic => {
-    let grades = [];
-    for (let submission of submissions) {
-      if (submission.grade) {
-        const grade = Number.parseFloat(submission.grade);
-        if (!isNaN(grade)) {
-          grades.push(grade);
-        }
-      }
-    }
-    let total = submissions.length;
-    return { grades, total } as GradeStatistic;
-  };
+  }, [currentView, userSubmissions.data, assignments.data, students.data]);
 
   const isLoading = useMemo(
     () =>
@@ -234,18 +132,140 @@ export default function GradePage() {
     ]
   );
 
+  const studentMap = useMemo(() => {
+    const map = new Map<number, User>();
+    students.data.forEach((student) => map.set(student.id, student));
+    return map;
+  }, [students.data]);
+
+  const rows = useMemo(() => {
+    return userSubmissions.data
+      .map((userSubmission) => {
+        const name = studentMap.get(userSubmission.user_id)?.name;
+        if (!name) {
+          return null;
+        }
+        const record: Record<string | number, Submission | string | number> = {
+          username: name,
+          userId: userSubmission.user_id,
+          key: `${userSubmission.user_id}${selectedCourseId}`,
+        };
+        userSubmission.submissions.forEach((submission) => {
+          record[submission.assignment_id] = submission;
+        });
+        return record;
+      })
+      .filter(Boolean) as Record<string | number, Submission | string | number>[];
+  }, [selectedCourseId, studentMap, userSubmissions.data]);
+
+  const paginatedRows = useMemo(() => {
+    const start = page * rowsPerPage;
+    return rows.slice(start, start + rowsPerPage);
+  }, [page, rows, rowsPerPage]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [selectedCourseId, rows.length]);
+
+  const gradeSummary = useMemo(() => {
+    const totalAssignments = assignments.data.length;
+    const totalStudents = students.data.length;
+    const gradedCount = userSubmissions.data.reduce((count, item) => {
+      return (
+        count +
+        item.submissions.filter((submission) => {
+          const grade = Number.parseFloat(submission.grade ?? "");
+          return !Number.isNaN(grade);
+        }).length
+      );
+    }, 0);
+    const pendingAssignments = assignments.data.filter((assignment) =>
+      assignmentIsEnded(assignment)
+    ).length;
+
+    return {
+      totalAssignments,
+      totalStudents,
+      gradedCount,
+      pendingAssignments,
+    };
+  }, [assignments.data, students.data, userSubmissions.data]);
+
+  const computeGradeStatistics = () => {
+    const submissionMap = new Map<number, Submission[]>();
+    const studentsTotalGradesMap = new Map<number, number>();
+
+    userSubmissions.data.forEach((userSubmission) => {
+      userSubmission.submissions.forEach((submission) => {
+        const assignmentId = submission.assignment_id;
+        if (!submissionMap.has(assignmentId)) {
+          submissionMap.set(assignmentId, []);
+        }
+        submissionMap.get(assignmentId)!.push(submission);
+
+        if (!studentsTotalGradesMap.has(userSubmission.user_id)) {
+          studentsTotalGradesMap.set(userSubmission.user_id, 0);
+        }
+        const grade = Number.parseFloat(submission.grade ?? "");
+        if (!Number.isNaN(grade)) {
+          studentsTotalGradesMap.set(
+            userSubmission.user_id,
+            studentsTotalGradesMap.get(userSubmission.user_id)! + grade
+          );
+        }
+      });
+    });
+
+    const eachAssignments = assignments.data
+      .filter((assignment) => submissionMap.has(assignment.id))
+      .map(
+        (assignment) =>
+          [assignment, gatherGrades(submissionMap.get(assignment.id)!)] as [
+            Assignment,
+            GradeStatistic
+          ]
+      )
+      .filter(([_, statistic]) => statistic.grades.length > 0);
+
+    const totalGrades: number[] = [];
+    studentsTotalGradesMap.forEach((grades) => totalGrades.push(grades));
+
+    return {
+      eachAssignments,
+      total: {
+        grades: totalGrades,
+        total: students.data.length,
+      } as GradeStatistic,
+    };
+  };
+
+  const gatherGrades = (submissions: Submission[]): GradeStatistic => {
+    const grades: number[] = [];
+    submissions.forEach((submission) => {
+      if (!submission.grade) {
+        return;
+      }
+      const grade = Number.parseFloat(submission.grade);
+      if (!Number.isNaN(grade)) {
+        grades.push(grade);
+      }
+    });
+    return {
+      grades,
+      total: submissions.length,
+    } as GradeStatistic;
+  };
+
   const validateGrade = (grade: string, assignment: Assignment) => {
     if (grade.length === 0) {
       return true;
     }
-    let maxGrade = assignment.points_possible;
-    let gradeNumber;
-    try {
-      gradeNumber = Number.parseFloat(grade);
-    } catch (_) {
+    const maxGrade = assignment.points_possible;
+    const gradeNumber = Number.parseFloat(grade);
+    if (Number.isNaN(gradeNumber)) {
       return false;
     }
-    return 0 <= gradeNumber && (!maxGrade || gradeNumber <= maxGrade);
+    return gradeNumber >= 0 && (!maxGrade || gradeNumber <= maxGrade);
   };
 
   const handleGrade = async (
@@ -254,9 +274,7 @@ export default function GradePage() {
     studentId: number
   ) => {
     if (!validateGrade(grade, assignment)) {
-      messageApi.error(
-        "请输入正确格式的评分（不超过上限的正数或空字符串）！🙅🙅🙅"
-      );
+      messageApi.error("请输入正确格式的评分");
       return;
     }
     try {
@@ -266,168 +284,469 @@ export default function GradePage() {
         studentId,
         grade,
       });
-      messageApi.success("打分成功！🎉", 0.5);
-    } catch (e) {
-      consoleLog(LOG_LEVEL_ERROR, e);
-      messageApi.error(`打分时出错🥹：${e}`);
+      messageApi.success("打分成功", 0.5);
+    } catch (error) {
+      consoleLog(LOG_LEVEL_ERROR, error);
+      messageApi.error(`打分时出错：${error}`);
     }
   };
 
-  const handleExport = async ({ fileName, folderPath }: ExportInfo) => {
+  const handleSelectExportPath = async () => {
+    const selected = await openDialog({
+      directory: true,
+      defaultPath: exportInfo.folderPath || undefined,
+    });
+    if (!selected) {
+      return;
+    }
+    const nextPath = Array.isArray(selected) ? selected[0] : selected;
+    if (!nextPath) {
+      return;
+    }
+    setExportInfo((prev) => ({ ...prev, folderPath: nextPath }));
+  };
+
+  const handleExport = async () => {
+    if (!exportInfo.fileName.trim()) {
+      messageApi.error("请输入导出文件名");
+      return;
+    }
+    if (!exportInfo.folderPath.trim()) {
+      messageApi.error("请选择导出目录");
+      return;
+    }
+
     const exportData: string[][] = [];
-    // add header
     const headers: string[] = ["学生"];
-    assignments.data.map((assignment) => {
+    assignments.data.forEach((assignment) => {
       headers.push(assignment.name);
     });
     exportData.push(headers);
-    data.map((rowData) => {
-      const row: string[] = [rowData["username"]];
-      assignments.data.map((assignment) => {
-        let submission = rowData[assignment.id] as Submission | undefined;
+
+    rows.forEach((rowData) => {
+      const row: string[] = [String(rowData.username)];
+      assignments.data.forEach((assignment) => {
+        const submission = rowData[assignment.id] as Submission | undefined;
         row.push(submission?.grade ?? "");
       });
       exportData.push(row);
     });
+
+    let fileName = exportInfo.fileName;
     if (!fileName.endsWith(".xlsx")) {
       fileName += ".xlsx";
     }
+
     try {
-      await invoke("export_excel", { data: exportData, fileName, folderPath });
-      messageApi.success("导出成功🎉！");
-    } catch (e) {
-      consoleLog(LOG_LEVEL_ERROR, e);
-      messageApi.error(`导出失败🥹：${e}`);
+      await invoke("export_excel", {
+        data: exportData,
+        fileName,
+        folderPath: exportInfo.folderPath,
+      });
+      messageApi.success("导出成功", 0.5);
+    } catch (error) {
+      consoleLog(LOG_LEVEL_ERROR, error);
+      messageApi.error(`导出失败：${error}`);
     }
   };
-
-  const items: TabsProps["items"] = [
-    {
-      key: "overview",
-      label: "总览视图",
-      children: (
-        <Space style={{ width: "100%" }} direction="vertical">
-          <Table
-            columns={columns}
-            dataSource={data}
-            loading={isLoading}
-            pagination={false}
-            bordered
-          />
-          {userSubmissions.data.length > 0 && (
-            <Form
-              form={form}
-              layout="vertical"
-              onFinish={handleExport}
-              preserve={false}
-            >
-              <Form.Item
-                name="fileName"
-                label="导出文件名（无需扩展名）"
-                required
-                rules={[
-                  {
-                    required: true,
-                    message: "请输入导出文件名！",
-                  },
-                ]}
-              >
-                <Input
-                  placeholder="请输入导出文件名（无需扩展名）"
-                  suffix={".xlsx"}
-                />
-              </Form.Item>
-              <Form.Item
-                name="folderPath"
-                label="导出目录"
-                required
-                rules={[
-                  {
-                    required: true,
-                    message: "请输入导出目录！",
-                  },
-                ]}
-              >
-                <PathSelector />
-              </Form.Item>
-              <Space>
-                <Form.Item>
-                  <Button disabled={isLoading} type="primary" htmlType="submit">
-                    导出
-                  </Button>
-                </Form.Item>
-              </Space>
-            </Form>
-          )}
-        </Space>
-      ),
-    },
-    {
-      key: "statistic",
-      label: "统计视图",
-      children: (
-        <Spin spinning={isLoading}>
-          <Space style={{ width: "100%" }} direction="vertical">
-            {statistics.total.total > 0 && (
-              <Space style={{ width: "100%" }} direction="vertical">
-                <span>总分</span>
-                <GradeStatisticChart
-                  statistic={statistics.total}
-                  subTitleRenderer={({ average }) => {
-                    return (
-                      <span>
-                        平均<b>{average}</b>分
-                      </span>
-                    );
-                  }}
-                />
-              </Space>
-            )}
-            {statistics.eachAssignments.map(([assignment, gradeStatistic]) => (
-              <Space
-                key={assignment.id}
-                style={{ width: "100%" }}
-                direction="vertical"
-              >
-                <span>{assignment.name}</span>
-                <GradeStatisticChart
-                  statistic={gradeStatistic}
-                  subTitleRenderer={({ average }) => {
-                    return (
-                      <span>
-                        平均<b>{average}</b>分
-                      </span>
-                    );
-                  }}
-                />
-              </Space>
-            ))}
-            {statistics.eachAssignments.length === 0 &&
-              statistics.total.total === 0 && <Empty />}
-          </Space>
-        </Spin>
-      ),
-    },
-  ];
 
   return (
     <BasicLayout>
       {contextHolder}
-      <Space
-        direction="vertical"
-        style={{ width: "100%", overflow: "scroll" }}
-        size={"large"}
-      >
-        <CourseSelect courses={courses.data} onChange={setSelectedCourseId} />
-        <Button onClick={userSubmissions.mutate} disabled={isLoading}>
-          刷新
-        </Button>
-        <Tabs
-          defaultActiveKey={currentView}
-          items={items}
-          onChange={setCurrentView}
-        />
-      </Space>
+      <Stack spacing={3}>
+        <Card
+          sx={{
+            ...surfaceCardSx,
+            background:
+              theme.palette.mode === "dark"
+                ? `linear-gradient(135deg, ${alpha(
+                    theme.palette.primary.main,
+                    0.18
+                  )}, ${alpha("#0f172a", 0.9)})`
+                : `linear-gradient(135deg, ${alpha(
+                    theme.palette.primary.main,
+                    0.1
+                  )}, rgba(255,255,255,0.96))`,
+          }}
+        >
+          <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+            <Stack spacing={3}>
+              <Stack
+                direction={{ xs: "column", lg: "row" }}
+                justifyContent="space-between"
+                spacing={2}
+              >
+                <Box>
+                  <Typography variant="h4" sx={{ fontWeight: 800 }}>
+                    评分册
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    批量查看学生作业成绩、录入分数，并导出 Excel 成绩表。
+                  </Typography>
+                </Box>
+                <Box
+                  sx={{
+                    width: "100%",
+                    maxWidth: { xs: "100%", lg: 640 },
+                    alignSelf: { xs: "stretch", lg: "flex-start" },
+                  }}
+                >
+                  <CourseSelect
+                    courses={courses.data}
+                    onChange={setSelectedCourseId}
+                    value={selectedCourseId}
+                  />
+                </Box>
+              </Stack>
+
+              <Box
+                sx={{
+                  display: "grid",
+                  gap: 2,
+                  gridTemplateColumns: {
+                    xs: "repeat(2, minmax(0, 1fr))",
+                    lg: "repeat(4, minmax(0, 1fr))",
+                  },
+                }}
+              >
+                {[
+                  { label: "作业数量", value: gradeSummary.totalAssignments },
+                  { label: "学生人数", value: gradeSummary.totalStudents },
+                  { label: "已评分条目", value: gradeSummary.gradedCount },
+                  { label: "已截止作业", value: gradeSummary.pendingAssignments },
+                ].map((item) => (
+                  <Card
+                    key={item.label}
+                    sx={{
+                      borderRadius: "22px",
+                      backgroundColor: alpha(theme.palette.background.paper, 0.8),
+                      border: "1px solid",
+                      borderColor: alpha(theme.palette.divider, 0.5),
+                      boxShadow: "none",
+                    }}
+                  >
+                    <CardContent sx={{ p: 2.25 }}>
+                      <Typography variant="overline" color="text.secondary">
+                        {item.label}
+                      </Typography>
+                      <Typography variant="h4" sx={{ fontWeight: 800, mt: 1 }}>
+                        {item.value}
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                ))}
+              </Box>
+
+              <Stack
+                direction={{ xs: "column", md: "row" }}
+                justifyContent="space-between"
+                spacing={1.5}
+              >
+                {selectedCourse ? (
+                  <Chip
+                    label={selectedCourse.name}
+                    color="primary"
+                    variant="outlined"
+                  />
+                ) : (
+                  <Chip label="请选择课程" variant="outlined" />
+                )}
+                <Button
+                  variant="outlined"
+                  startIcon={<RefreshRoundedIcon />}
+                  onClick={() => userSubmissions.mutate()}
+                  disabled={isLoading}
+                >
+                  刷新数据
+                </Button>
+              </Stack>
+            </Stack>
+          </CardContent>
+        </Card>
+
+        <Card sx={surfaceCardSx}>
+          <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+            <Tabs
+              value={currentView}
+              onChange={(_, value) => setCurrentView(value)}
+              sx={{ mb: 3 }}
+            >
+              <Tab value="overview" label="总览视图" />
+              <Tab value="statistic" label="统计视图" />
+            </Tabs>
+
+            {isLoading ? (
+              <Box sx={{ py: 10, display: "grid", placeItems: "center" }}>
+                <CircularProgress />
+              </Box>
+            ) : currentView === "overview" ? (
+              <Stack spacing={3}>
+                {rows.length > 0 ? (
+                  <>
+                    <Box
+                      sx={{
+                        borderRadius: "22px",
+                        border: "1px solid",
+                        borderColor: "divider",
+                        overflow: "auto",
+                      }}
+                    >
+                      <Table stickyHeader sx={{ minWidth: 960 }}>
+                        <TableHead>
+                          <TableRow>
+                            <TableCell
+                              sx={{
+                                minWidth: 160,
+                                position: "sticky",
+                                left: 0,
+                                zIndex: 3,
+                                bgcolor: "background.paper",
+                              }}
+                            >
+                              学生
+                            </TableCell>
+                            {assignments.data.map((assignment) => (
+                              <TableCell key={assignment.id} sx={{ minWidth: 220 }}>
+                                <Stack spacing={0.75}>
+                                  <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                                    {assignment.name}
+                                  </Typography>
+                                  <Typography variant="caption" color="text.secondary">
+                                    满分 {assignment.points_possible ?? "-"}
+                                  </Typography>
+                                </Stack>
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {paginatedRows.map((record) => (
+                            <TableRow key={String(record.key)} hover>
+                              <TableCell
+                                sx={{
+                                  position: "sticky",
+                                  left: 0,
+                                  zIndex: 2,
+                                  bgcolor: "background.paper",
+                                  fontWeight: 600,
+                                }}
+                              >
+                                {String(record.username)}
+                              </TableCell>
+                              {assignments.data.map((assignment) => {
+                                const submission = record[
+                                  assignment.id
+                                ] as Submission | undefined;
+                                const isEnded = assignmentIsEnded(assignment);
+                                const readonlyGrade =
+                                  assignment.needs_grading_count === null;
+                                const notSubmitted =
+                                  isEnded &&
+                                  submission?.workflow_state === "unsubmitted";
+                                const inputKey = `${record.userId}-${assignment.id}`;
+                                const displayedValue =
+                                  editingGrades[inputKey] ??
+                                  (submission?.grade ? String(submission.grade) : "");
+
+                                return (
+                                  <TableCell key={`${record.key}-${assignment.id}`}>
+                                    <Stack spacing={1}>
+                                      <TextField
+                                        value={displayedValue}
+                                        disabled={readonlyGrade}
+                                        size="small"
+                                        placeholder="输入分数"
+                                        onChange={(event) =>
+                                          setEditingGrades((prev) => ({
+                                            ...prev,
+                                            [inputKey]: event.target.value,
+                                          }))
+                                        }
+                                        onKeyDown={(event) => {
+                                          if (event.key !== "Enter") {
+                                            return;
+                                          }
+                                          void handleGrade(
+                                            (event.currentTarget as HTMLInputElement).value,
+                                            assignment,
+                                            Number(record.userId)
+                                          );
+                                        }}
+                                      />
+                                      <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                                        {submission?.late ? (
+                                          <Chip size="small" label="迟交" color="info" variant="outlined" />
+                                        ) : null}
+                                        {notSubmitted ? (
+                                          <Chip size="small" label="未提交" color="error" variant="outlined" />
+                                        ) : null}
+                                        {readonlyGrade ? (
+                                          <Chip size="small" label="只读" variant="outlined" />
+                                        ) : (
+                                          <Chip size="small" label="回车保存" color="primary" variant="outlined" />
+                                        )}
+                                      </Stack>
+                                    </Stack>
+                                  </TableCell>
+                                );
+                              })}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </Box>
+
+                    <TablePagination
+                      component="div"
+                      count={rows.length}
+                      page={page}
+                      onPageChange={(_, nextPage) => setPage(nextPage)}
+                      rowsPerPage={rowsPerPage}
+                      onRowsPerPageChange={(event) => {
+                        setRowsPerPage(Number(event.target.value));
+                        setPage(0);
+                      }}
+                      rowsPerPageOptions={[10, 20, 50]}
+                      labelRowsPerPage="每页学生数"
+                      labelDisplayedRows={({ from, to, count }) =>
+                        `${from}-${to} / ${count}`
+                      }
+                    />
+
+                    <Divider />
+
+                    <Stack spacing={2}>
+                      <Box>
+                        <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                          导出成绩
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          将当前评分数据导出为 Excel，便于归档或二次处理。
+                        </Typography>
+                      </Box>
+                      <Box
+                        sx={{
+                          display: "grid",
+                          gap: 2,
+                          gridTemplateColumns: {
+                            xs: "minmax(0, 1fr)",
+                            lg: "1fr 1.2fr auto",
+                          },
+                        }}
+                      >
+                        <TextField
+                          label="导出文件名"
+                          value={exportInfo.fileName}
+                          onChange={(event) =>
+                            setExportInfo((prev) => ({
+                              ...prev,
+                              fileName: event.target.value,
+                            }))
+                          }
+                          InputProps={{
+                            endAdornment: (
+                              <InputAdornment position="end">.xlsx</InputAdornment>
+                            ),
+                          }}
+                        />
+                        <TextField
+                          label="导出目录"
+                          value={exportInfo.folderPath}
+                          onChange={(event) =>
+                            setExportInfo((prev) => ({
+                              ...prev,
+                              folderPath: event.target.value,
+                            }))
+                          }
+                        />
+                        <Button
+                          variant="outlined"
+                          onClick={() => void handleSelectExportPath()}
+                        >
+                          选择目录
+                        </Button>
+                      </Box>
+                      <Box>
+                        <Button
+                          variant="contained"
+                          startIcon={<DownloadRoundedIcon />}
+                          onClick={() => void handleExport()}
+                        >
+                          导出 Excel
+                        </Button>
+                      </Box>
+                    </Stack>
+                  </>
+                ) : (
+                  <Alert severity="info" sx={{ borderRadius: "18px" }}>
+                    当前课程还没有可展示的评分数据。
+                  </Alert>
+                )}
+              </Stack>
+            ) : (
+              <Stack spacing={3}>
+                {statistics.total.total > 0 ? (
+                  <Card
+                    sx={{
+                      borderRadius: "22px",
+                      border: "1px solid",
+                      borderColor: "divider",
+                      boxShadow: "none",
+                    }}
+                  >
+                    <CardContent>
+                      <Typography variant="h6" sx={{ fontWeight: 800, mb: 2 }}>
+                        总分分布
+                      </Typography>
+                      <GradeStatisticChart
+                        statistic={statistics.total}
+                        subTitleRenderer={({ average }) => (
+                          <Typography variant="body2" color="text.secondary">
+                            平均分 <b>{average}</b>
+                          </Typography>
+                        )}
+                      />
+                    </CardContent>
+                  </Card>
+                ) : null}
+
+                {statistics.eachAssignments.map(([assignment, gradeStatistic]) => (
+                  <Card
+                    key={assignment.id}
+                    sx={{
+                      borderRadius: "22px",
+                      border: "1px solid",
+                      borderColor: "divider",
+                      boxShadow: "none",
+                    }}
+                  >
+                    <CardContent>
+                      <Typography variant="h6" sx={{ fontWeight: 800, mb: 2 }}>
+                        {assignment.name}
+                      </Typography>
+                      <GradeStatisticChart
+                        statistic={gradeStatistic}
+                        subTitleRenderer={({ average }) => (
+                          <Typography variant="body2" color="text.secondary">
+                            平均分 <b>{average}</b>
+                          </Typography>
+                        )}
+                      />
+                    </CardContent>
+                  </Card>
+                ))}
+
+                {statistics.eachAssignments.length === 0 &&
+                statistics.total.total === 0 ? (
+                  <Alert severity="info" sx={{ borderRadius: "18px" }}>
+                    暂无统计数据，请先选择课程或刷新成绩。
+                  </Alert>
+                ) : null}
+              </Stack>
+            )}
+          </CardContent>
+        </Card>
+      </Stack>
     </BasicLayout>
   );
 }

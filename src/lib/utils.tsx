@@ -1,8 +1,7 @@
-import { FileOutlined } from "@ant-design/icons";
 import { invoke } from "@tauri-apps/api/core";
+import InsertDriveFileRoundedIcon from "@mui/icons-material/InsertDriveFileRounded";
 import { relaunch } from '@tauri-apps/plugin-process';
 import { check } from "@tauri-apps/plugin-updater";
-import { MessageInstance } from "antd/es/message/interface";
 import dayjs, { Dayjs } from "dayjs";
 import { decode } from "js-base64";
 import {
@@ -29,6 +28,7 @@ import {
   ModuleItem,
   Option
 } from "./model";
+import { AppMessageApi } from "./message";
 
 export function isMergableFileType(fileType: string): boolean {
   for (let ext of ["pptx", "pdf", "docx"]) {
@@ -232,7 +232,7 @@ export function getFileIcon(file: FileModel) {
   if (mime_class.startsWith("image")) {
     return <FaImage style={{ fontSize: "22px" }} />;
   }
-  return <FileOutlined style={{ fontSize: "21px" }} />;
+  return <InsertDriveFileRoundedIcon sx={{ fontSize: 21 }} />;
 }
 
 export function getBigFileIcon(file: FileModel) {
@@ -279,7 +279,7 @@ export function getBigFileIcon(file: FileModel) {
   if (mime_class.startsWith("image")) {
     return <FaImage style={{ fontSize: "40px" }} />;
   }
-  return <FileOutlined style={{ fontSize: "39px" }} />;
+  return <InsertDriveFileRoundedIcon sx={{ fontSize: 39 }} />;
 }
 
 export function scrollToTop() {
@@ -290,7 +290,7 @@ export function scrollToEnd() {
   window.scrollTo(0, document.body.scrollHeight);
 }
 
-export async function checkForUpdates(messageApi: MessageInstance) {
+export async function checkForUpdates(messageApi: AppMessageApi) {
   try {
     const messageKey = "checking";
     messageApi.open({

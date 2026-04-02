@@ -1,130 +1,469 @@
-import { CalendarOutlined, CloudDownloadOutlined, FileOutlined, FormOutlined, SettingOutlined, UserOutlined, VideoCameraOutlined } from '@ant-design/icons';
 import { getVersion } from "@tauri-apps/api/app";
-import { Layout, Menu, Space, theme } from 'antd';
-import useMessage from 'antd/es/message/useMessage';
-import React, { useEffect, useState } from 'react';
-import { BsQrCode } from 'react-icons/bs';
-import { GoDiscussionOutdated } from 'react-icons/go';
-import { LuBookOpenCheck } from 'react-icons/lu';
-import { TbReportAnalytics } from "react-icons/tb";
-import { Link, useLocation } from 'react-router-dom';
-import { useKeyPress } from '../lib/hooks';
-import { checkForUpdates } from '../lib/utils';
-import { ChangeLogModal } from './change_log_modal';
-const { Content, Footer, Sider } = Layout;
+import ArticleRoundedIcon from "@mui/icons-material/ArticleRounded";
+import AssignmentRoundedIcon from "@mui/icons-material/AssignmentRounded";
+import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
+import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
+import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
+import CloudDownloadRoundedIcon from "@mui/icons-material/CloudDownloadRounded";
+import GridViewRoundedIcon from "@mui/icons-material/GridViewRounded";
+import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
+import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
+import QrCode2RoundedIcon from "@mui/icons-material/QrCode2Rounded";
+import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
+import SmartDisplayRoundedIcon from "@mui/icons-material/SmartDisplayRounded";
+import TimelineRoundedIcon from "@mui/icons-material/TimelineRounded";
+import {
+  Box,
+  Button,
+  Chip,
+  Divider,
+  Drawer,
+  IconButton,
+  List,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
+  Stack,
+  Tooltip,
+  Typography,
+  useMediaQuery,
+} from "@mui/material";
+import { alpha, useTheme } from "@mui/material/styles";
+import { useAppMessage } from "../lib/message";
+import React, { useEffect, useMemo, useState } from "react";
+import { GoDiscussionOutdated } from "react-icons/go";
+import { LuBookOpenCheck } from "react-icons/lu";
+import { Link, useLocation } from "react-router-dom";
+
+import { useKeyPress } from "../lib/hooks";
+import { checkForUpdates } from "../lib/utils";
+import { ChangeLogModal } from "./change_log_modal";
+
+const drawerWidth = 272;
+const collapsedDrawerWidth = 92;
+
+const navigationItems = [
+  { key: "files", label: "文件", icon: <ArticleRoundedIcon />, path: "/files" },
+  { key: "assignments", label: "查看作业", icon: <AssignmentRoundedIcon />, path: "/assignments" },
+  { key: "discussions", label: "讨论区", icon: <GoDiscussionOutdated size={20} />, path: "/discussions" },
+  { key: "calendar", label: "日历", icon: <CalendarMonthRoundedIcon />, path: "/calendar" },
+  { key: "users", label: "人员导出", icon: <GroupsRoundedIcon />, path: "/users" },
+  { key: "grades", label: "评分册", icon: <LuBookOpenCheck size={20} />, path: "/grades" },
+  { key: "submissions", label: "作业批改", icon: <CloudDownloadRoundedIcon />, path: "/submissions" },
+  { key: "video", label: "视频", icon: <SmartDisplayRoundedIcon />, path: "/video" },
+  { key: "qrcode", label: "二维码", icon: <QrCode2RoundedIcon />, path: "/qrcode" },
+  { key: "annual", label: "年度总结", icon: <TimelineRoundedIcon />, path: "/annual" },
+  { key: "settings", label: "设置", icon: <SettingsRoundedIcon />, path: "/settings" },
+];
+
+const pageTitleMap: Record<string, string> = {
+  files: "文件",
+  assignments: "查看作业",
+  discussions: "讨论区",
+  calendar: "日历",
+  users: "人员导出",
+  grades: "评分册",
+  submissions: "作业批改",
+  video: "视频",
+  qrcode: "二维码",
+  annual: "年度总结",
+  settings: "设置",
+};
 
 export default function BasicLayout({ children }: React.PropsWithChildren) {
-    const [version, setVersion] = useState<string>("");
-    const [showChangeLog, setShowChangeLog] = useState<boolean>(false);
+  const theme = useTheme();
+  const isDesktop = useMediaQuery(theme.breakpoints.up("lg"));
+  const location = useLocation();
+  const currentKey = location.pathname.split("/").filter(Boolean).pop() || "files";
+  const currentTitle = pageTitleMap[currentKey] || "Canvas";
+  const [version, setVersion] = useState("");
+  const [showChangeLog, setShowChangeLog] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [scale, setScale] = useState(1);
+  const [messageApi, contextHolder] = useAppMessage();
 
-    useEffect(() => {
-        getVersion().then(version => setVersion(version));
-    }, []);
+  useEffect(() => {
+    getVersion().then((value) => setVersion(value));
+  }, []);
 
-    const items = [{
-        key: 'files',
-        icon: <FileOutlined />,
-        label: <Link to={'/files'}>文件</Link>,
-    }, {
-        key: 'assignments',
-        icon: <FormOutlined />,
-        label: <Link to={'/assignments'}>查看作业</Link>,
-    }, {
-        key: 'discussions',
-        icon: <GoDiscussionOutdated />,
-        label: <Link to={'/discussions'}>讨论区</Link>,
-    }, {
-        key: 'calendar',
-        icon: <CalendarOutlined />,
-        label: <Link to={'/calendar'}>日历</Link>,
-    }, {
-        key: 'users',
-        icon: <UserOutlined />,
-        label: <Link to={'/users'}>人员导出</Link>,
-    }, {
-        key: 'grades',
-        icon: <LuBookOpenCheck />,
-        label: <Link to={'/grades'}>评分册</Link>,
-    }, {
-        key: 'submissions',
-        icon: <CloudDownloadOutlined />,
-        label: <Link to={'/submissions'}>作业批改</Link>,
-    }, {
-        key: 'video',
-        icon: <VideoCameraOutlined />,
-        label: <Link to={'/video'}>视频</Link>,
-    }, {
-        key: 'qrcode',
-        icon: <BsQrCode />,
-        label: <Link to={'/qrcode'}>二维码</Link>,
-    }, {
-        key: 'annual',
-        icon: <TbReportAnalytics />,
-        label: <Link to={'/annual'}>年度总结</Link>,
-    }, {
-        key: 'settings',
-        icon: <SettingOutlined />,
-        label: <Link to={'/settings'}>设置</Link>,
-    }]
+  useEffect(() => {
+    if (isDesktop) {
+      setMobileOpen(false);
+    }
+  }, [isDesktop, location.pathname]);
 
-    const parts = useLocation().pathname.split('/');
-    const selectedKeys = [parts[parts.length - 1]];
+  const zoomIn = () => setScale((prevScale) => prevScale + 0.1);
+  const zoomOut = () => setScale((prevScale) => Math.max(0.1, prevScale - 0.1));
 
-    const {
-        token: { colorBgContainer, borderRadiusLG },
-    } = theme.useToken();
+  useKeyPress("=", zoomIn);
+  useKeyPress("-", zoomOut);
 
-    const [messageApi, contextHolder] = useMessage();
+  const effectiveDrawerWidth = useMemo(() => {
+    if (!isDesktop) {
+      return drawerWidth;
+    }
+    return collapsed ? collapsedDrawerWidth : drawerWidth;
+  }, [collapsed, isDesktop]);
 
-    const [scale, setScale] = useState(1);
+  const drawerContent = (
+    <Stack
+      sx={{
+        height: "100%",
+        p: 2,
+        gap: 2,
+        color: theme.palette.mode === "dark" ? "#e2e8f0" : "text.primary",
+        bgcolor:
+          theme.palette.mode === "dark"
+            ? "rgba(8, 13, 24, 0.985)"
+            : alpha("#f8fbff", 0.96),
+        borderRight:
+          theme.palette.mode === "dark"
+            ? "1px solid rgba(148, 163, 184, 0.08)"
+            : `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+        boxShadow:
+          theme.palette.mode === "dark"
+            ? "inset -1px 0 0 rgba(148, 163, 184, 0.06), 18px 0 40px rgba(2, 6, 23, 0.32)"
+            : "none",
+      }}
+    >
+      <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
+        <Stack
+          direction="row"
+          alignItems="center"
+          spacing={1.25}
+          sx={{
+            minWidth: 0,
+            opacity: collapsed && isDesktop ? 0 : 1,
+            transition: "opacity 0.2s ease",
+          }}
+        >
+          <Box
+            sx={{
+              width: 42,
+              height: 42,
+              borderRadius: "16px",
+              display: "grid",
+              placeItems: "center",
+              bgcolor: alpha(theme.palette.primary.main, 0.12),
+              color: "primary.main",
+            }}
+          >
+            <GridViewRoundedIcon />
+          </Box>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+              Canvas Helper
+            </Typography>
+            <Typography
+              variant="caption"
+              color={theme.palette.mode === "dark" ? "rgba(226,232,240,0.66)" : "text.secondary"}
+            >
+              Workspace
+            </Typography>
+          </Box>
+        </Stack>
 
-    const zoomIn = () => {
-        setScale(prevScale => prevScale + 0.1);
-    };
+        {isDesktop ? (
+          <IconButton onClick={() => setCollapsed((prev) => !prev)}>
+            {collapsed ? <ChevronRightRoundedIcon /> : <ChevronLeftRoundedIcon />}
+          </IconButton>
+        ) : (
+          <IconButton onClick={() => setMobileOpen(false)}>
+            <ChevronLeftRoundedIcon />
+          </IconButton>
+        )}
+      </Stack>
 
-    const zoomOut = () => {
-        setScale(prevScale => Math.max(0.1, prevScale - 0.1));
-    };
+      {!collapsed || !isDesktop ? (
+        <Chip
+          label={currentTitle}
+          color="primary"
+          variant="outlined"
+          sx={{
+            width: "fit-content",
+            bgcolor:
+              theme.palette.mode === "dark"
+                ? alpha(theme.palette.primary.main, 0.12)
+                : undefined,
+            borderColor:
+              theme.palette.mode === "dark"
+                ? alpha(theme.palette.primary.main, 0.28)
+                : undefined,
+          }}
+        />
+      ) : null}
 
-    useKeyPress('=', zoomIn);
-    useKeyPress('-', zoomOut);
+      <List sx={{ p: 0, display: "grid", gap: 0.75 }}>
+        {navigationItems.map((item) => {
+          const selected = currentKey === item.key;
+          const button = (
+            <ListItemButton
+              key={item.key}
+              component={Link}
+              to={item.path}
+              selected={selected}
+              sx={{
+                minHeight: 52,
+                px: collapsed && isDesktop ? 1.25 : 1.5,
+                py: 1,
+                borderRadius: "18px",
+                justifyContent: collapsed && isDesktop ? "center" : "flex-start",
+                color:
+                  theme.palette.mode === "dark"
+                    ? alpha("#e2e8f0", selected ? 1 : 0.86)
+                    : "inherit",
+                "&.Mui-selected": {
+                  bgcolor:
+                    theme.palette.mode === "dark"
+                      ? alpha(theme.palette.primary.main, 0.2)
+                      : alpha(theme.palette.primary.main, 0.12),
+                  color: "primary.main",
+                  boxShadow:
+                    theme.palette.mode === "dark"
+                      ? `inset 0 0 0 1px ${alpha(theme.palette.primary.main, 0.18)}`
+                      : "none",
+                },
+                "&:hover": {
+                  bgcolor:
+                    theme.palette.mode === "dark"
+                      ? alpha("#94a3b8", 0.12)
+                      : alpha(theme.palette.primary.main, 0.04),
+                },
+                "&.Mui-selected:hover": {
+                  bgcolor:
+                    theme.palette.mode === "dark"
+                      ? alpha(theme.palette.primary.main, 0.24)
+                      : alpha(theme.palette.primary.main, 0.16),
+                },
+              }}
+            >
+              <ListItemIcon
+                sx={{
+                  minWidth: collapsed && isDesktop ? 0 : 38,
+                  color: "inherit",
+                  justifyContent: "center",
+                }}
+              >
+                {item.icon}
+              </ListItemIcon>
+              {collapsed && isDesktop ? null : (
+                <ListItemText
+                  primary={item.label}
+                  primaryTypographyProps={{
+                    fontSize: 15,
+                    fontWeight: selected ? 700 : 500,
+                  }}
+                />
+              )}
+            </ListItemButton>
+          );
 
-    return <Layout style={{ minHeight: "100vh" }}>
-        {contextHolder}
-        <Sider theme="light" style={{ position: 'fixed', height: '100%' }}>
-            <Menu theme="light" mode="inline" defaultSelectedKeys={selectedKeys} items={items} />
-        </Sider>
-        <Layout style={{ marginLeft: 200 }}>
-            <Content style={{ margin: '16px 16px 0' }}>
-                <div
-                    style={{
-                        padding: 24,
-                        minHeight: 360,
-                        background: colorBgContainer,
-                        borderRadius: borderRadiusLG,
-                        zoom: scale,
-                        transformOrigin: 'top left',
-                        width: '100%',
-                        height: '100%',
-                    }}
-                >
-                    {children}
-                </div>
-            </Content>
-            <ChangeLogModal open={showChangeLog} onCancel={() => setShowChangeLog(false)} onOk={() => setShowChangeLog(false)} />
-            <Footer style={{ textAlign: 'center' }}>
-                <Space>
-                    <span>当前版本：{version}</span>
-                    <a onClick={() => checkForUpdates(messageApi)}>检查更新</a>
-                    <a onClick={(e) => {
-                        e.preventDefault();
-                        setShowChangeLog(true);
-                    }}>更新日志</a>
-                    <a href='mailto:923048992@sjtu.edu.cn' target='_blank'>我要反馈</a>
-                </Space>
-                <br />
-                SJTU Canvas Helper ©{new Date().getFullYear()} Created by <a target="_blank" href='https://github.com/Okabe-Rintarou-0'>Okabe</a>
-            </Footer>
-        </Layout>
-    </Layout>
+          return collapsed && isDesktop ? (
+            <Tooltip key={item.key} title={item.label} placement="right">
+              {button}
+            </Tooltip>
+          ) : (
+            button
+          );
+        })}
+      </List>
+
+      <Box sx={{ flex: 1 }} />
+
+      <Divider />
+
+      <Stack spacing={1.25}>
+        {!collapsed || !isDesktop ? (
+          <>
+            <Typography variant="caption" color="text.secondary">
+              当前版本 {version || "读取中"}
+            </Typography>
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              <Button
+                onClick={() => checkForUpdates(messageApi)}
+                variant="outlined"
+                size="small"
+                sx={
+                  theme.palette.mode === "dark"
+                    ? {
+                        borderColor: alpha("#94a3b8", 0.2),
+                        color: alpha("#e2e8f0", 0.92),
+                      }
+                    : undefined
+                }
+              >
+                检查更新
+              </Button>
+              <Button
+                onClick={() => setShowChangeLog(true)}
+                variant="outlined"
+                size="small"
+                sx={
+                  theme.palette.mode === "dark"
+                    ? {
+                        borderColor: alpha("#94a3b8", 0.2),
+                        color: alpha("#e2e8f0", 0.92),
+                      }
+                    : undefined
+                }
+              >
+                更新日志
+              </Button>
+              <Button
+                component="a"
+                href="mailto:923048992@sjtu.edu.cn"
+                variant="outlined"
+                size="small"
+                sx={
+                  theme.palette.mode === "dark"
+                    ? {
+                        borderColor: alpha("#94a3b8", 0.2),
+                        color: alpha("#e2e8f0", 0.92),
+                      }
+                    : undefined
+                }
+              >
+                我要反馈
+              </Button>
+            </Stack>
+          </>
+        ) : (
+          <Stack spacing={1} alignItems="center">
+            <Tooltip title="检查更新">
+              <Button
+                onClick={() => checkForUpdates(messageApi)}
+                variant="outlined"
+                size="small"
+                sx={{
+                  minWidth: 0,
+                  px: 1.2,
+                  ...(theme.palette.mode === "dark"
+                    ? {
+                        borderColor: alpha("#94a3b8", 0.2),
+                        color: alpha("#e2e8f0", 0.92),
+                      }
+                    : undefined),
+                }}
+              >
+                更
+              </Button>
+            </Tooltip>
+            <Tooltip title="更新日志">
+              <Button
+                onClick={() => setShowChangeLog(true)}
+                variant="outlined"
+                size="small"
+                sx={{
+                  minWidth: 0,
+                  px: 1.2,
+                  ...(theme.palette.mode === "dark"
+                    ? {
+                        borderColor: alpha("#94a3b8", 0.2),
+                        color: alpha("#e2e8f0", 0.92),
+                      }
+                    : undefined),
+                }}
+              >
+                志
+              </Button>
+            </Tooltip>
+            <Tooltip title="我要反馈">
+              <Button
+                component="a"
+                href="mailto:923048992@sjtu.edu.cn"
+                variant="outlined"
+                size="small"
+                sx={{
+                  minWidth: 0,
+                  px: 1.2,
+                  ...(theme.palette.mode === "dark"
+                    ? {
+                        borderColor: alpha("#94a3b8", 0.2),
+                        color: alpha("#e2e8f0", 0.92),
+                      }
+                    : undefined),
+                }}
+              >
+                反
+              </Button>
+            </Tooltip>
+          </Stack>
+        )}
+      </Stack>
+    </Stack>
+  );
+
+  return (
+    <Box sx={{ display: "flex", minHeight: "100vh" }}>
+      {contextHolder}
+
+      <Drawer
+        variant={isDesktop ? "permanent" : "temporary"}
+        open={isDesktop ? true : mobileOpen}
+        onClose={() => setMobileOpen(false)}
+        ModalProps={{ keepMounted: true }}
+        sx={{
+          width: effectiveDrawerWidth,
+          flexShrink: 0,
+          "& .MuiDrawer-paper": {
+            width: effectiveDrawerWidth,
+            border: "none",
+            boxSizing: "border-box",
+            background: "transparent",
+            transition: theme.transitions.create("width", {
+              easing: theme.transitions.easing.sharp,
+              duration: theme.transitions.duration.standard,
+            }),
+          },
+        }}
+      >
+        {drawerContent}
+      </Drawer>
+
+      <Box
+        component="main"
+        sx={{
+          flex: 1,
+          minWidth: 0,
+          p: { xs: 1.5, md: 2.5 },
+        }}
+      >
+        {!isDesktop ? (
+          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
+            <IconButton onClick={() => setMobileOpen(true)}>
+              <MenuRoundedIcon />
+            </IconButton>
+            <Chip label={currentTitle} color="primary" variant="outlined" />
+            <Box sx={{ width: 40 }} />
+          </Stack>
+        ) : null}
+
+        <Box
+          sx={{
+            p: { xs: 1.5, md: 2.5 },
+            minHeight: "calc(100vh - 32px)",
+            borderRadius: { xs: "24px", md: "30px" },
+            bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === "dark" ? 0.9 : 0.88),
+            border: "1px solid transparent",
+            boxShadow:
+              theme.palette.mode === "dark"
+                ? "0 24px 60px rgba(2, 8, 23, 0.32)"
+                : "0 24px 60px rgba(15, 23, 42, 0.06)",
+            backdropFilter: "blur(18px)",
+            zoom: scale,
+            transformOrigin: "top left",
+          }}
+        >
+          {children}
+        </Box>
+      </Box>
+
+      <ChangeLogModal
+        open={showChangeLog}
+        onCancel={() => setShowChangeLog(false)}
+        onOk={() => setShowChangeLog(false)}
+      />
+    </Box>
+  );
 }

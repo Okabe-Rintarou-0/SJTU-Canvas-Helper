@@ -6453,7 +6453,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "786d480bce6247ab75f005b14ae1624ad978d3029d9113f0a22fa1ac773faeaf"
 dependencies = [
  "crossbeam-channel",
- "thiserror 2.0.12",
+ "thiserror 2.0.17",
  "time",
  "tracing-subscriber",
 ]

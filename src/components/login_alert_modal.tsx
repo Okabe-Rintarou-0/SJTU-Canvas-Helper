@@ -1,19 +1,32 @@
-import { Modal } from "antd";
-import { LoginAlert } from "./login_alert";
-import { useQRCode } from "../lib/hooks";
+import { Dialog, DialogContent, DialogTitle } from "@mui/material";
 import { useEffect } from "react";
 
-export function LoginAlertModal({ open, onCancelLogin, onLogin }: {
-    open: boolean,
-    onCancelLogin?: () => void,
-    onLogin?: () => void,
-}) {
-    useEffect(() => {
-        showQRCode();
-    }, []);
+import { useQRCode } from "../lib/hooks";
+import { LoginAlert } from "./login_alert";
 
-    const { qrcode, showQRCode, refreshQRCode } = useQRCode({ onScanSuccess: onLogin });
-    return <Modal open={open} footer={null} onCancel={onCancelLogin}>
+export function LoginAlertModal({
+  open,
+  onCancelLogin,
+  onLogin,
+}: {
+  open: boolean;
+  onCancelLogin?: () => void;
+  onLogin?: () => void;
+}) {
+  const { qrcode, showQRCode, refreshQRCode } = useQRCode({ onScanSuccess: onLogin });
+
+  useEffect(() => {
+    if (open) {
+      void showQRCode();
+    }
+  }, [open, showQRCode]);
+
+  return (
+    <Dialog open={open} onClose={onCancelLogin} fullWidth maxWidth="sm">
+      <DialogTitle>登录验证</DialogTitle>
+      <DialogContent>
         <LoginAlert qrcode={qrcode} refreshQRCode={refreshQRCode} />
-    </Modal>
+      </DialogContent>
+    </Dialog>
+  );
 }

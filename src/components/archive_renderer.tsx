@@ -1,10 +1,31 @@
-import { DownOutlined } from "@ant-design/icons";
 import DocViewer, { DocRendererProps, IDocument } from "@cyntler/react-doc-viewer";
 import { invoke } from "@tauri-apps/api/core";
-import { Button, Empty, Space, Tree, TreeDataNode, TreeProps } from "antd";
-import useMessage from "antd/es/message/useMessage";
+import ArticleRoundedIcon from "@mui/icons-material/ArticleRounded";
+import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
+import ExpandLessRoundedIcon from "@mui/icons-material/ExpandLessRounded";
+import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
+import FolderRoundedIcon from "@mui/icons-material/FolderRounded";
+import InsertDriveFileRoundedIcon from "@mui/icons-material/InsertDriveFileRounded";
+import {
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  CircularProgress,
+  Divider,
+  List,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
+  Stack,
+  Typography,
+} from "@mui/material";
+import { alpha, useTheme } from "@mui/material/styles";
 import { Archive } from "libarchive.js";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, ReactNode, useEffect, useRef, useState } from "react";
+
+import { useAppMessage } from "../lib/message";
 import { LOG_LEVEL_ERROR } from "../lib/model";
 import { consoleLog, dataURLtoFile, getFileType } from "../lib/utils";
 import { ArchiveSupportedRenderers } from "./renderers";
@@ -14,20 +35,31 @@ interface BlackListEntry {
   dir: boolean;
 }
 
-// WE DON'T WANT TO SEE 'node_modules' AT ALL!
+interface ArchiveTreeNode {
+  title: string;
+  key: string;
+  children: ArchiveTreeNode[];
+  isDir: boolean;
+}
+
 const BLACK_LIST: BlackListEntry[] = [{ name: "node_modules", dir: true }];
 
 export default function ArchiveRenderer({
   mainState: { currentDocument },
 }: DocRendererProps) {
-  if (!currentDocument || !currentDocument.fileData) return null;
-  const [selectedPath, setSelectedPath] = useState<string>("");
-  const [messageApi, contextHolder] = useMessage();
-  const [treeData, setTreeData] = useState<TreeDataNode | undefined>();
+  const theme = useTheme();
+  if (!currentDocument || !currentDocument.fileData) {
+    return null;
+  }
+
+  const [selectedPath, setSelectedPath] = useState("");
+  const [messageApi, contextHolder] = useAppMessage();
+  const [treeData, setTreeData] = useState<ArchiveTreeNode | undefined>();
   const [fileMap, setFileMap] = useState<Map<string, any> | undefined>();
   const [selectedDoc, setSelectedDoc] = useState<IDocument | undefined>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | undefined>();
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const archiveInitializedRef = useRef(false);
 
   const archiveWorkerUrl = new URL(
@@ -37,12 +69,10 @@ export default function ArchiveRenderer({
 
   useEffect(() => {
     if (!archiveInitializedRef.current) {
-      Archive.init({
-        workerUrl: archiveWorkerUrl,
-      });
+      Archive.init({ workerUrl: archiveWorkerUrl });
       archiveInitializedRef.current = true;
     }
-    parse();
+    void parse();
   }, [currentDocument]);
 
   const checkIsBanned = (fileName: string, isDir: boolean) => {
@@ -51,78 +81,56 @@ export default function ArchiveRenderer({
         (banned) => banned.name === fileName && banned.dir === isDir
       )
     ) {
-      messageApi.warning(`文件或目录"${fileName}"已被屏蔽`, 2);
+      messageApi.warning(`文件或目录 "${fileName}" 已被屏蔽`, 2);
       return true;
     }
     return false;
   };
 
   const parseArchiveStructureBFS = async (root: any) => {
-    let treeData = {
+    const nextTreeData: ArchiveTreeNode = {
       title: "",
       key: "",
       children: [],
-    } as TreeDataNode;
-    const fileMap = new Map<string, File | null>();
-    let currentDir = "";
-    let queue: [any, TreeDataNode][] = [[root, treeData]];
+      isDir: true,
+    };
+    const nextFileMap = new Map<string, File | null>();
+    const queue: [any, ArchiveTreeNode][] = [[root, nextTreeData]];
+
     while (queue.length > 0) {
-      let [currentNode, currentTreeData] = queue.shift()!;
-      currentDir = currentTreeData.key as string;
-      for (let fileName in currentNode) {
-        let entry = currentNode[fileName];
-        let thisPath = currentDir + "/" + fileName;
-        let thisNode = {
-          title: fileName,
-          key: thisPath,
-          children: [],
-        } as TreeDataNode;
-        let isDir = !entry["name"];
+      const [currentNode, currentTreeData] = queue.shift()!;
+      const currentDir = currentTreeData.key;
+      for (const fileName in currentNode) {
+        const entry = currentNode[fileName];
+        const path = `${currentDir}/${fileName}`;
+        const isDir = !entry.name;
         if (checkIsBanned(fileName, isDir)) {
           continue;
         }
-        if (!isDir) {
-          try {
-            fileMap.set(thisPath, entry);
-          } catch (e) {
-            fileMap.set(thisPath, null);
-            messageApi.error(`文件${thisPath}解压失败！🙅🙅🙅`);
-          }
+
+        const nextNode: ArchiveTreeNode = {
+          title: fileName,
+          key: path,
+          children: [],
+          isDir,
+        };
+
+        if (isDir) {
+          queue.push([entry, nextNode]);
         } else {
-          queue.push([entry, thisNode]);
+          try {
+            nextFileMap.set(path, entry);
+          } catch (e) {
+            nextFileMap.set(path, null);
+            messageApi.error(`文件 ${path} 解压失败`);
+          }
         }
-        currentTreeData.children?.push(thisNode);
+        currentTreeData.children.push(nextNode);
       }
     }
-    setFileMap(fileMap);
-    return treeData;
-  };
 
-  const parse = async () => {
-    setLoading(true);
-    setError(undefined);
-    setSelectedDoc((oldDoc) => setDocAndGC(oldDoc, undefined));
-    setSelectedPath("");
-    setTreeData(undefined);
-    setFileMap(undefined);
-    try {
-      let base64Content = currentDocument.fileData as string;
-      let file = dataURLtoFile(
-        base64Content,
-        currentDocument.fileName ?? "tmp"
-      );
-      const archive = await Archive.open(file);
-      let files = await archive.getFilesObject();
-      let treeData = await parseArchiveStructureBFS(files);
-      setTreeData(treeData);
-    } catch (e) {
-      const errorMsg = e instanceof Error ? e.message : String(e);
-      consoleLog(LOG_LEVEL_ERROR, e);
-      messageApi.error(errorMsg);
-      setError(errorMsg);
-    } finally {
-      setLoading(false);
-    }
+    setFileMap(nextFileMap);
+    return nextTreeData;
   };
 
   const setDocAndGC = (
@@ -135,12 +143,40 @@ export default function ArchiveRenderer({
     return newDoc;
   };
 
-  const onSelect: TreeProps["onSelect"] = async (_, info) => {
-    let path = info.node.key as string;
-    let fileReader = fileMap?.get(path);
+  const parse = async () => {
+    setLoading(true);
+    setError(undefined);
+    setSelectedDoc((oldDoc) => setDocAndGC(oldDoc, undefined));
+    setSelectedPath("");
+    setTreeData(undefined);
+    setFileMap(undefined);
+    setExpandedKeys(new Set());
+    try {
+      const base64Content = currentDocument.fileData as string;
+      const file = dataURLtoFile(
+        base64Content,
+        currentDocument.fileName ?? "tmp"
+      );
+      const archive = await Archive.open(file);
+      const files = await archive.getFilesObject();
+      const nextTreeData = await parseArchiveStructureBFS(files);
+      setTreeData(nextTreeData);
+      setExpandedKeys(new Set([""]));
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      consoleLog(LOG_LEVEL_ERROR, e);
+      messageApi.error(errorMsg);
+      setError(errorMsg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onSelect = async (path: string) => {
+    const fileReader = fileMap?.get(path);
     if (fileReader) {
-      let file = await fileReader.extract();
-      let doc = {
+      const file = await fileReader.extract();
+      const doc = {
         uri: URL.createObjectURL(file),
         fileName: file.name,
         fileType: await getFileType(file.name),
@@ -150,90 +186,270 @@ export default function ArchiveRenderer({
     } else {
       setSelectedDoc((oldDoc) => setDocAndGC(oldDoc, undefined));
       if (fileReader === null) {
-        messageApi.warning(`当前文件${path}解压失败，无法预览！😩😩😩`);
+        messageApi.warning(`当前文件 ${path} 解压失败，无法预览`);
       }
     }
   };
 
   const handleDownloadSubFile = async () => {
-    if (selectedDoc) {
-      let fileReader = fileMap?.get(selectedPath);
-      if (!fileReader) {
-        return;
-      }
-      try {
-        let file = await fileReader.extract();
-        let buffer = await file.arrayBuffer();
-        let content = Array.from<number>(new Uint8Array(buffer));
-        let fileName = selectedDoc.fileName ?? "downloaded";
-        await invoke("save_file_content", { content, fileName });
-        messageApi.success("下载成功🎉！");
-      } catch (e) {
-        messageApi.error(`下载失败😩：${e}`);
-      }
+    if (!selectedDoc) {
+      return;
+    }
+    const fileReader = fileMap?.get(selectedPath);
+    if (!fileReader) {
+      return;
+    }
+    try {
+      const file = await fileReader.extract();
+      const buffer = await file.arrayBuffer();
+      const content = Array.from<number>(new Uint8Array(buffer));
+      const fileName = selectedDoc.fileName ?? "downloaded";
+      await invoke("save_file_content", { content, fileName });
+      messageApi.success("下载成功", 0.5);
+    } catch (e) {
+      messageApi.error(`下载失败：${e}`);
     }
   };
 
   useEffect(() => {
     return () => {
-      // 清理资源
       if (selectedDoc) {
         URL.revokeObjectURL(selectedDoc.uri);
       }
     };
   }, [selectedDoc]);
 
+  const toggleExpanded = (key: string) => {
+    setExpandedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  const renderTree = (nodes: ArchiveTreeNode[], depth = 0): ReactNode =>
+    nodes.map((node) => {
+      const expanded = expandedKeys.has(node.key);
+      const selected = selectedPath === node.key;
+
+      if (node.isDir) {
+        return (
+          <Fragment key={node.key}>
+            <ListItemButton
+              onClick={() => toggleExpanded(node.key)}
+              sx={{
+                pl: 1.5 + depth * 2,
+                borderRadius: "16px",
+                mb: 0.5,
+              }}
+            >
+              <ListItemIcon sx={{ minWidth: 34 }}>
+                <FolderRoundedIcon color="primary" />
+              </ListItemIcon>
+              <ListItemText
+                primary={node.title}
+                primaryTypographyProps={{ fontSize: 14, fontWeight: 600 }}
+              />
+              {expanded ? <ExpandLessRoundedIcon /> : <ExpandMoreRoundedIcon />}
+            </ListItemButton>
+            {expanded ? renderTree(node.children, depth + 1) : null}
+          </Fragment>
+        );
+      }
+
+      return (
+        <ListItemButton
+          key={node.key}
+          selected={selected}
+          onClick={() => void onSelect(node.key)}
+          sx={{
+            pl: 1.5 + depth * 2,
+            borderRadius: "16px",
+            mb: 0.5,
+            "&.Mui-selected": {
+              bgcolor: alpha(theme.palette.primary.main, 0.12),
+            },
+          }}
+        >
+          <ListItemIcon sx={{ minWidth: 34 }}>
+            <InsertDriveFileRoundedIcon color="action" />
+          </ListItemIcon>
+          <ListItemText
+            primary={node.title}
+            primaryTypographyProps={{ fontSize: 14, fontWeight: selected ? 700 : 500 }}
+          />
+        </ListItemButton>
+      );
+    });
+
   return (
     <>
       {contextHolder}
-      <Space direction="vertical" style={{ width: "100%", height: "100%" }}>
+      <Stack spacing={2} sx={{ width: "100%", height: "100%" }}>
         {loading ? (
-          <div style={{ textAlign: "center", padding: "20px" }}>
-            <h3>正在解析压缩包...</h3>
-          </div>
+          <Box
+            sx={{
+              minHeight: 280,
+              display: "grid",
+              placeItems: "center",
+            }}
+          >
+            <Stack spacing={1.5} alignItems="center">
+              <CircularProgress />
+              <Typography variant="body2" color="text.secondary">
+                正在解析压缩包...
+              </Typography>
+            </Stack>
+          </Box>
         ) : error ? (
-          <div style={{ textAlign: "center", padding: "20px" }}>
-            <h3 style={{ color: "#ff4d4f" }}>解析失败</h3>
-            <p>{error}</p>
-          </div>
+          <Alert severity="error" sx={{ borderRadius: "18px" }}>
+            解析失败：{error}
+          </Alert>
         ) : (
-          <Space align="start" size={"large"} style={{ width: "100%", height: "100%" }}>
-            <Space direction="vertical" style={{ height: "100%" }}>
-              {selectedDoc && <Button onClick={handleDownloadSubFile}>下载</Button>}
-              {treeData?.children && treeData.children.length > 0 ? (
-                <Tree
-                  showLine
-                  switcherIcon={<DownOutlined />}
-                  onSelect={onSelect}
-                  treeData={treeData.children}
-                  style={{ width: 300, overflowY: "auto" }}
-                />
-              ) : (
-                <div style={{ textAlign: "center", padding: "20px" }}>
-                  <p>压缩包为空</p>
-                </div>
-              )}
-            </Space>
-            {selectedDoc ? (
-              <DocViewer
-                key={selectedDoc.uri}
-                config={{
-                  header: {
-                    disableHeader: true,
-                    disableFileName: true,
-                    retainURLParams: true,
-                  },
-                }}
-                pluginRenderers={ArchiveSupportedRenderers}
-                documents={[selectedDoc]}
-                style={{ flex: 1, height: "100%" }}
-              />
-            ) : (
-              <Empty />
-            )}
-          </Space>
+          <Box
+            sx={{
+              display: "grid",
+              gap: 2,
+              gridTemplateColumns: {
+                xs: "minmax(0, 1fr)",
+                lg: "320px minmax(0, 1fr)",
+              },
+              height: "100%",
+              minHeight: 520,
+            }}
+          >
+            <Card
+              sx={{
+                borderRadius: "24px",
+                border: "1px solid",
+                borderColor: "divider",
+                boxShadow: "none",
+                overflow: "hidden",
+              }}
+            >
+              <CardContent sx={{ p: 0, height: "100%" }}>
+                <Stack
+                  direction="row"
+                  justifyContent="space-between"
+                  alignItems="center"
+                  sx={{ px: 2, py: 1.75 }}
+                >
+                  <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                    压缩包目录
+                  </Typography>
+                  {selectedDoc ? (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<DownloadRoundedIcon />}
+                      onClick={() => void handleDownloadSubFile()}
+                    >
+                      下载
+                    </Button>
+                  ) : null}
+                </Stack>
+                <Divider />
+                {treeData?.children && treeData.children.length > 0 ? (
+                  <List
+                    disablePadding
+                    sx={{
+                      px: 1,
+                      py: 1,
+                      maxHeight: { lg: 620 },
+                      overflow: "auto",
+                    }}
+                  >
+                    {renderTree(treeData.children)}
+                  </List>
+                ) : (
+                  <Box
+                    sx={{
+                      minHeight: 220,
+                      display: "grid",
+                      placeItems: "center",
+                      p: 3,
+                    }}
+                  >
+                    <Typography variant="body2" color="text.secondary">
+                      压缩包为空
+                    </Typography>
+                  </Box>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card
+              sx={{
+                borderRadius: "24px",
+                border: "1px solid",
+                borderColor: "divider",
+                boxShadow: "none",
+                overflow: "hidden",
+              }}
+            >
+              <CardContent sx={{ p: 0, height: "100%" }}>
+                <Stack
+                  direction="row"
+                  justifyContent="space-between"
+                  alignItems="center"
+                  sx={{ px: 2, py: 1.75 }}
+                >
+                  <Stack spacing={0.35}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                      文件预览
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {selectedDoc?.fileName || "选择左侧文件开始预览"}
+                    </Typography>
+                  </Stack>
+                  <ArticleRoundedIcon color="action" />
+                </Stack>
+                <Divider />
+                {selectedDoc ? (
+                  <DocViewer
+                    key={selectedDoc.uri}
+                    config={{
+                      header: {
+                        disableHeader: true,
+                        disableFileName: true,
+                        retainURLParams: true,
+                      },
+                    }}
+                    pluginRenderers={ArchiveSupportedRenderers}
+                    documents={[selectedDoc]}
+                    style={{ height: "100%" }}
+                  />
+                ) : (
+                  <Box
+                    sx={{
+                      minHeight: 320,
+                      display: "grid",
+                      placeItems: "center",
+                      p: 3,
+                    }}
+                  >
+                    <Stack spacing={1.25} alignItems="center">
+                      <ArticleRoundedIcon
+                        sx={{ fontSize: 40, color: "text.secondary" }}
+                      />
+                      <Typography variant="body1" sx={{ fontWeight: 700 }}>
+                        暂无预览内容
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        从左侧目录选择一个文件后，这里会显示对应内容。
+                      </Typography>
+                    </Stack>
+                  </Box>
+                )}
+              </CardContent>
+            </Card>
+          </Box>
         )}
-      </Space>
+      </Stack>
     </>
   );
 }

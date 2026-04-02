@@ -1,13 +1,9 @@
-import AccountCircleRoundedIcon from "@mui/icons-material/AccountCircleRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
-import ColorLensRoundedIcon from "@mui/icons-material/ColorLensRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import FolderOpenRoundedIcon from "@mui/icons-material/FolderOpenRounded";
 import KeyRoundedIcon from "@mui/icons-material/KeyRounded";
 import PreviewRoundedIcon from "@mui/icons-material/PreviewRounded";
 import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
-import SettingsSuggestRoundedIcon from "@mui/icons-material/SettingsSuggestRounded";
-import SmartToyRoundedIcon from "@mui/icons-material/SmartToyRounded";
 import TipsAndUpdatesRoundedIcon from "@mui/icons-material/TipsAndUpdatesRounded";
 import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
@@ -18,32 +14,31 @@ import {
   Card,
   CardContent,
   Chip,
-  CssBaseline,
   Divider,
-  FormControlLabel,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   IconButton,
   InputAdornment,
   MenuItem,
   Link as MuiLink,
-  Paper,
   Stack,
-  Switch,
   TextField,
   Tooltip,
-  Typography,
+  Typography
 } from "@mui/material";
-import { ThemeProvider, alpha, createTheme } from "@mui/material/styles";
+import { alpha, useTheme } from "@mui/material/styles";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import type { TourProps } from "antd";
-import { Image, Tour } from "antd";
-import useMessage from "antd/es/message/useMessage";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactJson from "react-json-view-ts";
 
 import BasicLayout from "../components/layout";
 import LogModal from "../components/log_modal";
-import { getConfig, saveConfig } from "../lib/config";
+import { getConfig, saveConfig, updateConfig } from "../lib/config";
+import { useConfigDispatch } from "../lib/hooks";
+import { useAppMessage } from "../lib/message";
 import { AccountInfo, AppConfig, LOG_LEVEL_INFO, User } from "../lib/model";
 import { consoleLog, savePathValidator } from "../lib/utils";
 
@@ -71,12 +66,17 @@ const fullWidthChipSx = {
 };
 
 export default function SettingsPage() {
-  const [messageApi, contextHolder] = useMessage();
+  const theme = useTheme();
+  const dispatch = useConfigDispatch();
+  const [messageApi, contextHolder] = useAppMessage();
   const tokenFieldRef = useRef<HTMLDivElement>(null);
   const savePathFieldRef = useRef<HTMLDivElement>(null);
   const saveButtonRef = useRef<HTMLDivElement>(null);
+  const latestFormDataRef = useRef<AppConfig | null>(null);
+  const initialSnapshotRef = useRef<string>("");
   const [accounts, setAccounts] = useState<string[]>([]);
   const [openTour, setOpenTour] = useState<boolean>(false);
+  const [tourStep, setTourStep] = useState(0);
   const [accountMode, setAccountMode] = useState<AccountMode>("select");
   const [currentAccount, setCurrentAccount] = useState<string>("");
   const [rawConfig, setRawConfig] = useState<string>("");
@@ -89,105 +89,22 @@ export default function SettingsPage() {
   const [tokenError, setTokenError] = useState<string>("");
   const [savePathError, setSavePathError] = useState<string>("");
 
-  const steps: TourProps["steps"] = [
+  const steps = [
     {
       title: "填写您的 Canvas Token",
-      description: (
-        <div>
-          <p>
-            请前往{" "}
-            <a
-              href="https://oc.sjtu.edu.cn/profile/settings"
-              target="_blank"
-              rel="noreferrer"
-            >
-              https://oc.sjtu.edu.cn/profile/settings
-            </a>{" "}
-            创建您的 API Token。
-          </p>
-          <Image alt="Canvas Token 指引" src="help.png" width={360} />
-        </div>
-      ),
-      target: () => tokenFieldRef.current!,
+      description:
+        "请前往 https://oc.sjtu.edu.cn/profile/settings 创建您的 API Token。",
+      image: "help.png",
     },
     {
       title: "填写您的下载保存目录",
       description: "请正确填写您的下载保存目录。",
-      target: () => savePathFieldRef.current!,
     },
     {
       title: "保存",
       description: "保存您的设置。",
-      target: () => saveButtonRef.current!,
     },
   ];
-
-  const muiTheme = useMemo(() => {
-    const mode = formData?.theme ?? "light";
-    const primary = formData?.color_primary || DEFAULT_PRIMARY;
-
-    return createTheme({
-      palette: {
-        mode,
-        primary: {
-          main: primary,
-        },
-        secondary: {
-          main: "#1d4ed8",
-        },
-        background:
-          mode === "dark"
-            ? {
-              default: "#08111c",
-              paper: alpha("#0f172a", 0.92),
-            }
-            : {
-              default: "#f5f8fc",
-              paper: "#ffffff",
-            },
-      },
-      shape: {
-        borderRadius: SURFACE_RADIUS * 2,
-      },
-      typography: {
-        fontFamily:
-          '"SF Pro Display", "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif',
-        h3: {
-          fontWeight: 700,
-        },
-        h5: {
-          fontWeight: 700,
-        },
-        h6: {
-          fontWeight: 700,
-        },
-      },
-      components: {
-        MuiButton: {
-          styleOverrides: {
-            root: {
-              borderRadius: 999,
-              textTransform: "none",
-              paddingInline: 18,
-            },
-          },
-        },
-        MuiCard: {
-          styleOverrides: {
-            root: {
-              backgroundImage: "none",
-            },
-          },
-        },
-        MuiTextField: {
-          defaultProps: {
-            fullWidth: true,
-            variant: "outlined",
-          },
-        },
-      },
-    });
-  }, [formData?.color_primary, formData?.theme]);
 
   const dirty = useMemo(() => {
     if (!formData || !initialSnapshot) {
@@ -210,9 +127,18 @@ export default function SettingsPage() {
 
   const updateField = useCallback(
     <K extends keyof AppConfig>(key: K, value: AppConfig[K]) => {
-      setFormData((prev) => (prev ? { ...prev, [key]: value } : prev));
+      setFormData((prev) => {
+        if (!prev) {
+          return prev;
+        }
+        const next = { ...prev, [key]: value };
+        if (key === "theme" || key === "color_primary" || key === "compact_mode") {
+          dispatch(updateConfig(next));
+        }
+        return next;
+      });
     },
-    []
+    [dispatch]
   );
 
   const initAccounts = async () => {
@@ -235,12 +161,14 @@ export default function SettingsPage() {
       setCurrentAccount(accountInfo.current_account);
       setFormData(normalizedConfig);
       setInitialSnapshot(JSON.stringify(normalizedConfig));
+      initialSnapshotRef.current = JSON.stringify(normalizedConfig);
       setTokenError("");
       setSavePathError("");
       consoleLog(LOG_LEVEL_INFO, "init config: ", normalizedConfig);
 
       if (normalizedConfig.token.length === 0) {
         setOpenTour(true);
+        setTourStep(0);
       }
     } catch (e) {
       messageApi.error(`初始化时发生错误：${e}`);
@@ -250,6 +178,32 @@ export default function SettingsPage() {
   useEffect(() => {
     initConfig();
   }, []);
+
+  useEffect(() => {
+    latestFormDataRef.current = formData;
+  }, [formData]);
+
+  useEffect(() => {
+    initialSnapshotRef.current = initialSnapshot;
+  }, [initialSnapshot]);
+
+  useEffect(() => {
+    return () => {
+      if (!initialSnapshotRef.current || !latestFormDataRef.current) {
+        return;
+      }
+      const initialConfig = JSON.parse(initialSnapshotRef.current) as AppConfig;
+      const latestConfig = latestFormDataRef.current;
+      const visualChanged =
+        initialConfig.theme !== latestConfig.theme ||
+        initialConfig.color_primary !== latestConfig.color_primary ||
+        initialConfig.compact_mode !== latestConfig.compact_mode;
+
+      if (visualChanged) {
+        dispatch(updateConfig(initialConfig));
+      }
+    };
+  }, [dispatch]);
 
   useEffect(() => {
     if (!dirty) {
@@ -428,551 +382,193 @@ export default function SettingsPage() {
     setSavePathError("");
   };
 
-  const summaryItems = [
-    {
-      label: "当前账号",
-      value: currentAccount || "未选择",
-      icon: <AccountCircleRoundedIcon fontSize="small" />,
-    },
-    {
-      label: "主题模式",
-      value: formData?.theme === "dark" ? "深色" : "明亮",
-      icon: <ColorLensRoundedIcon fontSize="small" />,
-    },
-    {
-      label: "下载目录",
-      value: formData?.save_path ? "已配置" : "待配置",
-      icon: <FolderOpenRoundedIcon fontSize="small" />,
-    },
-    {
-      label: "智能功能",
-      value: formData?.llm_api_key ? "已接入" : "未接入",
-      icon: <SmartToyRoundedIcon fontSize="small" />,
-    },
-  ];
-
   return (
     <BasicLayout>
       {contextHolder}
-      <ThemeProvider theme={muiTheme}>
-        <CssBaseline enableColorScheme />
-        <Box
-          sx={{
-            minHeight: "100%",
-            color: "text.primary",
-          }}
-        >
-          <Stack spacing={3}>
-            <Paper
-              sx={{
-                ...cardSx,
-                overflow: "hidden",
-                position: "relative",
-                px: { xs: 2.5, md: 4 },
-                py: { xs: 3, md: 4 },
-                background:
-                  muiTheme.palette.mode === "dark"
-                    ? `linear-gradient(135deg, ${alpha(
-                      muiTheme.palette.primary.main,
-                      0.26
-                    )}, ${alpha("#0f172a", 0.96)})`
-                    : `linear-gradient(135deg, ${alpha(
-                      muiTheme.palette.primary.main,
-                      0.16
-                    )}, ${alpha("#eff6ff", 0.94)})`,
-              }}
-            >
-              <Box
-                sx={{
-                  position: "absolute",
-                  inset: 0,
-                  background:
-                    "radial-gradient(circle at top right, rgba(255,255,255,0.28), transparent 30%), radial-gradient(circle at bottom left, rgba(255,255,255,0.14), transparent 20%)",
-                  pointerEvents: "none",
-                }}
-              />
-              <Stack
-                direction={{ xs: "column", lg: "row" }}
-                justifyContent="center"
-                spacing={3}
-                sx={{ position: "relative" }}
-              >
-                <Stack spacing={1.5} maxWidth={760} sx={{ width: "100%", flex: 1 }}>
-                  <Chip
-                    icon={<SettingsSuggestRoundedIcon />}
-                    label="设置中心"
-                    color="primary"
-                    variant="outlined"
-                    sx={{
-                      ...fullWidthChipSx,
-                      bgcolor: alpha(muiTheme.palette.background.paper, 0.48),
-                      borderColor: alpha(muiTheme.palette.primary.main, 0.32),
-                    }}
-                  />
-                </Stack>
-
-                <Box
-                  sx={{
-                    width: "100%",
-                    maxWidth: { lg: 380 },
-                    display: "grid",
-                    gap: 1.5,
-                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                  }}
-                >
-                  {summaryItems.map((item) => (
-                    <Card
-                      key={item.label}
-                      sx={{
-                        borderRadius: "24px",
-                        bgcolor: alpha(muiTheme.palette.background.paper, 0.62),
-                        backdropFilter: "blur(18px)",
-                        border: "1px solid",
-                        borderColor: alpha(muiTheme.palette.common.white, 0.1),
-                      }}
+      <Box
+        sx={{
+          minHeight: "100%",
+          color: "text.primary",
+        }}
+      >
+        <Stack spacing={3}>
+          <Box
+            sx={{
+              display: "grid",
+              gap: 3,
+              gridTemplateColumns: {
+                xs: "minmax(0, 1fr)",
+                xl: "minmax(0, 1.35fr) minmax(320px, 0.9fr)",
+              },
+            }}
+          >
+            <Stack spacing={3}>
+              <Card sx={cardSx}>
+                <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+                  <Stack spacing={3}>
+                    <Stack
+                      direction={{ xs: "column", sm: "row" }}
+                      justifyContent="space-between"
+                      spacing={1.5}
+                      sx={{ width: "100%" }}
                     >
-                      <CardContent sx={{ p: 2.2 }}>
-                        <Stack spacing={1.2}>
-                          <Stack
-                            direction="row"
-                            alignItems="center"
-                            spacing={1}
-                            sx={{ width: "100%" }}
-                          >
-                            <Box
-                              sx={{
-                                flexShrink: 0,
-                                display: "grid",
-                                placeItems: "center",
-                                width: 36,
-                                height: 36,
-                                borderRadius: "14px",
-                                bgcolor: alpha(muiTheme.palette.primary.main, 0.14),
-                                color: "primary.main",
-                              }}
-                            >
-                              {item.icon}
-                            </Box>
-                            <Chip
-                              size="small"
-                              label={item.value}
-                              sx={{
-                                ...fullWidthChipSx,
-                                flex: 1,
-                                bgcolor: alpha(
-                                  muiTheme.palette.background.default,
-                                  0.72
-                                ),
-                              }}
-                            />
-                          </Stack>
-                          <Typography variant="body2" color="text.secondary">
-                            {item.label}
-                          </Typography>
-                        </Stack>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </Box>
-              </Stack>
-            </Paper>
-
-            <Box
-              sx={{
-                display: "grid",
-                gap: 3,
-                gridTemplateColumns: {
-                  xs: "minmax(0, 1fr)",
-                  xl: "minmax(0, 1.35fr) minmax(320px, 0.9fr)",
-                },
-              }}
-            >
-              <Stack spacing={3}>
-                <Card sx={cardSx}>
-                  <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-                    <Stack spacing={2.5}>
-                      <Stack
-                        direction={{ xs: "column", sm: "row" }}
-                        justifyContent="space-between"
-                        spacing={1.5}
-                        sx={{ width: "100%" }}
-                      >
-                        <Box>
-                          <Typography variant="h5">账号与身份</Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            为不同使用场景准备独立账号配置，避免 Token 和保存目录互相覆盖。
-                          </Typography>
-                        </Box>
-                        <Chip
-                          color="primary"
-                          variant="outlined"
-                          label={`当前账号：${currentAccount || "未选择"}`}
-                          sx={{
-                            ...fullWidthChipSx,
-                            width: { xs: "100%", sm: 260 },
-                            flexShrink: 0,
-                          }}
-                        />
-                      </Stack>
-
-                      {accountMode === "select" ? (
-                        <Box
-                          sx={{
-                            display: "grid",
-                            gap: 2,
-                            gridTemplateColumns: {
-                              xs: "minmax(0, 1fr)",
-                              md: "1.2fr auto auto",
-                            },
-                            alignItems: "end",
-                          }}
-                        >
-                          <TextField
-                            select
-                            label="选择账号"
-                            name="account_select"
-                            value={currentAccount}
-                            onChange={(event) =>
-                              void handleSwitchAccount(event.target.value)
-                            }
-                            helperText="切换后会自动加载该账号的完整配置。"
-                          >
-                            {accounts.map((account) => (
-                              <MenuItem key={account} value={account}>
-                                {account}
-                              </MenuItem>
-                            ))}
-                          </TextField>
-                          <Button
-                            variant="outlined"
-                            onClick={() => setAccountMode("create")}
-                          >
-                            新建账号
-                          </Button>
-                          <Button
-                            color="error"
-                            variant="outlined"
-                            onClick={handleDeleteAccount}
-                            disabled={currentAccount === "Default"}
-                            startIcon={<DeleteOutlineRoundedIcon />}
-                          >
-                            删除当前账号
-                          </Button>
-                        </Box>
-                      ) : (
-                        <Box
-                          sx={{
-                            display: "grid",
-                            gap: 2,
-                            gridTemplateColumns: {
-                              xs: "minmax(0, 1fr)",
-                              md: "1.2fr auto auto",
-                            },
-                            alignItems: "end",
-                          }}
-                        >
-                          <TextField
-                            label="新账号名称"
-                            name="account_name"
-                            value={createAccountName}
-                            onChange={(event) =>
-                              setCreateAccountName(event.target.value)
-                            }
-                            placeholder='例如：本科账号…'
-                            helperText="建议按用途命名，后续切换会更清晰。"
-                          />
-                          <Button variant="contained" onClick={handleCreateAccount}>
-                            创建账号
-                          </Button>
-                          <Button
-                            variant="text"
-                            onClick={() => setAccountMode("select")}
-                          >
-                            取消
-                          </Button>
-                        </Box>
-                      )}
-                    </Stack>
-                  </CardContent>
-                </Card>
-
-                <Card sx={cardSx}>
-                  <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-                    <Stack spacing={3}>
                       <Box>
-                        <Typography variant="h5">Canvas 连接</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          这是最核心的连接配置。建议先完成 Token 校验，再保存整页设置。
-                        </Typography>
+                        <Typography variant="h5">账号设置</Typography>
                       </Box>
-
-                      <Alert
-                        severity="info"
-                        icon={<TipsAndUpdatesRoundedIcon />}
-                        sx={{ borderRadius: "18px" }}
-                      >
-                        请前往{" "}
-                        <MuiLink
-                          href="https://oc.sjtu.edu.cn/profile/settings"
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Canvas Token 页面
-                        </MuiLink>{" "}
-                        创建 API Token，并将其粘贴到下方字段。
-                      </Alert>
-
-                      <Box
+                      <Chip
+                        color="primary"
+                        variant="outlined"
+                        label={`当前账号：${currentAccount || "未选择"}`}
                         sx={{
-                          display: "grid",
-                          gap: 2,
-                          gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "1fr 220px" },
+                          ...fullWidthChipSx,
+                          width: { xs: "100%", sm: 260 },
+                          flexShrink: 0,
                         }}
-                      >
-                        <Box ref={tokenFieldRef}>
-                          <TextField
-                            label="Canvas Token"
-                            name="token"
-                            type={showToken ? "text" : "password"}
-                            value={formData?.token ?? ""}
-                            onChange={(event) =>
-                              updateField("token", event.target.value)
-                            }
-                            placeholder="请输入 Canvas Token…"
-                            error={Boolean(tokenError)}
-                            helperText={
-                              tokenError ||
-                              "Token 仅用于访问你的 Canvas 数据，不会在界面中明文展示。"
-                            }
-                            autoComplete="off"
-                            spellCheck={false}
-                            InputProps={{
-                              startAdornment: (
-                                <InputAdornment position="start">
-                                  <KeyRoundedIcon color="action" />
-                                </InputAdornment>
-                              ),
-                              endAdornment: (
-                                <InputAdornment position="end">
-                                  <Tooltip title={showToken ? "隐藏 Token" : "显示 Token"}>
-                                    <IconButton
-                                      aria-label={showToken ? "隐藏 Token" : "显示 Token"}
-                                      onClick={() => setShowToken((prev) => !prev)}
-                                      edge="end"
-                                    >
-                                      {showToken ? (
-                                        <VisibilityOffRoundedIcon />
-                                      ) : (
-                                        <VisibilityRoundedIcon />
-                                      )}
-                                    </IconButton>
-                                  </Tooltip>
-                                </InputAdornment>
-                              ),
-                            }}
-                          />
-                        </Box>
-
-                        <TextField
-                          select
-                          label="账号类型"
-                          name="account_type"
-                          value={formData?.account_type ?? "Default"}
-                          onChange={(event) =>
-                            updateField(
-                              "account_type",
-                              event.target.value as AppConfig["account_type"]
-                            )
-                          }
-                          helperText="用于区分本部与密院环境。"
-                        >
-                          <MenuItem value="Default">本部</MenuItem>
-                          <MenuItem value="JI">密院</MenuItem>
-                        </TextField>
-                      </Box>
-
-                      <Box
-                        sx={{
-                          display: "grid",
-                          gap: 2,
-                          gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "1fr auto" },
-                          alignItems: "start",
-                        }}
-                      >
-                        <Box ref={savePathFieldRef}>
-                          <TextField
-                            label="下载保存目录"
-                            name="save_path"
-                            value={formData?.save_path ?? ""}
-                            onChange={(event) =>
-                              updateField("save_path", event.target.value)
-                            }
-                            placeholder="请选择下载保存目录…"
-                            error={Boolean(savePathError)}
-                            helperText={
-                              savePathError ||
-                              "建议使用固定目录，方便文件归档与后续自动化处理。"
-                            }
-                            autoComplete="off"
-                          />
-                        </Box>
-                        <Button
-                          variant="outlined"
-                          onClick={handleSelectSavePath}
-                          startIcon={<FolderOpenRoundedIcon />}
-                          sx={{ minHeight: 56 }}
-                        >
-                          选择目录
-                        </Button>
-                      </Box>
+                      />
                     </Stack>
-                  </CardContent>
-                </Card>
 
-                <Card sx={cardSx}>
-                  <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-                    <Stack spacing={3}>
-                      <Box>
-                        <Typography variant="h5">界面偏好</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          调整主题、主色和紧凑模式，让工作区更贴近你的使用习惯。
-                        </Typography>
-                      </Box>
-
+                    {accountMode === "select" ? (
                       <Box
                         sx={{
                           display: "grid",
                           gap: 2,
                           gridTemplateColumns: {
                             xs: "minmax(0, 1fr)",
-                            md: "repeat(3, minmax(0, 1fr))",
+                            md: "1.2fr auto auto",
                           },
-                          alignItems: "start",
+                          alignItems: "end",
                         }}
                       >
                         <TextField
                           select
-                          label="界面主题"
-                          name="theme"
-                          value={formData?.theme ?? "light"}
+                          label="选择账号"
+                          name="account_select"
+                          value={currentAccount}
                           onChange={(event) =>
-                            updateField("theme", event.target.value as AppConfig["theme"])
+                            void handleSwitchAccount(event.target.value)
                           }
-                          helperText="应用到整个工作区的亮暗风格。"
+                          helperText="切换后会自动加载该账号的完整配置。"
                         >
-                          <MenuItem value="light">明亮主题</MenuItem>
-                          <MenuItem value="dark">深色主题</MenuItem>
+                          {accounts.map((account) => (
+                            <MenuItem key={account} value={account}>
+                              {account}
+                            </MenuItem>
+                          ))}
                         </TextField>
-
-                        <TextField
-                          label="主色调"
-                          name="color_primary"
-                          value={formData?.color_primary ?? DEFAULT_PRIMARY}
-                          onChange={(event) =>
-                            updateField("color_primary", event.target.value)
-                          }
-                          placeholder="#00b96b"
-                          helperText="支持输入 Hex 颜色值。"
-                          InputProps={{
-                            startAdornment: (
-                              <InputAdornment position="start">
-                                <Box
-                                  sx={{
-                                    width: 18,
-                                    height: 18,
-                                    borderRadius: "6px",
-                                    bgcolor:
-                                      formData?.color_primary || DEFAULT_PRIMARY,
-                                    border: "1px solid",
-                                    borderColor: "divider",
-                                  }}
-                                />
-                              </InputAdornment>
-                            ),
-                            endAdornment: (
-                              <InputAdornment position="end">
-                                <input
-                                  aria-label="选择主色"
-                                  type="color"
-                                  value={formData?.color_primary ?? DEFAULT_PRIMARY}
-                                  onChange={(event) =>
-                                    updateField("color_primary", event.target.value)
-                                  }
-                                  style={{
-                                    width: 28,
-                                    height: 28,
-                                    padding: 0,
-                                    border: "none",
-                                    background: "transparent",
-                                    cursor: "pointer",
-                                  }}
-                                />
-                              </InputAdornment>
-                            ),
-                          }}
-                        />
+                        <Button
+                          variant="outlined"
+                          onClick={() => setAccountMode("create")}
+                        >
+                          新建账号
+                        </Button>
+                        <Button
+                          color="error"
+                          variant="outlined"
+                          onClick={handleDeleteAccount}
+                          disabled={currentAccount === "Default"}
+                          startIcon={<DeleteOutlineRoundedIcon />}
+                        >
+                          删除当前账号
+                        </Button>
                       </Box>
-                      <Divider />
-
-                      <FormControlLabel
-                        control={
-                          <Switch
-                            checked={formData?.compact_mode ?? false}
-                            onChange={(event) =>
-                              updateField("compact_mode", event.target.checked)
-                            }
-                          />
-                        }
-                        label="启用紧凑模式"
-                        sx={{ m: 0 }}
-                      />
-                    </Stack>
-                  </CardContent>
-                </Card>
-
-                <Card sx={cardSx}>
-                  <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-                    <Stack spacing={3}>
-                      <Box>
-                        <Typography variant="h5">高级选项</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          这部分用于接入 LLM 功能。
-                        </Typography>
-                      </Box>
-
+                    ) : (
                       <Box
                         sx={{
                           display: "grid",
                           gap: 2,
-                          gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "1fr 220px" },
+                          gridTemplateColumns: {
+                            xs: "minmax(0, 1fr)",
+                            md: "1.2fr auto auto",
+                          },
+                          alignItems: "end",
                         }}
                       >
                         <TextField
-                          label="DeepSeek API Key"
-                          name="llm_api_key"
-                          type={showApiKey ? "text" : "password"}
-                          value={formData?.llm_api_key ?? ""}
+                          label="新账号名称"
+                          name="account_name"
+                          value={createAccountName}
                           onChange={(event) =>
-                            updateField("llm_api_key", event.target.value)
+                            setCreateAccountName(event.target.value)
                           }
-                          placeholder="请输入 DeepSeek API Key…"
-                          helperText="用于启用大语言模型相关能力。"
+                          placeholder='例如：本科账号…'
+                          helperText="建议按用途命名，后续切换会更清晰。"
+                        />
+                        <Button variant="contained" onClick={handleCreateAccount}>
+                          创建账号
+                        </Button>
+                        <Button
+                          variant="text"
+                          onClick={() => setAccountMode("select")}
+                        >
+                          取消
+                        </Button>
+                      </Box>
+                    )}
+
+                    <Box>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                        Canvas 连接
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        这是最核心的连接配置。建议先完成 Token 校验，再保存整页设置。
+                      </Typography>
+                    </Box>
+
+                    <Alert
+                      severity="info"
+                      icon={<TipsAndUpdatesRoundedIcon />}
+                      sx={{ borderRadius: "18px" }}
+                    >
+                      请前往{" "}
+                      <MuiLink
+                        href="https://oc.sjtu.edu.cn/profile/settings"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Canvas Token 页面
+                      </MuiLink>{" "}
+                      创建 API Token，并将其粘贴到下方字段。
+                    </Alert>
+
+                    <Box
+                      sx={{
+                        display: "grid",
+                        gap: 2,
+                        gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "1fr 220px" },
+                      }}
+                    >
+                      <Box ref={tokenFieldRef}>
+                        <TextField
+                          label="Canvas Token"
+                          name="token"
+                          type={showToken ? "text" : "password"}
+                          value={formData?.token ?? ""}
+                          onChange={(event) =>
+                            updateField("token", event.target.value)
+                          }
+                          placeholder="请输入 Canvas Token…"
+                          error={Boolean(tokenError)}
+                          helperText={
+                            tokenError ||
+                            "Token 仅用于访问你的 Canvas 数据，不会在界面中明文展示。"
+                          }
                           autoComplete="off"
                           spellCheck={false}
                           InputProps={{
+                            startAdornment: (
+                              <InputAdornment position="start">
+                                <KeyRoundedIcon color="action" />
+                              </InputAdornment>
+                            ),
                             endAdornment: (
                               <InputAdornment position="end">
-                                <Tooltip
-                                  title={showApiKey ? "隐藏 API Key" : "显示 API Key"}
-                                >
+                                <Tooltip title={showToken ? "隐藏 Token" : "显示 Token"}>
                                   <IconButton
-                                    aria-label={
-                                      showApiKey ? "隐藏 API Key" : "显示 API Key"
-                                    }
-                                    onClick={() => setShowApiKey((prev) => !prev)}
+                                    aria-label={showToken ? "隐藏 Token" : "显示 Token"}
+                                    onClick={() => setShowToken((prev) => !prev)}
                                     edge="end"
                                   >
-                                    {showApiKey ? (
+                                    {showToken ? (
                                       <VisibilityOffRoundedIcon />
                                     ) : (
                                       <VisibilityRoundedIcon />
@@ -985,204 +581,443 @@ export default function SettingsPage() {
                         />
                       </Box>
 
-                      <Box
-                        sx={{
-                          display: "grid",
-                          gap: 2,
-                          gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "1fr 1fr" },
-                        }}
+                      <TextField
+                        select
+                        label="账号类型"
+                        name="account_type"
+                        value={formData?.account_type ?? "Default"}
+                        onChange={(event) =>
+                          updateField(
+                            "account_type",
+                            event.target.value as AppConfig["account_type"]
+                          )
+                        }
+                        helperText="用于区分本部与密院环境。"
                       >
+                        <MenuItem value="Default">本部</MenuItem>
+                        <MenuItem value="JI">密院</MenuItem>
+                      </TextField>
+                    </Box>
+
+                    <Box
+                      sx={{
+                        display: "grid",
+                        gap: 2,
+                        gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "1fr auto" },
+                        alignItems: "start",
+                      }}
+                    >
+                      <Box ref={savePathFieldRef}>
                         <TextField
-                          label="明文类型白名单"
-                          name="serve_as_plaintext"
-                          value={formData?.serve_as_plaintext ?? ""}
+                          label="下载保存目录"
+                          name="save_path"
+                          value={formData?.save_path ?? ""}
                           onChange={(event) =>
-                            updateField("serve_as_plaintext", event.target.value)
+                            updateField("save_path", event.target.value)
                           }
-                          placeholder="例如：md,txt,json…"
-                          helperText="用逗号分隔，用于指定以纯文本方式打开的扩展名。"
+                          placeholder="请选择下载保存目录…"
+                          error={Boolean(savePathError)}
+                          helperText={
+                            savePathError ||
+                            "建议使用固定目录，方便文件归档与后续自动化处理。"
+                          }
                           autoComplete="off"
                         />
                       </Box>
-                    </Stack>
-                  </CardContent>
-                </Card>
-              </Stack>
-
-              <Stack spacing={3}>
-                <Card sx={cardSx}>
-                  <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-                    <Stack spacing={2.5}>
-                      <Box>
-                        <Typography variant="h5">快捷操作</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          常用动作集中在这里，方便你在配置和排障之间快速切换。
-                        </Typography>
-                      </Box>
-
-                      <Box ref={saveButtonRef}>
-                        <Button
-                          fullWidth
-                          size="large"
-                          variant="contained"
-                          startIcon={<SaveRoundedIcon />}
-                          onClick={handleSaveConfig}
-                        >
-                          保存全部设置
-                        </Button>
-                      </Box>
-
-                      <Button fullWidth variant="outlined" onClick={handleTestToken}>
-                        测试 Canvas Token
-                      </Button>
                       <Button
-                        fullWidth
                         variant="outlined"
-                        onClick={handleTestApiKey}
-                        startIcon={<AutoAwesomeRoundedIcon />}
-                      >
-                        测试 DeepSeek API Key
-                      </Button>
-                      <Button
-                        fullWidth
-                        variant="outlined"
-                        onClick={handleOpenConfigDir}
+                        onClick={handleSelectSavePath}
                         startIcon={<FolderOpenRoundedIcon />}
+                        sx={{ minHeight: 56 }}
                       >
-                        打开配置目录
+                        选择目录
                       </Button>
+                    </Box>
+                  </Stack>
+                </CardContent>
+              </Card>
+
+              <Card sx={cardSx}>
+                <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+                  <Stack spacing={3}>
+                    <Box>
+                      <Typography variant="h5">界面偏好</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        调整主题、主色和紧凑模式，让工作区更贴近你的使用习惯。
+                      </Typography>
+                    </Box>
+
+                    <Box
+                      sx={{
+                        display: "grid",
+                        gap: 2,
+                        gridTemplateColumns: {
+                          xs: "minmax(0, 1fr)",
+                          md: "repeat(3, minmax(0, 1fr))",
+                        },
+                        alignItems: "start",
+                      }}
+                    >
+                      <TextField
+                        select
+                        label="界面主题"
+                        name="theme"
+                        value={formData?.theme ?? "light"}
+                        onChange={(event) =>
+                          updateField("theme", event.target.value as AppConfig["theme"])
+                        }
+                        helperText="应用到整个工作区的亮暗风格。"
+                      >
+                        <MenuItem value="light">明亮主题</MenuItem>
+                        <MenuItem value="dark">深色主题</MenuItem>
+                      </TextField>
+
+                      <TextField
+                        label="主色调"
+                        name="color_primary"
+                        value={formData?.color_primary ?? DEFAULT_PRIMARY}
+                        onChange={(event) =>
+                          updateField("color_primary", event.target.value)
+                        }
+                        placeholder="#00b96b"
+                        helperText="支持输入 Hex 颜色值。"
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <Box
+                                sx={{
+                                  width: 18,
+                                  height: 18,
+                                  borderRadius: "6px",
+                                  bgcolor:
+                                    formData?.color_primary || DEFAULT_PRIMARY,
+                                  border: "1px solid",
+                                  borderColor: "divider",
+                                }}
+                              />
+                            </InputAdornment>
+                          ),
+                          endAdornment: (
+                            <InputAdornment position="end">
+                              <input
+                                aria-label="选择主色"
+                                type="color"
+                                value={formData?.color_primary ?? DEFAULT_PRIMARY}
+                                onChange={(event) =>
+                                  updateField("color_primary", event.target.value)
+                                }
+                                style={{
+                                  width: 28,
+                                  height: 28,
+                                  padding: 0,
+                                  border: "none",
+                                  background: "transparent",
+                                  cursor: "pointer",
+                                }}
+                              />
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    </Box>
+                    <Divider />
+                  </Stack>
+                </CardContent>
+              </Card>
+
+              <Card sx={cardSx}>
+                <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+                  <Stack spacing={3}>
+                    <Box>
+                      <Typography variant="h5">高级选项</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        这部分用于接入 LLM 功能。
+                      </Typography>
+                    </Box>
+
+                    <Box
+                      sx={{
+                        display: "grid",
+                        gap: 2,
+                        gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "1fr 220px" },
+                      }}
+                    >
+                      <TextField
+                        label="DeepSeek API Key"
+                        name="llm_api_key"
+                        type={showApiKey ? "text" : "password"}
+                        value={formData?.llm_api_key ?? ""}
+                        onChange={(event) =>
+                          updateField("llm_api_key", event.target.value)
+                        }
+                        placeholder="请输入 DeepSeek API Key…"
+                        helperText="用于启用大语言模型相关能力。"
+                        autoComplete="off"
+                        spellCheck={false}
+                        InputProps={{
+                          endAdornment: (
+                            <InputAdornment position="end">
+                              <Tooltip
+                                title={showApiKey ? "隐藏 API Key" : "显示 API Key"}
+                              >
+                                <IconButton
+                                  aria-label={
+                                    showApiKey ? "隐藏 API Key" : "显示 API Key"
+                                  }
+                                  onClick={() => setShowApiKey((prev) => !prev)}
+                                  edge="end"
+                                >
+                                  {showApiKey ? (
+                                    <VisibilityOffRoundedIcon />
+                                  ) : (
+                                    <VisibilityRoundedIcon />
+                                  )}
+                                </IconButton>
+                              </Tooltip>
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    </Box>
+
+                    <Box
+                      sx={{
+                        display: "grid",
+                        gap: 2,
+                        gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "1fr 1fr" },
+                      }}
+                    >
+                      <TextField
+                        label="明文类型白名单"
+                        name="serve_as_plaintext"
+                        value={formData?.serve_as_plaintext ?? ""}
+                        onChange={(event) =>
+                          updateField("serve_as_plaintext", event.target.value)
+                        }
+                        placeholder="例如：md,txt,json…"
+                        helperText="用逗号分隔，用于指定以纯文本方式打开的扩展名。"
+                        autoComplete="off"
+                      />
+                    </Box>
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Stack>
+
+            <Stack spacing={3}>
+              <Card sx={cardSx}>
+                <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+                  <Stack spacing={2.5}>
+                    <Box>
+                      <Typography variant="h5">快捷操作</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        常用动作集中在这里，方便你在配置和排障之间快速切换。
+                      </Typography>
+                    </Box>
+
+                    <Box ref={saveButtonRef}>
                       <Button
                         fullWidth
-                        variant="outlined"
-                        onClick={() => setShowLogModal(true)}
-                      >
-                        查看运行日志
-                      </Button>
-                    </Stack>
-                  </CardContent>
-                </Card>
-
-                <Card sx={cardSx}>
-                  <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-                    <Stack spacing={2}>
-                      <Box>
-                        <Typography variant="h5">配置状态</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          帮助你快速判断当前配置是否完整，以及页面是否存在未保存修改。
-                        </Typography>
-                      </Box>
-
-                      <Stack spacing={1.25} sx={{ width: "100%" }}>
-                        <Chip
-                          color={dirty ? "warning" : "success"}
-                          label={dirty ? "有未保存修改" : "已与本地配置同步"}
-                          sx={fullWidthChipSx}
-                        />
-                        <Chip
-                          color={formData?.token ? "success" : "default"}
-                          label={formData?.token ? "Token 已填写" : "Token 待填写"}
-                          sx={fullWidthChipSx}
-                        />
-                        <Chip
-                          color={formData?.save_path ? "success" : "default"}
-                          label={formData?.save_path ? "保存目录已配置" : "保存目录待配置"}
-                          sx={fullWidthChipSx}
-                        />
-                        <Chip
-                          color={formData?.llm_api_key ? "info" : "default"}
-                          label={formData?.llm_api_key ? "LLM 功能已接入" : "LLM 功能未接入"}
-                          sx={fullWidthChipSx}
-                        />
-                      </Stack>
-                    </Stack>
-                  </CardContent>
-                </Card>
-
-                <Card sx={cardSx}>
-                  <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-                    <Stack spacing={2}>
-                      <Box>
-                        <Typography variant="h5">配置预览</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          查看最终写入的原始配置，适合排查异常或确认字段结构。
-                        </Typography>
-                      </Box>
-
-                      <Button
-                        variant="outlined"
-                        onClick={() => (rawConfig ? setRawConfig("") : void getRawConfig())}
-                        startIcon={<PreviewRoundedIcon />}
-                      >
-                        {rawConfig ? "隐藏原始配置" : "加载原始配置"}
-                      </Button>
-
-                      {rawConfig && parsedRawConfig && (
-                        <Box
-                          sx={{
-                            p: 1,
-                            borderRadius: "20px",
-                            border: "1px solid",
-                            borderColor: "divider",
-                            bgcolor: alpha(muiTheme.palette.background.default, 0.72),
-                            maxHeight: 420,
-                            overflow: "auto",
-                          }}
-                        >
-                          <ReactJson
-                            style={{ background: "transparent" }}
-                            src={parsedRawConfig}
-                            collapsed={1}
-                          />
-                        </Box>
-                      )}
-
-                      {rawConfig && !parsedRawConfig && (
-                        <Alert severity="warning" sx={{ borderRadius: "18px" }}>
-                          当前配置不是合法 JSON，无法渲染结构化预览。
-                        </Alert>
-                      )}
-                    </Stack>
-                  </CardContent>
-                </Card>
-
-                <Card
-                  sx={{
-                    ...cardSx,
-                    borderColor: alpha(muiTheme.palette.error.main, 0.24),
-                    bgcolor: alpha(muiTheme.palette.error.main, 0.04),
-                  }}
-                >
-                  <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-                    <Stack spacing={2}>
-                      <Box>
-                        <Typography variant="h5">危险操作</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          删除账号会移除当前账户配置。默认账号不允许删除，以避免误操作。
-                        </Typography>
-                      </Box>
-
-                      <Button
-                        color="error"
+                        size="large"
                         variant="contained"
-                        onClick={handleDeleteAccount}
-                        disabled={currentAccount === "Default"}
-                        startIcon={<DeleteOutlineRoundedIcon />}
+                        startIcon={<SaveRoundedIcon />}
+                        onClick={handleSaveConfig}
                       >
-                        删除当前账号
+                        保存全部设置
                       </Button>
-                    </Stack>
-                  </CardContent>
-                </Card>
-              </Stack>
-            </Box>
-          </Stack>
+                    </Box>
 
-          {showLogModal && <LogModal onClose={() => setShowLogModal(false)} />}
-          {openTour && (
-            <Tour open={openTour} onClose={() => setOpenTour(false)} steps={steps} />
-          )}
-        </Box>
-      </ThemeProvider>
+                    <Button fullWidth variant="outlined" onClick={handleTestToken}>
+                      测试 Canvas Token
+                    </Button>
+                    <Button
+                      fullWidth
+                      variant="outlined"
+                      onClick={handleTestApiKey}
+                      startIcon={<AutoAwesomeRoundedIcon />}
+                    >
+                      测试 DeepSeek API Key
+                    </Button>
+                    <Button
+                      fullWidth
+                      variant="outlined"
+                      onClick={handleOpenConfigDir}
+                      startIcon={<FolderOpenRoundedIcon />}
+                    >
+                      打开配置目录
+                    </Button>
+                    <Button
+                      fullWidth
+                      variant="outlined"
+                      onClick={() => setShowLogModal(true)}
+                    >
+                      查看运行日志
+                    </Button>
+                  </Stack>
+                </CardContent>
+              </Card>
+
+              <Card sx={cardSx}>
+                <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+                  <Stack spacing={2}>
+                    <Box>
+                      <Typography variant="h5">配置状态</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        帮助你快速判断当前配置是否完整，以及页面是否存在未保存修改。
+                      </Typography>
+                    </Box>
+
+                    <Stack spacing={1.25} sx={{ width: "100%" }}>
+                      <Chip
+                        color={dirty ? "warning" : "success"}
+                        label={dirty ? "有未保存修改" : "已与本地配置同步"}
+                        sx={fullWidthChipSx}
+                      />
+                      <Chip
+                        color={formData?.token ? "success" : "default"}
+                        label={formData?.token ? "Token 已填写" : "Token 待填写"}
+                        sx={fullWidthChipSx}
+                      />
+                      <Chip
+                        color={formData?.save_path ? "success" : "default"}
+                        label={formData?.save_path ? "保存目录已配置" : "保存目录待配置"}
+                        sx={fullWidthChipSx}
+                      />
+                      <Chip
+                        color={formData?.llm_api_key ? "info" : "default"}
+                        label={formData?.llm_api_key ? "LLM 功能已接入" : "LLM 功能未接入"}
+                        sx={fullWidthChipSx}
+                      />
+                    </Stack>
+                  </Stack>
+                </CardContent>
+              </Card>
+
+              <Card sx={cardSx}>
+                <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+                  <Stack spacing={2}>
+                    <Box>
+                      <Typography variant="h5">配置预览</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        查看最终写入的原始配置，适合排查异常或确认字段结构。
+                      </Typography>
+                    </Box>
+
+                    <Button
+                      variant="outlined"
+                      onClick={() => (rawConfig ? setRawConfig("") : void getRawConfig())}
+                      startIcon={<PreviewRoundedIcon />}
+                    >
+                      {rawConfig ? "隐藏原始配置" : "加载原始配置"}
+                    </Button>
+
+                    {rawConfig && parsedRawConfig && (
+                      <Box
+                        sx={{
+                          p: 1,
+                          borderRadius: "20px",
+                          border: "1px solid",
+                          borderColor: "divider",
+                          bgcolor: alpha(theme.palette.background.default, 0.72),
+                          maxHeight: 420,
+                          overflow: "auto",
+                        }}
+                      >
+                        <ReactJson
+                          style={{ background: "transparent" }}
+                          src={parsedRawConfig}
+                          collapsed={1}
+                        />
+                      </Box>
+                    )}
+
+                    {rawConfig && !parsedRawConfig && (
+                      <Alert severity="warning" sx={{ borderRadius: "18px" }}>
+                        当前配置不是合法 JSON，无法渲染结构化预览。
+                      </Alert>
+                    )}
+                  </Stack>
+                </CardContent>
+              </Card>
+
+              <Card
+                sx={{
+                  ...cardSx,
+                  borderColor: alpha(theme.palette.error.main, 0.24),
+                  bgcolor: alpha(theme.palette.error.main, 0.04),
+                }}
+              >
+                <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+                  <Stack spacing={2}>
+                    <Box>
+                      <Typography variant="h5">危险操作</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        删除账号会移除当前账户配置。默认账号不允许删除，以避免误操作。
+                      </Typography>
+                    </Box>
+
+                    <Button
+                      color="error"
+                      variant="contained"
+                      onClick={handleDeleteAccount}
+                      disabled={currentAccount === "Default"}
+                      startIcon={<DeleteOutlineRoundedIcon />}
+                    >
+                      删除当前账号
+                    </Button>
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Stack>
+          </Box>
+        </Stack>
+
+        {showLogModal && <LogModal onClose={() => setShowLogModal(false)} />}
+        <Dialog open={openTour} onClose={() => setOpenTour(false)} fullWidth maxWidth="sm">
+          <DialogTitle>{steps[tourStep]?.title}</DialogTitle>
+          <DialogContent dividers>
+            <Stack spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                {steps[tourStep]?.description}
+              </Typography>
+              {steps[tourStep]?.image ? (
+                <Box
+                  component="img"
+                  src={steps[tourStep].image}
+                  alt={steps[tourStep].title}
+                  sx={{
+                    width: "100%",
+                    borderRadius: "20px",
+                    border: "1px solid",
+                    borderColor: "divider",
+                  }}
+                />
+              ) : null}
+            </Stack>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, py: 2 }}>
+            <Button onClick={() => setOpenTour(false)}>关闭</Button>
+            <Button
+              onClick={() => setTourStep((prev) => Math.max(0, prev - 1))}
+              disabled={tourStep === 0}
+            >
+              上一步
+            </Button>
+            <Button
+              variant="contained"
+              onClick={() => {
+                if (tourStep === steps.length - 1) {
+                  setOpenTour(false);
+                  return;
+                }
+                setTourStep((prev) => prev + 1);
+              }}
+            >
+              {tourStep === steps.length - 1 ? "完成" : "下一步"}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </Box>
     </BasicLayout>
   );
 }

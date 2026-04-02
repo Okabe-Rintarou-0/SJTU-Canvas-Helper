@@ -1,5 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
-import { Button, Input, Progress, Space, message } from "antd";
+import {
+  Button,
+  LinearProgress,
+  Stack,
+  TextField,
+  Typography,
+} from "@mui/material";
 import dayjs from "dayjs";
 import PDFMerger from "pdf-merger-js/browser";
 import {
@@ -17,6 +23,7 @@ import { LoginAlertModal } from "../components/login_alert_modal";
 import PreviewModal from "../components/preview_modal";
 import { getConfig, saveConfig } from "./config";
 import { BASE_URL, JI_BASE_URL } from "./constants";
+import { appMessage } from "./message";
 import {
   AnnualReport,
   Assignment,
@@ -233,19 +240,19 @@ export function useMerger({
     files = files.filter((file) => isMergableFileType(file.display_name));
     const pdfMerger = new PDFMerger();
     if (files.length === 0) {
-      message.warning("未选中多个可用的 PDF 文件🙅！");
+      appMessage().warning("未选中多个可用的 PDF 文件🙅！");
       return;
     }
     if (files.length === 1) {
-      message.warning("单个 PDF 无需合并🤔️！");
+      appMessage().warning("单个 PDF 无需合并🤔️！");
       return;
     }
     if (merging) {
-      message.warning("请等待当前合并任务执行完毕！");
+      appMessage().warning("请等待当前合并任务执行完毕！");
       return;
     }
     if (downloading) {
-      message.warning("请等待当前下载任务执行完毕！");
+      appMessage().warning("请等待当前下载任务执行完毕！");
       return;
     }
     setTotalSteps(files.length);
@@ -327,36 +334,42 @@ export function useMerger({
       }
       setMsg("下载成功🎉！");
       setDownloading(false);
-      message.success(`下载成功🎉！`);
+      appMessage().success(`下载成功🎉！`);
     } catch (e) {
-      message.error(`下载失败😩：${e}`);
+      appMessage().error(`下载失败😩：${e}`);
     }
   };
 
   const merger = (
-    <Space direction="vertical" style={{ width: "100%" }}>
-      <Space>
-        自定义文件名：
-        <Input
+    <Stack spacing={2} sx={{ width: "100%" }}>
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }}>
+        <Typography variant="body2" color="text.secondary">
+          自定义文件名：
+        </Typography>
+        <TextField
+          size="small"
+          fullWidth
           onChange={(e) => setOutFileName(e.target.value)}
           placeholder="请输入自定义文件名"
-          addonAfter={".pdf"}
+          InputProps={{
+            endAdornment: <Typography variant="caption" color="text.secondary">.pdf</Typography>,
+          }}
         />
-      </Space>
+      </Stack>
       {progress}
       {result && (
-        <Space>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }}>
           <a
             onMouseEnter={() => onHoverEntry(result)}
             onMouseLeave={onLeaveEntry}
           >
             {result.display_name}
           </a>
-          <Button onClick={() => setPreviewEntry(result)}>预览</Button>
-          <Button onClick={handleDownloadResult}>下载</Button>
-        </Space>
+          <Button variant="outlined" onClick={() => setPreviewEntry(result)}>预览</Button>
+          <Button variant="contained" onClick={handleDownloadResult}>下载</Button>
+        </Stack>
       )}
-    </Space>
+    </Stack>
   );
 
   return { merger, mergePDFs };
@@ -376,10 +389,19 @@ function MergeProgress({
   const percent = Math.ceil((currentStep / totalSteps) * 100);
   const status = error ? "exception" : percent !== 100 ? "active" : "success";
   return (
-    <Space direction="vertical" style={{ width: "100%" }}>
-      {msg && <span>{msg}</span>}
-      <Progress percent={percent} status={status} style={{ width: "100%" }} />
-    </Space>
+    <Stack spacing={1.25} sx={{ width: "100%" }}>
+      {msg && (
+        <Typography variant="body2" color="text.secondary">
+          {msg}
+        </Typography>
+      )}
+      <LinearProgress
+        variant="determinate"
+        value={Number.isFinite(percent) ? percent : 0}
+        color={status === "exception" ? "error" : "primary"}
+        sx={{ height: 10, borderRadius: 999 }}
+      />
+    </Stack>
   );
 }
 
@@ -415,7 +437,7 @@ export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {
       await saveConfig(config);
       onScanSuccess?.();
     } catch (e) {
-      message.error(`登录失败🥹：${e}`);
+      appMessage().error(`登录失败🥹：${e}`);
     }
   };
 
@@ -485,7 +507,7 @@ export function useData<T>(command: string, shouldFetch: boolean, args?: any) {
       setData(data);
     } catch (e) {
       consoleLog(LOG_LEVEL_ERROR, e);
-      message.error(e as string);
+      appMessage().error(e as string);
       setError(e);
     }
     setIsLoading(false);

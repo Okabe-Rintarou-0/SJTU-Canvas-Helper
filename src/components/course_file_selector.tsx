@@ -1,91 +1,205 @@
-import { Badge, Button, Space, Tag } from "antd";
+import AttachFileRoundedIcon from "@mui/icons-material/AttachFileRounded";
+import FolderOpenRoundedIcon from "@mui/icons-material/FolderOpenRounded";
+import InsertDriveFileRoundedIcon from "@mui/icons-material/InsertDriveFileRounded";
+import {
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  Stack,
+  Typography,
+} from "@mui/material";
+import { alpha, useTheme } from "@mui/material/styles";
 import { useEffect, useState } from "react";
+
 import { usePreview } from "../lib/hooks";
 import { File } from "../lib/model";
 import CourseFileSelectModal from "./course_file_select_modal";
 
 interface CourseFileSelectorProps {
-    courseId: number;        // 课程ID，用于获取课程文件列表
-    initialFiles: File[];    // 初始选中的文件列表
-    onSelectFiles?: (files: File[]) => void; // 文件选择变化时的回调函数
+  courseId: number;
+  initialFiles: File[];
+  onSelectFiles?: (files: File[]) => void;
 }
 
-/**
- * 课程文件选择器组件
- * 用于选择课程相关的文件，并提供文件预览和删除功能
- */
-function CourseFileSelector({ courseId, initialFiles, onSelectFiles }: CourseFileSelectorProps) {
-    const [showModal, setShowModal] = useState<boolean>(false); // 控制文件选择模态框的显示
-    const [selectedFiles, setSelectedFiles] = useState<File[]>([]); // 当前选中的文件列表
-    const { previewer, onHoverEntry, onLeaveEntry } = usePreview(); // 文件预览相关的钩子函数
+function CourseFileSelector({
+  courseId,
+  initialFiles,
+  onSelectFiles,
+}: CourseFileSelectorProps) {
+  const theme = useTheme();
+  const [showModal, setShowModal] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry } =
+    usePreview();
 
-    /**
-     * 处理文件选择完成事件
-     */
-    const handleSelect = (files: File[]) => {
-        setSelectedFiles(files);
-        setShowModal(false);
-        onSelectFiles?.(files);
-    };
+  const handleSelect = (files: File[]) => {
+    setSelectedFiles(files);
+    setShowModal(false);
+    onSelectFiles?.(files);
+  };
 
-    /**
-     * 处理文件删除事件
-     */
-    const handleRemoveFile = (fileToRemove: File) => {
-        const updatedFiles = selectedFiles.filter(file => file.id !== fileToRemove.id);
-        setSelectedFiles(updatedFiles);
-        onSelectFiles?.(updatedFiles);
-    };
+  const handleRemoveFile = (fileToRemove: File) => {
+    const updatedFiles = selectedFiles.filter((file) => file.id !== fileToRemove.id);
+    setSelectedFiles(updatedFiles);
+    onSelectFiles?.(updatedFiles);
+  };
 
-    /**
-     * 当初始文件列表变化时，更新选中的文件列表
-     */
-    useEffect(() => {
-        setSelectedFiles(initialFiles);
-    }, [initialFiles]);
+  useEffect(() => {
+    setSelectedFiles(initialFiles);
+  }, [initialFiles]);
 
-    return <>
-        {previewer}
-        <Space wrap>
-            <span>选择课程文件：</span>
-            {selectedFiles.map(file => (
-                <Tag
+  return (
+    <>
+      {previewer}
+      <Card
+        sx={{
+          borderRadius: "22px",
+          border: "1px solid",
+          borderColor: "divider",
+          boxShadow: "none",
+          backgroundImage: "none",
+        }}
+      >
+        <CardContent sx={{ p: { xs: 2, md: 2.25 } }}>
+          <Stack spacing={2}>
+            <Stack
+              direction={{ xs: "column", md: "row" }}
+              justifyContent="space-between"
+              spacing={1.5}
+            >
+              <Box>
+                <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                  选择课程文件
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  绑定评分参考资料、题面或答案文件，方便预览时快速对照。
+                </Typography>
+              </Box>
+              <Button
+                variant="contained"
+                startIcon={<FolderOpenRoundedIcon />}
+                onClick={() => setShowModal(true)}
+              >
+                选择文件
+              </Button>
+            </Stack>
+
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              <Chip
+                icon={<AttachFileRoundedIcon />}
+                label={`已绑定 ${selectedFiles.length} 个文件`}
+                color="primary"
+                variant="outlined"
+              />
+            </Stack>
+
+            {selectedFiles.length > 0 ? (
+              <Box
+                sx={{
+                  display: "grid",
+                  gap: 1.5,
+                  gridTemplateColumns: {
+                    xs: "minmax(0, 1fr)",
+                    md: "repeat(2, minmax(0, 1fr))",
+                    xl: "repeat(3, minmax(0, 1fr))",
+                  },
+                }}
+              >
+                {selectedFiles.map((file) => (
+                  <Card
                     key={file.id}
-                    closable
-                    onClose={() => handleRemoveFile(file)}
-                    style={{
-                        margin: '4px 0',
-                        fontSize: '14px',
-                        backgroundColor: '#f0f5ff',
-                        borderColor: '#adc6ff'
+                    sx={{
+                      borderRadius: "18px",
+                      border: "1px solid",
+                      borderColor: alpha(theme.palette.divider, 0.6),
+                      boxShadow: "none",
+                      backgroundColor: alpha(theme.palette.background.paper, 0.72),
                     }}
-                    color="blue"
-                >
-                    <a
-                        onMouseEnter={() => onHoverEntry(file)}
-                        onMouseLeave={onLeaveEntry}
-                        style={{
-                            textDecoration: 'none',
-                            color: '#1890ff',
-                            display: 'inline-block',
-                            padding: '0 4px'
-                        }}
-                        onMouseOver={(e) => e.currentTarget.style.textDecoration = 'underline'}
-                        onMouseOut={(e) => e.currentTarget.style.textDecoration = 'none'}
-                    >
-                        {file.display_name}
-                    </a>
-                </Tag>
-            ))}
-            <Badge count={selectedFiles.length} showZero>
-                <Button onClick={() => setShowModal(true)}>选择</Button>
-            </Badge>
-        </Space>
-        <CourseFileSelectModal courseId={courseId} open={showModal}
-            onCancel={() => setShowModal(false)}
-            onOk={handleSelect}
-        />
+                  >
+                    <CardContent sx={{ p: 1.75 }}>
+                      <Stack spacing={1.25}>
+                        <Stack direction="row" spacing={1.25} alignItems="flex-start">
+                          <Box
+                            sx={{
+                              width: 40,
+                              height: 40,
+                              borderRadius: "14px",
+                              display: "grid",
+                              placeItems: "center",
+                              bgcolor: alpha(theme.palette.primary.main, 0.12),
+                              color: "primary.main",
+                              flexShrink: 0,
+                            }}
+                          >
+                            <InsertDriveFileRoundedIcon />
+                          </Box>
+                          <Box sx={{ minWidth: 0, flex: 1 }}>
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                fontWeight: 700,
+                                wordBreak: "break-word",
+                              }}
+                            >
+                              {file.display_name}
+                            </Typography>
+                          </Box>
+                        </Stack>
+
+                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                          <Button
+                            variant="text"
+                            size="small"
+                            onMouseEnter={() => onHoverEntry(file)}
+                            onMouseLeave={onLeaveEntry}
+                            onClick={() => setPreviewEntry(file)}
+                          >
+                            预览
+                          </Button>
+                          <Button
+                            variant="text"
+                            color="error"
+                            size="small"
+                            onClick={() => handleRemoveFile(file)}
+                          >
+                            移除
+                          </Button>
+                        </Stack>
+                      </Stack>
+                    </CardContent>
+                  </Card>
+                ))}
+              </Box>
+            ) : (
+              <Box
+                sx={{
+                  px: 2,
+                  py: 4,
+                  borderRadius: "18px",
+                  border: "1px dashed",
+                  borderColor: alpha(theme.palette.divider, 0.7),
+                  textAlign: "center",
+                }}
+              >
+                <Typography variant="body2" color="text.secondary">
+                  暂未绑定课程文件。点击右上角“选择文件”开始添加。
+                </Typography>
+              </Box>
+            )}
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <CourseFileSelectModal
+        courseId={courseId}
+        open={showModal}
+        onCancel={() => setShowModal(false)}
+        onOk={handleSelect}
+      />
     </>
+  );
 }
 
 export default CourseFileSelector;

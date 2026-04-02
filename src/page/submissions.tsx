@@ -1,11 +1,41 @@
-import { WarningOutlined } from "@ant-design/icons";
 import { invoke } from "@tauri-apps/api/core";
-import type { SelectProps } from "antd";
-import { Button, Input, Popconfirm, Select, Space, Table, Tag } from "antd";
-import useMessage from "antd/es/message/useMessage";
-import { DefaultOptionType } from "antd/es/select";
+import ArticleRoundedIcon from "@mui/icons-material/ArticleRounded";
+import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
+import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
+import PreviewRoundedIcon from "@mui/icons-material/PreviewRounded";
+import RateReviewRoundedIcon from "@mui/icons-material/RateReviewRounded";
+import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
+import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
+import {
+  Alert,
+  Autocomplete,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Checkbox,
+  Chip,
+  Collapse,
+  FormControl,
+  InputLabel,
+  Link as MuiLink,
+  MenuItem,
+  Select,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TablePagination,
+  TableRow,
+  TextField,
+  Tooltip,
+  Typography,
+} from "@mui/material";
+import { alpha, useTheme } from "@mui/material/styles";
 import { html, pinyin } from "pinyin-pro";
 import { ReactNode, useEffect, useMemo, useState } from "react";
+
 import ClosableAlert from "../components/closable_alert";
 import CommentPanel from "../components/comment_panel";
 import CourseFileSelector from "../components/course_file_selector";
@@ -15,6 +45,7 @@ import GradeStatisticChart from "../components/grade_statistic";
 import BasicLayout from "../components/layout";
 import { getConfig, saveConfig } from "../lib/config";
 import { SUBMISSION_PAGE_HINT_ALERT_KEY } from "../lib/constants";
+import { useAppMessage } from "../lib/message";
 import {
   useBaseURL,
   useMe,
@@ -41,46 +72,76 @@ import {
 
 interface SubmissionGradeProps {
   gradingType: string;
-  key: Option<number | string>,
-  disabled: boolean,
+  gradeKey: Option<number | string>;
+  disabled: boolean;
   defaultValue: string;
   onSubmit: (grade: string) => void;
 }
 
-function SubmissionGrade(props: SubmissionGradeProps) {
-  const {
-    gradingType, key, disabled, defaultValue, onSubmit
-  } = props;
+function SubmissionGrade({
+  gradingType,
+  gradeKey,
+  disabled,
+  defaultValue,
+  onSubmit,
+}: SubmissionGradeProps) {
+  const [value, setValue] = useState(defaultValue);
+
+  useEffect(() => {
+    setValue(defaultValue);
+  }, [defaultValue, gradeKey]);
+
   if (gradingType === "pass_fail") {
-    return <Select defaultValue={defaultValue}
-      style={{ width: "100px" }}
-      onChange={grade => onSubmit(grade)}
-      disabled={disabled}
-    >
-      <Select.Option value="complete">完成</Select.Option>
-      <Select.Option value="incomplete">未完成</Select.Option>
-    </Select>
-  } else {
-    return <Input
-      key={key}
-      disabled={disabled}
-      defaultValue={defaultValue}
-      placeholder="输入成绩并按下回车以打分"
-      onPressEnter={(ev) =>
-        onSubmit(ev.currentTarget.value)
-      }
-    />
+    return (
+      <FormControl fullWidth size="small">
+        <Select
+          value={value || ""}
+          disabled={disabled}
+          onChange={(event) => {
+            const nextValue = event.target.value;
+            setValue(nextValue);
+            onSubmit(nextValue);
+          }}
+        >
+          <MenuItem value="complete">完成</MenuItem>
+          <MenuItem value="incomplete">未完成</MenuItem>
+        </Select>
+      </FormControl>
+    );
   }
+
+  return (
+    <TextField
+      value={value}
+      disabled={disabled}
+      size="small"
+      placeholder="输入成绩后按回车"
+      onChange={(event) => setValue(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter") {
+          return;
+        }
+        onSubmit((event.currentTarget as HTMLInputElement).value);
+      }}
+    />
+  );
 }
 
+const surfaceCardSx = {
+  borderRadius: "28px",
+  border: "1px solid",
+  borderColor: "divider",
+  boxShadow: "0 24px 60px rgba(15, 23, 42, 0.08)",
+  backgroundImage: "none",
+};
+
 export default function SubmissionsPage() {
-  const [messageApi, contextHolder] = useMessage();
-  const [operating, setOperating] = useState<boolean>(false);
-  const [loading, setLoading] = useState<boolean>(false);
+  const theme = useTheme();
+  const [messageApi, contextHolder] = useAppMessage();
+  const [operating, setOperating] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
-  const [options, setOptions] = useState<SelectProps["options"]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
+  const [selectedCourseId, setSelectedCourseId] = useState(-1);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [downloadTasks, setDownloadTasks] = useState<FileDownloadTask[]>([]);
   const [selectedAssignment, setSelectedAssignment] = useState<
@@ -89,37 +150,37 @@ export default function SubmissionsPage() {
   const [selectedAttachments, setSelectedAttachments] = useState<Attachment[]>(
     []
   );
-  const usersMap = useMemo(
-    () => new Map<number, User>(users.map((user) => [user.id, user])),
-    [users]
-  );
-  const [statistic, setStatistic] = useState<GradeStatistic | undefined>(
-    undefined
-  );
-  const [keywords, setKeywords] = useState<string[]>([""]);
-  const [attachmentToComment, setAttachmentToComment] = useState<number>(-1);
+  const [statistic, setStatistic] = useState<GradeStatistic | undefined>();
+  const [keywords, setKeywords] = useState<string[]>([]);
+  const [attachmentToComment, setAttachmentToComment] = useState(-1);
   const [expandedRowKeys, setExpandedRowKeys] = useState<number[]>([]);
   const [previewFooter, setPreviewFooter] = useState<ReactNode>(undefined);
   const [commentingWhilePreviewing, setCommentingWhilePreviewing] =
-    useState<boolean>(false);
+    useState(false);
   const [notSubmitStudents, setNotSubmitStudents] = useState<User[]>([]);
   const [boundFiles, setBoundFiles] = useState<File[]>([]);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(20);
   const courses = useTAOrTeacherCourses();
   const me = useMe();
   const baseURL = useBaseURL();
 
+  const usersMap = useMemo(
+    () => new Map<number, User>(users.map((user) => [user.id, user])),
+    [users]
+  );
+
+  const readonlyGrade = selectedAssignment?.needs_grading_count === null;
+
   const refreshSubmission = async (studentId: number) => {
-    const submission = (await invoke(
-      "get_single_course_assignment_submission",
-      {
-        courseId: selectedCourseId,
-        assignmentId: selectedAssignment?.id,
-        studentId,
-      }
-    )) as Submission;
+    const submission = (await invoke("get_single_course_assignment_submission", {
+      courseId: selectedCourseId,
+      assignmentId: selectedAssignment?.id,
+      studentId,
+    })) as Submission;
     attachments
-      .filter((thisAttachment) => thisAttachment.user_id === studentId)
-      .map((attachment) => {
+      .filter((item) => item.user_id === studentId)
+      .forEach((attachment) => {
         attachment.user = usersMap.get(submission.user_id)?.name;
         attachment.user_id = submission.user_id;
         attachment.submitted_at = submission.submitted_at;
@@ -130,6 +191,7 @@ export default function SubmissionsPage() {
       });
     setAttachments([...attachments]);
   };
+
   const shouldMonitor = !previewFooter || !commentingWhilePreviewing;
   const {
     previewEntry,
@@ -155,20 +217,24 @@ export default function SubmissionsPage() {
     if (!previewedAttachment || !selectedAssignment) {
       return;
     }
-    const footer = (
-      <Space
-        direction="vertical"
-        size="large"
-        style={{ width: "100%", marginTop: "10px" }}
-      >
-        <Space>
-          打分：
-          <SubmissionGrade key={previewedAttachment.id}
-            gradingType={selectedAssignment.grading_type} disabled={readonlyGrade}
-            defaultValue={previewedAttachment.grade ?? ""}
-            onSubmit={grade => handleGrade(grade, previewedAttachment)}
-          />
-        </Space>
+    setPreviewFooter(
+      <Stack spacing={2} sx={{ mt: 1.5 }}>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={1.25}
+          alignItems={{ xs: "stretch", sm: "center" }}
+        >
+          <Typography variant="subtitle2">打分</Typography>
+          <Box sx={{ flex: 1 }}>
+            <SubmissionGrade
+              gradeKey={previewedAttachment.id}
+              gradingType={selectedAssignment.grading_type}
+              disabled={readonlyGrade}
+              defaultValue={previewedAttachment.grade ?? ""}
+              onSubmit={(grade) => handleGrade(grade, previewedAttachment)}
+            />
+          </Box>
+        </Stack>
         <CommentPanel
           me={me.data}
           onRefresh={refreshSubmission}
@@ -180,42 +246,45 @@ export default function SubmissionsPage() {
           showInput={true}
           messageApi={messageApi}
         />
-      </Space>
+      </Stack>
     );
-    setPreviewFooter(footer);
-  }, [previewEntry, attachments]);
+  }, [previewEntry, attachments, selectedAssignment, readonlyGrade, me.data]);
 
   useEffect(() => {
     setEntries(attachments.map(attachmentToFile));
-  }, [attachments]);
+  }, [attachments, setEntries]);
 
   useEffect(() => {
     if (attachments.length > 0) {
       setNotSubmitStudents(getNotSubmitStudents());
+    } else {
+      setNotSubmitStudents([]);
     }
-  }, [attachments]);
+  }, [attachments, usersMap]);
 
-  const gatherGrades = (attachments: Attachment[]): [number[], number] => {
-    let grades = [];
-    let visitSet = new Set<number>();
-    let userId;
-    for (let attachment of attachments) {
-      userId = attachment.user_id;
-      if (!visitSet.has(userId)) {
-        visitSet.add(userId);
-        if (attachment.grade) {
-          grades.push(Number.parseFloat(attachment.grade));
-        }
+  useEffect(() => {
+    setPage(0);
+  }, [selectedAssignment?.id, keywords, attachments.length]);
+
+  const gatherGrades = (items: Attachment[]): [number[], number] => {
+    const grades: number[] = [];
+    const visitSet = new Set<number>();
+    items.forEach((attachment) => {
+      const userId = attachment.user_id;
+      if (visitSet.has(userId)) {
+        return;
       }
-    }
-    let total = visitSet.size;
-    return [grades, total];
+      visitSet.add(userId);
+      if (attachment.grade) {
+        grades.push(Number.parseFloat(attachment.grade));
+      }
+    });
+    return [grades, visitSet.size];
   };
 
-  const updateGradeStatistic = (attachments: Attachment[]) => {
-    let [grades, total] = gatherGrades(attachments);
-    let statistic = { grades, total } as GradeStatistic;
-    setStatistic(statistic);
+  const updateGradeStatistic = (items: Attachment[]) => {
+    const [grades, total] = gatherGrades(items);
+    setStatistic({ grades, total } as GradeStatistic);
   };
 
   const handleGrade = async (grade: string, attachment: Attachment) => {
@@ -227,126 +296,29 @@ export default function SubmissionsPage() {
         grade,
       });
       attachments
-        .filter(
-          (thisAttachment) => thisAttachment.user_id === attachment.user_id
-        )
-        .map((attachment) => (attachment.grade = grade));
+        .filter((item) => item.user_id === attachment.user_id)
+        .forEach((item) => (item.grade = grade));
       setAttachments([...attachments]);
       updateGradeStatistic(attachments);
-      messageApi.success("打分成功！🎉", 0.5);
-    } catch (e) {
-      consoleLog(LOG_LEVEL_ERROR, e);
-      messageApi.error(e as string);
+      messageApi.success("打分成功", 0.5);
+    } catch (error) {
+      consoleLog(LOG_LEVEL_ERROR, error);
+      messageApi.error(error as string);
     }
   };
-
-  const readonlyGrade = selectedAssignment?.needs_grading_count === null;
-
-  const columns = [
-    {
-      title: "学生",
-      dataIndex: "user",
-      key: "user",
-      render: (user: string) => (
-        <div dangerouslySetInnerHTML={{ __html: html(user) }} />
-      ),
-    },
-    {
-      title: "分数",
-      dataIndex: "grade",
-      key: "grade",
-      render: (grade: string | null, attachment: Attachment) => (
-        <SubmissionGrade key={grade}
-          gradingType={selectedAssignment?.grading_type ?? "points"}
-          disabled={readonlyGrade}
-          defaultValue={grade ?? ""}
-          onSubmit={grade => handleGrade(grade, attachment)}
-        />
-      ),
-    },
-    {
-      title: "文件",
-      dataIndex: "display_name",
-      key: "display_name",
-      render: (name: string, attachment: Attachment) => (
-        <a
-          href={`${baseURL.data}/courses/${selectedCourseId}/gradebook/speed_grader?assignment_id=${selectedAssignment?.id}&student_id=${attachment.user_id}`}
-          target="_blank"
-          onMouseEnter={() => onHoverEntry(attachmentToFile(attachment))}
-          onMouseLeave={onLeaveEntry}
-        >
-          {name}
-        </a>
-      ),
-    },
-    {
-      title: "提交时间",
-      dataIndex: "submitted_at",
-      key: "submitted_at",
-      render: formatDate,
-    },
-    {
-      title: "状态",
-      dataIndex: "late",
-      key: "late",
-      render: (late: boolean) =>
-        late ? <Tag color="red">迟交</Tag> : <Tag color="green">按时提交</Tag>,
-    },
-    {
-      title: "操作",
-      dataIndex: "operation",
-      key: "operation",
-      render: (_: any, attachment: Attachment) => (
-        <Space>
-          {attachment.url && (
-            <a
-              onClick={(e) => {
-                e.preventDefault();
-                handleDownloadAttachment(attachment);
-              }}
-            >
-              下载
-            </a>
-          )}
-          <a
-            onClick={(e) => {
-              e.preventDefault();
-              setPreviewEntry(attachmentToFile(attachment));
-            }}
-          >
-            预览
-          </a>
-          <a
-            onClick={(e) => {
-              e.preventDefault();
-              setAttachmentToComment(attachment.id);
-              setExpandedRowKeys((keys) => [...keys, attachment.id]);
-            }}
-          >
-            评论
-          </a>
-        </Space>
-      ),
-    },
-  ];
 
   const handleGetUsers = async (courseId: number) => {
     if (courseId === -1) {
       return;
     }
     try {
-      let users = (await invoke("list_course_students", {
+      const nextUsers = (await invoke("list_course_students", {
         courseId,
       })) as User[];
-      users.map((user) => (user.key = user.id));
-      setUsers(users);
-      setOptions(
-        users.map((user) => {
-          return { label: user.name, value: user.name };
-        })
-      );
-    } catch (e) {
-      messageApi.error(e as string);
+      nextUsers.forEach((user) => (user.key = user.id));
+      setUsers(nextUsers);
+    } catch (error) {
+      messageApi.error(error as string);
     }
   };
 
@@ -355,33 +327,29 @@ export default function SubmissionsPage() {
       return;
     }
     try {
-      let assignments = (await invoke("list_course_assignments", {
+      const nextAssignments = (await invoke("list_course_assignments", {
         courseId,
       })) as Assignment[];
-      assignments.map((assignment) => (assignment.key = assignment.id));
-      setAssignments(assignments);
-    } catch (e) {
-      messageApi.error(e as string);
+      nextAssignments.forEach((assignment) => (assignment.key = assignment.id));
+      setAssignments(nextAssignments);
+    } catch (error) {
+      messageApi.error(error as string);
     }
   };
 
-  const handleGetSubmissions = async (
-    courseId: number,
-    assignmentId: number
-  ) => {
+  const handleGetSubmissions = async (courseId: number, assignmentId: number) => {
     if (courseId === -1 || assignmentId === -1) {
       return;
     }
-    setLoading(true);
     try {
-      let submissions = (await invoke("list_course_assignment_submissions", {
+      const submissions = (await invoke("list_course_assignment_submissions", {
         courseId,
         assignmentId,
       })) as Submission[];
-      let attachments: Attachment[] = [];
-      for (let submission of submissions) {
-        let thisAttachments = submission.attachments;
-        for (let attachment of thisAttachments) {
+      const nextAttachments: Attachment[] = [];
+      submissions.forEach((submission) => {
+        const thisAttachments = submission.attachments;
+        thisAttachments.forEach((attachment) => {
           attachment.user = usersMap.get(submission.user_id)?.name;
           attachment.user_id = submission.user_id;
           attachment.submitted_at = submission.submitted_at;
@@ -389,19 +357,18 @@ export default function SubmissionsPage() {
           attachment.key = attachment.id;
           attachment.late = submission.late;
           attachment.comments = submission.submission_comments;
-        }
-        attachments.push(...thisAttachments);
-      }
-      setAttachments(attachments);
-      updateGradeStatistic(attachments);
-    } catch (e) {
-      messageApi.error(e as string);
+        });
+        nextAttachments.push(...thisAttachments);
+      });
+      setAttachments(nextAttachments);
+      updateGradeStatistic(nextAttachments);
+    } catch (error) {
+      messageApi.error(error as string);
     }
-    setLoading(false);
   };
 
   const handleDownloadAttachment = async (attachment: Attachment) => {
-    let file = attachmentToFile(attachment);
+    const file = attachmentToFile(attachment);
     if (!downloadTasks.find((task) => task.file.uuid === file.uuid)) {
       setDownloadTasks((tasks) => [
         ...tasks,
@@ -412,8 +379,7 @@ export default function SubmissionsPage() {
         } as FileDownloadTask,
       ]);
     } else {
-      messageApi.warning("当前任务已存在！请勿重复添加！");
-      return;
+      messageApi.warning("当前任务已存在，请勿重复添加");
     }
   };
 
@@ -425,45 +391,38 @@ export default function SubmissionsPage() {
       setStatistic(undefined);
       setSelectedAssignment(undefined);
       setSelectedCourseId(courseId);
-      handleGetAssignments(courseId);
-      await handleGetUsers(courseId);
+      setExpandedRowKeys([]);
+      setAttachmentToComment(-1);
+      setBoundFiles([]);
+      await Promise.all([handleGetAssignments(courseId), handleGetUsers(courseId)]);
     }
     setOperating(false);
   };
 
-  const handleAssignmentSelect = (assignmentId: number) => {
+  const handleAssignmentSelect = async (assignmentId: number) => {
     setOperating(true);
     setStatistic(undefined);
     setSelectedAttachments([]);
-    let assignment = assignments.find(
-      (assignment) => assignment.id === assignmentId
-    );
+    setExpandedRowKeys([]);
+    setAttachmentToComment(-1);
+    const assignment = assignments.find((item) => item.id === assignmentId);
     if (assignment) {
       setSelectedAssignment(assignment);
-      handleGetSubmissions(selectedCourseId, assignmentId);
+      await handleGetSubmissions(selectedCourseId, assignmentId);
     }
-    getConfig(true).then((config) => {
-      if (assignmentId in config.course_assignment_file_bindings) {
-        const files = config.course_assignment_file_bindings[assignmentId];
-        setBoundFiles(files);
-      } else {
-        setBoundFiles([]);
-      }
-    });
+    const config = await getConfig(true);
+    if (assignmentId in config.course_assignment_file_bindings) {
+      setBoundFiles(config.course_assignment_file_bindings[assignmentId]);
+    } else {
+      setBoundFiles([]);
+    }
     setOperating(false);
   };
 
-  const handleAttachmentSelect = (
-    _: React.Key[],
-    selectedAttachments: Attachment[]
-  ) => {
-    setSelectedAttachments(selectedAttachments);
-  };
-
   const handleDownloadSelectedAttachments = () => {
-    for (let selectedAttachment of selectedAttachments) {
-      handleDownloadAttachment(selectedAttachment);
-    }
+    selectedAttachments.forEach((attachment) => {
+      void handleDownloadAttachment(attachment);
+    });
   };
 
   const handleRemoveTask = async (taskToRemove: FileDownloadTask) => {
@@ -472,11 +431,9 @@ export default function SubmissionsPage() {
     );
     try {
       await invoke("delete_file", { file: taskToRemove.file });
-      // messageApi.success("删除成功🎉！", 0.5);
-    } catch (e) {
+    } catch (error) {
       if (taskToRemove.state !== "fail") {
-        // no need to show error message for already failed tasks
-        messageApi.error(e as string);
+        messageApi.error(error as string);
       }
     }
   };
@@ -494,35 +451,20 @@ export default function SubmissionsPage() {
     );
   };
 
-  const getAssignmentTag = (assignment: Assignment) => {
+  const getAssignmentChipProps = (assignment: Assignment) => {
     const count = assignment.needs_grading_count ?? 0;
     const notUnlocked = assignmentIsNotUnlocked(assignment);
     if (notUnlocked) {
-      return <Tag color="geekblue">尚未解锁</Tag>;
+      return { label: "尚未解锁", color: "info" as const };
     }
     if (count === 0) {
-      return <Tag color="success">暂无待批改</Tag>;
+      return { label: "暂无待批改", color: "success" as const };
     }
-
-    return (
-      <Tag color="warning" icon={<WarningOutlined />}>
-        {count}份待批改
-      </Tag>
-    );
+    return { label: `${count} 份待批改`, color: "warning" as const };
   };
 
-  const assignmentOptions = assignments.map((assignment) => ({
-    label: (
-      <Space>
-        <span>{assignment.name}</span>
-        {getAssignmentTag(assignment)}
-      </Space>
-    ),
-    value: assignment.id,
-  }));
-
   const shouldShow = (attachment: Attachment) => {
-    const showAll = keywords.length == 0 || keywords[0] === "";
+    const showAll = keywords.length === 0;
     return attachment.user && (showAll || keywords.includes(attachment.user));
   };
 
@@ -534,202 +476,578 @@ export default function SubmissionsPage() {
     const name = task.file.display_name;
     try {
       await invoke("open_file", { name });
-    } catch (e) {
-      messageApi.error(e as string);
+    } catch (error) {
+      messageApi.error(error as string);
     }
   };
 
   const bindCourseAssignmentFiles = async (files: File[]) => {
-    let config = await getConfig(true);
+    const config = await getConfig(true);
     if (selectedAssignment) {
       config.course_assignment_file_bindings[selectedAssignment.id] = files;
       await saveConfig(config);
     }
   };
 
-  const showShowAttachments = attachments.filter((attachment) =>
+  const visibleAttachments = attachments.filter((attachment) =>
     shouldShow(attachment)
   );
 
-  const filterSelectorOptions = (
-    input: string,
-    option: DefaultOptionType | undefined
-  ) => {
-    const name = (option?.label as string | undefined) ?? "";
-    const matchFullname = name.includes(input);
+  const paginatedAttachments = useMemo(() => {
+    const start = page * rowsPerPage;
+    return visibleAttachments.slice(start, start + rowsPerPage);
+  }, [page, rowsPerPage, visibleAttachments]);
+
+  const selectedAttachmentIds = useMemo(
+    () => new Set(selectedAttachments.map((attachment) => attachment.id)),
+    [selectedAttachments]
+  );
+
+  const filterSelectorOptions = (optionName: string, input: string) => {
+    const matchFullname = optionName.includes(input);
     if (matchFullname) {
       return true;
     }
-    const py = pinyin(name, { type: "array" });
+    const py = pinyin(optionName, { type: "array" });
     let fc = "";
-    for (let i = 0; i < py.length; i++) {
+    for (let i = 0; i < py.length; i += 1) {
       fc += py[i].charAt(0);
     }
-    return fc.includes(input) || input.includes(name);
+    return fc.includes(input) || input.includes(optionName);
   };
+
+  const selectedCourse = courses.data.find(
+    (course) => course.id === selectedCourseId
+  );
 
   return (
     <BasicLayout>
       {contextHolder}
       {previewer}
-      <Space
-        direction="vertical"
-        style={{ width: "100%", overflow: "scroll" }}
-        size={"large"}
-      >
+      <Stack spacing={3}>
         <ClosableAlert
           message="使用指南"
           alertType="info"
           configKey={SUBMISSION_PAGE_HINT_ALERT_KEY}
           description={
             <div>
-              <p>
-                选择文件按钮可以绑定与课程相关的文件。绑定完成后，文件将以超链接的形式存在。鼠标移动到链接上并按下空格键即可进行预览；
-              </p>
-              <p>填写分数后按下回车键即可提交成绩；</p>
-              <p>
-                移动到文件名超链接上按下空格键或者按下右边的“预览”即可开启文件预览。预览窗口打开后，可以按下键盘⬅️➡️键切换到前（后）一个提交文件。
-              </p>
+              <p>可以绑定课程参考文件，预览时方便对照答案或评分标准。</p>
+              <p>填写分数后按回车即可提交成绩。</p>
+              <p>鼠标移到文件链接上后按空格，或点击“预览”，可以快速打开提交文件。</p>
             </div>
           }
         />
-        <CourseSelect
-          onChange={handleCourseSelect}
-          disabled={operating}
-          courses={courses.data}
-        />
-        <Space>
-          <span>选择作业：</span>
-          <Select
-            style={{ width: 350 }}
-            disabled={operating}
-            onChange={handleAssignmentSelect}
-            value={selectedAssignment?.id}
-            defaultValue={selectedAssignment?.id}
-            options={assignmentOptions}
-          />
-        </Space>
-        {selectedCourseId > 0 && selectedAssignment && (
-          <CourseFileSelector
-            courseId={selectedCourseId}
-            onSelectFiles={bindCourseAssignmentFiles}
-            initialFiles={boundFiles}
-          />
-        )}
-        {selectedAssignment?.points_possible != undefined &&
-          selectedAssignment?.points_possible > 0 && (
-            <span>
-              满分：<b>{selectedAssignment.points_possible}</b>分
-            </span>
-          )}
-        {attachments.length > 0 && notSubmitStudents.length > 0 && (
-          <Space wrap>
-            未提交学生:{" "}
-            {notSubmitStudents.map((s) => (
-              <Popconfirm
-                key={s.id}
-                placement="top"
-                title={"学生信息"}
-                showCancel={false}
-                description={
-                  <Space direction="vertical">
-                    <p>姓名：{s.name}</p>
-                    <p>学号: {s.login_id}</p>
-                    {s.email && (
-                      <p>
-                        邮箱:{" "}
-                        <a href={`mailto:${s.email}`} target="_blank">
-                          {s.email}
-                        </a>
-                      </p>
-                    )}
-                  </Space>
-                }
-                okText="确认"
-              >
-                <a>
-                  <Tag>{s.name}</Tag>
-                </a>
-              </Popconfirm>
-            ))}
-          </Space>
-        )}
-        {attachments.length === 0 && (
-          <Space wrap>
-            未提交学生: <Tag>暂无任何提交</Tag>
-          </Space>
-        )}
-        {statistic && <GradeStatisticChart statistic={statistic} />}
-        {/* <Input.Search placeholder="输入学生姓名关键词" onSearch={setKeyword} /> */}
-        <Select
-          mode="multiple"
-          allowClear
-          style={{ width: "100%" }}
-          placeholder="请选择学生"
-          onChange={setKeywords}
-          filterOption={filterSelectorOptions}
-          options={options}
-        />
-        <Table
-          style={{ width: "100%" }}
-          columns={columns}
-          loading={baseURL.isLoading || loading}
-          dataSource={showShowAttachments}
-          pagination={false}
-          rowSelection={{
-            onChange: handleAttachmentSelect,
-            selectedRowKeys: selectedAttachments.map(
-              (attachment) => attachment.key
-            ),
+
+        <Card
+          sx={{
+            ...surfaceCardSx,
+            background:
+              theme.palette.mode === "dark"
+                ? `linear-gradient(135deg, ${alpha(
+                    theme.palette.primary.main,
+                    0.18
+                  )}, ${alpha("#0f172a", 0.9)})`
+                : `linear-gradient(135deg, ${alpha(
+                    theme.palette.primary.main,
+                    0.1
+                  )}, rgba(255,255,255,0.96))`,
           }}
-          expandable={{
-            onExpand(expanded, record) {
-              if (expanded) {
-                setExpandedRowKeys([...expandedRowKeys, record.id]);
-              } else {
-                setExpandedRowKeys(
-                  expandedRowKeys.filter((key) => key !== record.id)
-                );
-              }
-            },
-            expandedRowKeys,
-            rowExpandable: (attachment) =>
-              attachment.comments.length > 0 ||
-              attachmentToComment === attachment.id,
-            expandedRowRender: (attachment) => {
-              if (!selectedAssignment) {
-                return null;
-              }
-              const showInput = attachmentToComment === attachment.id;
-              return (
-                <CommentPanel
-                  me={me.data}
-                  onRefresh={refreshSubmission}
-                  onHoverEntry={onHoverEntry}
-                  onLeaveEntry={onLeaveEntry}
-                  attachment={attachment}
-                  assignmentId={selectedAssignment.id}
-                  courseId={selectedCourseId}
-                  showInput={showInput}
-                  messageApi={messageApi}
-                />
-              );
-            },
-          }}
-        />
-        <Button
-          disabled={operating || selectedAttachments.length === 0}
-          onClick={handleDownloadSelectedAttachments}
         >
-          下载
-        </Button>
-        <FileDownloadTable
-          tasks={downloadTasks}
-          handleDownloadFile={handleDownloadFile}
-          handleOpenTaskFile={handleOpenTaskFile}
-          handleRemoveTask={handleRemoveTask}
-        />
-      </Space>
+          <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+            <Stack spacing={3}>
+              <Stack
+                direction={{ xs: "column", lg: "row" }}
+                justifyContent="space-between"
+                spacing={2}
+              >
+                <Box>
+                  <Typography variant="h4" sx={{ fontWeight: 800 }}>
+                    作业批改
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    集中查看提交文件、批量下载、快速打分和管理评论。
+                  </Typography>
+                </Box>
+                <Box
+                  sx={{
+                    width: "100%",
+                    maxWidth: { xs: "100%", lg: 680 },
+                    alignSelf: { xs: "stretch", lg: "flex-start" },
+                  }}
+                >
+                  <CourseSelect
+                    onChange={(courseId) => void handleCourseSelect(courseId)}
+                    disabled={operating}
+                    courses={courses.data}
+                    value={selectedCourseId === -1 ? undefined : selectedCourseId}
+                  />
+                </Box>
+              </Stack>
+
+              <Box
+                sx={{
+                  display: "grid",
+                  gap: 2,
+                  gridTemplateColumns: {
+                    xs: "repeat(2, minmax(0, 1fr))",
+                    lg: "repeat(4, minmax(0, 1fr))",
+                  },
+                }}
+              >
+                {[
+                  { label: "提交文件", value: attachments.length },
+                  { label: "已选文件", value: selectedAttachments.length },
+                  { label: "未交学生", value: notSubmitStudents.length },
+                  { label: "下载任务", value: downloadTasks.length },
+                ].map((item) => (
+                  <Card
+                    key={item.label}
+                    sx={{
+                      borderRadius: "22px",
+                      backgroundColor: alpha(theme.palette.background.paper, 0.8),
+                      border: "1px solid",
+                      borderColor: alpha(theme.palette.divider, 0.5),
+                      boxShadow: "none",
+                    }}
+                  >
+                    <CardContent sx={{ p: 2.25 }}>
+                      <Typography variant="overline" color="text.secondary">
+                        {item.label}
+                      </Typography>
+                      <Typography variant="h4" sx={{ fontWeight: 800, mt: 1 }}>
+                        {item.value}
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                ))}
+              </Box>
+
+              <Box
+                sx={{
+                  display: "grid",
+                  gap: 2,
+                  gridTemplateColumns: {
+                    xs: "minmax(0, 1fr)",
+                    lg: "minmax(0, 1.2fr) minmax(260px, 0.9fr)",
+                  },
+                }}
+              >
+                <FormControl fullWidth>
+                  <InputLabel id="assignment-select-label">选择作业</InputLabel>
+                  <Select
+                    labelId="assignment-select-label"
+                    label="选择作业"
+                    value={selectedAssignment?.id ?? ""}
+                    disabled={operating || assignments.length === 0}
+                    onChange={(event) =>
+                      void handleAssignmentSelect(Number(event.target.value))
+                    }
+                  >
+                    {assignments.map((assignment) => {
+                      const chip = getAssignmentChipProps(assignment);
+                      return (
+                        <MenuItem key={assignment.id} value={assignment.id}>
+                          <Stack
+                            direction="row"
+                            spacing={1}
+                            alignItems="center"
+                            justifyContent="space-between"
+                            sx={{ width: "100%" }}
+                          >
+                            <Typography variant="body2">{assignment.name}</Typography>
+                            <Chip
+                              size="small"
+                              label={chip.label}
+                              color={chip.color}
+                              variant="outlined"
+                              icon={
+                                chip.color === "warning" ? (
+                                  <WarningAmberRoundedIcon />
+                                ) : undefined
+                              }
+                            />
+                          </Stack>
+                        </MenuItem>
+                      );
+                    })}
+                  </Select>
+                </FormControl>
+
+                <Autocomplete
+                  multiple
+                  options={users.map((user) => user.name)}
+                  value={keywords}
+                  onChange={(_, value) => setKeywords(value)}
+                  filterOptions={(options, state) =>
+                    options.filter((option) =>
+                      filterSelectorOptions(option, state.inputValue)
+                    )
+                  }
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="筛选学生"
+                      placeholder="按姓名或拼音首字母筛选"
+                    />
+                  )}
+                />
+              </Box>
+
+              <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
+                {selectedCourse ? (
+                  <Chip label={selectedCourse.name} color="primary" variant="outlined" />
+                ) : (
+                  <Chip label="请选择课程" variant="outlined" />
+                )}
+                {selectedAssignment?.points_possible != null &&
+                selectedAssignment.points_possible > 0 ? (
+                  <Chip
+                    label={`满分 ${selectedAssignment.points_possible} 分`}
+                    variant="outlined"
+                  />
+                ) : null}
+                <Button
+                  variant="outlined"
+                  startIcon={<RefreshRoundedIcon />}
+                  disabled={!selectedAssignment || operating}
+                  onClick={() =>
+                    selectedAssignment
+                      ? void handleGetSubmissions(
+                          selectedCourseId,
+                          selectedAssignment.id
+                        )
+                      : undefined
+                  }
+                >
+                  刷新提交
+                </Button>
+              </Stack>
+            </Stack>
+          </CardContent>
+        </Card>
+
+        {selectedCourseId > 0 && selectedAssignment ? (
+          <Card sx={surfaceCardSx}>
+            <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+              <Stack spacing={2}>
+                <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                  参考文件绑定
+                </Typography>
+                <CourseFileSelector
+                  courseId={selectedCourseId}
+                  onSelectFiles={bindCourseAssignmentFiles}
+                  initialFiles={boundFiles}
+                />
+              </Stack>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {notSubmitStudents.length > 0 ? (
+          <Card sx={surfaceCardSx}>
+            <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+              <Stack spacing={1.5}>
+                <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                  未提交学生
+                </Typography>
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                  {notSubmitStudents.map((student) => (
+                    <Tooltip
+                      key={student.id}
+                      title={
+                        <Box>
+                          <Typography variant="body2">姓名：{student.name}</Typography>
+                          <Typography variant="body2">
+                            学号：{student.login_id || "-"}
+                          </Typography>
+                          {student.email ? (
+                            <Typography variant="body2">邮箱：{student.email}</Typography>
+                          ) : null}
+                        </Box>
+                      }
+                    >
+                      <Chip label={student.name} variant="outlined" />
+                    </Tooltip>
+                  ))}
+                </Stack>
+              </Stack>
+            </CardContent>
+          </Card>
+        ) : attachments.length === 0 ? (
+          <Alert severity="info" sx={{ borderRadius: "18px" }}>
+            当前还没有任何提交。
+          </Alert>
+        ) : null}
+
+        {statistic ? (
+          <Card sx={surfaceCardSx}>
+            <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+              <Stack spacing={2}>
+                <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                  成绩分布
+                </Typography>
+                <GradeStatisticChart statistic={statistic} />
+              </Stack>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        <Card sx={surfaceCardSx}>
+          <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+            <Stack spacing={3}>
+              {visibleAttachments.length > 0 ? (
+                <>
+                  <Box
+                    sx={{
+                      borderRadius: "22px",
+                      border: "1px solid",
+                      borderColor: "divider",
+                      overflow: "auto",
+                    }}
+                  >
+                    <Table stickyHeader sx={{ minWidth: 1200 }}>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell padding="checkbox">
+                            <Checkbox
+                              checked={
+                                visibleAttachments.length > 0 &&
+                                selectedAttachments.length === visibleAttachments.length
+                              }
+                              indeterminate={
+                                selectedAttachments.length > 0 &&
+                                selectedAttachments.length < visibleAttachments.length
+                              }
+                              onChange={(event) =>
+                                setSelectedAttachments(
+                                  event.target.checked ? visibleAttachments : []
+                                )
+                              }
+                            />
+                          </TableCell>
+                          <TableCell>学生</TableCell>
+                          <TableCell>分数</TableCell>
+                          <TableCell>文件</TableCell>
+                          <TableCell>提交时间</TableCell>
+                          <TableCell>状态</TableCell>
+                          <TableCell align="right">操作</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {paginatedAttachments.map((attachment) => {
+                          const expanded = expandedRowKeys.includes(attachment.id);
+                          const checked = selectedAttachmentIds.has(attachment.id);
+                          const showInput = attachmentToComment === attachment.id;
+                          return (
+                            <>
+                              <TableRow key={attachment.id} hover selected={checked}>
+                                <TableCell padding="checkbox">
+                                  <Checkbox
+                                    checked={checked}
+                                    onChange={(event) => {
+                                      setSelectedAttachments((prev) => {
+                                        if (event.target.checked) {
+                                          return [...prev, attachment];
+                                        }
+                                        return prev.filter(
+                                          (item) => item.id !== attachment.id
+                                        );
+                                      });
+                                    }}
+                                  />
+                                </TableCell>
+                                <TableCell>
+                                  <Box
+                                    dangerouslySetInnerHTML={{
+                                      __html: html(attachment.user || ""),
+                                    }}
+                                  />
+                                </TableCell>
+                                <TableCell sx={{ minWidth: 180 }}>
+                                  <SubmissionGrade
+                                    gradeKey={attachment.grade}
+                                    gradingType={
+                                      selectedAssignment?.grading_type ?? "points"
+                                    }
+                                    disabled={readonlyGrade}
+                                    defaultValue={attachment.grade ?? ""}
+                                    onSubmit={(grade) =>
+                                      void handleGrade(grade, attachment)
+                                    }
+                                  />
+                                </TableCell>
+                                <TableCell sx={{ minWidth: 260 }}>
+                                  <Stack direction="row" spacing={1} alignItems="center">
+                                    <MuiLink
+                                      href={`${baseURL.data}/courses/${selectedCourseId}/gradebook/speed_grader?assignment_id=${selectedAssignment?.id}&student_id=${attachment.user_id}`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      underline="hover"
+                                      onMouseEnter={() =>
+                                        onHoverEntry(attachmentToFile(attachment))
+                                      }
+                                      onMouseLeave={onLeaveEntry}
+                                    >
+                                      {attachment.display_name}
+                                    </MuiLink>
+                                  </Stack>
+                                </TableCell>
+                                <TableCell>{formatDate(attachment.submitted_at)}</TableCell>
+                                <TableCell>
+                                  <Chip
+                                    size="small"
+                                    label={attachment.late ? "迟交" : "按时提交"}
+                                    color={attachment.late ? "error" : "success"}
+                                    variant="outlined"
+                                  />
+                                </TableCell>
+                                <TableCell align="right">
+                                  <Stack
+                                    direction="row"
+                                    spacing={1}
+                                    justifyContent="flex-end"
+                                    flexWrap="wrap"
+                                    useFlexGap
+                                  >
+                                    {attachment.url ? (
+                                      <Button
+                                        size="small"
+                                        variant="outlined"
+                                        startIcon={<DownloadRoundedIcon />}
+                                        onClick={() =>
+                                          void handleDownloadAttachment(attachment)
+                                        }
+                                      >
+                                        下载
+                                      </Button>
+                                    ) : null}
+                                    <Button
+                                      size="small"
+                                      variant="text"
+                                      startIcon={<PreviewRoundedIcon />}
+                                      onClick={() =>
+                                        setPreviewEntry(attachmentToFile(attachment))
+                                      }
+                                    >
+                                      预览
+                                    </Button>
+                                    <Button
+                                      size="small"
+                                      variant="text"
+                                      startIcon={<RateReviewRoundedIcon />}
+                                      onClick={() => {
+                                        setAttachmentToComment(attachment.id);
+                                        setExpandedRowKeys((keys) =>
+                                          keys.includes(attachment.id)
+                                            ? keys
+                                            : [...keys, attachment.id]
+                                        );
+                                      }}
+                                    >
+                                      评论
+                                    </Button>
+                                    <Button
+                                      size="small"
+                                      variant="text"
+                                      startIcon={<OpenInNewRoundedIcon />}
+                                      component="a"
+                                      href={`${baseURL.data}/courses/${selectedCourseId}/gradebook/speed_grader?assignment_id=${selectedAssignment?.id}&student_id=${attachment.user_id}`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                    >
+                                      SpeedGrader
+                                    </Button>
+                                  </Stack>
+                                </TableCell>
+                              </TableRow>
+                              {(attachment.comments.length > 0 || showInput) && (
+                                <TableRow key={`${attachment.id}-detail`}>
+                                  <TableCell colSpan={7} sx={{ py: 0 }}>
+                                    <Collapse in={expanded} unmountOnExit>
+                                      <Box sx={{ p: 2 }}>
+                                        {selectedAssignment ? (
+                                          <CommentPanel
+                                            me={me.data}
+                                            onRefresh={refreshSubmission}
+                                            onHoverEntry={onHoverEntry}
+                                            onLeaveEntry={onLeaveEntry}
+                                            attachment={attachment}
+                                            assignmentId={selectedAssignment.id}
+                                            courseId={selectedCourseId}
+                                            showInput={showInput}
+                                            messageApi={messageApi}
+                                          />
+                                        ) : null}
+                                      </Box>
+                                    </Collapse>
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </Box>
+
+                  <TablePagination
+                    component="div"
+                    count={visibleAttachments.length}
+                    page={page}
+                    onPageChange={(_, nextPage) => setPage(nextPage)}
+                    rowsPerPage={rowsPerPage}
+                    onRowsPerPageChange={(event) => {
+                      setRowsPerPage(Number(event.target.value));
+                      setPage(0);
+                    }}
+                    rowsPerPageOptions={[10, 20, 50]}
+                    labelRowsPerPage="每页文件数"
+                    labelDisplayedRows={({ from, to, count }) =>
+                      `${from}-${to} / ${count}`
+                    }
+                  />
+
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                    <Button
+                      variant="contained"
+                      startIcon={<DownloadRoundedIcon />}
+                      disabled={operating || selectedAttachments.length === 0}
+                      onClick={handleDownloadSelectedAttachments}
+                    >
+                      下载所选
+                    </Button>
+                    <Chip
+                      icon={<ArticleRoundedIcon />}
+                      label={`当前筛选结果 ${visibleAttachments.length} 份`}
+                      variant="outlined"
+                    />
+                  </Stack>
+                </>
+              ) : (
+                <Alert severity="info" sx={{ borderRadius: "18px" }}>
+                  选择课程与作业后，这里会展示提交文件列表。
+                </Alert>
+              )}
+            </Stack>
+          </CardContent>
+        </Card>
+
+        <Card sx={surfaceCardSx}>
+          <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+            <Stack spacing={2}>
+              <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                下载任务
+              </Typography>
+              <FileDownloadTable
+                tasks={downloadTasks}
+                handleDownloadFile={handleDownloadFile}
+                handleOpenTaskFile={handleOpenTaskFile}
+                handleRemoveTask={handleRemoveTask}
+              />
+            </Stack>
+          </CardContent>
+        </Card>
+      </Stack>
     </BasicLayout>
   );
 }
