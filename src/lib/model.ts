@@ -243,6 +243,7 @@ export interface VideoDownloadTask {
 export interface DownloadTask {
     key: string;
     name: string;
+    outputPath?: string;
     progress: number;
     state: "downloading" | "completed" | "fail" | "merging";
 }
