@@ -1,44 +1,58 @@
-import { Alert, Radio, Space } from "antd";
+import { Alert, Checkbox, FormControlLabel, Stack } from "@mui/material";
 import { ReactNode, useEffect, useState } from "react";
+
 import { getConfig, saveConfig } from "../lib/config";
 import { LOG_LEVEL_INFO } from "../lib/model";
 import { consoleLog } from "../lib/utils";
 
 export interface ClosableAlertProps {
-    // The "not-show-again" option will be persisted in the config with a given key
-    configKey: string;
-    alertType: 'success' | 'info' | 'warning' | 'error';
-    message: ReactNode;
-    description?: ReactNode;
+  configKey: string;
+  alertType: "success" | "info" | "warning" | "error";
+  message: ReactNode;
+  description?: ReactNode;
 }
 
 export default function ClosableAlert(props: ClosableAlertProps) {
-    const [show, setShow] = useState<boolean>(false);
-    useEffect(() => {
-        getConfig(true).then(config => {
-            consoleLog(LOG_LEVEL_INFO, config)
-            // judge if configKey is in the map
-            if (!config.show_alert_map.hasOwnProperty(props.configKey) || config.show_alert_map[props.configKey]) {
-                setShow(true);
-            }
-        });
-    }, []);
+  const [show, setShow] = useState<boolean>(false);
 
-    const notShowAgain = () => {
-        getConfig(true).then(config => {
-            config.show_alert_map[props.configKey] = false;
-            saveConfig(config);
-            setShow(false);
-        });
-    }
+  useEffect(() => {
+    getConfig(true).then((config) => {
+      consoleLog(LOG_LEVEL_INFO, config);
+      if (
+        !config.show_alert_map.hasOwnProperty(props.configKey) ||
+        config.show_alert_map[props.configKey]
+      ) {
+        setShow(true);
+      }
+    });
+  }, [props.configKey]);
 
-    if (!show) {
-        return null;
-    }
+  const notShowAgain = () => {
+    getConfig(true).then((config) => {
+      config.show_alert_map[props.configKey] = false;
+      saveConfig(config);
+      setShow(false);
+    });
+  };
 
-    const description = <Space direction="vertical" size="large">
-        {props.description && <div>{props.description}</div>}
-        <Radio onClick={notShowAgain}>不再显示</Radio>
-    </Space>
-    return <Alert message={props.message} description={description} showIcon type={props.alertType} />
+  if (!show) {
+    return null;
+  }
+
+  return (
+    <Alert
+      severity={props.alertType}
+      sx={{ borderRadius: "20px" }}
+      onClose={() => setShow(false)}
+    >
+      <Stack spacing={1.5}>
+        <div>{props.message}</div>
+        {props.description ? <div>{props.description}</div> : null}
+        <FormControlLabel
+          control={<Checkbox size="small" onChange={notShowAgain} />}
+          label="不再显示"
+        />
+      </Stack>
+    </Alert>
+  );
 }

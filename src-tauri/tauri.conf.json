@@ -19,7 +19,7 @@
   },
   "productName": "SJTU Canvas Helper",
   "mainBinaryName": "SJTU Canvas Helper",
-  "version": "2.0.5",
+  "version": "3.0.0",
   "identifier": "com.okabe.sjtu.canvas",
   "plugins": {
     "updater": {
@@ -33,14 +33,14 @@
   },
   "app": {
     "security": {
-      "csp": null
+      "csp": "default-src 'self' http: https: data: blob: 'unsafe-eval' 'unsafe-inline'"
     },
     "windows": [
       {
         "title": "SJTU Canvas Helper",
         "width": 800,
         "height": 600,
-        "useHttpsScheme": true
+        "useHttpsScheme": false
       }
     ]
   }

@@ -1,10 +1,39 @@
-import { SwapOutlined } from "@ant-design/icons";
 import { invoke } from "@tauri-apps/api/core";
-import { Button, Checkbox, Divider, Select, Slider, Space, Table } from "antd";
-import useMessage from "antd/es/message/useMessage";
+import { save } from "@tauri-apps/plugin-dialog";
+import ClosedCaptionRoundedIcon from "@mui/icons-material/ClosedCaptionRounded";
+import PictureAsPdfRoundedIcon from "@mui/icons-material/PictureAsPdfRounded";
+import PsychologyRoundedIcon from "@mui/icons-material/PsychologyRounded";
+import SwapHorizRoundedIcon from "@mui/icons-material/SwapHorizRounded";
+import VideoLibraryRoundedIcon from "@mui/icons-material/VideoLibraryRounded";
+import {
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  FormControlLabel,
+  MenuItem,
+  Slider,
+  Stack,
+  Switch,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  TextField,
+  Typography,
+} from "@mui/material";
+import { alpha, useTheme } from "@mui/material/styles";
 import { useEffect, useRef, useState } from "react";
 import type { DraggableData, DraggableEvent } from "react-draggable";
 import Draggable from "react-draggable";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+
 import ClosableAlert from "../components/closable_alert";
 import CourseSelect from "../components/course_select";
 import BasicLayout from "../components/layout";
@@ -16,138 +45,171 @@ import videoStyles from "../css/video_player.module.css";
 import { getConfig, saveConfig } from "../lib/config";
 import { VIDEO_PAGE_HINT_ALERT_KEY } from "../lib/constants";
 import { useCourses, useQRCode } from "../lib/hooks";
+import { useAppMessage } from "../lib/message";
 import {
   CanvasVideo,
   DownloadTask,
   LOG_LEVEL_ERROR,
   VideoDownloadTask,
   VideoInfo,
-  VideoPlayInfo
+  VideoPlayInfo,
 } from "../lib/model";
 import { consoleLog, srtToVtt } from "../lib/utils";
 
+const surfaceCardSx = {
+  borderRadius: "28px",
+  border: "1px solid",
+  borderColor: "divider",
+  boxShadow: "0 24px 60px rgba(15, 23, 42, 0.08)",
+  backgroundImage: "none",
+};
+
+function timestampToSeconds(timestamp: string): number {
+  const match = timestamp.match(/^\[(\d{2}):(\d{2}):(\d{2}),(\d{1,3})\]$/);
+  if (!match) {
+    return 0;
+  }
+
+  const [, hh, mm, ss] = match;
+  return Number(hh) * 3600 + Number(mm) * 60 + Number(ss);
+}
+
 export default function VideoPage() {
-  const [videoDownloadTasks, setVideoDownloadTasks] = useState<
-    VideoDownloadTask[]
-  >([]);
+  const theme = useTheme();
+  const [videoDownloadTasks, setVideoDownloadTasks] = useState<VideoDownloadTask[]>([]);
   const [pptDownloadTasks, setPPTDownloadTasks] = useState<DownloadTask[]>([]);
-  const [operating, setOperating] = useState<boolean>(false);
+  const [operating, setOperating] = useState(false);
   const courses = useCourses();
-  const [messageApi, contextHolder] = useMessage();
+  const [messageApi, contextHolder] = useAppMessage();
   const [plays, setPlays] = useState<VideoPlayInfo[]>([]);
   const [selectedVideo, setSelectedVideo] = useState<CanvasVideo | undefined>();
+  const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
   const [videos, setVideos] = useState<CanvasVideo[]>([]);
-  const [notLogin, setNotLogin] = useState<boolean>(true);
-  const [loaded, setLoaded] = useState<boolean>(false);
+  const [notLogin, setNotLogin] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [playURLs, setPlayURLs] = useState<string[]>([]);
-  const [mainPlayURL, setMainPlayURL] = useState<string>("");
-  const [mutedPlayURL, setMutedPlayURL] = useState<string>("");
-  const [syncPlay, setSyncPlay] = useState<boolean>(true);
+  const [mainPlayURL, setMainPlayURL] = useState("");
+  const [mutedPlayURL, setMutedPlayURL] = useState("");
+  const [syncPlay, setSyncPlay] = useState(true);
   const [subVideoSize, setSubVideoSize] = useState<number>(25);
   const [subVideoOpacity, setSubVideoOpacity] = useState(0.8);
   const [subVideoPos, setSubVideoPos] = useState({ x: 100, y: 100 });
   const [subtitleUrl, setSubtitleUrl] = useState<string | undefined>(undefined);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [summaryContent, setSummaryContent] = useState("");
   const mainVideoRef = useRef<HTMLVideoElement>(null);
   const subVideoRef = useRef<HTMLVideoElement>(null);
-  const firstPlay = useRef<boolean>(true);
+  const playerContainerRef = useRef<HTMLDivElement>(null);
+  const firstPlay = useRef(true);
 
   const onScanSuccess = () => {
-    loginAndCheck(true);
+    void loginAndCheck(true);
   };
   const { qrcode, showQRCode, refreshQRCode } = useQRCode({ onScanSuccess });
+
+  const LinkRenderer = (props: any) => (
+    <a
+      target="_blank"
+      rel="noreferrer"
+      onClick={() => handleMainVideoJump(timestampToSeconds(props.children))}
+    >
+      {props.children}
+    </a>
+  );
 
   const handleLoginWebsite = async () => {
     try {
       await invoke("login_canvas_website");
       return true;
-    } catch (e) {
-      consoleLog(LOG_LEVEL_ERROR, e);
+    } catch (error) {
+      consoleLog(LOG_LEVEL_ERROR, error);
       return false;
     }
   };
 
   useEffect(() => {
-    loginAndCheck();
+    void loginAndCheck();
     return () => {
       if (!firstPlay.current) {
-        invoke("stop_proxy");
+        void invoke("stop_proxy");
       }
     };
   }, []);
 
   const loginAndCheck = async (retry = false) => {
-    let config = await getConfig(true);
-    let success = await handleLoginWebsite();
+    const config = await getConfig(true);
+    const success = await handleLoginWebsite();
     if (!success) {
       config.ja_auth_cookie = "";
       await saveConfig(config);
       showQRCode();
     } else if (!retry) {
-      messageApi.success("检测到登录会话，登录成功🎉！");
+      messageApi.success("检测到登录会话，登录成功", 0.5);
     } else {
-      messageApi.success("登录成功🎉！");
+      messageApi.success("登录成功", 0.5);
     }
     setNotLogin(!success);
     setLoaded(true);
     return success;
   };
 
-  const handleSelectCourse = (selected: number) => {
+  const handleSelectCourse = async (selected: number) => {
     setOperating(true);
+    setSelectedCourseId(selected);
     setVideos([]);
     setSelectedVideo(undefined);
     setPlayURLs([]);
     setPlays([]);
     setMainPlayURL("");
     setMutedPlayURL("");
-    handleGetVideos(selected);
+    await handleGetVideos(selected);
     setOperating(false);
   };
 
   const handleGetVideoInfo = async (video: CanvasVideo) => {
     try {
-      let videoInfo = (await invoke("get_canvas_video_info", {
+      const videoInfo = (await invoke("get_canvas_video_info", {
         videoId: video.videoId,
       })) as VideoInfo;
-      let plays = videoInfo.videoPlayResponseVoList;
-      plays.map((play, index) => {
+      const nextPlays = videoInfo.videoPlayResponseVoList;
+      nextPlays.forEach((play, index) => {
         play.key = play.id;
         play.index = index;
-        let part = index === 0 ? "" : `_录屏`;
-        let suffix = index > 2 ? `_${index}.mp4` : ".mp4";
+        const part = index === 0 ? "" : `_录屏`;
+        const suffix = index > 2 ? `_${index}.mp4` : ".mp4";
         play.name = `${video.videoName}${part}${suffix}`;
       });
-      setPlays(plays);
-    } catch (e) {
-      messageApi.error(`获取视频信息的时候出现错误🙅：${e}`);
+      setPlays(nextPlays);
+    } catch (error) {
+      messageApi.error(`获取视频信息时出现错误：${error}`);
     }
   };
 
-  const handleSelectVideo = (selected: string) => {
-    let video = videos.find((video) => video.videoId === selected);
+  const handleSelectVideo = async (selected: string) => {
+    const video = videos.find((item) => item.videoId === selected);
     if (video) {
       setPlays([]);
       setPlayURLs([]);
       setMainPlayURL("");
       setMutedPlayURL("");
       setSelectedVideo(video);
-      handleGetVideoInfo(video);
+      await handleGetVideoInfo(video);
     }
   };
 
   const handleGetVideos = async (courseId: number) => {
     try {
-      let videos = (await invoke("get_canvas_videos", {
+      const nextVideos = (await invoke("get_canvas_videos", {
         courseId,
       })) as CanvasVideo[];
-      setVideos(videos);
-    } catch (e) {
-      messageApi.error(`获取录像的时候发生了错误🙅：${e}`);
+      setVideos(nextVideos);
+    } catch (error) {
+      messageApi.error(`获取录像时发生了错误：${error}`);
     }
   };
 
   const handleDownloadVideo = (video: VideoPlayInfo) => {
-    let videoId = video.id + "";
+    const videoId = `${video.id}`;
     if (!videoDownloadTasks.find((task) => task.key === videoId)) {
       setVideoDownloadTasks((tasks) => [
         ...tasks,
@@ -160,48 +222,91 @@ export default function VideoPage() {
         } as VideoDownloadTask,
       ]);
     } else {
-      messageApi.warning("请勿重复添加任务！");
-      return;
+      messageApi.warning("请勿重复添加任务");
     }
   };
 
   const handleDownloadSubtitle = async () => {
     if (!selectedVideo) {
-      messageApi.warning("请先选择一个视频！");
+      messageApi.warning("请先选择一个视频");
       return;
     }
     try {
-      let videoInfo = (await invoke("get_canvas_video_info", {
+      const outputPath = await save({
+        defaultPath: `${selectedVideo.videoName}.srt`,
+        filters: [{ name: "Subtitle", extensions: ["srt"] }],
+      });
+      if (!outputPath) {
+        return;
+      }
+      const videoInfo = (await invoke("get_canvas_video_info", {
         videoId: selectedVideo.videoId,
       })) as VideoInfo;
       await invoke("download_subtitle", {
         canvasCourseId: videoInfo.courId,
-        savePath: `${selectedVideo.videoName}.srt`,
+        savePath: outputPath,
       });
-      messageApi.success("字幕下载成功🎉！（请前往保存目录查看）");
-    } catch (e) {
-      messageApi.error(`下载字幕时发生错误🙅：${e}`);
+      messageApi.success("字幕下载成功", 0.5);
+    } catch (error) {
+      messageApi.error(`下载字幕时发生错误：${error}`);
+    }
+  };
+
+  const handleSummarizeSubtitle = async () => {
+    if (!selectedVideo) {
+      messageApi.warning("请先选择一个视频");
+      return;
+    }
+    try {
+      const videoInfo = (await invoke("get_canvas_video_info", {
+        videoId: selectedVideo.videoId,
+      })) as VideoInfo;
+      messageApi.open({
+        key: "waiting_response",
+        type: "loading",
+        content: "AI 总结中",
+        duration: 0,
+      });
+      const summary = (await invoke("summarize_subtitle", {
+        canvasCourseId: videoInfo.courId,
+      })) as string;
+      messageApi.destroy("waiting_response");
+      messageApi.success("AI 总结成功", 0.5);
+      setSummaryContent(summary);
+      setSummaryOpen(true);
+    } catch (error) {
+      messageApi.destroy("waiting_response");
+      messageApi.error(`AI 总结时发生错误：${error}`);
     }
   };
 
   const handleDownloadPPT = async (videoId: string, saveName: string) => {
-    let videoInfo = (await invoke("get_canvas_video_info", {
-      videoId: videoId,
-    })) as VideoInfo;
-    let courseId = videoInfo.courId;
+    const videoInfo = (await invoke("get_canvas_video_info", { videoId })) as VideoInfo;
+    const courseId = videoInfo.courId;
+    const outputPath = await save({
+      defaultPath: saveName,
+      filters: [{ name: "PDF Document", extensions: ["pdf"] }],
+    });
+    if (!outputPath) {
+      return;
+    }
 
-    let taskKey = `ppt_${saveName}`;
+    const displayName = outputPath.split(/[/\\\\]/).pop() || saveName;
+    const taskKey = `ppt_${outputPath}`;
+
     if (!pptDownloadTasks.find((task) => task.key === taskKey)) {
       setPPTDownloadTasks((tasks) => [
         ...tasks,
         {
           key: taskKey,
-          name: saveName,
+          name: displayName,
+          outputPath,
           progress: 0,
           state: "downloading",
         } as DownloadTask,
       ]);
-      invoke("download_ppt", { courseId, saveName })
+
+      void invoke("download_ppt", { courseId, savePath: outputPath })
         .then(() => {
           setPPTDownloadTasks((tasks) =>
             tasks.map((task) =>
@@ -210,18 +315,18 @@ export default function VideoPage() {
                 : task
             )
           );
-          messageApi.success("PPT下载成功🎉！");
+          messageApi.success("PPT 下载成功", 0.5);
         })
-        .catch((e) => {
+        .catch((error) => {
           setPPTDownloadTasks((tasks) =>
             tasks.map((task) =>
               task.key === taskKey ? { ...task, state: "fail" } : task
             )
           );
-          messageApi.error(`下载PPT时发生错误🙅：${e}`);
+          messageApi.error(`下载 PPT 时发生错误：${error}`);
         });
     } else {
-      messageApi.warning("请勿重复添加任务！");
+      messageApi.warning("请勿重复添加任务");
     }
   };
 
@@ -231,10 +336,9 @@ export default function VideoPage() {
     );
     try {
       await invoke("delete_file_with_name", { name: taskToRemove.video.name });
-    } catch (e) {
+    } catch (error) {
       if (taskToRemove.state !== "fail") {
-        // no need to show error message for already failed tasks
-        messageApi.error(e as string);
+        messageApi.error(error as string);
       }
     }
   };
@@ -244,140 +348,94 @@ export default function VideoPage() {
       tasks.filter((task) => task.key !== taskToRemove.key)
     );
     try {
-      await invoke("delete_file_with_name", { name: taskToRemove.name });
-    } catch (e) {
+      if (taskToRemove.outputPath) {
+        await invoke("delete_path_file", { path: taskToRemove.outputPath });
+      } else {
+        await invoke("delete_file_with_name", { name: taskToRemove.name });
+      }
+    } catch (error) {
       if (taskToRemove.state !== "fail") {
-        // no need to show error message for already failed tasks
-        messageApi.error(e as string);
+        messageApi.error(error as string);
       }
     }
   };
 
-  const getVidePlayURL = (play: VideoPlayInfo, proxyPort: number) => {
-    let playURL = play.rtmpUrlHdv.replace(
+  const getVidePlayURL = (play: VideoPlayInfo, proxyPort: number) =>
+    play.rtmpUrlHdv.replace(
       "https://live.sjtu.edu.cn",
       `http://localhost:${proxyPort}`
     );
-    return playURL;
-  };
 
   const checkOrStartProxy = async () => {
     if (firstPlay.current) {
       messageApi.open({
         key: "proxy_preparing",
         type: "loading",
-        content: "正在启动反向代理🚀...",
+        content: "正在启动反向代理...",
         duration: 0,
       });
       let succeed;
       try {
         succeed = (await invoke("prepare_proxy")) as boolean;
-      } catch (e) {
-        messageApi.error(`反向代理启动失败🥹: ${e}`);
+      } catch (error) {
+        messageApi.error(`反向代理启动失败：${error}`);
       }
       if (succeed) {
         messageApi.destroy("proxy_preparing");
-        messageApi.success("反向代理启动成功🎉！", 0.5);
+        messageApi.success("反向代理启动成功", 0.5);
       } else {
-        messageApi.error("反向代理启动超时🥹！");
-        invoke("stop_proxy");
+        messageApi.error("反向代理启动超时");
+        void invoke("stop_proxy");
       }
       firstPlay.current = false;
     }
   };
 
   const handlePlay = async (play: VideoPlayInfo) => {
-    let config = await getConfig();
-    let playURL = getVidePlayURL(play, config.proxy_port);
-    if (playURLs.find((URL) => URL === playURL)) {
-      messageApi.warning("已经在播放啦😁");
+    const config = await getConfig();
+    const playURL = getVidePlayURL(play, config.proxy_port);
+    if (playURL === mainPlayURL || playURL === mutedPlayURL) {
+      messageApi.warning("已经在播放啦");
       return;
     }
-    if (playURLs.length === 2) {
-      messageApi.error("☹️目前只支持双屏观看");
+    if (mainPlayURL && mutedPlayURL) {
+      messageApi.error("目前只支持双屏观看");
       return;
     }
     await checkOrStartProxy();
-    if (playURLs.length === 0) {
-      setMainPlayURL(playURL);
-    }
-    if (play.index !== 0) {
-      setMutedPlayURL(playURL);
-    }
-    setPlayURLs((playURLs) => [...playURLs, playURL]);
-  };
 
-  const handlePlayAll = async () => {
-    if (playURLs.length === 2) {
-      messageApi.warning("已经在播放啦😄");
+    if (!mainPlayURL) {
+      setMainPlayURL(playURL);
+      setMutedPlayURL("");
+      setPlayURLs([playURL]);
       return;
     }
-    await checkOrStartProxy();
-    let config = await getConfig();
-    let URLs = [...playURLs];
-    plays.map((play, index) => {
-      let playURL = getVidePlayURL(play, config.proxy_port);
-      if (playURL === mainPlayURL) {
-        return;
-      }
-      URLs.push(playURL);
-      if (index === 0) {
+
+    if (!mutedPlayURL) {
+      if (play.index === 0) {
+        setMutedPlayURL(mainPlayURL);
         setMainPlayURL(playURL);
+        setPlayURLs([playURL, mainPlayURL]);
       } else {
         setMutedPlayURL(playURL);
+        setPlayURLs([mainPlayURL, playURL]);
       }
-    });
-    setPlayURLs(URLs);
-  };
+      return;
+    }
 
-  const columns = [
-    {
-      title: "视频名",
-      dataIndex: "name",
-      key: "name",
-    },
-    {
-      title: "操作",
-      dataIndex: "operation",
-      key: "operation",
-      render: (_: any, play: VideoPlayInfo) => (
-        <Space>
-          <a
-            onClick={(e) => {
-              e.preventDefault();
-              handleDownloadVideo(play);
-            }}
-          >
-            下载
-          </a>
-          <a
-            onClick={(e) => {
-              e.preventDefault();
-              handlePlay(play);
-            }}
-          >
-            播放
-          </a>
-        </Space>
-      ),
-    },
-  ];
-
-  const shouldShowAlert = loaded && notLogin && qrcode;
-  const getVideoClassName = (videoURL: string) => {
-    return videoURL === mainPlayURL ? "" : videoStyles.subVideo;
-  };
-
-  const getVideoStyle = (videoURL: string) => {
-    return { width: videoURL === mainPlayURL ? "100%" : subVideoSize + "%" };
+    if (play.index !== 0 || playURL !== mainPlayURL) {
+      setMutedPlayURL(playURL);
+    }
+    setPlayURLs((urls) => [...urls, playURL]);
   };
 
   const handleSwapVideo = () => {
     if (playURLs.length === 2 && mainPlayURL && mutedPlayURL) {
-      // 记录当前状态
       const mainVideo = mainVideoRef.current;
       const subVideo = subVideoRef.current;
-      if (!mainVideo || !subVideo) return;
+      if (!mainVideo || !subVideo) {
+        return;
+      }
 
       const mainState = {
         currentTime: mainVideo.currentTime,
@@ -390,36 +448,59 @@ export default function VideoPage() {
         playbackRate: subVideo.playbackRate,
       };
 
-      // 交换URL
       setMainPlayURL(mutedPlayURL);
       setMutedPlayURL(mainPlayURL);
 
-      // 等待URL切换后再同步状态
       setTimeout(() => {
         const newMain = mainVideoRef.current;
         const newSub = subVideoRef.current;
         if (newMain && newSub) {
-          // 恢复进度和速度
           newMain.currentTime = subState.currentTime;
           newMain.playbackRate = subState.playbackRate;
           newSub.currentTime = mainState.currentTime;
           newSub.playbackRate = mainState.playbackRate;
-          // 恢复播放状态
-          if (!subState.paused) newMain.play();
-          else newMain.pause();
-          if (!mainState.paused) newSub.play();
-          else newSub.pause();
+          if (!subState.paused) {
+            void newMain.play();
+          } else {
+            newMain.pause();
+          }
+          if (!mainState.paused) {
+            void newSub.play();
+          } else {
+            newSub.pause();
+          }
         }
-      }, 200); // 适当延迟，确保URL已切换
+      }, 200);
     }
   };
 
-  const noSubVideo = playURLs.length < 2;
+  const handleMainVideoJump = (time: number) => {
+    if (!mainVideoRef.current) {
+      messageApi.warning("当前未播放视频");
+      return;
+    }
+    mainVideoRef.current.currentTime = time;
+  };
+
+  const noSubVideo = !mutedPlayURL;
   const subVideoSizes = [0, 10, 20, 25, 33, 40, 50];
 
+  const positionSubVideo = () => {
+    const container = playerContainerRef.current;
+    if (!container || !mutedPlayURL) {
+      return;
+    }
+
+    const padding = 24;
+    const containerWidth = container.clientWidth;
+    const overlayWidth = (containerWidth * subVideoSize) / 100;
+    const maxX = Math.max(padding, containerWidth - overlayWidth - padding);
+    setSubVideoPos({ x: maxX, y: padding });
+  };
+
   const hookVideoHandlers = (swap: boolean) => {
-    let mainVideo = mainVideoRef.current;
-    let subVideo = subVideoRef.current;
+    const mainVideo = mainVideoRef.current;
+    const subVideo = subVideoRef.current;
     if (!mainVideo || !subVideo) {
       return;
     }
@@ -427,12 +508,12 @@ export default function VideoPage() {
     if (!swap) {
       subVideo.currentTime = mainVideo.currentTime;
       if (!mainVideo.paused) {
-        subVideo.play();
+        void subVideo.play();
       }
     }
 
     subVideo.onplay = null;
-    mainVideo.onplay = () => subVideo?.play();
+    mainVideo.onplay = () => void subVideo?.play();
 
     subVideo.onpause = null;
     mainVideo.onpause = () => subVideo?.pause();
@@ -456,13 +537,30 @@ export default function VideoPage() {
     if (!noSubVideo && syncPlay) {
       hookVideoHandlers(false);
     }
-  }, [playURLs]);
+  }, [playURLs, noSubVideo, syncPlay]);
 
   useEffect(() => {
     if (!noSubVideo && syncPlay) {
       hookVideoHandlers(true);
     }
-  }, [mainPlayURL]);
+  }, [mainPlayURL, noSubVideo, syncPlay]);
+
+  useEffect(() => {
+    if (!mutedPlayURL) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      positionSubVideo();
+    });
+
+    const handleResize = () => positionSubVideo();
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [mutedPlayURL, subVideoSize]);
 
   useEffect(() => {
     const fetchSubtitle = async () => {
@@ -471,215 +569,446 @@ export default function VideoPage() {
         return;
       }
       try {
-        let videoInfo = (await invoke("get_canvas_video_info", {
+        const videoInfo = (await invoke("get_canvas_video_info", {
           videoId: selectedVideo.videoId,
         })) as VideoInfo;
         const srt = (await invoke("get_subtitle", {
           canvasCourseId: videoInfo.courId,
         })) as string;
         const vtt = srtToVtt(srt);
-
         const blob = new Blob([vtt], { type: "text/vtt" });
         const url = URL.createObjectURL(blob);
         setSubtitleUrl(url);
-      } catch (e) {
-        console.log("字幕获取失败", e);
+      } catch {
         setSubtitleUrl(undefined);
       }
     };
-    fetchSubtitle();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void fetchSubtitle();
   }, [mainPlayURL, selectedVideo]);
+
+  const shouldShowAlert = loaded && notLogin && qrcode;
+  const selectedCourse = courses.data.find((course) =>
+    course.id === selectedCourseId
+  );
 
   return (
     <BasicLayout>
       {contextHolder}
-      <Space direction="vertical" size="large" style={{ width: "100%" }}>
+      <Stack spacing={3}>
         <ClosableAlert
           alertType="info"
-          message={"提示"}
+          message="提示"
           configKey={VIDEO_PAGE_HINT_ALERT_KEY}
-          description="依次点击主屏幕和副屏幕的播放按钮以开启双窗口模式"
+          description="依次点击主屏幕和副屏幕的播放按钮即可开启双窗口模式。"
         />
-        {shouldShowAlert && (
+
+        {shouldShowAlert ? (
           <LoginAlert qrcode={qrcode} refreshQRCode={refreshQRCode} />
-        )}
-        {!notLogin && (
-          <>
-            <CourseSelect
-              courses={courses.data}
-              onChange={handleSelectCourse}
-            ></CourseSelect>
-            <Space>
-              <span>选择视频：</span>
-              <Select
-                disabled={operating}
-                style={{ width: 350 }}
-                value={selectedVideo?.videoId}
-                defaultValue={selectedVideo?.videoId}
-                onChange={handleSelectVideo}
-                options={videos.map((video) => ({
-                  label: `${video.videoName} ${video.courseBeginTime}`,
-                  value: video.videoId,
-                }))}
-              />
-              <Space>
-                <Button
-                  onClick={handleDownloadSubtitle}
-                  disabled={!selectedVideo}
-                >
-                  下载字幕
-                </Button>
-                <Button
-                  onClick={() =>
-                    handleDownloadPPT(
-                      selectedVideo?.videoId || "",
-                      `${selectedVideo?.videoName}.pdf`
-                    )
-                  }
-                  disabled={!selectedVideo}
-                >
-                  下载PPT
-                </Button>
-              </Space>
-            </Space>
-            <Table
-              style={{ width: "100%" }}
-              columns={columns}
-              dataSource={plays}
-              pagination={false}
-            />
-            <Space direction="vertical">
-              <Space>
-                <Checkbox
-                  disabled={noSubVideo}
-                  defaultChecked
-                  onChange={(e) => setSyncPlay(e.target.checked)}
-                >
-                  同步播放
-                </Checkbox>
-              </Space>
-              <Space>
-                <Button disabled onClick={handlePlayAll}>
-                  播放全部
-                </Button>
-                <Button
-                  icon={<SwapOutlined />}
-                  disabled={noSubVideo}
-                  onClick={handleSwapVideo}
-                >
-                  主副屏切换
-                </Button>
-                <Select
-                  style={{ width: 150 }}
-                  disabled={noSubVideo}
-                  onChange={(size) => setSubVideoSize(size)}
-                  defaultValue={25}
-                  options={subVideoSizes.map((size) => ({
-                    label: "副屏：" + size + "%",
-                    value: size,
-                  }))}
-                />
-              </Space>
-              {/* 副屏透明度调节 */}
-              {!noSubVideo && (
-                <div
-                  style={{
-                    width: 240,
-                    margin: "8px 0",
-                    display: "flex",
-                    alignItems: "center",
-                  }}
-                >
-                  <span
-                    style={{ width: 72, textAlign: "right", marginRight: 8 }}
-                  >
-                    副屏透明度
-                  </span>
-                  <Slider
-                    min={0.1}
-                    max={1}
-                    step={0.05}
-                    value={subVideoOpacity}
-                    onChange={setSubVideoOpacity}
-                    style={{ width: 120, marginRight: 8 }}
-                    disabled={noSubVideo}
-                  />
-                  {/* <span style={{ width: 32, textAlign: 'left' }}>{Math.round(subVideoOpacity * 100)}%</span> */}
-                </div>
-              )}
-            </Space>
-            <div
-              className={videoStyles.videoPlayerContainer}
-              style={{ position: "relative" }}
-            >
-              {/* 主屏视频 */}
-              {mainPlayURL && (
-                <video
-                  className={getVideoClassName(mainPlayURL)}
-                  style={getVideoStyle(mainPlayURL)}
-                  ref={mainVideoRef}
-                  controls
-                  autoPlay={false}
-                  src={mainPlayURL}
-                  muted={mainPlayURL === mutedPlayURL}
-                  width="100%"
-                >
-                  {(() => {
-                    console.log("渲染track, subtitleUrl:", subtitleUrl);
-                    return null;
-                  })()}
-                  {subtitleUrl && (
-                    <track
-                      label="字幕"
-                      kind="subtitles"
-                      src={subtitleUrl}
-                      srcLang="zh"
-                      default
-                      onLoad={() => {
-                        console.log("字幕track已挂载", subtitleUrl);
-                      }}
-                    />
-                  )}
-                </video>
-              )}
-              {/* 副屏视频（可拖动+透明度） */}
-              {!noSubVideo && mutedPlayURL && (
-                <Draggable
-                  position={subVideoPos}
-                  onStop={(_: DraggableEvent, data: DraggableData) =>
-                    setSubVideoPos({ x: data.x, y: data.y })
-                  }
-                  disabled={noSubVideo}
-                >
-                  <div
-                    style={{
-                      position: "fixed",
-                      zIndex: 1000,
-                      opacity: subVideoOpacity,
-                      pointerEvents: noSubVideo ? "none" : "auto",
-                      width: subVideoSize + "%",
-                      right: 40,
-                      top: 120,
-                      display: playURLs.length >= 2 ? "block" : "none",
-                      boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
-                      borderRadius: 8,
-                      background: "#000",
+        ) : null}
+
+        <Card
+          sx={{
+            ...surfaceCardSx,
+            background:
+              theme.palette.mode === "dark"
+                ? `linear-gradient(135deg, ${alpha(
+                    theme.palette.primary.main,
+                    0.18
+                  )}, ${alpha("#0f172a", 0.9)})`
+                : `linear-gradient(135deg, ${alpha(
+                    theme.palette.primary.main,
+                    0.1
+                  )}, rgba(255,255,255,0.96))`,
+          }}
+        >
+          <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+            <Stack spacing={3}>
+              <Stack
+                direction={{ xs: "column", lg: "row" }}
+                justifyContent="space-between"
+                spacing={2}
+              >
+                <Box>
+                  <Typography variant="h4" sx={{ fontWeight: 800 }}>
+                    视频中心
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    选择课程录像，下载视频、字幕、PPT，并支持双屏同步播放。
+                  </Typography>
+                </Box>
+                {!notLogin ? (
+                  <Box
+                    sx={{
+                      width: "100%",
+                      maxWidth: { xs: "100%", lg: 680 },
+                      alignSelf: { xs: "stretch", lg: "flex-start" },
                     }}
                   >
-                    <video
-                      className={videoStyles.subVideo}
-                      ref={subVideoRef}
-                      controls
-                      autoPlay={false}
-                      src={mutedPlayURL}
-                      muted
-                      style={{ width: "100%", borderRadius: 8 }}
+                    <CourseSelect
+                      courses={courses.data}
+                      onChange={(courseId) => void handleSelectCourse(courseId)}
                     />
-                  </div>
-                </Draggable>
-              )}
-            </div>
+                  </Box>
+                ) : null}
+              </Stack>
+
+              <Box
+                sx={{
+                  display: "grid",
+                  gap: 2,
+                  gridTemplateColumns: {
+                    xs: "repeat(2, minmax(0, 1fr))",
+                    lg: "repeat(4, minmax(0, 1fr))",
+                  },
+                }}
+              >
+                {[
+                  { label: "课程视频", value: videos.length },
+                  { label: "播放片段", value: plays.length },
+                  { label: "视频任务", value: videoDownloadTasks.length },
+                  { label: "PPT 任务", value: pptDownloadTasks.length },
+                ].map((item) => (
+                  <Card
+                    key={item.label}
+                    sx={{
+                      borderRadius: "22px",
+                      backgroundColor: alpha(theme.palette.background.paper, 0.8),
+                      border: "1px solid",
+                      borderColor: alpha(theme.palette.divider, 0.5),
+                      boxShadow: "none",
+                    }}
+                  >
+                    <CardContent sx={{ p: 2.25 }}>
+                      <Typography variant="overline" color="text.secondary">
+                        {item.label}
+                      </Typography>
+                      <Typography variant="h4" sx={{ fontWeight: 800, mt: 1 }}>
+                        {item.value}
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                ))}
+              </Box>
+
+              {!notLogin ? (
+                <Box
+                  sx={{
+                    display: "grid",
+                    gap: 2,
+                    gridTemplateColumns: {
+                      xs: "minmax(0, 1fr)",
+                      xl: "minmax(0, 1.1fr) auto",
+                    },
+                    alignItems: "start",
+                  }}
+                >
+                  <TextField
+                    select
+                    label="选择视频"
+                    disabled={operating}
+                    value={selectedVideo?.videoId ?? ""}
+                    onChange={(event) =>
+                      void handleSelectVideo(String(event.target.value))
+                    }
+                    helperText={
+                      selectedVideo
+                        ? `当前视频：${selectedVideo.videoName}`
+                        : "选择一个课程后，这里会展示该课程的视频列表。"
+                    }
+                  >
+                    {videos.map((video) => (
+                      <MenuItem key={video.videoId} value={video.videoId}>
+                        {`${video.videoName} ${video.courseBeginTime}`}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} useFlexGap flexWrap="wrap">
+                    <Button
+                      variant="outlined"
+                      startIcon={<ClosedCaptionRoundedIcon />}
+                      onClick={() => void handleDownloadSubtitle()}
+                      disabled={!selectedVideo}
+                    >
+                      下载字幕
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      startIcon={<PictureAsPdfRoundedIcon />}
+                      onClick={() =>
+                        void handleDownloadPPT(
+                          selectedVideo?.videoId || "",
+                          `${selectedVideo?.videoName}.pdf`
+                        )
+                      }
+                      disabled={!selectedVideo}
+                    >
+                      下载 PPT
+                    </Button>
+                    <Button
+                      variant="contained"
+                      startIcon={<PsychologyRoundedIcon />}
+                      onClick={() => void handleSummarizeSubtitle()}
+                      disabled={!selectedVideo}
+                    >
+                      AI 总结
+                    </Button>
+                  </Stack>
+                </Box>
+              ) : null}
+
+              {selectedCourse ? (
+                <Chip label={selectedCourse.name} color="primary" variant="outlined" />
+              ) : null}
+            </Stack>
+          </CardContent>
+        </Card>
+
+        {!notLogin ? (
+          <>
+            <Card sx={surfaceCardSx}>
+              <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+                <Stack spacing={2}>
+                  <Box>
+                    <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                      播放片段
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      主屏一般是黑板视角，录屏轨道可作为副屏或下载对象。
+                    </Typography>
+                  </Box>
+
+                  <Box
+                    sx={{
+                      borderRadius: "22px",
+                      border: "1px solid",
+                      borderColor: "divider",
+                      overflow: "auto",
+                    }}
+                  >
+                    <Table sx={{ minWidth: 720 }}>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>视频名</TableCell>
+                          <TableCell align="right">操作</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {plays.map((play) => (
+                          <TableRow key={play.id} hover>
+                            <TableCell>{play.name}</TableCell>
+                            <TableCell align="right">
+                              <Stack
+                                direction="row"
+                                spacing={1}
+                                justifyContent="flex-end"
+                                flexWrap="wrap"
+                                useFlexGap
+                              >
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  onClick={() => handleDownloadVideo(play)}
+                                >
+                                  下载
+                                </Button>
+                                <Button
+                                  size="small"
+                                  variant="contained"
+                                  onClick={() => void handlePlay(play)}
+                                >
+                                  播放
+                                </Button>
+                              </Stack>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </Box>
+                </Stack>
+              </CardContent>
+            </Card>
+
+            <Card sx={surfaceCardSx}>
+              <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+                <Stack spacing={2.5}>
+                  <Box>
+                    <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                      播放控制
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      可调节副屏尺寸、透明度，并在双轨播放时切换主副屏。
+                    </Typography>
+                  </Box>
+
+                  <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems={{ xs: "stretch", md: "center" }}>
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={syncPlay}
+                          onChange={(event) => setSyncPlay(event.target.checked)}
+                          disabled={noSubVideo}
+                        />
+                      }
+                      label="同步播放"
+                    />
+                    <Button
+                      variant="outlined"
+                      startIcon={<SwapHorizRoundedIcon />}
+                      disabled={noSubVideo}
+                      onClick={handleSwapVideo}
+                    >
+                      主副屏切换
+                    </Button>
+                    <TextField
+                      select
+                      label="副屏尺寸"
+                      value={subVideoSize}
+                      onChange={(event) => setSubVideoSize(Number(event.target.value))}
+                      disabled={noSubVideo}
+                      sx={{ width: { xs: "100%", md: 180 } }}
+                    >
+                      {subVideoSizes.map((size) => (
+                        <MenuItem key={size} value={size}>
+                          副屏：{size}%
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  </Stack>
+
+                  {!noSubVideo ? (
+                    <Box sx={{ width: { xs: "100%", md: 360 } }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                        副屏透明度
+                      </Typography>
+                      <Slider
+                        min={0.1}
+                        max={1}
+                        step={0.05}
+                        value={subVideoOpacity}
+                        onChange={(_, value) => setSubVideoOpacity(value as number)}
+                      />
+                    </Box>
+                  ) : null}
+                </Stack>
+              </CardContent>
+            </Card>
+
+            <Card sx={surfaceCardSx}>
+              <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
+                <Stack spacing={2}>
+                  <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                    播放器
+                  </Typography>
+                  <Box
+                    className={videoStyles.videoPlayerContainer}
+                    sx={{
+                      borderRadius: "22px",
+                      overflow: "hidden",
+                      bgcolor: "#000",
+                    }}
+                  >
+                    <Box
+                      ref={playerContainerRef}
+                      sx={{
+                        position: "relative",
+                        width: "100%",
+                        aspectRatio: "16 / 9",
+                        minHeight: 360,
+                        bgcolor: "#000",
+                      }}
+                    >
+                      {mainPlayURL ? (
+                        <video
+                          ref={mainVideoRef}
+                          controls
+                          autoPlay={false}
+                          src={mainPlayURL}
+                          muted={false}
+                          width="100%"
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            display: "block",
+                            objectFit: "contain",
+                            background: "#000",
+                          }}
+                        >
+                          {subtitleUrl ? (
+                            <track
+                              label="字幕"
+                              kind="subtitles"
+                              src={subtitleUrl}
+                              srcLang="zh"
+                              default
+                            />
+                          ) : null}
+                        </video>
+                      ) : (
+                        <Box
+                          sx={{
+                            position: "absolute",
+                            inset: 0,
+                            display: "grid",
+                            placeItems: "center",
+                            color: "#fff",
+                          }}
+                        >
+                          <Stack spacing={1.25} alignItems="center">
+                            <VideoLibraryRoundedIcon sx={{ fontSize: 44, opacity: 0.8 }} />
+                            <Typography variant="body1">选择片段后在这里开始播放</Typography>
+                          </Stack>
+                        </Box>
+                      )}
+
+                      {!noSubVideo && mutedPlayURL ? (
+                        <Draggable
+                          bounds="parent"
+                          position={subVideoPos}
+                          onStop={(_: DraggableEvent, data: DraggableData) =>
+                            setSubVideoPos({ x: data.x, y: data.y })
+                          }
+                          disabled={noSubVideo}
+                        >
+                          <div
+                            style={{
+                              position: "absolute",
+                              zIndex: 1000,
+                              opacity: subVideoOpacity,
+                              pointerEvents: noSubVideo ? "none" : "auto",
+                              width: `${subVideoSize}%`,
+                              left: 0,
+                              top: 0,
+                              display: mutedPlayURL ? "block" : "block",
+                              boxShadow: "0 10px 30px rgba(0,0,0,0.3)",
+                              borderRadius: 12,
+                              background: "#000",
+                              overflow: "hidden",
+                            }}
+                          >
+                            <video
+                              ref={subVideoRef}
+                              controls
+                              autoPlay={false}
+                              src={mutedPlayURL}
+                              muted
+                              style={{
+                                width: "100%",
+                                height: "100%",
+                                display: "block",
+                                objectFit: "contain",
+                                background: "#000",
+                              }}
+                            />
+                          </div>
+                        </Draggable>
+                      ) : null}
+                    </Box>
+                  </Box>
+                </Stack>
+              </CardContent>
+            </Card>
 
             <VideoDownloadTable
               tasks={videoDownloadTasks}
@@ -690,10 +1019,38 @@ export default function VideoPage() {
               handleRemoveTask={handleRemovePPTTask}
             />
           </>
-        )}
-        <Divider orientation="left">视频合并</Divider>
-        <VideoAggregator />
-      </Space>
+        ) : null}
+
+        <Card sx={surfaceCardSx}>
+          <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+            <Stack spacing={2}>
+              <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                视频合并
+              </Typography>
+              <VideoAggregator />
+            </Stack>
+          </CardContent>
+        </Card>
+      </Stack>
+
+      <Dialog
+        open={summaryOpen}
+        onClose={() => setSummaryOpen(false)}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle>AI 总结</DialogTitle>
+        <DialogContent>
+          <Box sx={{ "& a": { color: "primary.main" } }}>
+            <Markdown
+              remarkPlugins={[remarkGfm]}
+              components={{ code: LinkRenderer }}
+            >
+              {summaryContent}
+            </Markdown>
+          </Box>
+        </DialogContent>
+      </Dialog>
     </BasicLayout>
   );
 }

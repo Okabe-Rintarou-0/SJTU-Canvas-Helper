@@ -1,7 +1,9 @@
+import ArticleRoundedIcon from "@mui/icons-material/ArticleRounded";
 import { DocRendererProps } from "@cyntler/react-doc-viewer";
 import { renderAsync } from "docx-preview"
 import { useEffect, useRef } from "react";
 import { decodeBase64DataAsBinary } from "../lib/utils";
+import RendererShell from "./renderer_shell";
 
 export default function DocxRenderer({
     mainState: { currentDocument },
@@ -13,11 +15,21 @@ export default function DocxRenderer({
 
     useEffect(() => {
         if (containerRef.current) {
+            containerRef.current.innerHTML = "";
             renderAsync(data, containerRef.current);
         }
-    }, [containerRef.current]);
+    }, [data]);
 
-    return <div ref={containerRef} style={{ width: "100%" }} />
+    return (
+        <RendererShell
+            title={currentDocument.fileName ?? "Document"}
+            subtitle="DOCX preview"
+            fileType={currentDocument.fileType}
+            icon={<ArticleRoundedIcon />}
+        >
+            <div ref={containerRef} style={{ width: "100%" }} />
+        </RendererShell>
+    );
 }
 
 DocxRenderer.fileTypes = ["docx"];

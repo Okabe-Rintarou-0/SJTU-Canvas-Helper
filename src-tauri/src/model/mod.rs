@@ -374,20 +374,15 @@ pub struct Attachment {
     pub content_type: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(clippy::enum_variant_names)]
 pub enum EnrollmentRole {
+    #[default]
     StudentEnrollment,
     TaEnrollment,
     TeacherEnrollment,
     ObserverEnrollment,
     DesignerEnrollment,
-}
-
-impl Default for EnrollmentRole {
-    fn default() -> Self {
-        Self::StudentEnrollment
-    }
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

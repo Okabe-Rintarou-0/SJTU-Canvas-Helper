@@ -37,7 +37,7 @@ impl Client {
             .get_request_with_token(url, query, token)
             .await?
             .error_for_status()?;
-        let json = utils::parse_json(&response.bytes().await?)?;
+        let json = utils::json::parse_json(&response.bytes().await?)?;
         Ok(json)
     }
 
@@ -93,7 +93,7 @@ impl Client {
         let bytes = resp.bytes().await?;
 
         // tracing::info!("resp: {:?}", String::from_utf8_lossy(&bytes.to_vec()));
-        let result = utils::parse_json(&bytes)?;
+        let result = utils::json::parse_json(&bytes)?;
         Ok(result)
     }
 
@@ -126,7 +126,7 @@ impl Client {
         }
 
         let response = req.send().await?.error_for_status()?;
-        let json = utils::parse_json(&response.bytes().await?)?;
+        let json = utils::json::parse_json(&response.bytes().await?)?;
         Ok(json)
     }
 }

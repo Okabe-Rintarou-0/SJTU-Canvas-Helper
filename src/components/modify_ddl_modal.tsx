@@ -1,15 +1,32 @@
-import { useForm } from "antd/lib/form/Form";
+import { invoke } from "@tauri-apps/api/core";
+import AddRoundedIcon from "@mui/icons-material/AddRounded";
+import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
+import KeyboardBackspaceRoundedIcon from "@mui/icons-material/KeyboardBackspaceRounded";
+import {
+  Alert,
+  Autocomplete,
+  Box,
+  Button,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  MenuItem,
+  Stack,
+  TextField,
+  Typography,
+} from "@mui/material";
+import dayjs, { Dayjs } from "dayjs";
+import { useEffect, useMemo, useState } from "react";
+
+import { useAppMessage } from "../lib/message";
 import {
   Assignment,
   AssignmentDate,
   LOG_LEVEL_ERROR,
   User,
 } from "../lib/model";
-import { Button, DatePicker, Form, Modal, Select, Space, Tag } from "antd";
-import dayjs, { Dayjs } from "dayjs";
-import { useEffect, useMemo, useState } from "react";
-import useMessage from "antd/es/message/useMessage";
-import { invoke } from "@tauri-apps/api/core";
 import { consoleLog } from "../lib/utils";
 
 const ALL_USERS = [0];
@@ -19,6 +36,20 @@ interface DDLFormData {
   target: string;
   dueAt: Dayjs | null;
   lockAt: Dayjs | null;
+}
+
+function toDateTimeLocal(value?: string | null) {
+  if (!value) {
+    return "";
+  }
+  return dayjs(value).format("YYYY-MM-DDTHH:mm");
+}
+
+function fromDateTimeLocal(value: string) {
+  if (!value) {
+    return null;
+  }
+  return dayjs(value);
 }
 
 export default function ModifyDDLModal({
@@ -36,73 +67,75 @@ export default function ModifyDDLModal({
   onRefresh?: () => void;
   onSuccess?: () => void;
 }) {
-  const [form] = useForm<DDLFormData>();
+  const [messageApi, contextHolder] = useAppMessage();
   const [mode, setMode] = useState<"modify" | "add">("modify");
-  const [messageApi, contextHolder] = useMessage();
   const [users, setUsers] = useState<User[]>([]);
   const [overrideUserIds, setOverrideUserIds] = useState<number[][]>([
     ALL_USERS,
   ]);
-  const [userIdToAdd, setUserIdToAdd] = useState<number | undefined>(undefined);
   const [availableUsers, setAvailableUsers] = useState<User[]>([]);
-  const [needRefresh, setNeedRefresh] = useState<boolean>(false);
+  const [needRefresh, setNeedRefresh] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [formData, setFormData] = useState<DDLFormData>({
+    target: ALL_USERS_TARGET,
+    dueAt: null,
+    lockAt: null,
+  });
 
   const getTargetDate = (target: string) => {
-    // is all user
     if (target === ALL_USERS_TARGET) {
       return assignment.all_dates.find((date) => date.base);
     }
     const overrideId = assignment.overrides.find(
       (override) => override.student_ids.join(",") === target
     )?.id;
-    const date = assignment.all_dates.find((date) => date.id === overrideId);
-    return date;
+    return assignment.all_dates.find((date) => date.id === overrideId);
   };
 
-  const [targetDate, setTargetDate] = useState<AssignmentDate | undefined>(
-    undefined
-  );
+  const [targetDate, setTargetDate] = useState<AssignmentDate | undefined>();
 
   const userMap = useMemo(() => {
     const map = new Map<number, User>();
-    users.map((user) => map.set(user.id, user));
+    users.forEach((user) => map.set(user.id, user));
     return map;
   }, [users]);
 
   useEffect(() => {
-    if (targetDate) {
-      form.setFieldValue(
-        "dueAt",
-        targetDate?.due_at ? dayjs(targetDate.due_at) : undefined
-      );
-      form.setFieldValue(
-        "lockAt",
-        targetDate?.lock_at ? dayjs(targetDate.lock_at) : undefined
-      );
-    }
-  }, [targetDate]);
-
-  useEffect(() => {
     const handleInitUsers = async () => {
       try {
-        const users = (await invoke("list_course_students", {
+        const nextUsers = (await invoke("list_course_students", {
           courseId,
         })) as User[];
-        setUsers(users);
-      } catch (e) {
-        consoleLog(LOG_LEVEL_ERROR, e);
+        setUsers(nextUsers);
+      } catch (error) {
+        consoleLog(LOG_LEVEL_ERROR, error);
       }
     };
-    handleInitUsers();
-  }, []);
+    void handleInitUsers();
+  }, [courseId]);
+
+  useEffect(() => {
+    if (!targetDate) {
+      return;
+    }
+    setFormData((prev) => ({
+      ...prev,
+      dueAt: targetDate.due_at ? dayjs(targetDate.due_at) : null,
+      lockAt: targetDate.lock_at ? dayjs(targetDate.lock_at) : null,
+    }));
+  }, [targetDate]);
 
   const init = () => {
-    form.setFieldValue("target", ALL_USERS_TARGET);
+    setFormData({
+      target: ALL_USERS_TARGET,
+      dueAt: null,
+      lockAt: null,
+    });
     setTargetDate(getTargetDate(ALL_USERS_TARGET));
   };
 
   useEffect(() => {
-    if (open === false) {
+    if (!open) {
       return;
     }
     init();
@@ -116,12 +149,12 @@ export default function ModifyDDLModal({
 
   useEffect(() => {
     const existedUsers = new Set<number>();
-    overrideUserIds.map((ids) => ids.map((id) => existedUsers.add(id)));
+    overrideUserIds.forEach((ids) => ids.forEach((id) => existedUsers.add(id)));
     setAvailableUsers(users.filter((user) => !existedUsers.has(user.id)));
   }, [overrideUserIds, users]);
 
   const handleModifyAssignmentDDL = async (dueAt?: string, lockAt?: string) => {
-    invoke("modify_assignment_ddl", {
+    await invoke("modify_assignment_ddl", {
       dueAt,
       lockAt,
       courseId,
@@ -137,7 +170,7 @@ export default function ModifyDDLModal({
     if (!overrideId) {
       return;
     }
-    invoke("modify_assignment_ddl_override", {
+    await invoke("modify_assignment_ddl_override", {
       dueAt,
       lockAt,
       overrideId,
@@ -152,7 +185,7 @@ export default function ModifyDDLModal({
     dueAt?: string,
     lockAt?: string
   ) => {
-    invoke("add_assignment_ddl_override", {
+    await invoke("add_assignment_ddl_override", {
       dueAt,
       lockAt,
       studentId,
@@ -169,37 +202,45 @@ export default function ModifyDDLModal({
         assignmentId: assignment.id,
         overrideId,
       });
-      messageApi.success("删除成功！🎉");
+      messageApi.success("删除成功", 0.5);
       const overrideToDelete = assignment.overrides.find(
         (override) => override.id === overrideId
       );
       if (overrideToDelete) {
         const targetToDelete = overrideToDelete.student_ids.join(",");
         setOverrideUserIds((ids) =>
-          ids.filter((ids) => ids.join(",") !== targetToDelete)
+          ids.filter((currentIds) => currentIds.join(",") !== targetToDelete)
         );
       }
       init();
       setNeedRefresh(true);
-    } catch (e) {
-      messageApi.error(`删除失败☹️：${e}`);
+    } catch (error) {
+      messageApi.error(`删除失败：${error}`);
     }
   };
 
-  const handleSubmit = async ({ dueAt, lockAt, target }: DDLFormData) => {
+  const handleSubmit = async () => {
+    const { dueAt, lockAt, target } = formData;
+    if (!target) {
+      messageApi.warning("请选择一个目标");
+      return;
+    }
+
     const newDueAt = dueAt?.toISOString();
     const newLockAt = lockAt?.toISOString();
     const modifyAll = target === ALL_USERS_TARGET;
+
     try {
+      setSubmitting(true);
       if (mode === "modify") {
         if (modifyAll) {
           await handleModifyAssignmentDDL(newDueAt, newLockAt);
         } else {
           await handleModifyAssignmentDDLOverride(newDueAt, newLockAt);
         }
-        await messageApi.success("修改成功！🎉", 0.5);
+        messageApi.success("修改成功", 0.5);
       } else {
-        const studentId = Number.parseInt(target);
+        const studentId = Number.parseInt(target, 10);
         const studentName = userMap.get(studentId)?.name ?? "学生";
         await handleAddAssignmentDDLOverride(
           studentId,
@@ -207,29 +248,19 @@ export default function ModifyDDLModal({
           newDueAt,
           newLockAt
         );
-        await messageApi.success("添加成功！🎉", 0.5);
+        messageApi.success("添加成功", 0.5);
       }
       onSuccess?.();
-    } catch (e) {
-      messageApi.error(`修改失败：${e}☹️`);
+    } catch (error) {
+      messageApi.error(`修改失败：${error}`);
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const options = overrideUserIds.map((ids) => ({
+  const targetOptions = overrideUserIds.map((ids) => ({
     value: ids.join(","),
-    label: (
-      <Space>
-        {ids.map((id) =>
-          id === 0 ? (
-            <Tag key={id}>
-              {overrideUserIds.length > 1 ? "其他所有人" : "所有人"}
-            </Tag>
-          ) : (
-            <Tag key={id}>{userMap.get(id)?.name}</Tag>
-          )
-        )}
-      </Space>
-    ),
+    ids,
   }));
 
   const handleCancelModal = () => {
@@ -241,107 +272,174 @@ export default function ModifyDDLModal({
   };
 
   return (
-    <Modal
-      open={open}
-      onCancel={handleCancelModal}
-      onOk={() => {
-        form.validateFields().then((data) => {
-          handleSubmit(data);
-        });
-      }}
-    >
+    <Dialog open={open} onClose={handleCancelModal} fullWidth maxWidth="md">
       {contextHolder}
-      <Form
-        style={{ marginTop: "30px" }}
-        form={form}
-        onFinish={handleSubmit}
-        preserve={false}
-      >
-        <Form.Item>
-          {mode === "modify" && (
-            <Space>
-              <Form.Item
-                key="modify"
-                style={{ marginBottom: "0px" }}
+      <DialogTitle sx={{ pb: 1 }}>
+        <Stack spacing={0.75}>
+          <Typography variant="h6" sx={{ fontWeight: 800 }}>
+            修改作业日期
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            为整个班级或指定学生设置新的截止时间与结束时间。
+          </Typography>
+        </Stack>
+      </DialogTitle>
+
+      <DialogContent sx={{ pt: 2 }}>
+        <Stack spacing={3}>
+          <Alert severity="info" sx={{ borderRadius: "18px" }}>
+            当前作业：{assignment.name}
+          </Alert>
+
+          {mode === "modify" ? (
+            <Stack spacing={2}>
+              <TextField
+                select
                 label="目标"
-                name="target"
-                initialValue={ALL_USERS_TARGET}
-              >
-                <Select
-                  onChange={(target) => setTargetDate(getTargetDate(target))}
-                  style={{ width: "200px" }}
-                  key="modify"
-                  options={options}
-                />
-              </Form.Item>
-              <Button
-                onClick={() => {
-                  setMode("add");
-                  form.setFieldValue("target", "");
+                value={formData.target}
+                onChange={(event) => {
+                  const target = event.target.value;
+                  setFormData((prev) => ({ ...prev, target }));
+                  setTargetDate(getTargetDate(target));
                 }}
               >
-                添加目标
-              </Button>
-              <Button
-                disabled={targetDate?.base !== false}
-                type="primary"
-                onClick={() =>
-                  handleDeleteAssignmentDDLOverride(targetDate!.id)
-                }
-              >
-                删除当前目标
-              </Button>
-            </Space>
-          )}
-          {mode === "add" && (
-            <Space>
-              <Form.Item
-                key="add"
-                style={{ marginBottom: "0px" }}
-                label="目标"
-                name="target"
-              >
-                <Select
-                  key="add"
-                  value={userIdToAdd}
-                  onChange={setUserIdToAdd}
-                  style={{ width: "200px" }}
-                  options={availableUsers.map((user) => ({
-                    label: user.name,
-                    value: user.id,
-                  }))}
-                  showSearch
-                  filterOption={(inputValue, option) => {
-                    const id = option?.value;
-                    const user = availableUsers.find((user) => user.id === id);
-                    const containsInName =
-                      user?.name.indexOf(inputValue) !== -1;
-                    const containsInId =
-                      user?.login_id?.toString().indexOf(inputValue) !== -1;
-                    return containsInName || containsInId;
+                {targetOptions.map((option) => (
+                  <MenuItem key={option.value} value={option.value}>
+                    <Stack
+                      direction="row"
+                      spacing={0.75}
+                      flexWrap="wrap"
+                      useFlexGap
+                    >
+                      {option.ids.map((id) => (
+                        <Chip
+                          key={id}
+                          size="small"
+                          label={
+                            id === 0
+                              ? overrideUserIds.length > 1
+                                ? "其他所有人"
+                                : "所有人"
+                              : userMap.get(id)?.name || `用户 ${id}`
+                          }
+                          variant="outlined"
+                        />
+                      ))}
+                    </Stack>
+                  </MenuItem>
+                ))}
+              </TextField>
+
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                <Button
+                  variant="outlined"
+                  startIcon={<AddRoundedIcon />}
+                  onClick={() => {
+                    setMode("add");
+                    setFormData((prev) => ({ ...prev, target: "" }));
                   }}
-                  placeholder="输入姓名或学号搜索"
-                />
-              </Form.Item>
+                >
+                  添加目标
+                </Button>
+                <Button
+                  color="error"
+                  variant="outlined"
+                  disabled={targetDate?.base !== false}
+                  startIcon={<DeleteOutlineRoundedIcon />}
+                  onClick={() =>
+                    targetDate?.id
+                      ? void handleDeleteAssignmentDDLOverride(targetDate.id)
+                      : undefined
+                  }
+                >
+                  删除当前目标
+                </Button>
+              </Stack>
+            </Stack>
+          ) : (
+            <Stack spacing={2}>
+              <Autocomplete
+                options={availableUsers}
+                getOptionLabel={(option) =>
+                  `${option.name}${option.login_id ? ` · ${option.login_id}` : ""}`
+                }
+                value={
+                  availableUsers.find(
+                    (user) => user.id === Number(formData.target || -1)
+                  ) ?? null
+                }
+                onChange={(_, nextValue) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    target: nextValue ? String(nextValue.id) : "",
+                  }))
+                }
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="添加学生目标"
+                    placeholder="输入姓名或学号搜索"
+                  />
+                )}
+              />
               <Button
-                type="primary"
+                variant="text"
+                startIcon={<KeyboardBackspaceRoundedIcon />}
                 onClick={() => {
                   setMode("modify");
                   init();
                 }}
+                sx={{ alignSelf: "flex-start" }}
               >
-                修改原有目标
+                返回修改已有目标
               </Button>
-            </Space>
+            </Stack>
           )}
-        </Form.Item>
-        <Form.Item label="截止时间" name="dueAt">
-          <DatePicker showMinute showHour showTime />
-        </Form.Item>
-        <Form.Item label="结束时间" name="lockAt">
-          <DatePicker showMinute showHour showTime />
-        </Form.Item>
-      </Form>
-    </Modal>
+
+          <Box
+            sx={{
+              display: "grid",
+              gap: 2,
+              gridTemplateColumns: {
+                xs: "minmax(0, 1fr)",
+                md: "repeat(2, minmax(0, 1fr))",
+              },
+            }}
+          >
+            <TextField
+              label="截止时间"
+              type="datetime-local"
+              value={toDateTimeLocal(formData.dueAt?.toISOString())}
+              onChange={(event) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  dueAt: fromDateTimeLocal(event.target.value),
+                }))
+              }
+              InputLabelProps={{ shrink: true }}
+            />
+            <TextField
+              label="结束时间"
+              type="datetime-local"
+              value={toDateTimeLocal(formData.lockAt?.toISOString())}
+              onChange={(event) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  lockAt: fromDateTimeLocal(event.target.value),
+                }))
+              }
+              InputLabelProps={{ shrink: true }}
+            />
+          </Box>
+        </Stack>
+      </DialogContent>
+
+      <DialogActions sx={{ px: 3, pb: 3 }}>
+        <Button onClick={handleCancelModal}>取消</Button>
+        <Button variant="contained" onClick={() => void handleSubmit()} disabled={submitting}>
+          保存修改
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 }

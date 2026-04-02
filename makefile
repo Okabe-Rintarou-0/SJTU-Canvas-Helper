@@ -17,4 +17,14 @@ clean:
 test:
 	cd $(TAURI_SRC_DIR) && cargo test
 
-.PHONY: install dev lint clean test
+check:
+	cd $(TAURI_SRC_DIR) && cargo check --workspace --all-targets --all-features
+
+version:
+	@python3 script/bump_version.py "$(firstword $(filter-out $@,$(MAKECMDGOALS)))"
+
+# Ignore all non-targets
+%:
+	@:
+
+.PHONY: install dev lint clean test version check

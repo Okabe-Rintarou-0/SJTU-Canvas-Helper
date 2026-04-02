@@ -270,6 +270,12 @@ async fn delete_file_with_name(name: String) -> Result<()> {
 }
 
 #[tauri::command]
+async fn delete_path_file(path: String) -> Result<()> {
+    std::fs::remove_file(path)?;
+    Ok(())
+}
+
+#[tauri::command]
 async fn export_excel(
     data: Vec<Vec<String>>,
     file_name: String,
@@ -564,13 +570,18 @@ async fn download_subtitle(canvas_course_id: i64, save_path: String) -> Result<(
 }
 
 #[tauri::command]
+async fn summarize_subtitle(canvas_course_id: i64) -> Result<String> {
+    APP.summarize_subtitle(canvas_course_id).await
+}
+
+#[tauri::command]
 async fn download_ppt<R: Runtime>(
     window: Window<R>,
     course_id: i64,
-    save_name: String,
+    save_path: String,
 ) -> Result<()> {
     let window = Arc::new(window);
-    APP.download_ppt(course_id, &save_name, move |progress| {
+    APP.download_ppt(course_id, &save_path, move |progress| {
         let _ = window.clone().emit("ppt_download://progress", progress);
     })
     .await
@@ -698,6 +709,7 @@ async fn main() -> Result<()> {
             open_config_dir,
             delete_file,
             delete_file_with_name,
+            delete_path_file,
             delete_course_file,
             delete_my_file,
             download_file,
@@ -739,7 +751,8 @@ async fn main() -> Result<()> {
             generate_annual_report,
             // LLM
             chat,
-            explain_file
+            explain_file,
+            summarize_subtitle
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

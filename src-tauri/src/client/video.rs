@@ -25,7 +25,7 @@ use crate::{
         GetCanvasVideoInfoResponse, ItemPage, ProgressPayload, Subject, VideoCourse, VideoInfo,
         VideoPlayInfo,
     },
-    utils::{self, format_time, get_file_name, write_file_at_offset},
+    utils::{self, file::get_file_name, file::write_file_at_offset, time::format_time},
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
 use md5::{Digest, Md5};
@@ -326,7 +326,7 @@ impl Client {
 
         tracing::info!("body: {}", String::from_utf8_lossy(&body));
 
-        let resp = utils::parse_json::<CanvasVideoResponse>(&body).unwrap();
+        let resp = utils::json::parse_json::<CanvasVideoResponse>(&body).unwrap();
         tracing::info!("resp: {:?}", resp);
         let videos = match resp.data {
             Some(body) => body.records,
@@ -511,7 +511,7 @@ impl Client {
             .await?
             .error_for_status()?;
         let bytes = resp.bytes().await?;
-        let resp = utils::parse_json::<GetCanvasVideoInfoResponse>(&bytes)?;
+        let resp = utils::json::parse_json::<GetCanvasVideoInfoResponse>(&bytes)?;
         Ok(resp.data)
     }
 
@@ -548,7 +548,7 @@ impl Client {
             .await?
             .error_for_status()?;
         let bytes = response.bytes().await?;
-        let video = utils::parse_json(&bytes)?;
+        let video = utils::json::parse_json(&bytes)?;
         Ok(video)
     }
 
@@ -573,7 +573,7 @@ impl Client {
             .await?
             .error_for_status()?;
         let bytes = resp.bytes().await?;
-        let resp = utils::parse_json::<CanvasVideoSubTitleResponse>(&bytes)?;
+        let resp = utils::json::parse_json::<CanvasVideoSubTitleResponse>(&bytes)?;
         resp.data.ok_or(AppError::VideoDownloadError(
             "No Subtitle Found".to_string(),
         ))
@@ -616,7 +616,7 @@ impl Client {
             .await?
             .error_for_status()?;
         let bytes = resp.bytes().await?;
-        let resp = utils::parse_json::<CanvasVideoPPTResponse>(&bytes)?;
+        let resp = utils::json::parse_json::<CanvasVideoPPTResponse>(&bytes)?;
         resp.data
             .ok_or(AppError::VideoDownloadError("No PPT Found".to_string()))
     }

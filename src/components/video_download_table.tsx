@@ -1,15 +1,45 @@
-import { Button, Progress, Space, Table } from "antd";
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
+import FolderOpenRoundedIcon from "@mui/icons-material/FolderOpenRounded";
+import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
+import {
+  Box,
+  Button,
+  Checkbox,
+  Chip,
+  LinearProgress,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  Typography,
+} from "@mui/material";
+import { alpha, useTheme } from "@mui/material/styles";
+import { useEffect, useMemo, useState } from "react";
+
 import {
   DownloadState,
-  VideoDownloadTask,
   ProgressPayload,
+  VideoDownloadTask,
 } from "../lib/model";
-import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import React, { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { appMessage } from "../lib/message";
 import { sleep } from "../lib/utils";
-import { message } from "antd/lib";
+
 const appWindow = getCurrentWebviewWindow();
+
+function stateMeta(state: DownloadState) {
+  switch (state) {
+    case "fail":
+      return { label: "失败", color: "error" as const };
+    case "succeed":
+      return { label: "完成", color: "success" as const };
+    default:
+      return { label: "下载中", color: "info" as const };
+  }
+}
 
 export default function VideoDownloadTable({
   tasks,
@@ -18,11 +48,20 @@ export default function VideoDownloadTable({
   tasks: VideoDownloadTask[];
   handleRemoveTask?: (task: VideoDownloadTask) => void;
 }) {
+  const theme = useTheme();
   const [currentTasks, setCurrentTasks] = useState<VideoDownloadTask[]>([]);
-  const taskSet = new Set<string>(currentTasks.map((task) => task.key));
+  const [selectedTaskKeys, setSelectedTaskKeys] = useState<string[]>([]);
+  const taskSet = useMemo(
+    () => new Set<string>(currentTasks.map((task) => task.key)),
+    [currentTasks]
+  );
+
+  const selectedTasks = currentTasks.filter((task) =>
+    selectedTaskKeys.includes(task.key)
+  );
 
   useEffect(() => {
-    let unlisten = appWindow.listen<ProgressPayload>(
+    const unlisten = appWindow.listen<ProgressPayload>(
       "video_download://progress",
       ({ payload }) => {
         updateTaskProgress(
@@ -32,62 +71,52 @@ export default function VideoDownloadTable({
       }
     );
     return () => {
-      unlisten.then((f) => f());
+      unlisten.then((fn) => fn());
     };
   }, []);
 
   useEffect(() => {
     setCurrentTasks(tasks);
-    for (let task of tasks) {
+    for (const task of tasks) {
       if (!taskSet.has(task.key)) {
         taskSet.add(task.key);
-        handleDownloadVideo(task);
+        void handleDownloadVideo(task);
       }
     }
   }, [tasks]);
 
   const handleDownloadVideo = async (task: VideoDownloadTask) => {
-    let video = task.video;
-    let uuid = video.id + "";
+    const video = task.video;
+    const uuid = `${video.id}`;
     updateTaskProgress(uuid, 0);
 
     let retries = 0;
-    let maxRetries = 3;
+    const maxRetries = 3;
     while (retries < maxRetries) {
       try {
         await invoke("download_video", { video, saveName: task.video.name });
         updateTaskProgress(uuid, 100);
-        // messageApi.success("下载成功！", 0.5);
         break;
-      } catch (e) {
-        message.error(e as string);
-        updateTaskProgress(uuid, undefined, e as string);
+      } catch (error) {
+        appMessage().error(error as string);
+        updateTaskProgress(uuid, undefined, error as string);
         retries += 1;
       }
       await sleep(1000);
     }
   };
 
-  const handleRetryTask = (task: VideoDownloadTask) => {
+  const handleRetryTask = async (task: VideoDownloadTask) => {
     if (task.progress < 100 && task.state !== "fail") {
-      message.warning("任务正在下载中，请勿重试☹️");
+      appMessage().warning("任务正在下载中，请勿重试。");
       return;
     }
-    handleDownloadVideo(task);
+    await handleDownloadVideo(task);
   };
 
   const handleRemoveTasks = () => {
-    for (let task of selectedTasks) {
-      taskSet.delete(task.key);
-      handleRemoveTask?.(task);
-    }
-    setSelectedTasks([]);
-  };
-
-  const [selectedTasks, setSelectedTasks] = useState<VideoDownloadTask[]>([]);
-
-  const handleSelect = (_: React.Key[], selectedTasks: VideoDownloadTask[]) => {
-    setSelectedTasks(selectedTasks);
+    selectedTasks.forEach((task) => handleRemoveTask?.(task));
+    setSelectedTaskKeys([]);
   };
 
   const updateTaskProgress = (
@@ -95,97 +124,183 @@ export default function VideoDownloadTable({
     progress?: number,
     error?: string
   ) => {
-    setCurrentTasks((tasks) => {
-      let task = tasks.find((task) => task.key === id);
-      let state: DownloadState = error
+    setCurrentTasks((prevTasks) => {
+      const nextTasks = [...prevTasks];
+      const task = nextTasks.find((item) => item.key === id);
+      const state: DownloadState = error
         ? "fail"
         : progress === 100
-        ? "succeed"
-        : "downloading";
+          ? "succeed"
+          : "downloading";
+
       if (task) {
-        if (progress) {
+        if (progress !== undefined) {
           task.progress = Math.ceil(progress);
         }
         task.state = state;
       }
-      return [...tasks];
+      return nextTasks;
     });
   };
-
-  const columns = [
-    {
-      title: "视频",
-      dataIndex: "file",
-      key: "file",
-      render: (_: any, task: VideoDownloadTask) => task.video.name,
-    },
-    {
-      title: "进度条",
-      dataIndex: "progress",
-      render: (_: any, task: VideoDownloadTask) => (
-        <Progress
-          percent={task.progress}
-          status={
-            task.state === "fail"
-              ? "exception"
-              : task.state === "downloading"
-              ? "active"
-              : "success"
-          }
-        />
-      ),
-    },
-    {
-      title: "操作",
-      dataIndex: "operation",
-      key: "operation",
-      render: (_: any, task: VideoDownloadTask) => (
-        <Space size="middle">
-          <a
-            onClick={(e) => {
-              e.preventDefault();
-              handleRemoveTask?.(task);
-            }}
-          >
-            删除
-          </a>
-          <a
-            onClick={(e) => {
-              e.preventDefault();
-              handleRetryTask(task);
-            }}
-          >
-            重试
-          </a>
-        </Space>
-      ),
-    },
-  ];
 
   const handleOpenSaveDir = async () => {
     try {
       await invoke("open_save_dir");
-    } catch (e) {
-      message.error(`打开目录失败🥹：${e}`);
+    } catch (error) {
+      appMessage().error(`打开目录失败：${error}`);
     }
   };
 
+  const allSelected =
+    currentTasks.length > 0 && selectedTaskKeys.length === currentTasks.length;
+
   return (
-    <Space direction="vertical" style={{ width: "100%" }}>
-      <Table
-        style={{ width: "100%" }}
-        columns={columns}
-        dataSource={currentTasks}
-        pagination={false}
-        rowSelection={{
-          onChange: handleSelect,
-          selectedRowKeys: selectedTasks.map((task) => task.key),
+    <Stack spacing={2} sx={{ width: "100%" }}>
+      <Box
+        sx={{
+          borderRadius: "22px",
+          border: "1px solid",
+          borderColor: "divider",
+          overflow: "hidden",
         }}
-      />
-      <Space>
-        <Button onClick={handleOpenSaveDir}>打开保存目录</Button>
-        <Button onClick={handleRemoveTasks}>删除</Button>
-      </Space>
-    </Space>
+      >
+        <Table sx={{ minWidth: 720 }}>
+          <TableHead>
+            <TableRow sx={{ bgcolor: alpha(theme.palette.primary.main, 0.05) }}>
+              <TableCell padding="checkbox">
+                <Checkbox
+                  checked={allSelected}
+                  indeterminate={
+                    selectedTaskKeys.length > 0 &&
+                    selectedTaskKeys.length < currentTasks.length
+                  }
+                  onChange={(event) =>
+                    setSelectedTaskKeys(
+                      event.target.checked
+                        ? currentTasks.map((task) => task.key)
+                        : []
+                    )
+                  }
+                />
+              </TableCell>
+              <TableCell>视频</TableCell>
+              <TableCell width="34%">进度</TableCell>
+              <TableCell width="14%">状态</TableCell>
+              <TableCell align="right">操作</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {currentTasks.map((task) => {
+              const checked = selectedTaskKeys.includes(task.key);
+              const meta = stateMeta(task.state);
+
+              return (
+                <TableRow key={task.key} hover selected={checked}>
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      checked={checked}
+                      onChange={(event) =>
+                        setSelectedTaskKeys((prev) =>
+                          event.target.checked
+                            ? [...prev, task.key]
+                            : prev.filter((key) => key !== task.key)
+                        )
+                      }
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      {task.video.name}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Stack spacing={0.75}>
+                      <LinearProgress
+                        variant="determinate"
+                        value={task.progress}
+                        color={meta.color === "error" ? "error" : "primary"}
+                        sx={{
+                          height: 8,
+                          borderRadius: 999,
+                          bgcolor: alpha(theme.palette.primary.main, 0.08),
+                        }}
+                      />
+                      <Typography variant="caption" color="text.secondary">
+                        {task.progress}%
+                      </Typography>
+                    </Stack>
+                  </TableCell>
+                  <TableCell>
+                    <Chip
+                      size="small"
+                      label={meta.label}
+                      color={meta.color}
+                      variant={task.state === "downloading" ? "outlined" : "filled"}
+                    />
+                  </TableCell>
+                  <TableCell align="right">
+                    <Stack
+                      direction="row"
+                      justifyContent="flex-end"
+                      spacing={1}
+                      flexWrap="wrap"
+                      useFlexGap
+                    >
+                      <Button
+                        size="small"
+                        color="error"
+                        startIcon={<DeleteOutlineRoundedIcon />}
+                        onClick={() => handleRemoveTask?.(task)}
+                      >
+                        删除
+                      </Button>
+                      <Button
+                        size="small"
+                        startIcon={<ReplayRoundedIcon />}
+                        onClick={() => void handleRetryTask(task)}
+                        disabled={task.state !== "fail"}
+                      >
+                        重试
+                      </Button>
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+
+            {currentTasks.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5}>
+                  <Box sx={{ py: 5, textAlign: "center" }}>
+                    <Typography variant="body2" color="text.secondary">
+                      暂无视频下载任务。
+                    </Typography>
+                  </Box>
+                </TableCell>
+              </TableRow>
+            ) : null}
+          </TableBody>
+        </Table>
+      </Box>
+
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} useFlexGap>
+        <Button
+          variant="outlined"
+          startIcon={<FolderOpenRoundedIcon />}
+          onClick={handleOpenSaveDir}
+        >
+          打开保存目录
+        </Button>
+        <Button
+          variant="contained"
+          color="error"
+          startIcon={<DeleteOutlineRoundedIcon />}
+          onClick={handleRemoveTasks}
+          disabled={selectedTasks.length === 0}
+        >
+          删除所选
+        </Button>
+      </Stack>
+    </Stack>
   );
 }

@@ -29,7 +29,7 @@ use crate::{
     },
     error,
     model::*,
-    utils::{self, TempFile},
+    utils::{self, file::TempFile},
 };
 
 use super::{
@@ -88,7 +88,7 @@ impl App {
         let account_path = format!("{}/{}", config_dir, "account.json");
         fs::metadata(&account_path)?;
         let content = fs::read(&account_path)?;
-        utils::parse_json(&content)
+        utils::json::parse_json(&content)
     }
 
     pub fn account_exists(account: &Account) -> Result<bool> {
@@ -318,7 +318,7 @@ impl App {
 
     fn read_config_from_file(config_path: &str) -> Result<AppConfig> {
         let content = fs::read(config_path)?;
-        let config = utils::parse_json(&content)?;
+        let config = utils::json::parse_json(&content)?;
         Ok(config)
     }
 
@@ -893,6 +893,10 @@ impl App {
     pub async fn explain_file(&self, file: &File) -> Result<String> {
         self.client.explain_file(file).await
     }
+    
+    pub async fn summarize_subtitle(&self, canvas_course_id: i64) -> Result<String> {
+        self.client.summarize_subtitle(canvas_course_id).await
+    }
 
     pub fn check_path(path: &str) -> bool {
         let path = Path::new(path);
@@ -1050,8 +1054,25 @@ impl App {
     }
 
     #[cfg(target_os = "windows")]
-    fn convert_docx_to_pdf_inner(&self, pptx_path: &Path, pdf_path: &Path) -> Result<()> {
-        Err(AppError::FunctionUnsupported)
+    fn convert_docx_to_pdf_inner(&self, docx_path: &Path, pdf_path: &Path) -> Result<()> {
+        match process::Command::new("powershell.exe")
+            .arg("-Command")
+            .arg(format!(r#"$word_app = New-Object -ComObject Word.Application; $document = $word_app.Documents.Open('{}'); $pdf_filename = '{}'; $opt= [Microsoft.Office.Interop.Word.WdSaveFormat]::wdFormatPDF; $document.SaveAs($pdf_filename, $opt); $document.Close(); $word_app.Quit();"#,
+        docx_path.to_str().unwrap(), pdf_path.to_str().unwrap()))
+            .output() {
+            Ok(output) => {
+                if !output.status.success() {
+                    let error_msg = String::from_utf8_lossy(&output.stderr);
+                    tracing::error!("docx to pdf conversion failed with status: {:?}, stderr: {}", output.status, error_msg);
+                    return Err(AppError::FunctionUnsupported);
+                }
+            },
+            Err(err) => {
+                tracing::error!("Failed to execute powershell command for docx to pdf conversion: {:?}", err);
+                return Err(err.into());
+            }
+        };
+        Ok(())
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -1061,11 +1082,23 @@ impl App {
 
     #[cfg(target_os = "windows")]
     fn convert_pptx_to_pdf_inner(&self, pptx_path: &Path, pdf_path: &Path) -> Result<()> {
-        process::Command::new("powershell.exe")
+        match process::Command::new("powershell.exe")
             .arg("-Command")
-            .arg(format!(r#"$ppt_app = New-Object -ComObject PowerPoint.Application; $document = $ppt_app.Presentations.Open("{}"); $pdf_filename = "{}"; $opt= [Microsoft.Office.Interop.PowerPoint.PpSaveAsFileType]::ppSaveAsPDF; $document.SaveAs($pdf_filename, $opt); $document.Close(); $ppt_app.Quit();"#,
+            .arg(format!(r#"$ppt_app = New-Object -ComObject PowerPoint.Application; $document = $ppt_app.Presentations.Open('{}'); $pdf_filename = '{}'; $opt= [Microsoft.Office.Interop.PowerPoint.PpSaveAsFileType]::ppSaveAsPDF; $document.SaveAs($pdf_filename, $opt); $document.Close(); $ppt_app.Quit();"#,
         pptx_path.to_str().unwrap(), pdf_path.to_str().unwrap()))
-            .output()?;
+            .output() {
+            Ok(output) => {
+                if !output.status.success() {
+                    let error_msg = String::from_utf8_lossy(&output.stderr);
+                    tracing::error!("pptx to pdf conversion failed with status: {:?}, stderr: {}", output.status, error_msg);
+                    return Err(AppError::FunctionUnsupported);
+                }
+            },
+            Err(err) => {
+                tracing::error!("Failed to execute powershell command for pptx to pdf conversion: {:?}", err);
+                return Err(err.into());
+            }
+        };
         Ok(())
     }
 

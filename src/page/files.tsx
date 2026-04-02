@@ -1,36 +1,53 @@
-import {
-  ExclamationCircleFilled,
-  FolderOutlined,
-  HomeOutlined,
-  LeftOutlined,
-} from "@ant-design/icons";
 import { invoke } from "@tauri-apps/api/core";
+import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
+import CloudDownloadRoundedIcon from "@mui/icons-material/CloudDownloadRounded";
+import DescriptionRoundedIcon from "@mui/icons-material/DescriptionRounded";
+import FolderOpenRoundedIcon from "@mui/icons-material/FolderOpenRounded";
+import HomeRoundedIcon from "@mui/icons-material/HomeRounded";
+import Inventory2RoundedIcon from "@mui/icons-material/Inventory2Rounded";
+import KeyboardBackspaceRoundedIcon from "@mui/icons-material/KeyboardBackspaceRounded";
+import PreviewRoundedIcon from "@mui/icons-material/PreviewRounded";
+import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
+import UploadFileRoundedIcon from "@mui/icons-material/UploadFileRounded";
 import {
+  Alert,
+  Box,
   Button,
+  Card,
+  CardContent,
   Checkbox,
-  CheckboxProps,
-  Divider,
-  Input,
-  Space,
-  Table,
+  Chip,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  FormControlLabel,
+  InputAdornment,
+  Link as MuiLink,
+  Snackbar,
+  Stack,
+  Tab,
   Tabs,
-  TabsProps,
-  message,
-} from "antd";
-import useMessage from "antd/es/message/useMessage";
-import confirm from "antd/es/modal/confirm";
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  TextField,
+  Typography,
+} from "@mui/material";
+import { alpha, useTheme } from "@mui/material/styles";
 import { useEffect, useMemo, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+
+import BasicLayout from "../components/layout";
 import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
 import FileOrderSelectModal from "../components/file_order_select_modal";
-import BasicLayout from "../components/layout";
 import {
   useBaseURL,
   useCourses,
   useExternalFiles,
-  useLoginModal,
   useMerger,
   usePreview,
 } from "../lib/hooks";
@@ -58,6 +75,8 @@ interface DownloadInfo {
   folderPath: string;
 }
 
+type SnackSeverity = "success" | "info" | "warning" | "error";
+
 const COURSE_FILES = "course files";
 const MY_FILES = "my files";
 const EXPLAINABLE_FILE_EXTS = [".pdf", ".docx"];
@@ -71,15 +90,16 @@ function LinkRenderer(props: any) {
 }
 
 function isExplainableFile(file: File) {
-  let dotPos = file.display_name.lastIndexOf(".");
+  const dotPos = file.display_name.lastIndexOf(".");
   if (dotPos === -1) {
     return false;
   }
-  let ext = file.display_name.slice(dotPos);
-  return EXPLAINABLE_FILE_EXTS.indexOf(ext) != -1;
+  const ext = file.display_name.slice(dotPos);
+  return EXPLAINABLE_FILE_EXTS.includes(ext);
 }
 
 export default function FilesPage() {
+  const theme = useTheme();
   const [section, setSection] = useState<string>(COURSE_FILES);
   const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
   const [selectedEntries, setSelectedEntries] = useState<Entry[]>([]);
@@ -89,9 +109,7 @@ export default function FilesPage() {
   const [downloadableOnly, setDownloadableOnly] = useState<boolean>(true);
   const [showExternal, setShowExternal] = useState<boolean>(false);
   const [downloadTasks, setDownloadTasks] = useState<FileDownloadTask[]>([]);
-  const [messageApi, contextHolder] = useMessage();
   const [operating, setOperating] = useState<boolean>(false);
-  const [loading, setLoading] = useState<boolean>(false);
   const [currentFolderId, setCurrentFolderId] = useState(0);
   const [currentFolderFullName, setCurrentFolderFullName] =
     useState<Option<string>>("");
@@ -99,6 +117,18 @@ export default function FilesPage() {
   const [keyword, setKeyword] = useState<string>("");
   const [openFileOrderSelectModal, setOpenFileOrderSelectModal] =
     useState<boolean>(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [summaryContent, setSummaryContent] = useState("");
+  const [summaryTitle, setSummaryTitle] = useState("");
+  const [snackbar, setSnackbar] = useState<{
+    open: boolean;
+    message: string;
+    severity: SnackSeverity;
+  }>({
+    open: false,
+    message: "",
+    severity: "info",
+  });
   const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry, setEntries } =
     usePreview();
   const { merger, mergePDFs } = useMerger({
@@ -111,175 +141,42 @@ export default function FilesPage() {
   const downloadInfoMap = useMemo(() => new Map<number, DownloadInfo>(), []);
   const externalFiles = useExternalFiles(showExternal ? selectedCourseId : -1);
 
+  const notify = (message: string, severity: SnackSeverity = "info") => {
+    setSnackbar({ open: true, message, severity });
+  };
+
   useEffect(() => {
     setEntries(files);
   }, [files]);
 
   useEffect(() => {
     if (currentFolderId > 0) {
-      handleGetFoldersAndFiles(currentFolderId);
+      void handleGetFoldersAndFiles(currentFolderId);
     }
   }, [currentFolderId]);
 
   useEffect(() => {
     if (section === MY_FILES) {
-      initAllMyFolders();
+      void initAllMyFolders();
+    } else if (selectedCourseId !== -1) {
+      void handleCourseSelect(selectedCourseId);
     } else {
-      if (selectedCourseId !== -1) {
-        handleCourseSelect(selectedCourseId);
-      } else {
-        clearFilesAndFolders();
-      }
+      clearFilesAndFolders();
     }
   }, [section]);
 
   const handleExplainFile = async (file: File) => {
     try {
-      messageApi.open({
-        key: "waiting_response",
-        type: "loading",
-        content: "正在等待 LLM 答复😄...",
-        duration: 0,
-      });
-      let resp = (await invoke("explain_file", { file })) as string;
-      consoleLog(LOG_LEVEL_INFO, resp);
-      confirm({
-        style: {
-          minWidth: "80%",
-          maxWidth: "80%",
-          maxHeight: "80%",
-        },
-        styles: {
-          body: { overflow: "scroll" },
-        },
-        title: "🤖AI 总结",
-        icon: <ExclamationCircleFilled />,
-        content: (
-          <Markdown
-            remarkPlugins={[remarkGfm]}
-            components={{ a: LinkRenderer }}
-          >
-            {resp}
-          </Markdown>
-        ),
-      });
-      messageApi.destroy("waiting_response");
-    } catch (e) {
-      messageApi.destroy("waiting_response");
-      messageApi.error(`总结出错！${e}，请前往设置查看 API KEY 是否设置正确！`);
+      notify("正在等待 LLM 答复…", "info");
+      const response = (await invoke("explain_file", { file })) as string;
+      consoleLog(LOG_LEVEL_INFO, response);
+      setSummaryTitle(file.display_name);
+      setSummaryContent(response);
+      setSummaryOpen(true);
+    } catch (error) {
+      notify(`总结出错：${error}，请前往设置确认 API Key。`, "error");
     }
   };
-
-  const handleLoginJbox = async () => {
-    try {
-      await invoke("login_jbox");
-      return true;
-    } catch (e) {
-      return false;
-    }
-  };
-
-  const onLogin = async () => {
-    if (await handleLoginJbox()) {
-      message.success("登录成功🎉！");
-      closeModal();
-    }
-  };
-
-  const { modal, showModal, closeModal } = useLoginModal({ onLogin });
-
-  const fileColumns = [
-    {
-      title: "文件",
-      key: "name",
-      render: (entry: Entry) => {
-        if (isFile(entry)) {
-          const file = entry as File;
-          const displayName = file.display_name;
-          const external_type = file.external_type;
-          const href = external_type ?
-            file.url :
-            `${baseURL.data}/courses/${selectedCourseId}/files?preview=${file.id}`;
-          const filePrefix = file.external_title ? "[外部文件]" : "";
-          return (
-            <Space>
-              {getFileIcon(file)}
-              <a
-                target="_blank"
-                href={href}
-                onMouseEnter={() => onHoverEntry(entry)}
-                onMouseLeave={onLeaveEntry}
-              >
-                {filePrefix}{displayName}
-              </a>
-            </Space>
-          );
-        } else {
-          const folder = entry as Folder;
-          return (
-            <Space>
-              <FolderOutlined style={{ fontSize: "22px" }} />
-              <a
-                onMouseEnter={() => onHoverEntry(entry)}
-                onMouseLeave={onLeaveEntry}
-                onClick={() => handleFolderOpen(folder.id)}
-              >
-                {folder.name}
-              </a>
-            </Space>
-          );
-        }
-      },
-    },
-    {
-      title: "操作",
-      key: "operation",
-      render: (entry: Entry) => {
-        if (isFile(entry)) {
-          const file = entry as File;
-          return (
-            isFile(file) && (
-              <Space>
-                {file.url && (
-                  <a
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handleAddDownloadFileTask(file);
-                    }}
-                  >
-                    下载
-                  </a>
-                )}
-                {file.url && (
-                  <a
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handleUploadFile(file);
-                    }}
-                  >
-                    上传云盘
-                  </a>
-                )}
-                <a
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setPreviewEntry(file);
-                  }}
-                >
-                  预览
-                </a>
-                {isExplainableFile(file) && (
-                  <a onClick={() => handleExplainFile(file)}>AI 总结</a>
-                )}
-              </Space>
-            )
-          );
-        } else {
-          return <></>;
-        }
-      },
-    },
-  ];
 
   const getSelectedCourse = () => {
     if (section !== COURSE_FILES) {
@@ -288,9 +185,9 @@ export default function FilesPage() {
     return courses.data.find((course) => course.id === selectedCourseId);
   };
 
-  const initWithFolders = (folders: Folder[]) => {
-    setAllFolders(folders);
-    let folder = folders.find((folder) => folder.name === section)!;
+  const initWithFolders = (nextFolders: Folder[]) => {
+    setAllFolders(nextFolders);
+    const folder = nextFolders.find((item) => item.name === section)!;
     setCurrentFolderId(folder.id);
     setCurrentFolderFullName(section);
     setParentFolderId(null);
@@ -306,21 +203,21 @@ export default function FilesPage() {
 
   const initAllMyFolders = async () => {
     try {
-      let myFolders = (await invoke("list_my_folders")) as Folder[];
+      const myFolders = (await invoke("list_my_folders")) as Folder[];
       initWithFolders(myFolders);
-    } catch (e) {
-      consoleLog(LOG_LEVEL_ERROR, e);
+    } catch (error) {
+      consoleLog(LOG_LEVEL_ERROR, error);
       clearFilesAndFolders();
     }
   };
 
   const initAllCourseFolders = async (courseId: number) => {
     try {
-      let courseFolders = (await invoke("list_course_folders", {
+      const courseFolders = (await invoke("list_course_folders", {
         courseId,
       })) as Folder[];
       initWithFolders(courseFolders);
-    } catch (_) {
+    } catch {
       clearFilesAndFolders();
     }
   };
@@ -328,56 +225,55 @@ export default function FilesPage() {
   const getParentFolder = async (
     folderId: number
   ): Promise<Folder | undefined> => {
-    let parentFolder = undefined;
     try {
-      let folder = (await invoke("get_folder_by_id", { folderId })) as Folder;
-      parentFolder = folder;
-    } catch (_) {
-      parentFolder = undefined;
+      return (await invoke("get_folder_by_id", { folderId })) as Folder;
+    } catch {
+      return undefined;
     }
-    return parentFolder;
   };
 
   const handleGetFolderFiles = async (folderId: number) => {
     try {
-      let files = (await invoke("list_folder_files", { folderId })) as File[];
+      const nextFiles = (await invoke("list_folder_files", { folderId })) as File[];
       if (folderId !== currentFolderId) {
         return;
       }
-      files.map((file) => (file.key = file.uuid));
-      setFiles(files);
-    } catch (e) {
+      nextFiles.forEach((file) => {
+        file.key = file.uuid;
+      });
+      setFiles(nextFiles);
+    } catch {
       setFiles([]);
     }
   };
 
   const handleGetFolderFolders = async (folderId: number) => {
     try {
-      let folders = (await invoke("list_folder_folders", {
+      const nextFolders = (await invoke("list_folder_folders", {
         folderId,
       })) as Folder[];
-      folders.map((folder) => (folder.key = folder.id.toString()));
-      setFolders(folders);
-    } catch (e) {
+      nextFolders.forEach((folder) => {
+        folder.key = folder.id.toString();
+      });
+      setFolders(nextFolders);
+    } catch {
       setFolders([]);
     }
   };
 
   const handleGetFoldersAndFiles = async (folderId: number) => {
     setOperating(true);
-    setLoading(true);
     try {
       await Promise.all([
         handleGetFolderFolders(folderId),
         handleGetFolderFiles(folderId),
       ]);
-    } catch (e) {
-      consoleLog(LOG_LEVEL_ERROR, e);
+    } catch (error) {
+      consoleLog(LOG_LEVEL_ERROR, error);
       setFiles([]);
       setFolders([]);
     }
     setOperating(false);
-    setLoading(false);
   };
 
   const handleCourseSelect = async (courseId: number) => {
@@ -400,17 +296,14 @@ export default function FilesPage() {
   };
 
   const getFolderPath = (file: File) => {
-    let folderPath = undefined;
     if (file.external_type) {
-      folderPath = allFolders
+      return allFolders
         .find((folder) => folder.name === section)
         ?.full_name.slice(section.length + 1);
-    } else {
-      folderPath = allFolders
-        .find((folder) => folder.id === file.folder_id)
-        ?.full_name.slice(section.length + 1);
     }
-    return folderPath;
+    return allFolders
+      .find((folder) => folder.id === file.folder_id)
+      ?.full_name.slice(section.length + 1);
   };
 
   const handleOpenTaskFile = async (task: FileDownloadTask) => {
@@ -424,15 +317,15 @@ export default function FilesPage() {
       } else {
         await invoke("open_my_file", { name, folderPath });
       }
-    } catch (e) {
-      messageApi.error(e as string);
-      consoleLog(LOG_LEVEL_ERROR, e);
+    } catch (error) {
+      notify(String(error), "error");
+      consoleLog(LOG_LEVEL_ERROR, error);
     }
   };
 
   const handleDownloadFile = async (file: File) => {
     const folderPath = getFolderPath(file);
-    const course = getSelectedCourse()!;
+    const course = getSelectedCourse();
     if (!downloadInfoMap.get(file.folder_id) && folderPath !== undefined) {
       downloadInfoMap.set(file.folder_id, {
         course,
@@ -449,27 +342,19 @@ export default function FilesPage() {
   const handleSyncFiles = async () => {
     try {
       const course = getSelectedCourse()!;
-      messageApi.open({
-        type: "loading",
-        key: "syncing",
-        content: "正在计算中🚀...",
-      });
-      let filesToSync = (await invoke("sync_course_files", {
+      notify("正在计算同步任务…", "info");
+      const filesToSync = (await invoke("sync_course_files", {
         course,
       })) as File[];
-      messageApi.destroy("syncing");
       if (filesToSync.length > 0) {
-        messageApi.success(
-          `共${filesToSync.length}个文件需要下载，下载任务开始🥰`,
-          1
-        );
+        notify(`共 ${filesToSync.length} 个文件需要下载，任务已开始。`, "success");
       } else {
-        messageApi.success("已同步，无需下载🎉", 1);
+        notify("已同步，无需下载。", "success");
       }
-      filesToSync.map((file) => handleAddDownloadFileTask(file));
-    } catch (e) {
-      consoleLog(LOG_LEVEL_ERROR, e);
-      messageApi.error(`同步失败😑：${e}`);
+      filesToSync.forEach((file) => void handleAddDownloadFileTask(file));
+    } catch (error) {
+      consoleLog(LOG_LEVEL_ERROR, error);
+      notify(`同步失败：${error}`, "error");
     }
   };
 
@@ -487,17 +372,15 @@ export default function FilesPage() {
       } else {
         await invoke("delete_my_file", { file, folderPath });
       }
-      // messageApi.success("删除成功🎉！", 0.5);
-    } catch (e) {
+    } catch (error) {
       if (taskToRemove.state !== "fail") {
-        // no need to show error message for already failed tasks
-        messageApi.error(e as string);
+        notify(String(error), "error");
       }
     }
   };
 
   const handleAddDownloadFileTask = async (file: File) => {
-    let task = downloadTasks.find((task) => task.file.uuid === file.uuid);
+    const task = downloadTasks.find((item) => item.file.uuid === file.uuid);
     if (!task) {
       setDownloadTasks((tasks) => [
         ...tasks,
@@ -512,223 +395,665 @@ export default function FilesPage() {
       task.progress = 0;
       task.state = "wait_retry";
       setDownloadTasks([...downloadTasks]);
-      return;
     }
   };
 
   const handleUploadFile = async (file: File) => {
-    let saveDir;
     const subDir = currentFolderFullName?.replace(section, "");
-    if (section === COURSE_FILES) {
-      let course = getSelectedCourse()!;
-      saveDir = course.name + subDir;
-    } else {
-      saveDir = "我的Canvas文件" + subDir;
-    }
-    const savePath = saveDir + "/" + file.display_name;
-    const infoKey = `uploading_${savePath}`;
+    const saveDir =
+      section === COURSE_FILES
+        ? `${getSelectedCourse()!.name}${subDir}`
+        : `我的Canvas文件${subDir}`;
+    const savePath = `${saveDir}/${file.display_name}`;
     let retries = 0;
-    let maxRetries = 1;
-    let error: any;
-    let logined = false;
-    messageApi.open({
-      key: infoKey,
-      type: "loading",
-      content: `正在上传至交大云盘🚀（文件路径：${savePath}）...`,
-      duration: 0,
-    });
+    const maxRetries = 1;
+    let error: unknown;
+    let loggedIn = false;
+
+    notify(`正在上传至交大云盘：${savePath}`, "info");
     while (retries <= maxRetries) {
       try {
         await invoke("upload_file", { file, saveDir });
-        messageApi.destroy(infoKey);
-        messageApi.success("上传文件成功🎉！");
+        notify("上传文件成功。", "success");
         break;
-      } catch (e) {
-        error = e;
+      } catch (nextError) {
+        error = nextError;
         retries += 1;
-        logined = await handleLoginJbox();
+        try {
+          await invoke("login_jbox");
+          loggedIn = true;
+        } catch {
+          loggedIn = false;
+        }
       }
     }
-    if (!logined && error) {
-      messageApi.destroy(infoKey);
-      messageApi.error(`上传文件出错🥹：${error}`);
-      showModal();
+
+    if (!loggedIn && error) {
+      notify(`上传文件出错：${error}。请先登录交大云盘。`, "error");
     }
   };
 
-  const handleSetShowAllFiles: CheckboxProps["onChange"] = (e) => {
-    setDownloadableOnly(e.target.checked);
-  };
-
-  const handleSetShowExternalFiles: CheckboxProps["onChange"] = (e) => {
-    setShowExternal(e.target.checked);
-  };
-
-  const handleEntrySelect = (_: React.Key[], selectedEntries: Entry[]) => {
-    setSelectedEntries(selectedEntries);
+  const handleEntrySelect = (entry: Entry, checked: boolean) => {
+    if (!isFile(entry)) {
+      return;
+    }
+    setSelectedEntries((prev) =>
+      checked
+        ? [...prev, entry]
+        : prev.filter((item) => item.key !== entry.key)
+    );
   };
 
   const handleDownloadSelectedFiles = () => {
-    for (let selectedEntry of selectedEntries) {
-      if (isFile(selectedEntry)) {
-        handleAddDownloadFileTask(selectedEntry as File);
+    selectedEntries.forEach((entry) => {
+      if (isFile(entry)) {
+        void handleAddDownloadFileTask(entry as File);
       }
-    }
+    });
   };
 
   const backToParentDir = async () => {
     setFiles([]);
     setFolders([]);
-    const currentFolderId = parentFolderId as number;
-    setCurrentFolderId(currentFolderId);
-    const parentFolder = await getParentFolder(currentFolderId);
+    const nextFolderId = parentFolderId as number;
+    setCurrentFolderId(nextFolderId);
+    const parentFolder = await getParentFolder(nextFolderId);
     setCurrentFolderFullName(parentFolder?.full_name);
     setParentFolderId(parentFolder?.parent_folder_id);
   };
 
   const backToRootDir = async () => {
-    let mainFolder = allFolders.find((folder) => folder.name === section)!;
+    const mainFolder = allFolders.find((folder) => folder.name === section)!;
     setCurrentFolderId(mainFolder.id);
     setCurrentFolderFullName(section);
     setParentFolderId(null);
   };
 
   const shouldShow = (entry: Entry) => {
-    let containsKeyword = entryName(entry).indexOf(keyword) !== -1;
-    let downloadable =
-      !isFile(entry) || !downloadableOnly || (entry as File).url;
+    const containsKeyword = entryName(entry).includes(keyword);
+    const downloadable = !isFile(entry) || !downloadableOnly || (entry as File).url;
     return containsKeyword && downloadable;
   };
 
-  const noSelectedPDFs =
+  const noSelectedMergeFiles =
     (selectedEntries.filter(isFile) as File[]).filter((file) =>
       isMergableFileType(file.display_name)
     ).length < 2;
 
-  const tabs: TabsProps["items"] = [
-    {
-      key: COURSE_FILES,
-      label: "课程文件",
-      disabled: operating,
-      children: (
-        <CourseSelect
-          onChange={handleCourseSelect}
-          disabled={operating}
-          courses={courses.data}
-        />
-      ),
-    },
-    {
-      key: MY_FILES,
-      disabled: operating,
-      label: "我的文件(beta)",
-    },
-  ];
-
   const getSupportedMergeFiles = () => {
-    return (selectedEntries as File[]).filter((f) =>
-      isMergableFileType(f.display_name)
+    return (selectedEntries as File[]).filter((file) =>
+      isMergableFileType(file.display_name)
     );
   };
 
+  const filteredEntries = useMemo(
+    () =>
+      ([...(folders as Entry[]), ...(files as Entry[]), ...externalFiles.data] as Entry[]).filter(
+        shouldShow
+      ),
+    [folders, files, externalFiles.data, keyword, downloadableOnly]
+  );
+
+  const selectedFileCount = selectedEntries.filter(isFile).length;
+  const currentFolderName = currentFolderFullName || "未选择目录";
+  const activeCourse = getSelectedCourse();
+
+  const statItems = [
+    {
+      label: "当前目录",
+      value: currentFolderName,
+      icon: <FolderOpenRoundedIcon />,
+    },
+    {
+      label: "可见项目",
+      value: `${filteredEntries.length}`,
+      icon: <Inventory2RoundedIcon />,
+    },
+    {
+      label: "已选文件",
+      value: `${selectedFileCount}`,
+      icon: <CloudDownloadRoundedIcon />,
+    },
+    {
+      label: "下载任务",
+      value: `${downloadTasks.length}`,
+      icon: <AutoAwesomeRoundedIcon />,
+    },
+  ];
+
   return (
     <BasicLayout>
-      {contextHolder}
       {previewer}
-      {modal}
+
       <FileOrderSelectModal
         open={openFileOrderSelectModal}
         handleOk={(items) => {
           setOpenFileOrderSelectModal(false);
-          const files = items.map((item) => item.data as File);
-          mergePDFs(files);
+          const orderedFiles = items.map((item) => item.data as File);
+          mergePDFs(orderedFiles);
         }}
         handleCancel={() => setOpenFileOrderSelectModal(false)}
         files={getSupportedMergeFiles()}
       />
-      <Space
-        direction="vertical"
-        style={{ width: "100%", overflow: "scroll" }}
-        size={"large"}
+
+      <Dialog
+        open={summaryOpen}
+        onClose={() => setSummaryOpen(false)}
+        fullWidth
+        maxWidth="md"
+        PaperProps={{ sx: { borderRadius: "28px" } }}
       >
-        <Tabs items={tabs} onChange={setSection} />
-        <Space>
-          <Checkbox
-            disabled={operating}
-            onChange={handleSetShowAllFiles}
-            defaultChecked
-          >
-            只显示可下载文件
-          </Checkbox>
-          <Checkbox
-            disabled={operating}
-            onChange={handleSetShowExternalFiles}
-          >
-            显示外部文件
-          </Checkbox>
-          <Input.Search placeholder="输入文件关键词" onSearch={setKeyword} />
-        </Space>
-        <Space>
-          <Button
-            icon={<LeftOutlined />}
-            disabled={typeof parentFolderId != "number"}
-            onClick={backToParentDir}
-          >
-            上级目录
-          </Button>
-          <Button
-            icon={<HomeOutlined />}
-            disabled={!parentFolderId}
-            onClick={backToRootDir}
-          >
-            根目录
-          </Button>
-        </Space>
-        {currentFolderFullName && (
-          <span>当前目录：{currentFolderFullName}</span>
-        )}
-        <Table
-          style={{ width: "100%" }}
-          columns={fileColumns}
-          loading={baseURL.isLoading || externalFiles.isLoading || loading}
-          pagination={false}
-          dataSource={[...(folders as Entry[]), ...(files as Entry[]), ...externalFiles.data]
-            .filter(shouldShow)}
-          rowSelection={{
-            onChange: handleEntrySelect,
-            selectedRowKeys: selectedEntries.map((entry) => entry.key),
-            getCheckboxProps: (entry: Entry) => ({
-              disabled: !isFile(entry),
-            }),
+        <DialogTitle>AI 总结：{summaryTitle}</DialogTitle>
+        <DialogContent dividers sx={{ maxHeight: "72vh" }}>
+          <Markdown remarkPlugins={[remarkGfm]} components={{ a: LinkRenderer }}>
+            {summaryContent}
+          </Markdown>
+        </DialogContent>
+      </Dialog>
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={2800}
+        onClose={() => setSnackbar((prev) => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+      >
+        <Alert
+          onClose={() => setSnackbar((prev) => ({ ...prev, open: false }))}
+          severity={snackbar.severity}
+          variant="filled"
+          sx={{ width: "100%" }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+
+      <Stack spacing={3} sx={{ width: "100%" }}>
+        <Card
+          sx={{
+            borderRadius: "28px",
+            border: "1px solid",
+            borderColor: "divider",
+            background:
+              theme.palette.mode === "dark"
+                ? `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.18)}, ${alpha(
+                    theme.palette.background.paper,
+                    0.92
+                  )})`
+                : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.1)}, ${alpha(
+                    "#ffffff",
+                    0.94
+                  )})`,
+            boxShadow: "0 24px 60px rgba(15, 23, 42, 0.08)",
           }}
-        />
-        <Space>
-          <Button
-            disabled={operating || selectedEntries.length === 0}
-            onClick={handleDownloadSelectedFiles}
-          >
-            下载
-          </Button>
-          <Button
-            disabled={operating || noSelectedPDFs}
-            onClick={() => setOpenFileOrderSelectModal(true)}
-          >
-            合并 Word/PDF/PPTX
-          </Button>
-        </Space>
-        <Divider orientation="left">Word/PDF/PPTX (混合)合并</Divider>
-        {merger}
-        <Divider orientation="left">文件下载</Divider>
-        {section === COURSE_FILES && selectedCourseId > 0 && (
-          <Button onClick={handleSyncFiles}>一键同步</Button>
-        )}
-        <FileDownloadTable
-          tasks={downloadTasks}
-          handleRemoveTask={handleRemoveTask}
-          handleDownloadFile={handleDownloadFile}
-          handleOpenTaskFile={handleOpenTaskFile}
-        />
-      </Space>
+        >
+          <CardContent sx={{ p: { xs: 2.25, md: 3 } }}>
+            <Stack spacing={2.2}>
+              <Stack
+                direction={{ xs: "column", md: "row" }}
+                justifyContent="space-between"
+                spacing={2}
+              >
+                <Stack spacing={1}>
+                  <Chip
+                    icon={<FolderOpenRoundedIcon />}
+                    label="File Workspace"
+                    color="primary"
+                    variant="outlined"
+                    sx={{ width: "fit-content" }}
+                  />
+                  <Typography
+                    variant="h4"
+                    sx={{ fontWeight: 700, letterSpacing: "-0.03em" }}
+                  >
+                    文件浏览与下载工作台
+                  </Typography>
+                  <Typography variant="body1" color="text.secondary">
+                    更适合课程文件筛选、批量下载、目录跳转和下载任务追踪的内容布局。
+                  </Typography>
+                </Stack>
+                <Stack spacing={1} alignItems={{ xs: "flex-start", md: "flex-end" }}>
+                  <Chip
+                    label={section === COURSE_FILES ? "课程文件模式" : "我的文件模式"}
+                    color="primary"
+                  />
+                  {activeCourse && (
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ maxWidth: 320, textAlign: { md: "right" } }}
+                    >
+                      当前课程：{activeCourse.name}
+                    </Typography>
+                  )}
+                </Stack>
+              </Stack>
+
+              <Box
+                sx={{
+                  display: "grid",
+                  gap: 1.25,
+                  gridTemplateColumns: {
+                    xs: "repeat(2, minmax(0, 1fr))",
+                    xl: "repeat(4, minmax(0, 1fr))",
+                  },
+                }}
+              >
+                {statItems.map((item) => (
+                  <Box
+                    key={item.label}
+                    sx={{
+                      p: 2,
+                      borderRadius: "22px",
+                      border: "1px solid",
+                      borderColor: alpha(theme.palette.primary.main, 0.12),
+                      bgcolor: alpha(theme.palette.background.paper, 0.74),
+                    }}
+                  >
+                    <Stack direction="row" spacing={1.5} alignItems="center">
+                      <Box
+                        sx={{
+                          width: 46,
+                          height: 46,
+                          borderRadius: "16px",
+                          display: "grid",
+                          placeItems: "center",
+                          bgcolor: alpha(theme.palette.primary.main, 0.12),
+                          color: "primary.main",
+                          "& svg": { fontSize: 24 },
+                        }}
+                      >
+                        {item.icon}
+                      </Box>
+                      <Stack spacing={0.25} sx={{ minWidth: 0 }}>
+                        <Typography variant="body2" color="text.secondary">
+                          {item.label}
+                        </Typography>
+                        <Typography
+                          variant="h6"
+                          sx={{ lineHeight: 1.2, wordBreak: "break-word" }}
+                        >
+                          {item.value}
+                        </Typography>
+                      </Stack>
+                    </Stack>
+                  </Box>
+                ))}
+              </Box>
+            </Stack>
+          </CardContent>
+        </Card>
+
+        <Card sx={{ borderRadius: "28px", border: "1px solid", borderColor: "divider" }}>
+          <CardContent sx={{ p: { xs: 2.25, md: 3 } }}>
+            <Stack spacing={2.5}>
+              <Tabs
+                value={section}
+                onChange={(_, value) => setSection(value)}
+                variant="scrollable"
+                allowScrollButtonsMobile
+              >
+                <Tab value={COURSE_FILES} label="课程文件" disabled={operating} />
+                <Tab value={MY_FILES} label="我的文件(beta)" disabled={operating} />
+              </Tabs>
+
+              <Box
+                sx={{
+                  display: "grid",
+                  gap: 2,
+                  gridTemplateColumns: { xs: "minmax(0, 1fr)", xl: "1.2fr 1fr" },
+                  alignItems: "start",
+                }}
+              >
+                <Box
+                  sx={{
+                    p: 2,
+                    borderRadius: "22px",
+                    bgcolor: alpha(theme.palette.background.default, 0.72),
+                    border: "1px solid",
+                    borderColor: "divider",
+                  }}
+                >
+                  {section === COURSE_FILES ? (
+                    <CourseSelect
+                      onChange={handleCourseSelect}
+                      disabled={operating}
+                      courses={courses.data}
+                      value={selectedCourseId > 0 ? selectedCourseId : undefined}
+                    />
+                  ) : (
+                    <Alert severity="info" sx={{ borderRadius: "16px" }}>
+                      当前正在浏览“我的文件(beta)”，系统会自动载入你的个人目录结构。
+                    </Alert>
+                  )}
+                </Box>
+
+                <Box
+                  sx={{
+                    display: "grid",
+                    gap: 1.5,
+                    gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "repeat(2, minmax(0, 1fr))" },
+                  }}
+                >
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: "22px",
+                      bgcolor: alpha(theme.palette.background.default, 0.72),
+                      border: "1px solid",
+                      borderColor: "divider",
+                    }}
+                  >
+                    <Stack spacing={1.25}>
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={downloadableOnly}
+                            disabled={operating}
+                            onChange={(event) => setDownloadableOnly(event.target.checked)}
+                          />
+                        }
+                        label="只显示可下载文件"
+                      />
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={showExternal}
+                            disabled={operating}
+                            onChange={(event) => setShowExternal(event.target.checked)}
+                          />
+                        }
+                        label="显示外部文件"
+                      />
+                    </Stack>
+                  </Box>
+
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: "22px",
+                      bgcolor: alpha(theme.palette.background.default, 0.72),
+                      border: "1px solid",
+                      borderColor: "divider",
+                    }}
+                  >
+                    <TextField
+                      fullWidth
+                      placeholder="输入文件关键词…"
+                      value={keyword}
+                      onChange={(event) => setKeyword(event.target.value)}
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <SearchRoundedIcon color="action" />
+                          </InputAdornment>
+                        ),
+                      }}
+                    />
+                  </Box>
+                </Box>
+              </Box>
+
+              <Stack
+                direction={{ xs: "column", md: "row" }}
+                justifyContent="space-between"
+                spacing={1.5}
+              >
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25}>
+                  <Button
+                    variant="outlined"
+                    startIcon={<KeyboardBackspaceRoundedIcon />}
+                    disabled={typeof parentFolderId !== "number"}
+                    onClick={() => void backToParentDir()}
+                  >
+                    上级目录
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    startIcon={<HomeRoundedIcon />}
+                    disabled={!parentFolderId}
+                    onClick={() => void backToRootDir()}
+                  >
+                    根目录
+                  </Button>
+                  {section === COURSE_FILES && selectedCourseId > 0 && (
+                    <Button variant="contained" onClick={() => void handleSyncFiles()}>
+                      一键同步
+                    </Button>
+                  )}
+                </Stack>
+
+                <Chip
+                  label={`当前目录：${currentFolderName}`}
+                  variant="outlined"
+                  sx={{
+                    maxWidth: "100%",
+                    "& .MuiChip-label": {
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    },
+                  }}
+                />
+              </Stack>
+
+              <Box
+                sx={{
+                  borderRadius: "22px",
+                  border: "1px solid",
+                  borderColor: "divider",
+                  overflow: "hidden",
+                }}
+              >
+                <Table sx={{ minWidth: 860 }}>
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: alpha(theme.palette.primary.main, 0.05) }}>
+                      <TableCell padding="checkbox" />
+                      <TableCell>文件</TableCell>
+                      <TableCell align="right">操作</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {filteredEntries.map((entry) => {
+                      const checked = selectedEntries.some((item) => item.key === entry.key);
+                      if (isFile(entry)) {
+                        const file = entry as File;
+                        const href = file.external_type
+                          ? file.url
+                          : `${baseURL.data}/courses/${selectedCourseId}/files?preview=${file.id}`;
+                        const filePrefix = file.external_title ? "[外部文件] " : "";
+                        return (
+                          <TableRow key={entry.key} hover selected={checked}>
+                            <TableCell padding="checkbox">
+                              <Checkbox
+                                checked={checked}
+                                onChange={(event) => handleEntrySelect(entry, event.target.checked)}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Stack direction="row" spacing={1.25} alignItems="center">
+                                <Box
+                                  sx={{ display: "grid", placeItems: "center", width: 28, height: 28 }}
+                                >
+                                  {getFileIcon(file)}
+                                </Box>
+                                <MuiLink
+                                  href={href}
+                                  target="_blank"
+                                  underline="hover"
+                                  color="inherit"
+                                  onMouseEnter={() => onHoverEntry(entry)}
+                                  onMouseLeave={onLeaveEntry}
+                                  sx={{ fontWeight: 600 }}
+                                >
+                                  {filePrefix}
+                                  {file.display_name}
+                                </MuiLink>
+                              </Stack>
+                            </TableCell>
+                            <TableCell align="right">
+                              <Stack
+                                direction="row"
+                                spacing={1}
+                                justifyContent="flex-end"
+                                flexWrap="wrap"
+                                useFlexGap
+                              >
+                                {file.url ? (
+                                  <Button
+                                    size="small"
+                                    onClick={() => void handleAddDownloadFileTask(file)}
+                                  >
+                                    下载
+                                  </Button>
+                                ) : null}
+                                {file.url ? (
+                                  <Button
+                                    size="small"
+                                    startIcon={<UploadFileRoundedIcon />}
+                                    onClick={() => void handleUploadFile(file)}
+                                  >
+                                    上传云盘
+                                  </Button>
+                                ) : null}
+                                <Button
+                                  size="small"
+                                  startIcon={<PreviewRoundedIcon />}
+                                  onClick={() => setPreviewEntry(file)}
+                                >
+                                  预览
+                                </Button>
+                                {isExplainableFile(file) ? (
+                                  <Button
+                                    size="small"
+                                    startIcon={<AutoAwesomeRoundedIcon />}
+                                    onClick={() => void handleExplainFile(file)}
+                                  >
+                                    AI 总结
+                                  </Button>
+                                ) : null}
+                              </Stack>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      }
+
+                      const folder = entry as Folder;
+                      return (
+                        <TableRow key={entry.key} hover>
+                          <TableCell padding="checkbox" />
+                          <TableCell>
+                            <Stack direction="row" spacing={1.25} alignItems="center">
+                              <FolderOpenRoundedIcon color="primary" />
+                              <MuiLink
+                                component="button"
+                                type="button"
+                                underline="hover"
+                                color="inherit"
+                                onMouseEnter={() => onHoverEntry(entry)}
+                                onMouseLeave={onLeaveEntry}
+                                onClick={() => void handleFolderOpen(folder.id)}
+                                sx={{
+                                  fontWeight: 600,
+                                  border: "none",
+                                  background: "transparent",
+                                  cursor: "pointer",
+                                  p: 0,
+                                }}
+                              >
+                                {folder.name}
+                              </MuiLink>
+                            </Stack>
+                          </TableCell>
+                          <TableCell />
+                        </TableRow>
+                      );
+                    })}
+
+                    {filteredEntries.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={3}>
+                          <Box sx={{ py: 6, textAlign: "center" }}>
+                            <DescriptionRoundedIcon color="disabled" />
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                              当前条件下没有找到可显示的文件或文件夹。
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                  </TableBody>
+                </Table>
+              </Box>
+
+              <Stack
+                direction={{ xs: "column", md: "row" }}
+                spacing={1.25}
+                justifyContent="space-between"
+              >
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25}>
+                  <Button
+                    variant="contained"
+                    disabled={operating || selectedEntries.length === 0}
+                    onClick={handleDownloadSelectedFiles}
+                  >
+                    下载所选文件
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    disabled={operating || noSelectedMergeFiles}
+                    onClick={() => setOpenFileOrderSelectModal(true)}
+                  >
+                    合并 Word/PDF/PPTX
+                  </Button>
+                </Stack>
+                <Chip
+                  label={selectedFileCount > 0 ? `已选 ${selectedFileCount} 个文件` : "尚未选择文件"}
+                  color={selectedFileCount > 0 ? "primary" : "default"}
+                  variant={selectedFileCount > 0 ? "filled" : "outlined"}
+                />
+              </Stack>
+            </Stack>
+          </CardContent>
+        </Card>
+
+        <Card sx={{ borderRadius: "28px", border: "1px solid", borderColor: "divider" }}>
+          <CardContent sx={{ p: { xs: 2.25, md: 3 } }}>
+            <Stack spacing={2.5}>
+              <Box>
+                <Typography variant="h5">文档合并</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  选中多个可合并文件后，在这里调整顺序并执行 Word / PDF / PPTX 混合合并。
+                </Typography>
+              </Box>
+              {selectedFileCount > 0 && noSelectedMergeFiles ? (
+                <Alert severity="info" sx={{ borderRadius: "16px" }}>
+                  当前已选文件中，可用于合并的 Word/PDF/PPTX 文件不足 2 个。
+                </Alert>
+              ) : null}
+              {merger}
+            </Stack>
+          </CardContent>
+        </Card>
+
+        <Card sx={{ borderRadius: "28px", border: "1px solid", borderColor: "divider" }}>
+          <CardContent sx={{ p: { xs: 2.25, md: 3 } }}>
+            <Stack spacing={2.5}>
+              <Box>
+                <Typography variant="h5">下载任务</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  在这里追踪下载进度、重试失败任务，或直接打开保存后的文件。
+                </Typography>
+              </Box>
+              <FileDownloadTable
+                tasks={downloadTasks}
+                handleRemoveTask={handleRemoveTask}
+                handleDownloadFile={handleDownloadFile}
+                handleOpenTaskFile={handleOpenTaskFile}
+              />
+            </Stack>
+          </CardContent>
+        </Card>
+      </Stack>
     </BasicLayout>
   );
 }

@@ -1,17 +1,48 @@
+import { invoke } from "@tauri-apps/api/core";
+import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
+import EditCalendarRoundedIcon from "@mui/icons-material/EditCalendarRounded";
+import ExpandLessRoundedIcon from "@mui/icons-material/ExpandLessRounded";
+import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
+import FileDownloadRoundedIcon from "@mui/icons-material/FileDownloadRounded";
+import LaunchRoundedIcon from "@mui/icons-material/LaunchRounded";
+import PreviewRoundedIcon from "@mui/icons-material/PreviewRounded";
+import SendRoundedIcon from "@mui/icons-material/SendRounded";
 import {
   Avatar,
+  Box,
   Button,
+  Card,
+  CardContent,
   Checkbox,
-  CheckboxProps,
+  Chip,
+  Collapse,
   Divider,
+  FormControlLabel,
+  Link as MuiLink,
   List,
-  Space,
+  ListItem,
+  ListItemAvatar,
+  ListItemText,
+  Stack,
   Table,
-  Tag,
-} from "antd";
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  Typography,
+} from "@mui/material";
+import { alpha, useTheme } from "@mui/material/styles";
+import dayjs from "dayjs";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+
+import CourseSelect from "../components/course_select";
+import { GradeOverviewChart } from "../components/grade_overview";
 import BasicLayout from "../components/layout";
-import useMessage from "antd/es/message/useMessage";
-import { useEffect, useState } from "react";
+import ModifyDDLModal from "../components/modify_ddl_modal";
+import { SubmitModal } from "../components/submit_modal";
+import { useBaseURL, useCourses, useMe, usePreview } from "../lib/hooks";
+import { useAppMessage } from "../lib/message";
 import {
   Assignment,
   Attachment,
@@ -20,7 +51,6 @@ import {
   ScoreStatistic,
   Submission,
 } from "../lib/model";
-import { invoke } from "@tauri-apps/api/core";
 import {
   assignmentIsEnded,
   assignmentNotNeedSubmit,
@@ -29,28 +59,33 @@ import {
   formatDate,
   getBaseDate,
 } from "../lib/utils";
-import CourseSelect from "../components/course_select";
-import { useBaseURL, useCourses, useMe, usePreview } from "../lib/hooks";
-import dayjs from "dayjs";
-import ModifyDDLModal from "../components/modify_ddl_modal";
-import { SubmitModal } from "../components/submit_modal";
-import { GradeOverviewChart } from "../components/grade_overview";
-import { useSearchParams } from "react-router-dom";
+
+const surfaceCardSx = {
+  borderRadius: "28px",
+  border: "1px solid",
+  borderColor: "divider",
+  boxShadow: "0 24px 60px rgba(15, 23, 42, 0.08)",
+  backgroundImage: "none",
+};
 
 export default function AssignmentsPage() {
-  const [messageApi, contextHolder] = useMessage();
-  const [operating, setOperating] = useState<boolean>(false);
-  const [onlyShowUnfinished, setOnlyShowUnfinished] = useState<boolean>(true);
+  const theme = useTheme();
+  const [messageApi, contextHolder] = useAppMessage();
+  const [operating, setOperating] = useState(false);
+  const [onlyShowUnfinished, setOnlyShowUnfinished] = useState(true);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
   const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry } =
     usePreview();
   const [linksMap, setLinksMap] = useState<Record<number, Attachment[]>>({});
-  const [showModifyDDLModal, setShowModifyDDLModal] = useState<boolean>(false);
+  const [expandedAssignmentIds, setExpandedAssignmentIds] = useState<number[]>(
+    []
+  );
+  const [showModifyDDLModal, setShowModifyDDLModal] = useState(false);
   const [assignmentToModify, setAssignmentToModify] = useState<
     Assignment | undefined
   >();
-  const [showModal, setShowModal] = useState<boolean>(false);
+  const [showModal, setShowModal] = useState(false);
   const [selectedAssignment, setSelectedAssignment] = useState<
     Assignment | undefined
   >();
@@ -66,206 +101,36 @@ export default function AssignmentsPage() {
       if (courseId > 0) {
         setSearchParams({});
         setSelectedCourseId(courseId);
-        handleGetAssignments(courseId, onlyShowUnfinished);
+        void handleGetAssignments(courseId, onlyShowUnfinished);
       }
     }
-  }, [courses.data]);
+  }, [courses.data, onlyShowUnfinished, searchParams, setSearchParams]);
 
   useEffect(() => {
-    let newGradeMap = new Map<number, GradeStatus>();
-    assignments.map((assignment) => {
+    const nextGradeMap = new Map<number, GradeStatus>();
+    assignments.forEach((assignment) => {
       const actualGrade = Number.parseInt(assignment.submission?.grade ?? "0");
       let maxGrade = assignment.points_possible ?? 0;
       const graded =
         assignment.submission?.workflow_state === "graded" &&
-        !isNaN(actualGrade);
-      const assignmetName = assignment.name;
+        !Number.isNaN(actualGrade);
       if (!graded) {
         return;
       }
       if (maxGrade < actualGrade) {
         maxGrade = actualGrade;
       }
-      let status = {
-        assignmetName,
+      nextGradeMap.set(assignment.id, {
+        assignmetName: assignment.name,
         actualGrade,
         maxGrade,
-      } as GradeStatus;
-      newGradeMap.set(assignment.id, status);
+      } as GradeStatus);
     });
-    setGradeMap(newGradeMap);
+    setGradeMap(nextGradeMap);
   }, [assignments]);
 
-  const handleGetAssignments = async (
-    courseId: number,
-    onlyShowUnfinished: boolean
-  ) => {
-    if (courseId === -1) {
-      return;
-    }
-    setOperating(true);
-    try {
-      let linksMap = {};
-      let assignments = (await invoke("list_course_assignments", {
-        courseId,
-      })) as Assignment[];
-      assignments.map((assignment) => (assignment.key = assignment.id));
-      if (!isTAOrTeacher(courseId) && onlyShowUnfinished) {
-        assignments = assignments.filter(
-          (assignment) =>
-            assignment.submission?.workflow_state === "unsubmitted"
-        );
-      }
-      for (let assignment of assignments) {
-        dealWithDescription(assignment, linksMap);
-      }
-      setLinksMap(linksMap);
-      setAssignments(assignments);
-    } catch (e) {
-      messageApi.error(e as string);
-    }
-    setOperating(false);
-  };
-
-  const getColumns = () => {
-    const columns = [
-      {
-        title: "作业名",
-        dataIndex: "name",
-        key: "name",
-        render: (_: any, assignment: Assignment) => (
-          <a href={assignment.html_url} target="_blank">
-            {assignment.name}
-          </a>
-        ),
-      },
-      {
-        title: "开始时间",
-        dataIndex: "unlock_at",
-        key: "unlock_at",
-        render: formatDate,
-      },
-      {
-        title: "截止时间",
-        dataIndex: "due_at",
-        key: "due_at",
-        render: (_: any, assignment: Assignment) =>
-          formatDate(getBaseDate(assignment.all_dates)?.due_at),
-      },
-      {
-        title: "结束时间",
-        dataIndex: "lock_at",
-        key: "lock_at",
-        render: (_: any, assignment: Assignment) =>
-          formatDate(getBaseDate(assignment.all_dates)?.lock_at),
-      },
-      {
-        title: "得分",
-        dataIndex: "points_possible",
-        key: "points_possible",
-        render: (
-          points_possible: number | undefined,
-          assignment: Assignment
-        ) => {
-          let grade = assignment.submission?.grade ?? 0;
-          if (points_possible) {
-            return `${grade}/${points_possible}`;
-          }
-          return grade;
-        },
-      },
-      {
-        title: "最低分/最高分/平均分",
-        dataIndex: "score_statistics",
-        key: "score_statistics",
-        render: (score_statistics: ScoreStatistic | null) => {
-          if (score_statistics) {
-            return `${score_statistics.min}/${score_statistics.max}/${score_statistics.mean}`;
-          }
-          return null;
-        },
-      },
-      {
-        title: "状态",
-        dataIndex: "submission",
-        key: "submission",
-        render: (submission: Submission, assignment: Assignment) => {
-          const tags = [];
-          if (assignmentIsEnded(assignment)) {
-            tags.push(<Tag color="orange">已截止</Tag>);
-          } else {
-            tags.push(<Tag color="blue">进行中</Tag>);
-          }
-          if (assignmentNotNeedSubmit(assignment)) {
-            tags.push(<Tag>无需提交</Tag>);
-          } else if (submission.submitted_at) {
-            tags.push(
-              submission.late ? (
-                <Tag color="red">迟交</Tag>
-              ) : (
-                <Tag color="green">已提交</Tag>
-              )
-            );
-          } else {
-            tags.push(<Tag color="red">未提交</Tag>);
-          }
-          return <Space size={"small"}>{tags}</Space>;
-        },
-      },
-    ];
-    if (isTAOrTeacher(selectedCourseId)) {
-      columns.push({
-        title: "操作",
-        key: "action",
-        dataIndex: "action",
-        render: (_: any, assignment: Assignment) => (
-          <Button
-            onClick={() => {
-              setShowModifyDDLModal(true);
-              setAssignmentToModify(assignment);
-            }}
-          >
-            修改日期
-          </Button>
-        ),
-      });
-    } else {
-      columns.push({
-        title: "操作",
-        key: "action",
-        dataIndex: "action",
-        render: (_: any, assignment: Assignment) => {
-          const now = dayjs();
-          const lockAt = dayjs(assignment.lock_at);
-          const dueAt = dayjs(assignment.due_at);
-          if (
-            !assignment.submission ||
-            assignment.submission_types.includes("none") ||
-            assignment.submission_types.includes("not_graded") ||
-            now.isAfter(lockAt) ||
-            now.isAfter(dueAt)
-          ) {
-            return <p />;
-          }
-          return (
-            <a
-              onClick={(e) => {
-                e.preventDefault();
-                setSelectedAssignment(assignment);
-                setShowModal(true);
-              }}
-            >
-              提交
-            </a>
-          );
-        },
-      });
-    }
-    return columns;
-  };
-
   const isTAOrTeacher = (courseId: number) => {
-    const course = courses.data.find((course) => course.id === courseId);
+    const course = courses.data.find((item) => item.id === courseId);
     return (
       course !== undefined &&
       course.enrollments.find(
@@ -276,157 +141,109 @@ export default function AssignmentsPage() {
     );
   };
 
+  const assignmentSummary = useMemo(() => {
+    const total = assignments.length;
+    const ended = assignments.filter((assignment) =>
+      assignmentIsEnded(assignment)
+    ).length;
+    const submitted = assignments.filter(
+      (assignment) => assignment.submission?.submitted_at
+    ).length;
+    const unfinished = assignments.filter(
+      (assignment) =>
+        !assignmentNotNeedSubmit(assignment) &&
+        assignment.submission?.workflow_state === "unsubmitted"
+    ).length;
+
+    return { total, ended, submitted, unfinished };
+  }, [assignments]);
+
+  const handleGetAssignments = async (
+    courseId: number,
+    onlyShowUnfinishedValue: boolean
+  ) => {
+    if (courseId === -1) {
+      return;
+    }
+    setOperating(true);
+    try {
+      const nextLinksMap: Record<number, Attachment[]> = {};
+      let nextAssignments = (await invoke("list_course_assignments", {
+        courseId,
+      })) as Assignment[];
+      nextAssignments = nextAssignments.map((assignment) => ({
+        ...assignment,
+        key: assignment.id,
+      }));
+      if (!isTAOrTeacher(courseId) && onlyShowUnfinishedValue) {
+        nextAssignments = nextAssignments.filter(
+          (assignment) =>
+            assignment.submission?.workflow_state === "unsubmitted"
+        );
+      }
+      nextAssignments.forEach((assignment) =>
+        dealWithDescription(assignment, nextLinksMap)
+      );
+      setLinksMap(nextLinksMap);
+      setAssignments(nextAssignments);
+      setExpandedAssignmentIds([]);
+    } catch (error) {
+      messageApi.error(error as string);
+    }
+    setOperating(false);
+  };
+
   const handleDownloadAttachment = async (attachment: Attachment) => {
-    let file = attachmentToFile(attachment);
+    const file = attachmentToFile(attachment);
     try {
       await invoke("download_file", { file });
-      messageApi.success("下载成功🎉！", 0.5);
-    } catch (e) {
-      messageApi.success(`下载失败🥹(${e})！`);
+      messageApi.success("下载成功", 0.5);
+    } catch (error) {
+      messageApi.error(`下载失败：${error}`);
     }
   };
-
-  const attachmentColumns = [
-    {
-      title: "文件",
-      dataIndex: "display_name",
-      key: "display_name",
-      render: (name: string, attachment: Attachment) => (
-        <a
-          onMouseEnter={() => onHoverEntry(attachmentToFile(attachment))}
-          onMouseLeave={onLeaveEntry}
-        >
-          {name}
-        </a>
-      ),
-    },
-    {
-      title: "操作",
-      dataIndex: "operation",
-      key: "operation",
-      render: (_: any, attachment: Attachment) => (
-        <Space>
-          {attachment.url && (
-            <a
-              onClick={(e) => {
-                e.preventDefault();
-                handleDownloadAttachment(attachment);
-              }}
-            >
-              下载
-            </a>
-          )}
-          <a
-            onClick={(e) => {
-              e.preventDefault();
-              setPreviewEntry(attachmentToFile(attachment));
-            }}
-          >
-            预览
-          </a>
-        </Space>
-      ),
-    },
-  ];
-
-  const submittedAttachmentColumns = [
-    {
-      title: "文件",
-      dataIndex: "display_name",
-      key: "display_name",
-      render: (name: string, attachment: Attachment) => (
-        <a
-          onMouseEnter={() => onHoverEntry(attachmentToFile(attachment))}
-          onMouseLeave={onLeaveEntry}
-        >
-          {name}
-        </a>
-      ),
-    },
-    {
-      title: "提交时间",
-      dataIndex: "submitted_at",
-      key: "submitted_at",
-      render: formatDate,
-    },
-    {
-      title: "状态",
-      dataIndex: "late",
-      key: "late",
-      render: (late: boolean) =>
-        late ? <Tag color="red">迟交</Tag> : <Tag color="green">按时提交</Tag>,
-    },
-    {
-      title: "操作",
-      dataIndex: "operation",
-      key: "operation",
-      render: (_: any, attachment: Attachment) => (
-        <Space>
-          {attachment.url && (
-            <a
-              onClick={(e) => {
-                e.preventDefault();
-                handleDownloadAttachment(attachment);
-              }}
-            >
-              下载
-            </a>
-          )}
-          <a
-            onClick={(e) => {
-              e.preventDefault();
-              setPreviewEntry(attachmentToFile(attachment));
-            }}
-          >
-            预览
-          </a>
-        </Space>
-      ),
-    },
-  ];
 
   const handleCourseSelect = async (courseId: number) => {
-    let selectedCourse = courses.data.find((course) => course.id === courseId);
-    if (selectedCourse) {
-      setSelectedCourseId(courseId);
-      handleGetAssignments(courseId, onlyShowUnfinished);
+    const selectedCourse = courses.data.find((course) => course.id === courseId);
+    if (!selectedCourse) {
+      return;
     }
+    setSelectedCourseId(courseId);
+    await handleGetAssignments(courseId, onlyShowUnfinished);
   };
 
-  const handleSetOnlyShowUnfinished: CheckboxProps["onChange"] = (e) => {
-    let onlyShowUnfinished = e.target.checked;
-    setOnlyShowUnfinished(onlyShowUnfinished);
-    handleGetAssignments(selectedCourseId, onlyShowUnfinished);
+  const handleSetOnlyShowUnfinished = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const nextValue = event.target.checked;
+    setOnlyShowUnfinished(nextValue);
+    await handleGetAssignments(selectedCourseId, nextValue);
   };
 
   const dealWithDescription = (
     assignment: Assignment,
-    linksMap: Record<number, Attachment[]>
+    nextLinksMap: Record<number, Attachment[]>
   ) => {
     if (!assignment.description) {
       return;
     }
     const parser = new DOMParser();
-    const document = parser.parseFromString(
-      assignment.description,
-      "text/html"
-    );
+    const document = parser.parseFromString(assignment.description, "text/html");
     const anchorTags = document.querySelectorAll("a");
     const downloadableRegex =
       /https:\/\/oc\.sjtu\.edu\.cn\/courses\/(\d+)\/files\/(\d+)/g;
     const id = assignment.id;
-    if (!linksMap[id]) {
-      linksMap[id] = [];
+    if (!nextLinksMap[id]) {
+      nextLinksMap[id] = [];
     }
-    let links = linksMap[id];
+    const links = nextLinksMap[id];
     anchorTags.forEach((anchorTag) => {
-      // Set the target attribute of each anchor tag to "_blank"
       anchorTag.setAttribute("target", "_blank");
-      let result = anchorTag.href.match(downloadableRegex);
+      const result = anchorTag.href.match(downloadableRegex);
       if (result && result.length > 0) {
         const urlObj = new URL(anchorTag.href);
         const params = new URLSearchParams(urlObj.search);
-        let url = result[0] + "/download?" + params;
+        const url = result[0] + "/download?" + params;
         links.push({
           url,
           display_name: anchorTag.text,
@@ -442,18 +259,17 @@ export default function AssignmentsPage() {
     assignmentId: number
   ) => {
     try {
-      let submission = (await invoke("get_my_single_submission", {
+      const submission = (await invoke("get_my_single_submission", {
         courseId,
         assignmentId,
       })) as Submission;
-      let assignment = assignments.find(
-        (assignment) => assignment.id === assignmentId
-      )!;
-      assignment.submission = submission;
-      setAssignments([...assignments]);
-    } catch (e) {
-      consoleLog(LOG_LEVEL_ERROR, e);
-      messageApi.error(`加载出错🥹：${e}`);
+      const nextAssignments = assignments.map((assignment) =>
+        assignment.id === assignmentId ? { ...assignment, submission } : assignment
+      );
+      setAssignments(nextAssignments);
+    } catch (error) {
+      consoleLog(LOG_LEVEL_ERROR, error);
+      messageApi.error(`加载出错：${error}`);
     }
   };
 
@@ -467,34 +283,185 @@ export default function AssignmentsPage() {
         assignmentId,
         commentId,
       });
-      messageApi.success("删除成功！🎉", 0.5);
-      handleGetMySingleSubmission(selectedCourseId, assignmentId);
-    } catch (e) {
-      consoleLog(LOG_LEVEL_ERROR, e);
-      messageApi.error(e as string);
+      messageApi.success("删除成功", 0.5);
+      await handleGetMySingleSubmission(selectedCourseId, assignmentId);
+    } catch (error) {
+      consoleLog(LOG_LEVEL_ERROR, error);
+      messageApi.error(error as string);
     }
   };
+
+  const toggleExpanded = async (assignment: Assignment) => {
+    const expanded = expandedAssignmentIds.includes(assignment.id);
+    if (expanded) {
+      setExpandedAssignmentIds((prev) => prev.filter((id) => id !== assignment.id));
+      return;
+    }
+    setExpandedAssignmentIds((prev) => [...prev, assignment.id]);
+    if (!isTAOrTeacher(selectedCourseId)) {
+      await handleGetMySingleSubmission(selectedCourseId, assignment.id);
+    }
+  };
+
+  const getAssignmentStatusChips = (
+    assignment: Assignment,
+    submission?: Submission
+  ) => {
+    const chips = [];
+    chips.push(
+      <Chip
+        key="time"
+        label={assignmentIsEnded(assignment) ? "已截止" : "进行中"}
+        color={assignmentIsEnded(assignment) ? "warning" : "primary"}
+        variant={assignmentIsEnded(assignment) ? "outlined" : "filled"}
+        size="small"
+      />
+    );
+    if (assignmentNotNeedSubmit(assignment)) {
+      chips.push(
+        <Chip key="skip" label="无需提交" variant="outlined" size="small" />
+      );
+    } else if (submission?.submitted_at) {
+      chips.push(
+        <Chip
+          key="submission"
+          label={submission.late ? "迟交" : "已提交"}
+          color={submission.late ? "error" : "success"}
+          variant="outlined"
+          size="small"
+        />
+      );
+    } else {
+      chips.push(
+        <Chip
+          key="submission"
+          label="未提交"
+          color="error"
+          variant="outlined"
+          size="small"
+        />
+      );
+    }
+    return chips;
+  };
+
+  const renderAttachmentsTable = (
+    rows: Attachment[] | undefined,
+    showSubmittedAt = false
+  ) => {
+    if (!rows || rows.length === 0) {
+      return (
+        <Typography variant="body2" color="text.secondary">
+          暂无可展示的文件。
+        </Typography>
+      );
+    }
+
+    return (
+      <Box
+        sx={{
+          borderRadius: "20px",
+          border: "1px solid",
+          borderColor: "divider",
+          overflow: "hidden",
+        }}
+      >
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell>文件</TableCell>
+              {showSubmittedAt ? <TableCell>提交时间</TableCell> : null}
+              {showSubmittedAt ? <TableCell>状态</TableCell> : null}
+              <TableCell align="right">操作</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {rows.map((attachment) => (
+              <TableRow key={attachment.id ?? attachment.key}>
+                <TableCell>
+                  <MuiLink
+                    component="button"
+                    underline="hover"
+                    onMouseEnter={() => onHoverEntry(attachmentToFile(attachment))}
+                    onMouseLeave={onLeaveEntry}
+                    onClick={() => setPreviewEntry(attachmentToFile(attachment))}
+                  >
+                    {attachment.display_name}
+                  </MuiLink>
+                </TableCell>
+                {showSubmittedAt ? (
+                  <TableCell>{formatDate(attachment.submitted_at)}</TableCell>
+                ) : null}
+                {showSubmittedAt ? (
+                  <TableCell>
+                    <Chip
+                      size="small"
+                      label={attachment.late ? "迟交" : "按时提交"}
+                      color={attachment.late ? "error" : "success"}
+                      variant="outlined"
+                    />
+                  </TableCell>
+                ) : null}
+                <TableCell align="right">
+                  <Stack
+                    direction="row"
+                    spacing={1}
+                    justifyContent="flex-end"
+                    flexWrap="wrap"
+                    useFlexGap
+                  >
+                    {attachment.url ? (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={<FileDownloadRoundedIcon />}
+                        onClick={() => void handleDownloadAttachment(attachment)}
+                      >
+                        下载
+                      </Button>
+                    ) : null}
+                    <Button
+                      size="small"
+                      variant="text"
+                      startIcon={<PreviewRoundedIcon />}
+                      onClick={() => setPreviewEntry(attachmentToFile(attachment))}
+                    >
+                      预览
+                    </Button>
+                  </Stack>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </Box>
+    );
+  };
+
+  const selectedCourse = courses.data.find(
+    (course) => course.id === selectedCourseId
+  );
 
   return (
     <BasicLayout>
       {contextHolder}
       {previewer}
-      {assignmentToModify && (
+      {assignmentToModify ? (
         <ModifyDDLModal
           open={showModifyDDLModal}
           assignment={assignmentToModify}
           handleCancel={() => setShowModifyDDLModal(false)}
           onRefresh={() =>
-            handleGetAssignments(selectedCourseId, onlyShowUnfinished)
+            void handleGetAssignments(selectedCourseId, onlyShowUnfinished)
           }
           onSuccess={() => {
             setShowModifyDDLModal(false);
-            handleGetAssignments(selectedCourseId, onlyShowUnfinished);
+            void handleGetAssignments(selectedCourseId, onlyShowUnfinished);
           }}
           courseId={selectedCourseId}
         />
-      )}
-      {selectedAssignment && (
+      ) : null}
+      {selectedAssignment ? (
         <SubmitModal
           open={showModal}
           allowed_extensions={selectedAssignment.allowed_extensions}
@@ -504,120 +471,414 @@ export default function AssignmentsPage() {
           onSubmit={() => {
             setShowModal(false);
             setSelectedAssignment(undefined);
-            messageApi.success("提交成功🎉！");
-            handleGetMySingleSubmission(
+            messageApi.success("提交成功", 0.5);
+            void handleGetMySingleSubmission(
               selectedCourseId,
               selectedAssignment.id
             );
           }}
         />
-      )}
-      <Space
-        direction="vertical"
-        style={{ width: "100%", overflow: "scroll" }}
-        size={"large"}
-      >
-        <CourseSelect
-          onChange={handleCourseSelect}
-          disabled={operating}
-          courses={courses.data}
-          value={selectedCourseId === -1 ? undefined : selectedCourseId}
-        />
-        {!isTAOrTeacher(selectedCourseId) && (
-          <Checkbox
-            disabled={operating}
-            onChange={handleSetOnlyShowUnfinished}
-            defaultChecked
-          >
-            只显示未完成
-          </Checkbox>
-        )}
-        <GradeOverviewChart gradeMap={gradeMap} />
-        <Table
-          style={{ width: "100%" }}
-          loading={operating}
-          columns={getColumns()}
-          dataSource={assignments}
-          pagination={false}
-          expandable={{
-            onExpand: (expanded, assignment) => {
-              if (expanded && !isTAOrTeacher(selectedCourseId)) {
-                handleGetMySingleSubmission(selectedCourseId, assignment.id);
-              }
-            },
-            expandedRowRender: (assignment) => {
-              let attachments = undefined;
-              let submission = assignment.submission;
-              if (submission) {
-                attachments = submission?.attachments;
-                attachments?.map((attachment) => {
-                  attachment.submitted_at = submission?.submitted_at;
-                  attachment.key = attachment.id;
-                });
-              }
-              return (
-                <Space direction="vertical" style={{ width: "100%" }}>
-                  <Divider orientation="left">作业描述</Divider>
-                  {assignment.description && (
-                    <div
-                      dangerouslySetInnerHTML={{
-                        __html: assignment.description,
-                      }}
-                    />
-                  )}
-                  <Divider orientation="left">作业附件</Divider>
-                  <Table
-                    columns={attachmentColumns}
-                    dataSource={linksMap[assignment.id]}
-                    pagination={false}
-                  />
-                  <Divider orientation="left">历史评论</Divider>
-                  <List
-                    loading={baseURL.isLoading}
-                    itemLayout="horizontal"
-                    dataSource={assignment.submission?.submission_comments}
-                    renderItem={(comment) => (
-                      <List.Item
-                        actions={
-                          comment.author_id === me.data?.id
-                            ? [
-                                <a
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    handleDeleteComment(
-                                      comment.id,
-                                      assignment.id
-                                    );
-                                  }}
-                                >
-                                  删除
-                                </a>,
-                              ]
-                            : undefined
-                        }
-                      >
-                        <List.Item.Meta
-                          avatar={
-                            <Avatar src={baseURL.data + comment.avatar_path} />
-                          }
-                          title={comment.author_name}
-                          description={comment.comment}
-                        />
-                      </List.Item>
-                    )}
-                  />
-                  <Divider orientation="left">我的提交</Divider>
-                  <Table
-                    columns={submittedAttachmentColumns}
-                    dataSource={attachments}
-                    pagination={false}
-                  />
-                </Space>
-              );
-            },
+      ) : null}
+
+      <Stack spacing={3}>
+        <Card
+          sx={{
+            ...surfaceCardSx,
+            background:
+              theme.palette.mode === "dark"
+                ? `linear-gradient(135deg, ${alpha(
+                    theme.palette.primary.main,
+                    0.18
+                  )}, ${alpha("#0f172a", 0.88)})`
+                : `linear-gradient(135deg, ${alpha(
+                    theme.palette.primary.main,
+                    0.1
+                  )}, rgba(255,255,255,0.96))`,
           }}
-        />
-      </Space>
+        >
+          <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+            <Stack spacing={3}>
+              <Stack
+                direction={{ xs: "column", lg: "row" }}
+                justifyContent="space-between"
+                spacing={2}
+              >
+                <Box>
+                  <Typography variant="h4" sx={{ fontWeight: 800 }}>
+                    作业工作台
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    集中查看课程作业、提交状态、得分概览和历史评论。
+                  </Typography>
+                </Box>
+                <Box
+                  sx={{
+                    width: "100%",
+                    maxWidth: { xs: "100%", lg: 640 },
+                    alignSelf: { xs: "stretch", lg: "flex-start" },
+                  }}
+                >
+                  <CourseSelect
+                    onChange={(courseId) => void handleCourseSelect(courseId)}
+                    disabled={operating}
+                    courses={courses.data}
+                    value={selectedCourseId === -1 ? undefined : selectedCourseId}
+                  />
+                </Box>
+              </Stack>
+
+              <Box
+                sx={{
+                  display: "grid",
+                  gap: 2,
+                  gridTemplateColumns: {
+                    xs: "repeat(2, minmax(0, 1fr))",
+                    lg: "repeat(4, minmax(0, 1fr))",
+                  },
+                }}
+              >
+                {[
+                  { label: "作业总数", value: assignmentSummary.total },
+                  { label: "待完成", value: assignmentSummary.unfinished },
+                  { label: "已提交", value: assignmentSummary.submitted },
+                  { label: "已截止", value: assignmentSummary.ended },
+                ].map((item) => (
+                  <Card
+                    key={item.label}
+                    sx={{
+                      borderRadius: "22px",
+                      backgroundColor: alpha(theme.palette.background.paper, 0.8),
+                      border: "1px solid",
+                      borderColor: alpha(theme.palette.divider, 0.5),
+                      boxShadow: "none",
+                    }}
+                  >
+                    <CardContent sx={{ p: 2.25 }}>
+                      <Typography variant="overline" color="text.secondary">
+                        {item.label}
+                      </Typography>
+                      <Typography variant="h4" sx={{ fontWeight: 800, mt: 1 }}>
+                        {item.value}
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                ))}
+              </Box>
+
+              <Stack
+                direction={{ xs: "column", md: "row" }}
+                alignItems={{ xs: "stretch", md: "center" }}
+                justifyContent="space-between"
+                spacing={2}
+              >
+                {!isTAOrTeacher(selectedCourseId) ? (
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={onlyShowUnfinished}
+                        onChange={(event) =>
+                          void handleSetOnlyShowUnfinished(event)
+                        }
+                      />
+                    }
+                    label="只显示未完成作业"
+                    sx={{ m: 0 }}
+                  />
+                ) : (
+                  <Chip label="教师 / 助教模式" color="primary" variant="outlined" />
+                )}
+                {selectedCourse ? (
+                  <Chip
+                    icon={<CalendarMonthRoundedIcon />}
+                    label={selectedCourse.name}
+                    color="primary"
+                    variant="outlined"
+                  />
+                ) : null}
+              </Stack>
+            </Stack>
+          </CardContent>
+        </Card>
+
+        <Card sx={surfaceCardSx}>
+          <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+            <Stack spacing={2}>
+              <Box>
+                <Typography variant="h5" sx={{ fontWeight: 800 }}>
+                  成绩概览
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  已评分作业会在这里汇总成图，帮助快速判断失分分布。
+                </Typography>
+              </Box>
+              <GradeOverviewChart gradeMap={gradeMap} />
+            </Stack>
+          </CardContent>
+        </Card>
+
+        <Stack spacing={2.25}>
+          {assignments.map((assignment) => {
+            const expanded = expandedAssignmentIds.includes(assignment.id);
+            const submission = assignment.submission ?? undefined;
+            const attachments =
+              submission?.attachments?.map((attachment) => ({
+                ...attachment,
+                submitted_at: submission.submitted_at,
+                key: attachment.id,
+              })) ?? [];
+            const submissionComments = submission?.submission_comments ?? [];
+            const scoreText = assignment.points_possible
+              ? `${assignment.submission?.grade ?? 0}/${assignment.points_possible}`
+              : assignment.submission?.grade ?? "-";
+            const stats = assignment.score_statistics as ScoreStatistic | null;
+            const now = dayjs();
+            const lockAt = dayjs(assignment.lock_at);
+            const dueAt = dayjs(assignment.due_at);
+            const allowSubmit =
+              !isTAOrTeacher(selectedCourseId) &&
+              !!assignment.submission &&
+              !assignment.submission_types.includes("none") &&
+              !assignment.submission_types.includes("not_graded") &&
+              !now.isAfter(lockAt) &&
+              !now.isAfter(dueAt);
+
+            return (
+              <Card key={assignment.id} sx={surfaceCardSx}>
+                <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+                  <Stack spacing={2.5}>
+                    <Stack
+                      direction={{ xs: "column", lg: "row" }}
+                      justifyContent="space-between"
+                      spacing={2}
+                    >
+                      <Stack spacing={1.5} sx={{ minWidth: 0 }}>
+                        <Stack
+                          direction={{ xs: "column", sm: "row" }}
+                          spacing={1}
+                          alignItems={{ xs: "flex-start", sm: "center" }}
+                          flexWrap="wrap"
+                          useFlexGap
+                        >
+                          <Typography variant="h5" sx={{ fontWeight: 800 }}>
+                            {assignment.name}
+                          </Typography>
+                          {getAssignmentStatusChips(assignment, submission)}
+                        </Stack>
+                        <Stack
+                          direction={{ xs: "column", md: "row" }}
+                          spacing={2}
+                          flexWrap="wrap"
+                          useFlexGap
+                        >
+                          <Typography variant="body2" color="text.secondary">
+                            开始时间：{formatDate(assignment.unlock_at)}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            截止时间：
+                            {formatDate(getBaseDate(assignment.all_dates)?.due_at)}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            结束时间：
+                            {formatDate(getBaseDate(assignment.all_dates)?.lock_at)}
+                          </Typography>
+                        </Stack>
+                      </Stack>
+
+                      <Stack
+                        direction={{ xs: "column", sm: "row" }}
+                        spacing={1}
+                        alignItems={{ xs: "stretch", sm: "center" }}
+                      >
+                        <Chip
+                          label={`得分：${scoreText}`}
+                          color="primary"
+                          variant="outlined"
+                        />
+                        {stats ? (
+                          <Chip
+                            label={`最低/最高/平均：${stats.min}/${stats.max}/${stats.mean}`}
+                            variant="outlined"
+                          />
+                        ) : null}
+                      </Stack>
+                    </Stack>
+
+                    <Stack
+                      direction={{ xs: "column", sm: "row" }}
+                      spacing={1}
+                      flexWrap="wrap"
+                      useFlexGap
+                    >
+                      <Button
+                        variant="outlined"
+                        startIcon={expanded ? <ExpandLessRoundedIcon /> : <ExpandMoreRoundedIcon />}
+                        onClick={() => void toggleExpanded(assignment)}
+                      >
+                        {expanded ? "收起详情" : "展开详情"}
+                      </Button>
+                      <Button
+                        component="a"
+                        href={assignment.html_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        variant="text"
+                        startIcon={<LaunchRoundedIcon />}
+                      >
+                        在 Canvas 打开
+                      </Button>
+                      {isTAOrTeacher(selectedCourseId) ? (
+                        <Button
+                          variant="text"
+                          startIcon={<EditCalendarRoundedIcon />}
+                          onClick={() => {
+                            setShowModifyDDLModal(true);
+                            setAssignmentToModify(assignment);
+                          }}
+                        >
+                          修改日期
+                        </Button>
+                      ) : allowSubmit ? (
+                        <Button
+                          variant="contained"
+                          startIcon={<SendRoundedIcon />}
+                          onClick={() => {
+                            setSelectedAssignment(assignment);
+                            setShowModal(true);
+                          }}
+                        >
+                          提交作业
+                        </Button>
+                      ) : null}
+                    </Stack>
+
+                    <Collapse in={expanded} timeout="auto" unmountOnExit>
+                      <Stack spacing={2.5} sx={{ pt: 1 }}>
+                        <Box
+                          sx={{
+                            p: 2.25,
+                            borderRadius: "22px",
+                            bgcolor: alpha(theme.palette.primary.main, 0.04),
+                            border: "1px solid",
+                            borderColor: alpha(theme.palette.primary.main, 0.1),
+                          }}
+                        >
+                          <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>
+                            作业描述
+                          </Typography>
+                          {assignment.description ? (
+                            <Box
+                              sx={{
+                                color: "text.secondary",
+                                "& a": {
+                                  color: "primary.main",
+                                },
+                                "& img": {
+                                  maxWidth: "100%",
+                                },
+                              }}
+                              dangerouslySetInnerHTML={{
+                                __html: assignment.description,
+                              }}
+                            />
+                          ) : (
+                            <Typography variant="body2" color="text.secondary">
+                              暂无作业描述。
+                            </Typography>
+                          )}
+                        </Box>
+
+                        <Box>
+                          <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.25 }}>
+                            作业附件
+                          </Typography>
+                          {renderAttachmentsTable(linksMap[assignment.id])}
+                        </Box>
+
+                        <Box>
+                          <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.25 }}>
+                            历史评论
+                          </Typography>
+                          {submissionComments.length ? (
+                            <List
+                              sx={{
+                                border: "1px solid",
+                                borderColor: "divider",
+                                borderRadius: "20px",
+                                overflow: "hidden",
+                                p: 0,
+                              }}
+                            >
+                              {submissionComments.map((comment, index) => (
+                                <Box key={comment.id}>
+                                  <ListItem
+                                    alignItems="flex-start"
+                                    secondaryAction={
+                                      comment.author_id === me.data?.id ? (
+                                        <Button
+                                          color="error"
+                                          variant="text"
+                                          size="small"
+                                          onClick={() =>
+                                            void handleDeleteComment(
+                                              comment.id,
+                                              assignment.id
+                                            )
+                                          }
+                                        >
+                                          删除
+                                        </Button>
+                                      ) : undefined
+                                    }
+                                  >
+                                    <ListItemAvatar>
+                                      <Avatar src={baseURL.data + comment.avatar_path} />
+                                    </ListItemAvatar>
+                                    <ListItemText
+                                      primary={comment.author_name}
+                                      secondary={comment.comment}
+                                    />
+                                  </ListItem>
+                                  {index !== submissionComments.length - 1 ? (
+                                    <Divider component="li" />
+                                  ) : null}
+                                </Box>
+                              ))}
+                            </List>
+                          ) : (
+                            <Typography variant="body2" color="text.secondary">
+                              暂无评论记录。
+                            </Typography>
+                          )}
+                        </Box>
+
+                        <Box>
+                          <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.25 }}>
+                            我的提交
+                          </Typography>
+                          {renderAttachmentsTable(attachments, true)}
+                        </Box>
+                      </Stack>
+                    </Collapse>
+                  </Stack>
+                </CardContent>
+              </Card>
+            );
+          })}
+
+          {!operating && assignments.length === 0 ? (
+            <Card sx={surfaceCardSx}>
+              <CardContent sx={{ py: 8 }}>
+                <Typography align="center" variant="h6" sx={{ fontWeight: 700 }}>
+                  当前没有可展示的作业
+                </Typography>
+                <Typography align="center" variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  可以切换课程，或者关闭“只显示未完成”后再看看。
+                </Typography>
+              </CardContent>
+            </Card>
+          ) : null}
+        </Stack>
+      </Stack>
     </BasicLayout>
   );
 }
