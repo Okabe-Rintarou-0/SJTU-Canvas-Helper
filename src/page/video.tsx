@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
 import ClosedCaptionRoundedIcon from "@mui/icons-material/ClosedCaptionRounded";
 import PictureAsPdfRoundedIcon from "@mui/icons-material/PictureAsPdfRounded";
 import PsychologyRoundedIcon from "@mui/icons-material/PsychologyRounded";
@@ -98,6 +99,7 @@ export default function VideoPage() {
   const [summaryContent, setSummaryContent] = useState("");
   const mainVideoRef = useRef<HTMLVideoElement>(null);
   const subVideoRef = useRef<HTMLVideoElement>(null);
+  const playerContainerRef = useRef<HTMLDivElement>(null);
   const firstPlay = useRef(true);
 
   const onScanSuccess = () => {
@@ -230,12 +232,19 @@ export default function VideoPage() {
       return;
     }
     try {
+      const outputPath = await save({
+        defaultPath: `${selectedVideo.videoName}.srt`,
+        filters: [{ name: "Subtitle", extensions: ["srt"] }],
+      });
+      if (!outputPath) {
+        return;
+      }
       const videoInfo = (await invoke("get_canvas_video_info", {
         videoId: selectedVideo.videoId,
       })) as VideoInfo;
       await invoke("download_subtitle", {
         canvasCourseId: videoInfo.courId,
-        savePath: `${selectedVideo.videoName}.srt`,
+        savePath: outputPath,
       });
       messageApi.success("字幕下载成功", 0.5);
     } catch (error) {
@@ -274,20 +283,30 @@ export default function VideoPage() {
   const handleDownloadPPT = async (videoId: string, saveName: string) => {
     const videoInfo = (await invoke("get_canvas_video_info", { videoId })) as VideoInfo;
     const courseId = videoInfo.courId;
-    const taskKey = `ppt_${saveName}`;
+    const outputPath = await save({
+      defaultPath: saveName,
+      filters: [{ name: "PDF Document", extensions: ["pdf"] }],
+    });
+    if (!outputPath) {
+      return;
+    }
+
+    const displayName = outputPath.split(/[/\\\\]/).pop() || saveName;
+    const taskKey = `ppt_${outputPath}`;
 
     if (!pptDownloadTasks.find((task) => task.key === taskKey)) {
       setPPTDownloadTasks((tasks) => [
         ...tasks,
         {
           key: taskKey,
-          name: saveName,
+          name: displayName,
+          outputPath,
           progress: 0,
           state: "downloading",
         } as DownloadTask,
       ]);
 
-      void invoke("download_ppt", { courseId, saveName })
+      void invoke("download_ppt", { courseId, savePath: outputPath })
         .then(() => {
           setPPTDownloadTasks((tasks) =>
             tasks.map((task) =>
@@ -329,7 +348,11 @@ export default function VideoPage() {
       tasks.filter((task) => task.key !== taskToRemove.key)
     );
     try {
-      await invoke("delete_file_with_name", { name: taskToRemove.name });
+      if (taskToRemove.outputPath) {
+        await invoke("delete_path_file", { path: taskToRemove.outputPath });
+      } else {
+        await invoke("delete_file_with_name", { name: taskToRemove.name });
+      }
     } catch (error) {
       if (taskToRemove.state !== "fail") {
         messageApi.error(error as string);
@@ -462,6 +485,19 @@ export default function VideoPage() {
   const noSubVideo = !mutedPlayURL;
   const subVideoSizes = [0, 10, 20, 25, 33, 40, 50];
 
+  const positionSubVideo = () => {
+    const container = playerContainerRef.current;
+    if (!container || !mutedPlayURL) {
+      return;
+    }
+
+    const padding = 24;
+    const containerWidth = container.clientWidth;
+    const overlayWidth = (containerWidth * subVideoSize) / 100;
+    const maxX = Math.max(padding, containerWidth - overlayWidth - padding);
+    setSubVideoPos({ x: maxX, y: padding });
+  };
+
   const hookVideoHandlers = (swap: boolean) => {
     const mainVideo = mainVideoRef.current;
     const subVideo = subVideoRef.current;
@@ -508,6 +544,23 @@ export default function VideoPage() {
       hookVideoHandlers(true);
     }
   }, [mainPlayURL, noSubVideo, syncPlay]);
+
+  useEffect(() => {
+    if (!mutedPlayURL) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      positionSubVideo();
+    });
+
+    const handleResize = () => positionSubVideo();
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [mutedPlayURL, subVideoSize]);
 
   useEffect(() => {
     const fetchSubtitle = async () => {
@@ -851,84 +904,107 @@ export default function VideoPage() {
                   <Box
                     className={videoStyles.videoPlayerContainer}
                     sx={{
-                      position: "relative",
-                      minHeight: 360,
                       borderRadius: "22px",
                       overflow: "hidden",
                       bgcolor: "#000",
                     }}
                   >
-                    {mainPlayURL ? (
-                      <video
-                        style={{ width: "100%" }}
-                        ref={mainVideoRef}
-                        controls
-                        autoPlay={false}
-                        src={mainPlayURL}
-                        muted={false}
-                        width="100%"
-                      >
-                        {subtitleUrl ? (
-                          <track
-                            label="字幕"
-                            kind="subtitles"
-                            src={subtitleUrl}
-                            srcLang="zh"
-                            default
-                          />
-                        ) : null}
-                      </video>
-                    ) : (
-                      <Box
-                        sx={{
-                          minHeight: 360,
-                          display: "grid",
-                          placeItems: "center",
-                          color: "#fff",
-                        }}
-                      >
-                        <Stack spacing={1.25} alignItems="center">
-                          <VideoLibraryRoundedIcon sx={{ fontSize: 44, opacity: 0.8 }} />
-                          <Typography variant="body1">选择片段后在这里开始播放</Typography>
-                        </Stack>
-                      </Box>
-                    )}
-
-                    {!noSubVideo && mutedPlayURL ? (
-                      <Draggable
-                        position={subVideoPos}
-                        onStop={(_: DraggableEvent, data: DraggableData) =>
-                          setSubVideoPos({ x: data.x, y: data.y })
-                        }
-                        disabled={noSubVideo}
-                      >
-                        <div
+                    <Box
+                      ref={playerContainerRef}
+                      sx={{
+                        position: "relative",
+                        width: "100%",
+                        aspectRatio: "16 / 9",
+                        minHeight: 360,
+                        bgcolor: "#000",
+                      }}
+                    >
+                      {mainPlayURL ? (
+                        <video
+                          ref={mainVideoRef}
+                          controls
+                          autoPlay={false}
+                          src={mainPlayURL}
+                          muted={false}
+                          width="100%"
                           style={{
-                            position: "absolute",
-                            zIndex: 1000,
-                            opacity: subVideoOpacity,
-                            pointerEvents: noSubVideo ? "none" : "auto",
-                            width: `${subVideoSize}%`,
-                            left: 0,
-                            top: 0,
-                            display: mutedPlayURL ? "block" : "none",
-                            boxShadow: "0 10px 30px rgba(0,0,0,0.3)",
-                            borderRadius: 12,
+                            width: "100%",
+                            height: "100%",
+                            display: "block",
+                            objectFit: "contain",
                             background: "#000",
                           }}
                         >
-                          <video
-                            className={videoStyles.subVideo}
-                            ref={subVideoRef}
-                            controls
-                            autoPlay={false}
-                            src={mutedPlayURL}
-                            muted
-                            style={{ width: "100%", borderRadius: 12 }}
-                          />
-                        </div>
-                      </Draggable>
-                    ) : null}
+                          {subtitleUrl ? (
+                            <track
+                              label="字幕"
+                              kind="subtitles"
+                              src={subtitleUrl}
+                              srcLang="zh"
+                              default
+                            />
+                          ) : null}
+                        </video>
+                      ) : (
+                        <Box
+                          sx={{
+                            position: "absolute",
+                            inset: 0,
+                            display: "grid",
+                            placeItems: "center",
+                            color: "#fff",
+                          }}
+                        >
+                          <Stack spacing={1.25} alignItems="center">
+                            <VideoLibraryRoundedIcon sx={{ fontSize: 44, opacity: 0.8 }} />
+                            <Typography variant="body1">选择片段后在这里开始播放</Typography>
+                          </Stack>
+                        </Box>
+                      )}
+
+                      {!noSubVideo && mutedPlayURL ? (
+                        <Draggable
+                          bounds="parent"
+                          position={subVideoPos}
+                          onStop={(_: DraggableEvent, data: DraggableData) =>
+                            setSubVideoPos({ x: data.x, y: data.y })
+                          }
+                          disabled={noSubVideo}
+                        >
+                          <div
+                            style={{
+                              position: "absolute",
+                              zIndex: 1000,
+                              opacity: subVideoOpacity,
+                              pointerEvents: noSubVideo ? "none" : "auto",
+                              width: `${subVideoSize}%`,
+                              left: 0,
+                              top: 0,
+                              display: mutedPlayURL ? "block" : "block",
+                              boxShadow: "0 10px 30px rgba(0,0,0,0.3)",
+                              borderRadius: 12,
+                              background: "#000",
+                              overflow: "hidden",
+                            }}
+                          >
+                            <video
+                              ref={subVideoRef}
+                              controls
+                              autoPlay={false}
+                              src={mutedPlayURL}
+                              muted
+                              style={{
+                                width: "100%",
+                                height: "100%",
+                                display: "block",
+                                objectFit: "contain",
+                                background: "#000",
+                              }}
+                            />
+                          </div>
+                        </Draggable>
+                      ) : null}
+                    </Box>
                   </Box>
                 </Stack>
               </CardContent>

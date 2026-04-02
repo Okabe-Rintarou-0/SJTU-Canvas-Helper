@@ -14,11 +14,11 @@ import {
   Card,
   CardContent,
   Chip,
-  Divider,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  Divider,
   IconButton,
   InputAdornment,
   MenuItem,
@@ -47,6 +47,7 @@ type AccountMode = "create" | "select";
 const SURFACE_RADIUS = 6;
 const DEFAULT_PRIMARY = "#00b96b";
 const DEFAULT_PROXY_PORT = 3030;
+const CANVAS_TOKEN_URL = "https://oc.sjtu.edu.cn/profile/settings";
 
 const cardSx = {
   borderRadius: `${SURFACE_RADIUS * 4}px`,
@@ -521,7 +522,7 @@ export default function SettingsPage() {
                     >
                       请前往{" "}
                       <MuiLink
-                        href="https://oc.sjtu.edu.cn/profile/settings"
+                        href={CANVAS_TOKEN_URL}
                         target="_blank"
                         rel="noreferrer"
                       >
@@ -529,7 +530,6 @@ export default function SettingsPage() {
                       </MuiLink>{" "}
                       创建 API Token，并将其粘贴到下方字段。
                     </Alert>
-
                     <Box
                       sx={{
                         display: "grid",

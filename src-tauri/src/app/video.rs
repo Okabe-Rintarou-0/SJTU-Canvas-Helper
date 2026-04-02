@@ -78,10 +78,9 @@ impl App {
         self.client.get_video_course(subject_id, tecl_id).await
     }
 
-    pub async fn download_subtitle(&self, canvas_course_id: i64, save_name: &str) -> Result<()> {
+    pub async fn download_subtitle(&self, canvas_course_id: i64, save_path: &str) -> Result<()> {
         let res = self.client.get_subtitle(canvas_course_id).await?;
         let sub_title = self.client.convert_to_srt(&res.before_assembly_list)?;
-        let save_path = Path::new(&self.config.read().await.save_path).join(save_name);
         fs::write(save_path, sub_title)?;
         Ok(())
     }
@@ -89,15 +88,13 @@ impl App {
     pub async fn download_ppt<F: Fn(ProgressPayload) + Send + 'static>(
         &self,
         canvas_course_id: i64,
-        save_name: &str,
+        save_path: &str,
         progress_handler: F,
     ) -> Result<()> {
-        let save_dir = self.config.read().await.save_path.clone();
-        let save_path = Path::new(&save_dir).join(save_name);
         let res = self.client.get_ppt(canvas_course_id).await?;
         self.client
             .clone()
-            .download_ppt_pdf(&res, save_path.to_str().unwrap(), progress_handler)
+            .download_ppt_pdf(&res, save_path, progress_handler)
             .await
     }
 }

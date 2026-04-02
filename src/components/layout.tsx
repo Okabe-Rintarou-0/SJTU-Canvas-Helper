@@ -43,31 +43,31 @@ const drawerWidth = 272;
 const collapsedDrawerWidth = 92;
 
 const navigationItems = [
-  { key: "files", label: "文件", icon: <ArticleRoundedIcon />, path: "/files" },
-  { key: "assignments", label: "查看作业", icon: <AssignmentRoundedIcon />, path: "/assignments" },
-  { key: "discussions", label: "讨论区", icon: <GoDiscussionOutdated size={20} />, path: "/discussions" },
-  { key: "calendar", label: "日历", icon: <CalendarMonthRoundedIcon />, path: "/calendar" },
-  { key: "users", label: "人员导出", icon: <GroupsRoundedIcon />, path: "/users" },
-  { key: "grades", label: "评分册", icon: <LuBookOpenCheck size={20} />, path: "/grades" },
-  { key: "submissions", label: "作业批改", icon: <CloudDownloadRoundedIcon />, path: "/submissions" },
-  { key: "video", label: "视频", icon: <SmartDisplayRoundedIcon />, path: "/video" },
-  { key: "qrcode", label: "二维码", icon: <QrCode2RoundedIcon />, path: "/qrcode" },
+  { key: "files", label: "文件管理", icon: <ArticleRoundedIcon />, path: "/files" },
+  { key: "assignments", label: "作业列表", icon: <AssignmentRoundedIcon />, path: "/assignments" },
+  { key: "discussions", label: "讨论管理", icon: <GoDiscussionOutdated size={20} />, path: "/discussions" },
+  { key: "calendar", label: "日程管理", icon: <CalendarMonthRoundedIcon />, path: "/calendar" },
+  { key: "users", label: "成员导出", icon: <GroupsRoundedIcon />, path: "/users" },
+  { key: "grades", label: "成绩管理", icon: <LuBookOpenCheck size={20} />, path: "/grades" },
+  { key: "submissions", label: "提交批改", icon: <CloudDownloadRoundedIcon />, path: "/submissions" },
+  { key: "video", label: "视频管理", icon: <SmartDisplayRoundedIcon />, path: "/video" },
+  { key: "qrcode", label: "二维码管理", icon: <QrCode2RoundedIcon />, path: "/qrcode" },
   { key: "annual", label: "年度总结", icon: <TimelineRoundedIcon />, path: "/annual" },
-  { key: "settings", label: "设置", icon: <SettingsRoundedIcon />, path: "/settings" },
+  { key: "settings", label: "系统设置", icon: <SettingsRoundedIcon />, path: "/settings" },
 ];
 
 const pageTitleMap: Record<string, string> = {
-  files: "文件",
-  assignments: "查看作业",
-  discussions: "讨论区",
-  calendar: "日历",
-  users: "人员导出",
-  grades: "评分册",
-  submissions: "作业批改",
-  video: "视频",
-  qrcode: "二维码",
+  files: "文件管理",
+  assignments: "作业列表",
+  discussions: "讨论管理",
+  calendar: "日程管理",
+  users: "成员导出",
+  grades: "成绩管理",
+  submissions: "提交批改",
+  video: "视频管理",
+  qrcode: "二维码管理",
   annual: "年度总结",
-  settings: "设置",
+  settings: "系统设置",
 };
 
 export default function BasicLayout({ children }: React.PropsWithChildren) {
