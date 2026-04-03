@@ -6,12 +6,14 @@ import PsychologyRoundedIcon from "@mui/icons-material/PsychologyRounded";
 import SwapHorizRoundedIcon from "@mui/icons-material/SwapHorizRounded";
 import VideoLibraryRoundedIcon from "@mui/icons-material/VideoLibraryRounded";
 import {
+  Alert,
   Box,
   Button,
   Card,
   CardContent,
   Chip,
   Dialog,
+  DialogActions,
   DialogContent,
   DialogTitle,
   FormControlLabel,
@@ -33,18 +35,18 @@ import type { DraggableData, DraggableEvent } from "react-draggable";
 import Draggable from "react-draggable";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Link as RouterLink } from "react-router-dom";
 
 import ClosableAlert from "../components/closable_alert";
 import CourseSelect from "../components/course_select";
 import BasicLayout from "../components/layout";
-import { LoginAlert } from "../components/login_alert";
 import PPTDownloadTable from "../components/ppt_download_table";
 import VideoAggregator from "../components/video_aggregator";
 import VideoDownloadTable from "../components/video_download_table";
 import videoStyles from "../css/video_player.module.css";
 import { getConfig, saveConfig } from "../lib/config";
 import { VIDEO_PAGE_HINT_ALERT_KEY } from "../lib/constants";
-import { useCourses, useQRCode } from "../lib/hooks";
+import { useCourses } from "../lib/hooks";
 import { useAppMessage } from "../lib/message";
 import {
   CanvasVideo,
@@ -97,15 +99,11 @@ export default function VideoPage() {
   const [subtitleUrl, setSubtitleUrl] = useState<string | undefined>(undefined);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryContent, setSummaryContent] = useState("");
+  const [showLoginRequiredDialog, setShowLoginRequiredDialog] = useState(false);
   const mainVideoRef = useRef<HTMLVideoElement>(null);
   const subVideoRef = useRef<HTMLVideoElement>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const firstPlay = useRef(true);
-
-  const onScanSuccess = () => {
-    void loginAndCheck(true);
-  };
-  const { qrcode, showQRCode, refreshQRCode } = useQRCode({ onScanSuccess });
 
   const LinkRenderer = (props: any) => (
     <a
@@ -136,13 +134,18 @@ export default function VideoPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (loaded && notLogin) {
+      setShowLoginRequiredDialog(true);
+    }
+  }, [loaded, notLogin]);
+
   const loginAndCheck = async (retry = false) => {
     const config = await getConfig(true);
     const success = await handleLoginWebsite();
     if (!success) {
       config.ja_auth_cookie = "";
       await saveConfig(config);
-      showQRCode();
     } else if (!retry) {
       messageApi.success("检测到登录会话，登录成功", 0.5);
     } else {
@@ -586,7 +589,6 @@ export default function VideoPage() {
     void fetchSubtitle();
   }, [mainPlayURL, selectedVideo]);
 
-  const shouldShowAlert = loaded && notLogin && qrcode;
   const selectedCourse = courses.data.find((course) =>
     course.id === selectedCourseId
   );
@@ -602,9 +604,49 @@ export default function VideoPage() {
           description="依次点击主屏幕和副屏幕的播放按钮即可开启双窗口模式。"
         />
 
-        {shouldShowAlert ? (
-          <LoginAlert qrcode={qrcode} refreshQRCode={refreshQRCode} />
+        {loaded && notLogin ? (
+          <Alert
+            severity="info"
+            sx={{ borderRadius: "20px" }}
+            action={
+              <Button component={RouterLink} to="/settings" color="inherit" size="small">
+                前往设置
+              </Button>
+            }
+          >
+            视频功能依赖额外扫码登录。你可以前往设置页，在“额外扫码登录”区域完成登录后再回来使用。
+          </Alert>
         ) : null}
+
+        <Dialog
+          open={showLoginRequiredDialog && loaded && notLogin}
+          onClose={() => setShowLoginRequiredDialog(false)}
+          fullWidth
+          maxWidth="sm"
+        >
+          <DialogTitle>需要额外登录</DialogTitle>
+          <DialogContent>
+            <Stack spacing={1.5} sx={{ pt: 1 }}>
+              <Typography variant="body1">
+                视频相关功能需要额外扫码登录后才能使用。
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                登录入口已经放到设置页，你可以在那里主动完成扫码并保存登录态。
+              </Typography>
+            </Stack>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, py: 2 }}>
+            <Button onClick={() => setShowLoginRequiredDialog(false)}>稍后再说</Button>
+            <Button
+              component={RouterLink}
+              to="/settings"
+              variant="contained"
+              onClick={() => setShowLoginRequiredDialog(false)}
+            >
+              前往设置页
+            </Button>
+          </DialogActions>
+        </Dialog>
 
         <Card
           sx={{

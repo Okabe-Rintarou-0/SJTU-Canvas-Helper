@@ -94,14 +94,26 @@ export function AppMessageProvider({ children }: { children: ReactNode }) {
   return (
     <MessageContext.Provider value={api}>
       {children}
-      <Stack spacing={1} sx={{ position: "fixed", right: 16, bottom: 16, zIndex: 1600 }}>
+      <Stack
+        spacing={1}
+        sx={{
+          position: "fixed",
+          top: 16,
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 1600,
+          width: "min(560px, calc(100vw - 32px))",
+          alignItems: "center",
+        }}
+      >
         {messages.map((message) => (
           <Snackbar
             key={message.id}
             open
             autoHideDuration={message.duration === 0 ? null : (message.duration ?? 3) * 1000}
             onClose={() => api.destroy(message.id)}
-            anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+            anchorOrigin={{ vertical: "top", horizontal: "center" }}
+            sx={{ position: "static", transform: "none", width: "100%" }}
           >
             <Alert
               onClose={() => api.destroy(message.id)}

@@ -7,6 +7,7 @@
   ],
   "permissions": [
     "core:default",
+    "fs:default",
     "shell:allow-open",
     "dialog:allow-open",
     "dialog:allow-save",

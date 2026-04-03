@@ -21,7 +21,7 @@ import {
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import { save } from "@tauri-apps/plugin-dialog";
-import { writeFile } from "@tauri-apps/plugin-fs";
+import { invoke } from "@tauri-apps/api/core";
 import ReactEcharts from "echarts-for-react";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
@@ -261,7 +261,10 @@ export default function AnnualPage() {
       if (!blob) {
         throw new Error("无法生成图片数据。");
       }
-      await writeFile(outputPath, await blobToUint8Array(blob));
+      await invoke("save_path_file", {
+        path: outputPath,
+        content: Array.from(await blobToUint8Array(blob)),
+      });
       setToast("年度总结图片已保存。");
     } catch (error) {
       setToast(`导出图片失败：${error}`);
@@ -289,7 +292,10 @@ export default function AnnualPage() {
       });
       pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height);
       const pdfBytes = pdf.output("arraybuffer");
-      await writeFile(outputPath, new Uint8Array(pdfBytes));
+      await invoke("save_path_file", {
+        path: outputPath,
+        content: Array.from(new Uint8Array(pdfBytes)),
+      });
       setToast("年度总结 PDF 已保存。");
     } catch (error) {
       setToast(`导出 PDF 失败：${error}`);
@@ -607,7 +613,7 @@ export default function AnnualPage() {
         open={Boolean(toast)}
         autoHideDuration={2600}
         onClose={() => setToast("")}
-        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        anchorOrigin={{ vertical: "top", horizontal: "center" }}
       >
         <Alert onClose={() => setToast("")} severity="info" variant="filled">
           {toast}

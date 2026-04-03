@@ -276,6 +276,12 @@ async fn delete_path_file(path: String) -> Result<()> {
 }
 
 #[tauri::command]
+async fn save_path_file(path: String, content: Vec<u8>) -> Result<()> {
+    std::fs::write(path, content)?;
+    Ok(())
+}
+
+#[tauri::command]
 async fn export_excel(
     data: Vec<Vec<String>>,
     file_name: String,
@@ -659,6 +665,7 @@ async fn main() -> Result<()> {
     APP.init().await?;
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
@@ -710,6 +717,7 @@ async fn main() -> Result<()> {
             delete_file,
             delete_file_with_name,
             delete_path_file,
+            save_path_file,
             delete_course_file,
             delete_my_file,
             download_file,
