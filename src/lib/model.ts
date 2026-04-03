@@ -552,11 +552,20 @@ export interface VideoAggregateParams {
 export interface AnnualCourseStatistic {
     courseId: number;
     courseName: string;
+    assignmentCount: number;
+    submittedCount: number;
+    lateCount: number;
+    gradedCount: number;
+    totalPointsPossible: number;
+    totalScore: number;
     submitTimeList: string[];
 }
 
 export interface AnnualReport {
     year: number;
+    activeDayCount: number;
+    firstSubmitAt?: Option<string>;
+    lastSubmitAt?: Option<string>;
     courseToStatistic: Record<number, AnnualCourseStatistic>;
 }
 

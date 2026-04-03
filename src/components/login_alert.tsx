@@ -1,5 +1,5 @@
-import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
 import QrCode2RoundedIcon from "@mui/icons-material/QrCode2Rounded";
+import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
 import {
   Box,
   Button,
@@ -68,7 +68,7 @@ export function LoginAlert({
             </Stack>
 
             <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-              <Chip size="small" label="1. 打开统一身份认证" />
+              <Chip size="small" label="1. 打开手机微信" />
               <Chip size="small" label="2. 扫码确认" />
               <Chip size="small" label="3. 自动完成绑定" />
             </Stack>

@@ -27,6 +27,7 @@ impl Client {
     pub fn new<S: Into<String>>(base_url: S, llm_api_key: S) -> Self {
         let jar = Arc::new(cookie::Jar::default());
         let cli = reqwest::Client::builder()
+            .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36")
             .cookie_provider(jar.clone())
             .build()
             .unwrap();

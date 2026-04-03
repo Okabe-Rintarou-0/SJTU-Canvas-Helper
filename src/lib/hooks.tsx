@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import {
   Button,
   LinearProgress,
@@ -6,17 +5,18 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { invoke } from "@tauri-apps/api/core";
 import dayjs from "dayjs";
 import PDFMerger from "pdf-merger-js/browser";
 import {
   CSSProperties,
   Dispatch,
   ReactNode,
-  useCallback,
-  useRef,
   SetStateAction,
+  useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
@@ -463,6 +463,7 @@ export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {
     setQrcode("");
     hasRetriedRef.current = false;
     let nextUuid = (await invoke("get_uuid")) as string | null;
+    consoleLog(LOG_LEVEL_ERROR, nextUuid)
     if (nextUuid) {
       uuidRef.current = nextUuid;
       setUuid(nextUuid);

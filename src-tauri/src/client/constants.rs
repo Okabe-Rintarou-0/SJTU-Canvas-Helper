@@ -9,6 +9,7 @@ pub const VIDEO_INFO_URL: &str =
     "https://courses.sjtu.edu.cn/app/system/resource/vodVideo/getvideoinfos";
 pub const AUTH_URL: &str = "https://jaccount.sjtu.edu.cn";
 pub const MY_SJTU_URL: &str = "https://my.sjtu.edu.cn/ui/appmyinfo";
+pub const MY_SJTU_ACCOUNT_URL: &str = "https://my.sjtu.edu.cn/api/account";
 pub const EXPRESS_LOGIN_URL: &str = "https://jaccount.sjtu.edu.cn/jaccount/expresslogin";
 pub const OAUTH_PATH: &str =
     "aHR0cHM6Ly9jb3Vyc2VzLnNqdHUuZWR1LmNuL2FwcC92b2R2aWRlby92b2RWaWRlb1BsYXkuZDJq";

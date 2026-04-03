@@ -39,6 +39,11 @@ impl App {
         self.client.login_canvas_website(&cookie).await
     }
 
+    pub async fn check_extra_login_status(&self) -> Result<bool> {
+        let cookie = self.get_cookie().await;
+        self.client.check_extra_login_status(&cookie).await
+    }
+
     pub async fn get_subjects(&self) -> Result<Vec<Subject>> {
         self.client.get_subjects().await
     }

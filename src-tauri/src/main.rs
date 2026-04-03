@@ -533,6 +533,11 @@ async fn login_canvas_website() -> Result<()> {
 }
 
 #[tauri::command]
+async fn check_extra_login_status() -> Result<bool> {
+    APP.check_extra_login_status().await
+}
+
+#[tauri::command]
 async fn get_video_course(subject_id: i64, tecl_id: i64) -> Result<Option<VideoCourse>> {
     APP.get_video_course(subject_id, tecl_id).await
 }
@@ -742,6 +747,7 @@ async fn main() -> Result<()> {
             get_subjects,
             get_canvas_videos,
             login_canvas_website,
+            check_extra_login_status,
             get_video_course,
             get_video_info,
             get_canvas_video_info,

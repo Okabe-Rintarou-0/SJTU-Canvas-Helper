@@ -236,7 +236,7 @@ export default function SettingsPage() {
   const checkExtraLoginStatus = async (silent = false) => {
     setCheckingExtraLogin(true);
     try {
-      const ok = (await invoke("login_canvas_website")) as boolean;
+      const ok = (await invoke("check_extra_login_status")) as boolean;
       setExtraLoginReady(ok);
       if (!ok && !silent) {
         messageApi.warning("当前额外登录态不可用，请重新扫码。");
@@ -251,14 +251,6 @@ export default function SettingsPage() {
     } finally {
       setCheckingExtraLogin(false);
     }
-  };
-
-  const handleClearExtraLogin = async () => {
-    const config = await getConfig(true);
-    config.ja_auth_cookie = "";
-    await saveConfig(config);
-    setExtraLoginReady(false);
-    messageApi.success("已清除额外扫码登录状态。", 0.6);
   };
 
   const initAccounts = async () => {
@@ -284,12 +276,10 @@ export default function SettingsPage() {
       initialSnapshotRef.current = JSON.stringify(normalizedConfig);
       setTokenError("");
       setSavePathError("");
-      setExtraLoginReady(config.ja_auth_cookie.length > 0 ? null : false);
+      setExtraLoginReady(null);
       consoleLog(LOG_LEVEL_INFO, "init config: ", normalizedConfig);
 
-      if (config.ja_auth_cookie.length > 0) {
-        void checkExtraLoginStatus(true);
-      }
+      void checkExtraLoginStatus(true);
 
       if (normalizedConfig.token.length === 0) {
         setOpenTour(true);
@@ -777,7 +767,9 @@ export default function SettingsPage() {
                           label={
                             checkingExtraLogin
                               ? "登录态检查中"
-                              : extraLoginReady
+                              : extraLoginReady === null
+                                ? "登录态待检测"
+                                : extraLoginReady
                                 ? "额外登录已连接"
                                 : "额外登录未连接"
                           }
@@ -793,23 +785,37 @@ export default function SettingsPage() {
                         >
                           检查登录状态
                         </Button>
-                        <Button
-                          variant="text"
-                          color="error"
-                          onClick={() => void handleClearExtraLogin()}
-                          disabled={!extraLoginReady}
-                        >
-                          清除额外登录
-                        </Button>
                       </Stack>
 
-                      {!extraLoginReady ? (
+                      {extraLoginReady === false ? (
                         <InlineQRCodePanel
                           onScanSuccess={() => {
                             messageApi.success("扫码登录成功，已保存额外登录态。", 0.8);
                             void checkExtraLoginStatus(true);
                           }}
                         />
+                      ) : extraLoginReady === null || checkingExtraLogin ? (
+                        <Card
+                          sx={{
+                            borderRadius: "24px",
+                            border: "1px solid",
+                            borderColor: alpha(theme.palette.primary.main, 0.12),
+                            boxShadow: "none",
+                          }}
+                        >
+                          <CardContent sx={{ p: { xs: 2.25, md: 2.5 } }}>
+                            <Stack
+                              spacing={1.5}
+                              direction={{ xs: "column", sm: "row" }}
+                              alignItems={{ xs: "flex-start", sm: "center" }}
+                            >
+                              <CircularProgress size={22} />
+                              <Typography variant="body2" color="text.secondary">
+                                正在检查额外登录状态，确认未登录后会显示二维码。
+                              </Typography>
+                            </Stack>
+                          </CardContent>
+                        </Card>
                       ) : null}
                     </Stack>
                   </Stack>
