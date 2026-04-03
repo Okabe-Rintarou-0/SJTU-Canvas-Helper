@@ -23,7 +23,6 @@ import {
   FormControlLabel,
   InputAdornment,
   Link as MuiLink,
-  Snackbar,
   Stack,
   Tab,
   Tabs,
@@ -51,6 +50,7 @@ import {
   useMerger,
   usePreview,
 } from "../lib/hooks";
+import { useAppMessage } from "../lib/message";
 import {
   Course,
   Entry,
@@ -120,15 +120,7 @@ export default function FilesPage() {
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryContent, setSummaryContent] = useState("");
   const [summaryTitle, setSummaryTitle] = useState("");
-  const [snackbar, setSnackbar] = useState<{
-    open: boolean;
-    message: string;
-    severity: SnackSeverity;
-  }>({
-    open: false,
-    message: "",
-    severity: "info",
-  });
+  const [messageApi] = useAppMessage();
   const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry, setEntries } =
     usePreview();
   const { merger, mergePDFs } = useMerger({
@@ -142,7 +134,19 @@ export default function FilesPage() {
   const externalFiles = useExternalFiles(showExternal ? selectedCourseId : -1);
 
   const notify = (message: string, severity: SnackSeverity = "info") => {
-    setSnackbar({ open: true, message, severity });
+    if (severity === "success") {
+      messageApi.success(message);
+      return;
+    }
+    if (severity === "error") {
+      messageApi.error(message);
+      return;
+    }
+    if (severity === "warning") {
+      messageApi.warning(message);
+      return;
+    }
+    messageApi.info(message);
   };
 
   useEffect(() => {
@@ -428,6 +432,11 @@ export default function FilesPage() {
       }
     }
 
+    if (loggedIn && error) {
+      notify(`上传失败：${error}。已尝试自动登录交大云盘，但上传仍未成功。`, "error");
+      return;
+    }
+
     if (!loggedIn && error) {
       notify(`上传文件出错：${error}。请先登录交大云盘。`, "error");
     }
@@ -550,22 +559,6 @@ export default function FilesPage() {
           </Markdown>
         </DialogContent>
       </Dialog>
-
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={2800}
-        onClose={() => setSnackbar((prev) => ({ ...prev, open: false }))}
-        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-      >
-        <Alert
-          onClose={() => setSnackbar((prev) => ({ ...prev, open: false }))}
-          severity={snackbar.severity}
-          variant="filled"
-          sx={{ width: "100%" }}
-        >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
 
       <Stack spacing={3} sx={{ width: "100%" }}>
         <Card
@@ -693,7 +686,7 @@ export default function FilesPage() {
                 allowScrollButtonsMobile
               >
                 <Tab value={COURSE_FILES} label="课程文件" disabled={operating} />
-                <Tab value={MY_FILES} label="我的文件(beta)" disabled={operating} />
+                <Tab value={MY_FILES} label="我的文件" disabled={operating} />
               </Tabs>
 
               <Box
@@ -722,7 +715,7 @@ export default function FilesPage() {
                     />
                   ) : (
                     <Alert severity="info" sx={{ borderRadius: "16px" }}>
-                      当前正在浏览“我的文件(beta)”，系统会自动载入你的个人目录结构。
+                      当前正在浏览“我的文件”，系统会自动载入你的个人目录结构。
                     </Alert>
                   )}
                 </Box>

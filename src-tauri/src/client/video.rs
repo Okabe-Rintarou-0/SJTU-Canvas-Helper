@@ -8,7 +8,7 @@ use std::{
 
 use super::{
     constants::{
-        AUTH_URL, CANVAS_LOGIN_URL, EXPRESS_LOGIN_URL, MY_SJTU_URL, VIDEO_BASE_URL,
+        AUTH_URL, CANVAS_LOGIN_URL, EXPRESS_LOGIN_URL, MY_SJTU_ACCOUNT_URL, MY_SJTU_URL, VIDEO_BASE_URL,
         VIDEO_LOGIN_URL, VIDEO_OAUTH_KEY_URL,
     },
     Client,
@@ -61,7 +61,7 @@ impl Client {
         let body = resp.text().await?;
         // let document = Document::from(body.as_str());
         let re = Regex::new(
-            r#"uuid=([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"#,
+            r#"uuid\s*[:=]\s*["']?([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})["']?"#,
         )
         .unwrap();
 
@@ -121,6 +121,21 @@ impl Client {
             }
         }
         Ok(())
+    }
+
+    pub async fn check_extra_login_status(&self, cookie: &str) -> Result<bool> {
+        self.jar
+            .add_cookie_str(cookie, &Url::parse(AUTH_URL).unwrap());
+        let response = self.cli.get(MY_SJTU_ACCOUNT_URL).send().await?;
+        let status = response.status();
+        if status == StatusCode::UNAUTHORIZED {
+            return Ok(false);
+        }
+        if !status.is_success() {
+            return Ok(false);
+        }
+        let body = response.text().await?;
+        Ok(!body.trim().is_empty())
     }
 
     pub async fn get_page_items<T: Serialize + DeserializeOwned>(

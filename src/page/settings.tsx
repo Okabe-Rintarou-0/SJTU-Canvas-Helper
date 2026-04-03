@@ -2,6 +2,7 @@ import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import FolderOpenRoundedIcon from "@mui/icons-material/FolderOpenRounded";
 import KeyRoundedIcon from "@mui/icons-material/KeyRounded";
+import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
 import PreviewRoundedIcon from "@mui/icons-material/PreviewRounded";
 import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
 import TipsAndUpdatesRoundedIcon from "@mui/icons-material/TipsAndUpdatesRounded";
@@ -14,6 +15,7 @@ import {
   Card,
   CardContent,
   Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -35,9 +37,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactJson from "react-json-view-ts";
 
 import BasicLayout from "../components/layout";
+import { LoginAlert } from "../components/login_alert";
 import LogModal from "../components/log_modal";
 import { getConfig, saveConfig, updateConfig } from "../lib/config";
-import { useConfigDispatch } from "../lib/hooks";
+import { useConfigDispatch, useQRCode } from "../lib/hooks";
 import { useAppMessage } from "../lib/message";
 import { AccountInfo, AppConfig, LOG_LEVEL_INFO, User } from "../lib/model";
 import { consoleLog, savePathValidator } from "../lib/utils";
@@ -66,6 +69,92 @@ const fullWidthChipSx = {
   },
 };
 
+function InlineQRCodePanel({
+  onScanSuccess,
+}: {
+  onScanSuccess: () => void;
+}) {
+  const theme = useTheme();
+  const { qrcode, showQRCode, refreshQRCode, loading, error } = useQRCode({
+    onScanSuccess,
+  });
+
+  useEffect(() => {
+    void showQRCode();
+  }, [showQRCode]);
+
+  return (
+    <Card
+      sx={{
+        borderRadius: "28px",
+        border: "1px solid",
+        borderColor: alpha(theme.palette.primary.main, 0.12),
+        boxShadow: "0 24px 64px rgba(15, 23, 42, 0.08)",
+        background: `linear-gradient(135deg, ${alpha(
+          theme.palette.primary.main,
+          0.08
+        )} 0%, ${alpha(theme.palette.background.paper, 0.96)} 48%, ${alpha(
+          theme.palette.secondary.main,
+          0.08
+        )} 100%)`,
+      }}
+    >
+      <CardContent sx={{ p: { xs: 2.25, md: 3 } }}>
+        <Stack spacing={2}>
+          <Stack
+            direction={{ xs: "column", md: "row" }}
+            spacing={2}
+            justifyContent="space-between"
+            alignItems={{ xs: "flex-start", md: "center" }}
+          >
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                扫码完成额外登录
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                打开上海交通大学统一身份认证扫码。成功后会自动保存登录态，无需额外点击开始。
+              </Typography>
+            </Box>
+            <Chip
+              label={
+                qrcode ? "自动刷新" : error ? "获取失败" : "正在拉取二维码"
+              }
+              color={error ? "warning" : "primary"}
+              variant="outlined"
+              sx={{ alignSelf: { xs: "flex-start", md: "center" } }}
+            />
+          </Stack>
+
+          {qrcode ? (
+            <LoginAlert qrcode={qrcode} refreshQRCode={refreshQRCode} />
+          ) : (
+            <Stack
+              spacing={2}
+              alignItems="center"
+              justifyContent="center"
+              sx={{
+                minHeight: 260,
+                borderRadius: "24px",
+                border: "1px dashed",
+                borderColor: alpha(theme.palette.primary.main, 0.18),
+                bgcolor: alpha(theme.palette.background.paper, 0.62),
+              }}
+            >
+              {loading ? <CircularProgress size={28} /> : null}
+              <Typography variant="body2" color="text.secondary">
+                {error || "正在获取登录二维码…"}
+              </Typography>
+              <Button variant="outlined" onClick={() => void showQRCode()}>
+                重新获取二维码
+              </Button>
+            </Stack>
+          )}
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function SettingsPage() {
   const theme = useTheme();
   const dispatch = useConfigDispatch();
@@ -89,6 +178,8 @@ export default function SettingsPage() {
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
   const [tokenError, setTokenError] = useState<string>("");
   const [savePathError, setSavePathError] = useState<string>("");
+  const [extraLoginReady, setExtraLoginReady] = useState<boolean | null>(null);
+  const [checkingExtraLogin, setCheckingExtraLogin] = useState(false);
 
   const steps = [
     {
@@ -142,6 +233,26 @@ export default function SettingsPage() {
     [dispatch]
   );
 
+  const checkExtraLoginStatus = async (silent = false) => {
+    setCheckingExtraLogin(true);
+    try {
+      const ok = (await invoke("check_extra_login_status")) as boolean;
+      setExtraLoginReady(ok);
+      if (!ok && !silent) {
+        messageApi.warning("当前额外登录态不可用，请重新扫码。");
+      }
+      return ok;
+    } catch (error) {
+      setExtraLoginReady(false);
+      if (!silent) {
+        messageApi.warning(`额外登录态检查失败：${error}`);
+      }
+      return false;
+    } finally {
+      setCheckingExtraLogin(false);
+    }
+  };
+
   const initAccounts = async () => {
     const nextAccounts = (await invoke("list_accounts")) as string[];
     setAccounts(nextAccounts);
@@ -165,7 +276,10 @@ export default function SettingsPage() {
       initialSnapshotRef.current = JSON.stringify(normalizedConfig);
       setTokenError("");
       setSavePathError("");
+      setExtraLoginReady(null);
       consoleLog(LOG_LEVEL_INFO, "init config: ", normalizedConfig);
+
+      void checkExtraLoginStatus(true);
 
       if (normalizedConfig.token.length === 0) {
         setOpenTour(true);
@@ -633,6 +747,77 @@ export default function SettingsPage() {
                         选择目录
                       </Button>
                     </Box>
+
+                    <Divider />
+
+                    <Stack spacing={2.5}>
+                      <Box>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                          额外扫码登录
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          用于启用视频等依赖额外登录态的功能。只有在你需要这些能力时，才需要手动扫码登录。
+                        </Typography>
+                      </Box>
+
+                      <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} useFlexGap flexWrap="wrap">
+                        <Chip
+                          icon={<LinkRoundedIcon />}
+                          color={extraLoginReady ? "success" : "default"}
+                          label={
+                            checkingExtraLogin
+                              ? "登录态检查中"
+                              : extraLoginReady === null
+                                ? "登录态待检测"
+                                : extraLoginReady
+                                ? "额外登录已连接"
+                                : "额外登录未连接"
+                          }
+                          sx={fullWidthChipSx}
+                        />
+                      </Stack>
+
+                      <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} useFlexGap flexWrap="wrap">
+                        <Button
+                          variant="outlined"
+                          onClick={() => void checkExtraLoginStatus()}
+                          disabled={checkingExtraLogin}
+                        >
+                          检查登录状态
+                        </Button>
+                      </Stack>
+
+                      {extraLoginReady === false ? (
+                        <InlineQRCodePanel
+                          onScanSuccess={() => {
+                            messageApi.success("扫码登录成功，已保存额外登录态。", 0.8);
+                            void checkExtraLoginStatus(true);
+                          }}
+                        />
+                      ) : extraLoginReady === null || checkingExtraLogin ? (
+                        <Card
+                          sx={{
+                            borderRadius: "24px",
+                            border: "1px solid",
+                            borderColor: alpha(theme.palette.primary.main, 0.12),
+                            boxShadow: "none",
+                          }}
+                        >
+                          <CardContent sx={{ p: { xs: 2.25, md: 2.5 } }}>
+                            <Stack
+                              spacing={1.5}
+                              direction={{ xs: "column", sm: "row" }}
+                              alignItems={{ xs: "flex-start", sm: "center" }}
+                            >
+                              <CircularProgress size={22} />
+                              <Typography variant="body2" color="text.secondary">
+                                正在检查额外登录状态，确认未登录后会显示二维码。
+                              </Typography>
+                            </Stack>
+                          </CardContent>
+                        </Card>
+                      ) : null}
+                    </Stack>
                   </Stack>
                 </CardContent>
               </Card>

@@ -5,6 +5,8 @@ import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import CloudDownloadRoundedIcon from "@mui/icons-material/CloudDownloadRounded";
+import FactCheckRoundedIcon from "@mui/icons-material/FactCheckRounded";
+import ForumRoundedIcon from "@mui/icons-material/ForumRounded";
 import GridViewRoundedIcon from "@mui/icons-material/GridViewRounded";
 import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
@@ -31,8 +33,6 @@ import {
 import { alpha, useTheme } from "@mui/material/styles";
 import { useAppMessage } from "../lib/message";
 import React, { useEffect, useMemo, useState } from "react";
-import { GoDiscussionOutdated } from "react-icons/go";
-import { LuBookOpenCheck } from "react-icons/lu";
 import { Link, useLocation } from "react-router-dom";
 
 import { useKeyPress } from "../lib/hooks";
@@ -45,10 +45,10 @@ const collapsedDrawerWidth = 92;
 const navigationItems = [
   { key: "files", label: "文件管理", icon: <ArticleRoundedIcon />, path: "/files" },
   { key: "assignments", label: "作业列表", icon: <AssignmentRoundedIcon />, path: "/assignments" },
-  { key: "discussions", label: "讨论管理", icon: <GoDiscussionOutdated size={20} />, path: "/discussions" },
+  { key: "discussions", label: "讨论管理", icon: <ForumRoundedIcon />, path: "/discussions" },
   { key: "calendar", label: "日程管理", icon: <CalendarMonthRoundedIcon />, path: "/calendar" },
   { key: "users", label: "成员导出", icon: <GroupsRoundedIcon />, path: "/users" },
-  { key: "grades", label: "成绩管理", icon: <LuBookOpenCheck size={20} />, path: "/grades" },
+  { key: "grades", label: "成绩管理", icon: <FactCheckRoundedIcon />, path: "/grades" },
   { key: "submissions", label: "提交批改", icon: <CloudDownloadRoundedIcon />, path: "/submissions" },
   { key: "video", label: "视频管理", icon: <SmartDisplayRoundedIcon />, path: "/video" },
   { key: "qrcode", label: "二维码管理", icon: <QrCode2RoundedIcon />, path: "/qrcode" },

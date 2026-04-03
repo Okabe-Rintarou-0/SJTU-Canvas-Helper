@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import {
   Button,
   LinearProgress,
@@ -6,6 +5,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { invoke } from "@tauri-apps/api/core";
 import dayjs from "dayjs";
 import PDFMerger from "pdf-merger-js/browser";
 import {
@@ -13,8 +13,10 @@ import {
   Dispatch,
   ReactNode,
   SetStateAction,
+  useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
@@ -44,9 +46,10 @@ import { ConfigDispatch, ConfigState } from "./store";
 import { consoleLog, isMergableFileType, moduleItem2File } from "./utils";
 
 const UPDATE_QRCODE_MESSAGE = '{ "type": "UPDATE_QR_CODE" }';
-const SEND_INTERVAL = 1000 * 50;
+const SEND_INTERVAL = 1000 * 25;
 const QRCODE_BASE_URL = "https://jaccount.sjtu.edu.cn/jaccount/confirmscancode";
 const WEBSOCKET_BASE_URL = "wss://jaccount.sjtu.edu.cn/jaccount/sub";
+const QRCODE_TIMEOUT = 1000 * 8;
 
 const EMPTY_ARRAY: any[] = [];
 
@@ -63,29 +66,34 @@ export function usePreview(
     undefined
   );
 
-  const previewer = (
-    <Previewer
-      previewEntry={previewEntry}
-      setPreviewEntry={setPreviewEntry}
-      hoveredEntry={hoveredEntry}
-      setHoveredEntry={setHoveredEntry}
-      entries={entries}
-      footer={footer}
-      bodyStyle={bodyStyle}
-      monitorBlankKey={monitorBlankKey}
-    />
-  );
-
-  const onHoverEntry = (entry: Entry) => {
+  const onHoverEntry = useCallback((entry: Entry) => {
     if (!previewEntry) {
       setHoveredEntry(entry);
     }
-  };
-  const onLeaveEntry = () => {
+  }, [previewEntry]);
+
+  const onLeaveEntry = useCallback(() => {
     if (!previewEntry) {
       setHoveredEntry(undefined);
     }
-  };
+  }, [previewEntry]);
+
+  const previewer = useMemo(
+    () => (
+      <Previewer
+        previewEntry={previewEntry}
+        setPreviewEntry={setPreviewEntry}
+        hoveredEntry={hoveredEntry}
+        setHoveredEntry={setHoveredEntry}
+        entries={entries}
+        footer={footer}
+        bodyStyle={bodyStyle}
+        monitorBlankKey={monitorBlankKey}
+      />
+    ),
+    [bodyStyle, entries, footer, hoveredEntry, monitorBlankKey, previewEntry]
+  );
+
   return {
     previewer,
     previewEntry,
@@ -118,54 +126,85 @@ function Previewer({
   bodyStyle?: CSSProperties;
   monitorBlankKey: boolean;
 }) {
-  const [files, setFiles] = useState<File[]>([]);
+  const previewEntryRef = useRef<EntryType>(previewEntry);
+  const hoveredEntryRef = useRef<EntryType>(hoveredEntry);
+  const monitorBlankKeyRef = useRef(monitorBlankKey);
 
-  const getNextEntry = (entry: Entry) => {
-    const index = entries.findIndex((file) => file.id === entry.id);
+  useEffect(() => {
+    previewEntryRef.current = previewEntry;
+  }, [previewEntry]);
+
+  useEffect(() => {
+    hoveredEntryRef.current = hoveredEntry;
+  }, [hoveredEntry]);
+
+  useEffect(() => {
+    monitorBlankKeyRef.current = monitorBlankKey;
+  }, [monitorBlankKey]);
+
+  const entryIndexMap = useMemo(() => {
+    const map = new Map<Entry["id"], number>();
+    entries.forEach((entry, index) => {
+      map.set(entry.id, index);
+    });
+    return map;
+  }, [entries]);
+
+  const getNextEntry = useCallback((entry: Entry) => {
+    const index = entryIndexMap.get(entry.id);
     if (index === -1) {
+      return null;
+    }
+    if (index === undefined) {
       return null;
     }
     if (index === entries.length - 1) {
       return entries[0];
     }
     return entries[index + 1];
-  };
+  }, [entries, entryIndexMap]);
 
-  const getPrevEntry = (entry: Entry) => {
-    const index = entries.findIndex((file) => file.id === entry.id);
+  const getPrevEntry = useCallback((entry: Entry) => {
+    const index = entryIndexMap.get(entry.id);
     if (index === -1) {
+      return null;
+    }
+    if (index === undefined) {
       return null;
     }
     if (index === 0) {
       return entries[entries.length - 1];
     }
     return entries[index - 1];
-  };
+  }, [entries, entryIndexMap]);
 
   useEffect(() => {
     const handleKeyDownEvent = (ev: KeyboardEvent) => {
-      if (!monitorBlankKey) {
+      const currentPreviewEntry = previewEntryRef.current;
+      const currentHoveredEntry = hoveredEntryRef.current;
+
+      if (!monitorBlankKeyRef.current) {
         return;
       }
       if (ev.key === " " && !ev.repeat) {
         ev.stopPropagation();
         ev.preventDefault();
-        if (hoveredEntry && !previewEntry) {
+        if (currentHoveredEntry && !currentPreviewEntry) {
           setHoveredEntry(undefined);
-          setPreviewEntry(hoveredEntry);
-        } else if (previewEntry) {
+          setPreviewEntry(currentHoveredEntry);
+        } else if (currentPreviewEntry) {
           setPreviewEntry(undefined);
         }
         return;
       }
-      if (!previewEntry) {
+      if (!currentPreviewEntry) {
         return;
       }
 
       if (ev.key === "ArrowRight" && !ev.repeat) {
         ev.stopPropagation();
         ev.preventDefault();
-        const entry = getNextEntry(previewEntry);
+        const entry = getNextEntry(currentPreviewEntry);
         if (entry) {
           setHoveredEntry(undefined);
           setPreviewEntry(entry);
@@ -174,7 +213,7 @@ function Previewer({
       if (ev.key === "ArrowLeft" && !ev.repeat) {
         ev.stopPropagation();
         ev.preventDefault();
-        const entry = getPrevEntry(previewEntry);
+        const entry = getPrevEntry(currentPreviewEntry);
         if (entry) {
           setHoveredEntry(undefined);
           setPreviewEntry(entry);
@@ -186,30 +225,29 @@ function Previewer({
     return () => {
       document.body.removeEventListener("keydown", handleKeyDownEvent, true);
     };
-  }, [previewEntry, hoveredEntry, monitorBlankKey, entries]);
+  }, [getNextEntry, getPrevEntry, setHoveredEntry, setPreviewEntry]);
 
-  useEffect(() => {
+  const currentFile = useMemo(() => {
     if (previewEntry && isFile(previewEntry)) {
-      setFiles([previewEntry as File]);
-    } else {
-      setFiles([]);
+      return previewEntry as File;
     }
+    return undefined;
   }, [previewEntry]);
 
-  const handleCancelPreview = () => {
+  const handleCancelPreview = useCallback(() => {
     setPreviewEntry(undefined);
-  };
+  }, [setPreviewEntry]);
 
-  const shouldOpen = previewEntry !== undefined && files.length > 0;
+  const shouldOpen = previewEntry !== undefined && currentFile !== undefined;
   return (
     <>
       {shouldOpen && (
         <PreviewModal
           open={shouldOpen}
-          files={files}
+          files={[currentFile]}
           footer={footer}
           bodyStyle={bodyStyle}
-          title={(previewEntry as File).display_name}
+          title={currentFile.display_name}
           handleCancelPreview={handleCancelPreview}
         />
       )}
@@ -409,23 +447,36 @@ export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {
   const [uuid, setUuid] = useState<string>("");
   const [qrcode, setQrcode] = useState<string>("");
   const [wsURL, setWsURL] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const hasRetriedRef = useRef(false);
+  const uuidRef = useRef("");
   const { sendMessage, lastMessage, readyState } = useWebSocket(
     wsURL,
     undefined,
     wsURL.length > 0
   );
 
-  const showQRCode = async () => {
-    let uuid = (await invoke("get_uuid")) as string | null;
-    if (uuid) {
-      setUuid(uuid);
-      setWsURL(`${WEBSOCKET_BASE_URL}/${uuid}`);
+  const showQRCode = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    setQrcode("");
+    hasRetriedRef.current = false;
+    let nextUuid = (await invoke("get_uuid")) as string | null;
+    consoleLog(LOG_LEVEL_ERROR, nextUuid)
+    if (nextUuid) {
+      uuidRef.current = nextUuid;
+      setUuid(nextUuid);
+      setWsURL(`${WEBSOCKET_BASE_URL}/${nextUuid}`);
+      return;
     }
-  };
+    setLoading(false);
+    setError("未能获取登录二维码标识，请稍后重试。");
+  }, []);
 
   const handleScanSuccess = async () => {
     try {
-      let JAAuthCookie = (await invoke("express_login", { uuid })) as
+      let JAAuthCookie = (await invoke("express_login", { uuid: uuidRef.current || uuid })) as
         | string
         | null;
       if (!JAAuthCookie) {
@@ -454,6 +505,14 @@ export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {
   }, [readyState]);
 
   useEffect(() => {
+    if (!wsURL || readyState !== ReadyState.CLOSED || qrcode) {
+      return;
+    }
+    setLoading(false);
+    setError("二维码连接未建立成功，请重新获取。");
+  }, [readyState, wsURL, qrcode]);
+
+  useEffect(() => {
     if (lastMessage) {
       try {
         let loginMessage = JSON.parse(lastMessage.data) as LoginMessage;
@@ -471,17 +530,39 @@ export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {
     }
   }, [lastMessage]);
 
+  useEffect(() => {
+    if (!loading || qrcode || !wsURL) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      if (!hasRetriedRef.current) {
+        hasRetriedRef.current = true;
+        refreshQRCode();
+        return;
+      }
+      setLoading(false);
+      setError("二维码获取超时，请重新获取。");
+    }, QRCODE_TIMEOUT);
+
+    return () => window.clearTimeout(timeout);
+  }, [loading, qrcode, wsURL]);
+
   const handleUpdateQrcode = (loginMessage: LoginMessage) => {
     let payload = loginMessage.payload;
-    let qrcode = `${QRCODE_BASE_URL}?uuid=${uuid}&ts=${payload.ts}&sig=${payload.sig}`;
+    let qrcode = `${QRCODE_BASE_URL}?uuid=${uuidRef.current || uuid}&ts=${payload.ts}&sig=${payload.sig}`;
     setQrcode(qrcode);
+    setLoading(false);
+    setError("");
   };
 
   const refreshQRCode = () => {
+    setLoading(true);
+    setError("");
     sendMessage(UPDATE_QRCODE_MESSAGE);
   };
 
-  return { qrcode, showQRCode, refreshQRCode };
+  return { qrcode, showQRCode, refreshQRCode, loading, error };
 }
 
 export function useLoginModal({ onLogin }: { onLogin?: () => void }) {

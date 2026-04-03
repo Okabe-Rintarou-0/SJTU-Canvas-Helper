@@ -1,22 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
+import AudioFileRoundedIcon from "@mui/icons-material/AudioFileRounded";
+import DescriptionRoundedIcon from "@mui/icons-material/DescriptionRounded";
+import FolderZipRoundedIcon from "@mui/icons-material/FolderZipRounded";
+import ImageRoundedIcon from "@mui/icons-material/ImageRounded";
 import InsertDriveFileRoundedIcon from "@mui/icons-material/InsertDriveFileRounded";
+import MovieRoundedIcon from "@mui/icons-material/MovieRounded";
+import PictureAsPdfRoundedIcon from "@mui/icons-material/PictureAsPdfRounded";
+import SlideshowRoundedIcon from "@mui/icons-material/SlideshowRounded";
+import TableChartRoundedIcon from "@mui/icons-material/TableChartRounded";
 import { relaunch } from '@tauri-apps/plugin-process';
 import { check } from "@tauri-apps/plugin-updater";
 import dayjs, { Dayjs } from "dayjs";
 import { decode } from "js-base64";
-import {
-  FaFileCsv,
-  FaImage,
-  FaRegFileArchive,
-  FaRegFileAudio,
-  FaRegFilePdf,
-  FaRegFileVideo,
-} from "react-icons/fa";
-import {
-  PiMicrosoftExcelLogoFill,
-  PiMicrosoftPowerpointLogoFill,
-  PiMicrosoftWordLogoFill,
-} from "react-icons/pi";
 import { getConfig } from "./config";
 import {
   Assignment,
@@ -73,6 +68,9 @@ const aliasMap: Record<string, string> = {
   cjs: "js",
   gitignore: "txt",
   mp4: "video/mp4",
+  mov: "video/quicktime",
+  qt: "video/quicktime",
+  m4v: "video/mp4",
 };
 
 export async function getFileType(filename: string) {
@@ -192,22 +190,22 @@ export function getFileIcon(file: FileModel) {
   const name = file.filename;
   const mime_class = file.mime_class;
   if (name.endsWith(".pdf")) {
-    return <FaRegFilePdf style={{ fontSize: "22px" }} />;
+    return <PictureAsPdfRoundedIcon sx={{ fontSize: 22, color: "#dc2626" }} />;
   }
   if (name.endsWith(".doc") || name.endsWith(".docx")) {
-    return <PiMicrosoftWordLogoFill style={{ fontSize: "24px" }} />;
+    return <DescriptionRoundedIcon sx={{ fontSize: 22, color: "#2563eb" }} />;
   }
   if (name.endsWith(".ppt") || name.endsWith(".pptx")) {
-    return <PiMicrosoftPowerpointLogoFill style={{ fontSize: "24px" }} />;
+    return <SlideshowRoundedIcon sx={{ fontSize: 22, color: "#ea580c" }} />;
   }
   if (name.endsWith(".csv")) {
-    return <FaFileCsv style={{ fontSize: "22px" }} />;
+    return <TableChartRoundedIcon sx={{ fontSize: 22, color: "#16a34a" }} />;
   }
   if (name.endsWith(".xls") || name.endsWith(".xlsx")) {
-    return <PiMicrosoftExcelLogoFill style={{ fontSize: "24px" }} />;
+    return <TableChartRoundedIcon sx={{ fontSize: 22, color: "#15803d" }} />;
   }
   if (name.endsWith(".ppt") || name.endsWith(".pptx")) {
-    return <PiMicrosoftPowerpointLogoFill style={{ fontSize: "24px" }} />;
+    return <SlideshowRoundedIcon sx={{ fontSize: 22, color: "#ea580c" }} />;
   }
   if (
     name.endsWith(".flv") ||
@@ -216,10 +214,10 @@ export function getFileIcon(file: FileModel) {
     name.endsWith(".m4v") ||
     name.endsWith(".avi")
   ) {
-    return <FaRegFileVideo style={{ fontSize: "22px" }} />;
+    return <MovieRoundedIcon sx={{ fontSize: 22, color: "#7c3aed" }} />;
   }
   if (name.endsWith(".mp3") || name.endsWith(".wav")) {
-    return <FaRegFileAudio style={{ fontSize: "22px" }} />;
+    return <AudioFileRoundedIcon sx={{ fontSize: 22, color: "#0f766e" }} />;
   }
   if (
     name.endsWith(".7z") ||
@@ -227,10 +225,10 @@ export function getFileIcon(file: FileModel) {
     name.endsWith(".tar") ||
     name.endsWith(".zip")
   ) {
-    return <FaRegFileArchive style={{ fontSize: "22px" }} />;
+    return <FolderZipRoundedIcon sx={{ fontSize: 22, color: "#a16207" }} />;
   }
   if (mime_class.startsWith("image")) {
-    return <FaImage style={{ fontSize: "22px" }} />;
+    return <ImageRoundedIcon sx={{ fontSize: 22, color: "#0891b2" }} />;
   }
   return <InsertDriveFileRoundedIcon sx={{ fontSize: 21 }} />;
 }
@@ -239,22 +237,22 @@ export function getBigFileIcon(file: FileModel) {
   const name = file.display_name;
   const mime_class = file.mime_class;
   if (name.endsWith(".pdf")) {
-    return <FaRegFilePdf style={{ fontSize: "40px" }} />;
+    return <PictureAsPdfRoundedIcon sx={{ fontSize: 40, color: "#dc2626" }} />;
   }
   if (name.endsWith(".doc") || name.endsWith(".docx")) {
-    return <PiMicrosoftWordLogoFill style={{ fontSize: "42px" }} />;
+    return <DescriptionRoundedIcon sx={{ fontSize: 42, color: "#2563eb" }} />;
   }
   if (name.endsWith(".ppt") || name.endsWith(".pptx")) {
-    return <PiMicrosoftPowerpointLogoFill style={{ fontSize: "42px" }} />;
+    return <SlideshowRoundedIcon sx={{ fontSize: 42, color: "#ea580c" }} />;
   }
   if (name.endsWith(".csv")) {
-    return <FaFileCsv style={{ fontSize: "40px" }} />;
+    return <TableChartRoundedIcon sx={{ fontSize: 40, color: "#16a34a" }} />;
   }
   if (name.endsWith(".xls") || name.endsWith(".xlsx")) {
-    return <PiMicrosoftExcelLogoFill style={{ fontSize: "42px" }} />;
+    return <TableChartRoundedIcon sx={{ fontSize: 42, color: "#15803d" }} />;
   }
   if (name.endsWith(".ppt") || name.endsWith(".pptx")) {
-    return <PiMicrosoftPowerpointLogoFill style={{ fontSize: "42px" }} />;
+    return <SlideshowRoundedIcon sx={{ fontSize: 42, color: "#ea580c" }} />;
   }
   if (
     name.endsWith(".flv") ||
@@ -263,10 +261,10 @@ export function getBigFileIcon(file: FileModel) {
     name.endsWith(".m4v") ||
     name.endsWith(".avi")
   ) {
-    return <FaRegFileVideo style={{ fontSize: "40px" }} />;
+    return <MovieRoundedIcon sx={{ fontSize: 40, color: "#7c3aed" }} />;
   }
   if (name.endsWith(".mp3") || name.endsWith(".wav")) {
-    return <FaRegFileAudio style={{ fontSize: "40px" }} />;
+    return <AudioFileRoundedIcon sx={{ fontSize: 40, color: "#0f766e" }} />;
   }
   if (
     name.endsWith(".7z") ||
@@ -274,10 +272,10 @@ export function getBigFileIcon(file: FileModel) {
     name.endsWith(".tar") ||
     name.endsWith(".zip")
   ) {
-    return <FaRegFileArchive style={{ fontSize: "40px" }} />;
+    return <FolderZipRoundedIcon sx={{ fontSize: 40, color: "#a16207" }} />;
   }
   if (mime_class.startsWith("image")) {
-    return <FaImage style={{ fontSize: "40px" }} />;
+    return <ImageRoundedIcon sx={{ fontSize: 40, color: "#0891b2" }} />;
   }
   return <InsertDriveFileRoundedIcon sx={{ fontSize: 39 }} />;
 }

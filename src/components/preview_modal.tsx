@@ -14,12 +14,35 @@ import {
 import { alpha, useTheme } from "@mui/material/styles";
 import { CSSProperties, ReactNode, useEffect, useMemo, useState } from "react";
 import { pdfjs } from "react-pdf";
+import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.js?url";
 
 import { File } from "../lib/model";
 import { getFileType } from "../lib/utils";
 import { BasicRenderers } from "./renderers";
 
-pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.js`;
+pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
+
+const docTypeCache = new Map<string, Promise<IDocument>>();
+
+async function resolveDocument(file: File): Promise<IDocument> {
+  const cacheKey = `${file.display_name}|${file.url}`;
+  const cached = docTypeCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const task = (async () => {
+    const fileType = await getFileType(file.display_name);
+    return {
+      uri: file.url,
+      fileName: file.display_name,
+      fileType,
+    } satisfies IDocument;
+  })();
+
+  docTypeCache.set(cacheKey, task);
+  return task;
+}
 
 export default function PreviewModal({
   open,
@@ -40,21 +63,22 @@ export default function PreviewModal({
   const [docs, setDocs] = useState<IDocument[]>([]);
 
   useEffect(() => {
-    void initDocs();
-  }, [files]);
-
-  const initDocs = async () => {
-    const nextDocs: IDocument[] = [];
-    for (const file of files) {
-      const fileType = await getFileType(file.display_name);
-      nextDocs.push({
-        uri: file.url,
-        fileName: file.display_name,
-        fileType,
-      });
+    if (!open || files.length === 0) {
+      return;
     }
-    setDocs(nextDocs);
-  };
+
+    let cancelled = false;
+    void (async () => {
+      const nextDocs = await Promise.all(files.map((file) => resolveDocument(file)));
+      if (!cancelled) {
+        setDocs(nextDocs);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [files, open]);
 
   const viewer = useMemo(() => {
     const body = footer ? bodyStyle : { height: "78vh", marginTop: "0px" };

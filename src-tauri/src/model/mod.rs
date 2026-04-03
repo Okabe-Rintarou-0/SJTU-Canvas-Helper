@@ -1036,6 +1036,12 @@ impl From<i32> for LogLevel {
 pub struct AnnualCourseStatistic {
     pub course_id: i64,
     pub course_name: String,
+    pub assignment_count: i32,
+    pub submitted_count: i32,
+    pub late_count: i32,
+    pub graded_count: i32,
+    pub total_points_possible: f64,
+    pub total_score: f64,
     pub submit_time_list: Vec<String>,
 }
 
@@ -1043,6 +1049,9 @@ pub struct AnnualCourseStatistic {
 #[serde(rename_all = "camelCase")]
 pub struct AnnualReport {
     pub year: i32,
+    pub active_day_count: i32,
+    pub first_submit_at: Option<String>,
+    pub last_submit_at: Option<String>,
     pub course_to_statistic: HashMap<i64, AnnualCourseStatistic>,
 }
 

@@ -1,9 +1,10 @@
 import {
   Alert,
-  Snackbar,
+  Box,
+  Portal,
   Stack,
 } from "@mui/material";
-import { createContext, ReactNode, useContext, useMemo, useState } from "react";
+import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
 
 type MessageType = "success" | "error" | "warning" | "info" | "loading";
 
@@ -52,6 +53,20 @@ function normalizeType(type?: MessageType) {
 export function AppMessageProvider({ children }: { children: ReactNode }) {
   const [messages, setMessages] = useState<MessageRecord[]>([]);
 
+  useEffect(() => {
+    const timers = messages
+      .filter((message) => message.duration !== 0)
+      .map((message) =>
+        window.setTimeout(() => {
+          setMessages((prev) => prev.filter((item) => item.id !== message.id));
+        }, (message.duration ?? 3) * 1000)
+      );
+
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, [messages]);
+
   const api = useMemo<AppMessageApi>(() => {
     const remove = (id?: string) => {
       if (!id) {
@@ -94,26 +109,34 @@ export function AppMessageProvider({ children }: { children: ReactNode }) {
   return (
     <MessageContext.Provider value={api}>
       {children}
-      <Stack spacing={1} sx={{ position: "fixed", right: 16, bottom: 16, zIndex: 1600 }}>
-        {messages.map((message) => (
-          <Snackbar
-            key={message.id}
-            open
-            autoHideDuration={message.duration === 0 ? null : (message.duration ?? 3) * 1000}
-            onClose={() => api.destroy(message.id)}
-            anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-          >
-            <Alert
-              onClose={() => api.destroy(message.id)}
-              severity={normalizeType(message.type) as "success" | "error" | "warning" | "info"}
-              variant="filled"
-              sx={{ width: "100%" }}
-            >
-              {message.content}
-            </Alert>
-          </Snackbar>
-        ))}
-      </Stack>
+      <Portal>
+        <Box
+          sx={{
+            position: "fixed",
+            top: 16,
+            left: "50vw",
+            transform: "translateX(-50%)",
+            zIndex: 1600,
+            width: "min(560px, calc(100vw - 32px))",
+            maxWidth: "calc(100vw - 32px)",
+            pointerEvents: "none",
+          }}
+        >
+          <Stack spacing={1} sx={{ width: "100%", alignItems: "stretch" }}>
+            {messages.map((message) => (
+              <Alert
+                key={message.id}
+                onClose={() => api.destroy(message.id)}
+                severity={normalizeType(message.type) as "success" | "error" | "warning" | "info"}
+                variant="filled"
+                sx={{ width: "100%", pointerEvents: "auto" }}
+              >
+                {message.content}
+              </Alert>
+            ))}
+          </Stack>
+        </Box>
+      </Portal>
     </MessageContext.Provider>
   );
 }
