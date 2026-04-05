@@ -8,8 +8,8 @@ use std::{
 
 use super::{
     constants::{
-        AUTH_URL, CANVAS_LOGIN_URL, EXPRESS_LOGIN_URL, MY_SJTU_ACCOUNT_URL, MY_SJTU_URL, VIDEO_BASE_URL,
-        VIDEO_LOGIN_URL, VIDEO_OAUTH_KEY_URL,
+        AUTH_URL, CANVAS_LOGIN_URL, EXPRESS_LOGIN_URL, MY_SJTU_ACCOUNT_URL, MY_SJTU_URL,
+        VIDEO_BASE_URL, VIDEO_LOGIN_URL, VIDEO_OAUTH_KEY_URL,
     },
     Client,
 };
@@ -33,7 +33,7 @@ use printpdf::*;
 use regex::Regex;
 use reqwest::{
     cookie::CookieStore,
-    header::{HeaderValue, ACCEPT, CONTENT_RANGE, RANGE, REFERER},
+    header::{HeaderValue, ACCEPT, CONTENT_LENGTH, CONTENT_RANGE, RANGE, REFERER},
     redirect::Policy,
     Response, StatusCode,
 };
@@ -411,8 +411,9 @@ impl Client {
 
     async fn get_download_video_size(&self, url: &str) -> Result<u64> {
         let resp = self.download_video_partial(url, 0, 0).await?;
-        let range = resp.headers().get(CONTENT_RANGE);
-        if let Some(range) = range {
+        // log headers:
+        tracing::info!("headers: {:?}", resp.headers());
+        if let Some(range) = resp.headers().get(CONTENT_RANGE) {
             let range = range.to_str()?;
             let parts: Vec<_> = range.split('/').collect();
             let size = if parts.len() == 2 {
@@ -420,10 +421,19 @@ impl Client {
             } else {
                 0
             };
-            Ok(size)
-        } else {
-            Ok(0)
+            if size > 0 {
+                return Ok(size);
+            }
         }
+
+        if let Some(length) = resp.headers().get(CONTENT_LENGTH) {
+            let length = length.to_str()?.parse().unwrap_or_default();
+            if length > 0 {
+                return Ok(length);
+            }
+        }
+
+        Ok(0)
     }
 
     pub async fn download_video<F: Fn(ProgressPayload) + Send + 'static>(
@@ -717,6 +727,7 @@ mod tests {
     use std::fs;
 
     use super::*;
+    use crate::client::constants::BASE_URL;
 
     #[tokio::test]
     async fn test_get_uuid() -> Result<()> {
@@ -728,13 +739,18 @@ mod tests {
         Ok(())
     }
 
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "macOS system-configuration panics in CI/local test env"
+    )]
     #[tokio::test]
     async fn test_download_video() -> Result<()> {
-        let cli = Arc::new(Client::default());
+        let _ = tracing_subscriber::fmt::try_init();
+        let cli = Arc::new(Client::new_without_proxy(BASE_URL, ""));
         // let video_url = "https://www.w3schools.com/html/mov_bbb.mp4";
         // a bigger one, more than one video block
         let video_url = "https://download.samplelib.com/mp4/sample-10s.mp4";
-        let save_path = "test.mp4";
+        let save_path = "test_download_video.mp4";
         let video_info = VideoPlayInfo {
             rtmp_url_hdv: video_url.to_owned(),
             ..Default::default()
@@ -754,6 +770,7 @@ mod tests {
 
         let downloaded = fs::read(save_path)?;
         assert_eq!(original, downloaded);
+        let _ = fs::remove_file(save_path);
         Ok(())
     }
 

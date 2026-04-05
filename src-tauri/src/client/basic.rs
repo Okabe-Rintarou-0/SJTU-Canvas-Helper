@@ -24,6 +24,29 @@ impl Client {
         Self::new(BASE_URL, "")
     }
 
+    #[allow(dead_code)]
+    pub fn new_without_proxy<S: Into<String>>(base_url: S, llm_api_key: S) -> Self {
+        let jar = Arc::new(cookie::Jar::default());
+        let cli = reqwest::Client::builder()
+            .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36")
+            .no_proxy()
+            .cookie_provider(jar.clone())
+            .build()
+            .unwrap();
+        let base_url = RwLock::new(base_url.into());
+        let token = RwLock::new("".to_owned());
+        let llm_cli = llm::chat::new_llm_client(llm_api_key.into()).unwrap();
+        let file_parser = file_parser::new_generic_file_reader();
+        Self {
+            cli,
+            jar,
+            base_url,
+            token,
+            llm_cli,
+            file_parser,
+        }
+    }
+
     pub fn new<S: Into<String>>(base_url: S, llm_api_key: S) -> Self {
         let jar = Arc::new(cookie::Jar::default());
         let cli = reqwest::Client::builder()
