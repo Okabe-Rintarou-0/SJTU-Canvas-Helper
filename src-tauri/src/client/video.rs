@@ -33,7 +33,7 @@ use printpdf::*;
 use regex::Regex;
 use reqwest::{
     cookie::CookieStore,
-    header::{HeaderValue, ACCEPT, CONTENT_LENGTH, CONTENT_RANGE, RANGE, REFERER},
+    header::{HeaderMap, HeaderValue, ACCEPT, ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE, RANGE, REFERER},
     redirect::Policy,
     Response, StatusCode,
 };
@@ -47,6 +47,38 @@ use serde_json::Value;
 use tauri::Url;
 use tokio::{sync::Mutex, task::JoinSet};
 use urlencoding::encode;
+
+fn parse_download_probe(status: StatusCode, headers: &HeaderMap) -> (u64, bool) {
+    let supports_range = status == StatusCode::PARTIAL_CONTENT
+        || headers.get(CONTENT_RANGE).is_some()
+        || headers
+            .get(ACCEPT_RANGES)
+            .and_then(|value| value.to_str().ok())
+            .map(|value| value.contains("bytes"))
+            .unwrap_or(false);
+
+    if let Some(range) = headers.get(CONTENT_RANGE).and_then(|value| value.to_str().ok()) {
+        let parts: Vec<_> = range.split('/').collect();
+        if parts.len() == 2 {
+            let size = parts[1].parse().unwrap_or_default();
+            if size > 0 {
+                return (size, supports_range);
+            }
+        }
+    }
+
+    if let Some(length) = headers
+        .get(CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+    {
+        let size = length.parse().unwrap_or_default();
+        if size > 0 {
+            return (size, supports_range);
+        }
+    }
+
+    (0, supports_range)
+}
 
 // Apis here are for course video
 // We take references from: https://github.com/prcwcy/sjtu-canvas-video-download/blob/master/sjtu_canvas_video.py
@@ -409,31 +441,11 @@ impl Client {
         Ok(response)
     }
 
-    async fn get_download_video_size(&self, url: &str) -> Result<u64> {
+    async fn get_download_video_metadata(&self, url: &str) -> Result<(u64, bool)> {
         let resp = self.download_video_partial(url, 0, 0).await?;
         // log headers:
         tracing::info!("headers: {:?}", resp.headers());
-        if let Some(range) = resp.headers().get(CONTENT_RANGE) {
-            let range = range.to_str()?;
-            let parts: Vec<_> = range.split('/').collect();
-            let size = if parts.len() == 2 {
-                parts[1].parse().unwrap_or_default()
-            } else {
-                0
-            };
-            if size > 0 {
-                return Ok(size);
-            }
-        }
-
-        if let Some(length) = resp.headers().get(CONTENT_LENGTH) {
-            let length = length.to_str()?.parse().unwrap_or_default();
-            if length > 0 {
-                return Ok(length);
-            }
-        }
-
-        Ok(0)
+        Ok(parse_download_probe(resp.status(), resp.headers()))
     }
 
     pub async fn download_video<F: Fn(ProgressPayload) + Send + 'static>(
@@ -444,7 +456,7 @@ impl Client {
     ) -> Result<()> {
         let output_file = Arc::new(Mutex::new(File::create(save_path)?));
         let url = &video.rtmp_url_hdv;
-        let size = self.get_download_video_size(url).await?;
+        let (size, supports_range) = self.get_download_video_metadata(url).await?;
         let payload = ProgressPayload {
             uuid: video.id.to_string(),
             processed: 0,
@@ -457,6 +469,37 @@ impl Client {
                 save_path
             );
             return Err(AppError::VideoDownloadError(save_path.to_owned()));
+        }
+
+        if !supports_range {
+            tracing::info!("video source does not support range requests, fallback to single stream");
+            let mut response = self
+                .cli
+                .get(url)
+                .header(REFERER, "https://courses.sjtu.edu.cn")
+                .send()
+                .await?;
+            let status = response.status();
+            if status != StatusCode::OK {
+                tracing::error!("status not ok: {}", status);
+                return Err(AppError::VideoDownloadError(save_path.to_owned()));
+            }
+
+            let progress_handler = Arc::new(Mutex::new(progress_handler));
+            let payload = Arc::new(Mutex::new(payload));
+            let mut current_offset = 0;
+            while let Some(chunk) = response.chunk().await? {
+                {
+                    let mut file = output_file.lock().await;
+                    write_file_at_offset(file.by_ref(), &chunk, current_offset)?;
+                }
+                current_offset += chunk.len() as u64;
+                let mut payload_guard = payload.lock().await;
+                payload_guard.processed = current_offset;
+                progress_handler.lock().await(payload_guard.clone());
+            }
+            tracing::info!("Successfully downloaded video to {}", save_path);
+            return Ok(());
         }
 
         let progress_handler = Arc::new(Mutex::new(progress_handler));
@@ -728,6 +771,7 @@ mod tests {
 
     use super::*;
     use crate::client::constants::BASE_URL;
+    use reqwest::header::{HeaderMap, HeaderValue, ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE};
 
     #[tokio::test]
     async fn test_get_uuid() -> Result<()> {
@@ -772,6 +816,25 @@ mod tests {
         assert_eq!(original, downloaded);
         let _ = fs::remove_file(save_path);
         Ok(())
+    }
+
+    #[test]
+    fn test_parse_download_probe_with_partial_content() {
+        let mut headers = HeaderMap::new();
+        headers.insert(CONTENT_RANGE, HeaderValue::from_static("bytes 0-0/5485935"));
+        let (size, supports_range) = parse_download_probe(StatusCode::PARTIAL_CONTENT, &headers);
+        assert_eq!(size, 5_485_935);
+        assert!(supports_range);
+    }
+
+    #[test]
+    fn test_parse_download_probe_with_content_length_only() {
+        let mut headers = HeaderMap::new();
+        headers.insert(CONTENT_LENGTH, HeaderValue::from_static("5485935"));
+        headers.insert(ACCEPT_RANGES, HeaderValue::from_static("none"));
+        let (size, supports_range) = parse_download_probe(StatusCode::OK, &headers);
+        assert_eq!(size, 5_485_935);
+        assert!(!supports_range);
     }
 
     #[test]
