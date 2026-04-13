@@ -87,7 +87,10 @@ export async function getFileType(filename: string) {
   return extension;
 }
 
-export function getBase64Data(raw: string) {
+export function getBase64Data(raw?: string) {
+  if (!raw) {
+    return "";
+  }
   if (raw.startsWith("data:") && raw.indexOf(",") !== -1) {
     return raw.split(",")[1];
   }

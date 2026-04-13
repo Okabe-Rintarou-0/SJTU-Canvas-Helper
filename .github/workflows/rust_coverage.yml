@@ -1,0 +1,91 @@
+name: Rust coverage
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    name: Report Rust coverage
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: ./src-tauri
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - uses: swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        with:
+          workspaces: "./src-tauri -> target"
+          key: coverage-ubuntu
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev patchelf
+
+      - name: Collect coverage (non-blocking)
+        id: coverage
+        shell: bash
+        env:
+          CANVAS_TOKEN: ${{ secrets.CANVAS_TOKEN }}
+        run: |
+          mkdir -p target/llvm-cov
+          set +e
+          cargo llvm-cov --workspace --lcov --output-path target/llvm-cov/lcov.info \
+            > target/llvm-cov/summary.txt 2>&1
+          status=$?
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rust-coverage
+          path: |
+            src-tauri/target/llvm-cov/lcov.info
+            src-tauri/target/llvm-cov/summary.txt
+          if-no-files-found: warn
+
+      - name: Publish coverage summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## Rust coverage" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f target/llvm-cov/summary.txt ]; then
+            echo '```text' >> "$GITHUB_STEP_SUMMARY"
+            tail -n 80 target/llvm-cov/summary.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "未生成覆盖率摘要。" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ -f target/llvm-cov/lcov.info ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "- 已生成 \`lcov.info\`，可在 workflow artifacts 中下载。" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ "${{ steps.coverage.outputs.exit_code }}" != "0" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "> 覆盖率采集过程中出现非阻塞错误，已忽略，不影响工作流通过。" >> "$GITHUB_STEP_SUMMARY"
+          fi

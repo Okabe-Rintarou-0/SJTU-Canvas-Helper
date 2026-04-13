@@ -32,6 +32,7 @@ export default function MovRenderer({
       subtitle="MOV video preview"
       fileType={fileType}
       icon={<MovieRoundedIcon />}
+      headerMode="compact"
       actions={
         <Button
           size="small"

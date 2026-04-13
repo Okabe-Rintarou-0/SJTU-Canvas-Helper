@@ -29,6 +29,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 
 import BasicLayout from "../components/layout";
+import { WorkspaceHero } from "../components/workspace_hero";
 import { useAppMessage } from "../lib/message";
 import { CalendarEvent, Colors, Course } from "../lib/model";
 
@@ -258,120 +259,66 @@ export default function CalendarPage() {
       {contextHolder}
       <Box sx={{ minHeight: "100%", color: "text.primary" }}>
         <Stack spacing={3}>
-          <Stack
-            direction={{ xs: "column", md: "row" }}
-            justifyContent="space-between"
-            alignItems={{ xs: "stretch", md: "center" }}
-            spacing={2}
-          >
-            <Stack spacing={1}>
-              <Chip
-                icon={<CalendarMonthRoundedIcon />}
-                label="Calendar Workspace"
-                color="primary"
-                variant="outlined"
-                sx={{ width: "fit-content" }}
-              />
-              <Typography variant="h4" sx={{ fontWeight: 700, letterSpacing: "-0.03em" }}>
-                日历与 DDL 工作台
-              </Typography>
-              <Typography variant="body1" color="text.secondary">
-                更适合扫读、排程和追踪作业截止日期的月历视图。
-              </Typography>
-            </Stack>
-
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25}>
-              <TextField
-                select
-                size="small"
-                label="年份"
-                value={currentMonth.year()}
-                onChange={(event) => void handleYearSelect(Number(event.target.value))}
-                sx={{ minWidth: 120 }}
-              >
-                {yearOptions.map((year) => (
-                  <MenuItem key={year} value={year}>
-                    {year} 年
-                  </MenuItem>
-                ))}
-              </TextField>
-              <TextField
-                select
-                size="small"
-                label="月份"
-                value={currentMonth.month()}
-                onChange={(event) => void handleMonthSelect(Number(event.target.value))}
-                sx={{ minWidth: 110 }}
-              >
-                {monthOptions.map((label, index) => (
-                  <MenuItem key={label} value={index}>
-                    {label}
-                  </MenuItem>
-                ))}
-              </TextField>
-              <Button
-                variant="outlined"
-                startIcon={<KeyboardDoubleArrowLeftRoundedIcon />}
-                onClick={() => void handleMonthChange(dayjs())}
-              >
-                回到本月
-              </Button>
-              <Button
-                variant="outlined"
-                startIcon={<ArrowBackRoundedIcon />}
-                onClick={() => void handleMonthChange(currentMonth.subtract(1, "month"))}
-              >
-                上个月
-              </Button>
-              <Button
-                variant="contained"
-                endIcon={<ArrowForwardRoundedIcon />}
-                onClick={() => void handleMonthChange(currentMonth.add(1, "month"))}
-              >
-                下个月
-              </Button>
-            </Stack>
-          </Stack>
-
-          <Box
-            sx={{
-              display: "grid",
-              gap: 1.5,
-              gridTemplateColumns: {
-                xs: "repeat(2, minmax(0, 1fr))",
-                lg: "repeat(4, minmax(0, 1fr))",
-              },
-            }}
-          >
-            {statItems.map((item) => (
-              <Card key={item.label} sx={cardSx}>
-                <CardContent sx={{ p: 2.5 }}>
-                  <Stack direction="row" alignItems="center" spacing={1.5}>
-                    <Box
-                      sx={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: "16px",
-                        display: "grid",
-                        placeItems: "center",
-                        bgcolor: alpha("#2563eb", 0.12),
-                        color: "primary.main",
-                        "& svg": { fontSize: 26 },
-                      }}
-                    >
-                      {item.icon}
-                    </Box>
-                    <Stack spacing={0.4}>
-                      <Typography variant="body2" color="text.secondary">
-                        {item.label}
-                      </Typography>
-                      <Typography variant="h5">{item.value}</Typography>
-                    </Stack>
-                  </Stack>
-                </CardContent>
-              </Card>
-            ))}
-          </Box>
+          <WorkspaceHero
+            chipLabel="Calendar Workspace"
+            chipIcon={<CalendarMonthRoundedIcon />}
+            title="日历与 DDL 工作台"
+            description="更适合扫读、排程和追踪作业截止日期的月历视图。"
+            aside={
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25}>
+                <TextField
+                  select
+                  size="small"
+                  label="年份"
+                  value={currentMonth.year()}
+                  onChange={(event) => void handleYearSelect(Number(event.target.value))}
+                  sx={{ minWidth: 120 }}
+                >
+                  {yearOptions.map((year) => (
+                    <MenuItem key={year} value={year}>
+                      {year} 年
+                    </MenuItem>
+                  ))}
+                </TextField>
+                <TextField
+                  select
+                  size="small"
+                  label="月份"
+                  value={currentMonth.month()}
+                  onChange={(event) => void handleMonthSelect(Number(event.target.value))}
+                  sx={{ minWidth: 110 }}
+                >
+                  {monthOptions.map((label, index) => (
+                    <MenuItem key={label} value={index}>
+                      {label}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                <Button
+                  variant="outlined"
+                  startIcon={<KeyboardDoubleArrowLeftRoundedIcon />}
+                  onClick={() => void handleMonthChange(dayjs())}
+                >
+                  回到本月
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={<ArrowBackRoundedIcon />}
+                  onClick={() => void handleMonthChange(currentMonth.subtract(1, "month"))}
+                >
+                  上个月
+                </Button>
+                <Button
+                  variant="contained"
+                  endIcon={<ArrowForwardRoundedIcon />}
+                  onClick={() => void handleMonthChange(currentMonth.add(1, "month"))}
+                >
+                  下个月
+                </Button>
+              </Stack>
+            }
+            stats={statItems}
+          />
 
           <Box
             sx={{

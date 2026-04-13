@@ -13,14 +13,10 @@ import {
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import { CSSProperties, ReactNode, useEffect, useMemo, useState } from "react";
-import { pdfjs } from "react-pdf";
-import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.js?url";
 
 import { File } from "../lib/model";
 import { getFileType } from "../lib/utils";
 import { BasicRenderers } from "./renderers";
-
-pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
 const docTypeCache = new Map<string, Promise<IDocument>>();
 

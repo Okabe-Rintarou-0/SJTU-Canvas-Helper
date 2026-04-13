@@ -20,6 +20,7 @@ export default function CodeRenderer({
             subtitle="Source preview"
             fileType={currentDocument.fileType}
             icon={<CodeRoundedIcon />}
+            headerMode="none"
             contentSx={{ p: 0 }}
         >
             <SyntaxHighlighter

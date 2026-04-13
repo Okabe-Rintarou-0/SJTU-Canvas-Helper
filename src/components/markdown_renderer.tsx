@@ -25,6 +25,7 @@ export default function MarkdownRenderer({
       subtitle="Markdown preview"
       fileType={currentDocument.fileType}
       icon={<ArticleRoundedIcon />}
+      headerMode="none"
       contentSx={{ p: 0 }}
     >
       <Box className={`${styles.markdownContainer} ${styles.markdown}`}>

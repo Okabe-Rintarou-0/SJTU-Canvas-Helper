@@ -176,10 +176,17 @@ export default function ArchiveRenderer({
     const fileReader = fileMap?.get(path);
     if (fileReader) {
       const file = await fileReader.extract();
+      const fileData = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result ?? ""));
+        reader.onerror = () => reject(reader.error ?? new Error("读取压缩包子文件失败"));
+        reader.readAsDataURL(file);
+      });
       const doc = {
         uri: URL.createObjectURL(file),
         fileName: file.name,
         fileType: await getFileType(file.name),
+        fileData,
       } as IDocument;
       setSelectedDoc((oldDoc) => setDocAndGC(oldDoc, doc));
       setSelectedPath(path);

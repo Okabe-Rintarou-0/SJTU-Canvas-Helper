@@ -17,6 +17,7 @@ export default function JupiterNotebookRenderer({
             subtitle="Jupyter Notebook preview"
             fileType={currentDocument.fileType}
             icon={<DataObjectRoundedIcon />}
+            headerMode="none"
         >
             <IpynbRenderer ipynb={data as IpynbType} />
         </RendererShell>
