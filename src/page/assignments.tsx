@@ -39,6 +39,7 @@ import { useSearchParams } from "react-router-dom";
 import CourseSelect from "../components/course_select";
 import { GradeOverviewChart } from "../components/grade_overview";
 import BasicLayout from "../components/layout";
+import { WorkspaceHero } from "../components/workspace_hero";
 import ModifyDDLModal from "../components/modify_ddl_modal";
 import { SubmitModal } from "../components/submit_modal";
 import { useBaseURL, useCourses, useMe, usePreview } from "../lib/hooks";
@@ -481,124 +482,66 @@ export default function AssignmentsPage() {
       ) : null}
 
       <Stack spacing={3}>
-        <Card
-          sx={{
-            ...surfaceCardSx,
-            background:
-              theme.palette.mode === "dark"
-                ? `linear-gradient(135deg, ${alpha(
-                    theme.palette.primary.main,
-                    0.18
-                  )}, ${alpha("#0f172a", 0.88)})`
-                : `linear-gradient(135deg, ${alpha(
-                    theme.palette.primary.main,
-                    0.1
-                  )}, rgba(255,255,255,0.96))`,
-          }}
-        >
-          <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-            <Stack spacing={3}>
-              <Stack
-                direction={{ xs: "column", lg: "row" }}
-                justifyContent="space-between"
-                spacing={2}
-              >
-                <Box>
-                  <Typography variant="h4" sx={{ fontWeight: 800 }}>
-                    作业工作台
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    集中查看课程作业、提交状态、得分概览和历史评论。
-                  </Typography>
-                </Box>
-                <Box
-                  sx={{
-                    width: "100%",
-                    maxWidth: { xs: "100%", lg: 640 },
-                    alignSelf: { xs: "stretch", lg: "flex-start" },
-                  }}
-                >
-                  <CourseSelect
-                    onChange={(courseId) => void handleCourseSelect(courseId)}
-                    disabled={operating}
-                    courses={courses.data}
-                    value={selectedCourseId === -1 ? undefined : selectedCourseId}
-                  />
-                </Box>
-              </Stack>
-
-              <Box
-                sx={{
-                  display: "grid",
-                  gap: 2,
-                  gridTemplateColumns: {
-                    xs: "repeat(2, minmax(0, 1fr))",
-                    lg: "repeat(4, minmax(0, 1fr))",
-                  },
-                }}
-              >
-                {[
-                  { label: "作业总数", value: assignmentSummary.total },
-                  { label: "待完成", value: assignmentSummary.unfinished },
-                  { label: "已提交", value: assignmentSummary.submitted },
-                  { label: "已截止", value: assignmentSummary.ended },
-                ].map((item) => (
-                  <Card
-                    key={item.label}
-                    sx={{
-                      borderRadius: "22px",
-                      backgroundColor: alpha(theme.palette.background.paper, 0.8),
-                      border: "1px solid",
-                      borderColor: alpha(theme.palette.divider, 0.5),
-                      boxShadow: "none",
-                    }}
-                  >
-                    <CardContent sx={{ p: 2.25 }}>
-                      <Typography variant="overline" color="text.secondary">
-                        {item.label}
-                      </Typography>
-                      <Typography variant="h4" sx={{ fontWeight: 800, mt: 1 }}>
-                        {item.value}
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                ))}
-              </Box>
-
-              <Stack
-                direction={{ xs: "column", md: "row" }}
-                alignItems={{ xs: "stretch", md: "center" }}
-                justifyContent="space-between"
-                spacing={2}
-              >
-                {!isTAOrTeacher(selectedCourseId) ? (
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={onlyShowUnfinished}
-                        onChange={(event) =>
-                          void handleSetOnlyShowUnfinished(event)
-                        }
-                      />
-                    }
-                    label="只显示未完成作业"
-                    sx={{ m: 0 }}
-                  />
-                ) : (
-                  <Chip label="教师 / 助教模式" color="primary" variant="outlined" />
-                )}
-                {selectedCourse ? (
-                  <Chip
-                    icon={<CalendarMonthRoundedIcon />}
-                    label={selectedCourse.name}
-                    color="primary"
-                    variant="outlined"
-                  />
-                ) : null}
-              </Stack>
+        <WorkspaceHero
+          chipLabel="Assignment Workspace"
+          title="作业工作台"
+          description="集中查看课程作业、提交状态、得分概览和历史评论。"
+          aside={
+            <Box
+              sx={{
+                width: "100%",
+                maxWidth: { xs: "100%", lg: 640 },
+                alignSelf: { xs: "stretch", lg: "flex-start" },
+              }}
+            >
+              <CourseSelect
+                onChange={(courseId) => void handleCourseSelect(courseId)}
+                disabled={operating}
+                courses={courses.data}
+                value={selectedCourseId === -1 ? undefined : selectedCourseId}
+              />
+            </Box>
+          }
+          stats={[
+            { label: "作业总数", value: assignmentSummary.total },
+            { label: "待完成", value: assignmentSummary.unfinished },
+            { label: "已提交", value: assignmentSummary.submitted },
+            { label: "已截止", value: assignmentSummary.ended },
+          ]}
+          footer={
+            <Stack
+              direction={{ xs: "column", md: "row" }}
+              alignItems={{ xs: "stretch", md: "center" }}
+              justifyContent="space-between"
+              spacing={2}
+            >
+              {!isTAOrTeacher(selectedCourseId) ? (
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={onlyShowUnfinished}
+                      onChange={(event) =>
+                        void handleSetOnlyShowUnfinished(event)
+                      }
+                    />
+                  }
+                  label="只显示未完成作业"
+                  sx={{ m: 0 }}
+                />
+              ) : (
+                <Chip label="教师 / 助教模式" color="primary" variant="outlined" />
+              )}
+              {selectedCourse ? (
+                <Chip
+                  icon={<CalendarMonthRoundedIcon />}
+                  label={selectedCourse.name}
+                  color="primary"
+                  variant="outlined"
+                />
+              ) : null}
             </Stack>
-          </CardContent>
-        </Card>
+          }
+        />
 
         <Card sx={surfaceCardSx}>
           <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>

@@ -135,6 +135,7 @@ export default function XlsxRenderer({
       subtitle="Excel workbook"
       fileType={currentDocument.fileType}
       icon={<TableChartRoundedIcon />}
+      headerMode="compact"
       actions={
         currentSheet ? (
           <Typography variant="caption" color="text.secondary">

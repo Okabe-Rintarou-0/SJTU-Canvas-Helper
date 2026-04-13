@@ -22,6 +22,7 @@ import { useMemo, useState } from "react";
 
 import CourseSelect from "../components/course_select";
 import BasicLayout from "../components/layout";
+import { WorkspaceHero } from "../components/workspace_hero";
 import { useCourses, useMe } from "../lib/hooks";
 import { useAppMessage } from "../lib/message";
 import {
@@ -222,142 +223,75 @@ export default function DiscussionsPage() {
     <BasicLayout>
       {contextHolder}
       <Stack spacing={3}>
-        <Card
-          sx={{
-            ...surfaceCardSx,
-            background:
-              theme.palette.mode === "dark"
-                ? `linear-gradient(135deg, ${alpha(
-                    theme.palette.primary.main,
-                    0.18
-                  )}, ${alpha("#0f172a", 0.9)})`
-                : `linear-gradient(135deg, ${alpha(
-                    theme.palette.primary.main,
-                    0.1
-                  )}, rgba(255,255,255,0.96))`,
-          }}
-        >
-          <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-            <Stack spacing={3}>
-              <Stack
-                direction={{ xs: "column", lg: "row" }}
-                justifyContent="space-between"
-                spacing={2}
+        <WorkspaceHero
+          chipLabel="Discussion Workspace"
+          title="讨论区"
+          description="更清晰地查看课程讨论主题、发言流和未读情况。"
+          aside={
+            <Box
+              sx={{
+                width: "100%",
+                maxWidth: { xs: "100%", lg: 680 },
+                alignSelf: { xs: "stretch", lg: "flex-start" },
+              }}
+            >
+              <CourseSelect
+                onChange={(courseId) => void handleCourseSelect(courseId)}
+                disabled={operating}
+                courses={courses.data}
+                value={selectedCourseId === -1 ? undefined : selectedCourseId}
+              />
+            </Box>
+          }
+          stats={[
+            { label: "讨论主题", value: topics.length },
+            { label: "未读条目", value: fullDiscussion?.unread_entries.length ?? 0 },
+            { label: "参与者", value: fullDiscussion?.participants.length ?? 0 },
+            { label: "消息条数", value: discussionMessages.length },
+          ]}
+          footer={
+            <Stack
+              direction={{ xs: "column", md: "row" }}
+              spacing={1.5}
+              justifyContent="space-between"
+            >
+              <TextField
+                select
+                fullWidth
+                disabled={operating || topics.length === 0}
+                label="选择话题"
+                value={selectedTopicId}
+                onChange={(event) =>
+                  void handleTopicSelect(Number(event.target.value))
+                }
+                helperText={
+                  selectedTopic
+                    ? `当前查看：${selectedTopic.title}`
+                    : "先选择课程，再选择一个讨论主题。"
+                }
               >
-                <Box>
-                  <Typography variant="h4" sx={{ fontWeight: 800 }}>
-                    讨论区
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    更清晰地查看课程讨论主题、发言流和未读情况。
-                  </Typography>
-                </Box>
-                <Box
-                  sx={{
-                    width: "100%",
-                    maxWidth: { xs: "100%", lg: 680 },
-                    alignSelf: { xs: "stretch", lg: "flex-start" },
-                  }}
-                >
-                  <CourseSelect
-                    onChange={(courseId) => void handleCourseSelect(courseId)}
-                    disabled={operating}
-                    courses={courses.data}
-                    value={selectedCourseId === -1 ? undefined : selectedCourseId}
-                  />
-                </Box>
-              </Stack>
-
-              <Box
-                sx={{
-                  display: "grid",
-                  gap: 2,
-                  gridTemplateColumns: {
-                    xs: "repeat(2, minmax(0, 1fr))",
-                    lg: "repeat(4, minmax(0, 1fr))",
-                  },
-                }}
-              >
-                {[
-                  { label: "讨论主题", value: topics.length },
-                  {
-                    label: "未读条目",
-                    value: fullDiscussion?.unread_entries.length ?? 0,
-                  },
-                  {
-                    label: "参与者",
-                    value: fullDiscussion?.participants.length ?? 0,
-                  },
-                  {
-                    label: "消息条数",
-                    value: discussionMessages.length,
-                  },
-                ].map((item) => (
-                  <Card
-                    key={item.label}
-                    sx={{
-                      borderRadius: "22px",
-                      backgroundColor: alpha(theme.palette.background.paper, 0.8),
-                      border: "1px solid",
-                      borderColor: alpha(theme.palette.divider, 0.5),
-                      boxShadow: "none",
-                    }}
-                  >
-                    <CardContent sx={{ p: 2.25 }}>
-                      <Typography variant="overline" color="text.secondary">
-                        {item.label}
-                      </Typography>
-                      <Typography variant="h4" sx={{ fontWeight: 800, mt: 1 }}>
-                        {item.value}
-                      </Typography>
-                    </CardContent>
-                  </Card>
+                {topics.map((topic) => (
+                  <MenuItem key={topic.id} value={topic.id}>
+                    {topic.title}
+                  </MenuItem>
                 ))}
-              </Box>
-
-              <Stack
-                direction={{ xs: "column", md: "row" }}
-                spacing={1.5}
-                justifyContent="space-between"
+              </TextField>
+              <Button
+                variant="outlined"
+                startIcon={<RefreshRoundedIcon />}
+                onClick={() =>
+                  selectedCourseId > 0
+                    ? void handleGetDiscussionTopics(selectedCourseId)
+                    : undefined
+                }
+                disabled={selectedCourseId <= 0 || operating}
+                sx={{ minWidth: { md: 132 } }}
               >
-                <TextField
-                  select
-                  fullWidth
-                  disabled={operating || topics.length === 0}
-                  label="选择话题"
-                  value={selectedTopicId}
-                  onChange={(event) =>
-                    void handleTopicSelect(Number(event.target.value))
-                  }
-                  helperText={
-                    selectedTopic
-                      ? `当前查看：${selectedTopic.title}`
-                      : "先选择课程，再选择一个讨论主题。"
-                  }
-                >
-                  {topics.map((topic) => (
-                    <MenuItem key={topic.id} value={topic.id}>
-                      {topic.title}
-                    </MenuItem>
-                  ))}
-                </TextField>
-                <Button
-                  variant="outlined"
-                  startIcon={<RefreshRoundedIcon />}
-                  onClick={() =>
-                    selectedCourseId > 0
-                      ? void handleGetDiscussionTopics(selectedCourseId)
-                      : undefined
-                  }
-                  disabled={selectedCourseId <= 0 || operating}
-                  sx={{ minWidth: { md: 132 } }}
-                >
-                  刷新主题
-                </Button>
-              </Stack>
+                刷新主题
+              </Button>
             </Stack>
-          </CardContent>
-        </Card>
+          }
+        />
 
         <Box
           sx={{

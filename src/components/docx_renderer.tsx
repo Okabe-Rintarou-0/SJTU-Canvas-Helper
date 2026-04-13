@@ -26,6 +26,7 @@ export default function DocxRenderer({
             subtitle="DOCX preview"
             fileType={currentDocument.fileType}
             icon={<ArticleRoundedIcon />}
+            headerMode="none"
         >
             <div ref={containerRef} style={{ width: "100%" }} />
         </RendererShell>

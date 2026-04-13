@@ -179,7 +179,7 @@ export default function SettingsPage() {
   const [tokenError, setTokenError] = useState<string>("");
   const [savePathError, setSavePathError] = useState<string>("");
   const [extraLoginReady, setExtraLoginReady] = useState<boolean | null>(null);
-  const [checkingExtraLogin, setCheckingExtraLogin] = useState(false);
+  const [checkingExtraLogin, setCheckingExtraLogin] = useState(true);
 
   const steps = [
     {
@@ -233,25 +233,28 @@ export default function SettingsPage() {
     [dispatch]
   );
 
-  const checkExtraLoginStatus = async (silent = false) => {
-    setCheckingExtraLogin(true);
-    try {
-      const ok = (await invoke("check_extra_login_status")) as boolean;
-      setExtraLoginReady(ok);
-      if (!ok && !silent) {
-        messageApi.warning("当前额外登录态不可用，请重新扫码。");
+  const checkExtraLoginStatus = useCallback(
+    async (silent = false) => {
+      setCheckingExtraLogin(true);
+      try {
+        const ok = (await invoke("check_extra_login_status")) as boolean;
+        setExtraLoginReady(ok);
+        if (!ok && !silent) {
+          messageApi.warning("当前额外登录态不可用，请重新扫码。");
+        }
+        return ok;
+      } catch (error) {
+        setExtraLoginReady(false);
+        if (!silent) {
+          messageApi.warning(`额外登录态检查失败：${error}`);
+        }
+        return false;
+      } finally {
+        setCheckingExtraLogin(false);
       }
-      return ok;
-    } catch (error) {
-      setExtraLoginReady(false);
-      if (!silent) {
-        messageApi.warning(`额外登录态检查失败：${error}`);
-      }
-      return false;
-    } finally {
-      setCheckingExtraLogin(false);
-    }
-  };
+    },
+    [messageApi]
+  );
 
   const initAccounts = async () => {
     const nextAccounts = (await invoke("list_accounts")) as string[];
@@ -276,10 +279,7 @@ export default function SettingsPage() {
       initialSnapshotRef.current = JSON.stringify(normalizedConfig);
       setTokenError("");
       setSavePathError("");
-      setExtraLoginReady(null);
       consoleLog(LOG_LEVEL_INFO, "init config: ", normalizedConfig);
-
-      void checkExtraLoginStatus(true);
 
       if (normalizedConfig.token.length === 0) {
         setOpenTour(true);
@@ -293,6 +293,11 @@ export default function SettingsPage() {
   useEffect(() => {
     initConfig();
   }, []);
+
+  useEffect(() => {
+    setExtraLoginReady(null);
+    void checkExtraLoginStatus(true);
+  }, [checkExtraLoginStatus]);
 
   useEffect(() => {
     latestFormDataRef.current = formData;
@@ -496,6 +501,30 @@ export default function SettingsPage() {
     updateField("save_path", savePath);
     setSavePathError("");
   };
+
+  const renderCardSaveAction = (label: string) => (
+    <>
+      <Divider />
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        spacing={1.25}
+        justifyContent="space-between"
+        alignItems={{ xs: "stretch", sm: "center" }}
+      >
+        <Typography variant="body2" color="text.secondary">
+          {dirty ? "当前修改尚未写入本地配置。" : "当前卡片内容已与本地配置同步。"}
+        </Typography>
+        <Button
+          variant="contained"
+          onClick={handleSaveConfig}
+          startIcon={<SaveRoundedIcon />}
+          sx={{ minWidth: { xs: "100%", sm: 164 } }}
+        >
+          {label}
+        </Button>
+      </Stack>
+    </>
+  );
 
   return (
     <BasicLayout>
@@ -748,7 +777,7 @@ export default function SettingsPage() {
                       </Button>
                     </Box>
 
-                    <Divider />
+                    {renderCardSaveAction("保存账号设置")}
 
                     <Stack spacing={2.5}>
                       <Box>
@@ -905,7 +934,8 @@ export default function SettingsPage() {
                         }}
                       />
                     </Box>
-                    <Divider />
+
+                    {renderCardSaveAction("保存界面偏好")}
                   </Stack>
                 </CardContent>
               </Card>
@@ -984,6 +1014,8 @@ export default function SettingsPage() {
                         autoComplete="off"
                       />
                     </Box>
+
+                    {renderCardSaveAction("保存高级选项")}
                   </Stack>
                 </CardContent>
               </Card>

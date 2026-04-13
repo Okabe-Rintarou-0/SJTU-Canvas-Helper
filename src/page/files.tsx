@@ -40,6 +40,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import BasicLayout from "../components/layout";
+import { WorkspaceHero } from "../components/workspace_hero";
 import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
 import FileOrderSelectModal from "../components/file_order_select_modal";
@@ -561,120 +562,30 @@ export default function FilesPage() {
       </Dialog>
 
       <Stack spacing={3} sx={{ width: "100%" }}>
-        <Card
-          sx={{
-            borderRadius: "28px",
-            border: "1px solid",
-            borderColor: "divider",
-            background:
-              theme.palette.mode === "dark"
-                ? `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.18)}, ${alpha(
-                    theme.palette.background.paper,
-                    0.92
-                  )})`
-                : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.1)}, ${alpha(
-                    "#ffffff",
-                    0.94
-                  )})`,
-            boxShadow: "0 24px 60px rgba(15, 23, 42, 0.08)",
-          }}
-        >
-          <CardContent sx={{ p: { xs: 2.25, md: 3 } }}>
-            <Stack spacing={2.2}>
-              <Stack
-                direction={{ xs: "column", md: "row" }}
-                justifyContent="space-between"
-                spacing={2}
-              >
-                <Stack spacing={1}>
-                  <Chip
-                    icon={<FolderOpenRoundedIcon />}
-                    label="File Workspace"
-                    color="primary"
-                    variant="outlined"
-                    sx={{ width: "fit-content" }}
-                  />
-                  <Typography
-                    variant="h4"
-                    sx={{ fontWeight: 700, letterSpacing: "-0.03em" }}
-                  >
-                    文件浏览与下载工作台
-                  </Typography>
-                  <Typography variant="body1" color="text.secondary">
-                    更适合课程文件筛选、批量下载、目录跳转和下载任务追踪的内容布局。
-                  </Typography>
-                </Stack>
-                <Stack spacing={1} alignItems={{ xs: "flex-start", md: "flex-end" }}>
-                  <Chip
-                    label={section === COURSE_FILES ? "课程文件模式" : "我的文件模式"}
-                    color="primary"
-                  />
-                  {activeCourse && (
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                      sx={{ maxWidth: 320, textAlign: { md: "right" } }}
-                    >
-                      当前课程：{activeCourse.name}
-                    </Typography>
-                  )}
-                </Stack>
-              </Stack>
-
-              <Box
-                sx={{
-                  display: "grid",
-                  gap: 1.25,
-                  gridTemplateColumns: {
-                    xs: "repeat(2, minmax(0, 1fr))",
-                    xl: "repeat(4, minmax(0, 1fr))",
-                  },
-                }}
-              >
-                {statItems.map((item) => (
-                  <Box
-                    key={item.label}
-                    sx={{
-                      p: 2,
-                      borderRadius: "22px",
-                      border: "1px solid",
-                      borderColor: alpha(theme.palette.primary.main, 0.12),
-                      bgcolor: alpha(theme.palette.background.paper, 0.74),
-                    }}
-                  >
-                    <Stack direction="row" spacing={1.5} alignItems="center">
-                      <Box
-                        sx={{
-                          width: 46,
-                          height: 46,
-                          borderRadius: "16px",
-                          display: "grid",
-                          placeItems: "center",
-                          bgcolor: alpha(theme.palette.primary.main, 0.12),
-                          color: "primary.main",
-                          "& svg": { fontSize: 24 },
-                        }}
-                      >
-                        {item.icon}
-                      </Box>
-                      <Stack spacing={0.25} sx={{ minWidth: 0 }}>
-                        <Typography variant="body2" color="text.secondary">
-                          {item.label}
-                        </Typography>
-                        <Typography
-                          variant="h6"
-                          sx={{ lineHeight: 1.2, wordBreak: "break-word" }}
-                        >
-                          {item.value}
-                        </Typography>
-                      </Stack>
-                    </Stack>
-                  </Box>
-                ))}
-              </Box>
+        <WorkspaceHero
+          chipLabel="File Workspace"
+          chipIcon={<FolderOpenRoundedIcon />}
+          title="文件浏览与下载工作台"
+          description="更适合课程文件筛选、批量下载、目录跳转和下载任务追踪的内容布局。"
+          aside={
+            <Stack spacing={1} alignItems={{ xs: "flex-start", md: "flex-end" }}>
+              <Chip
+                label={section === COURSE_FILES ? "课程文件模式" : "我的文件模式"}
+                color="primary"
+              />
+              {activeCourse && (
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ maxWidth: 320, textAlign: { md: "right" } }}
+                >
+                  当前课程：{activeCourse.name}
+                </Typography>
+              )}
             </Stack>
-          </CardContent>
-        </Card>
+          }
+          stats={statItems}
+        />
 
         <Card sx={{ borderRadius: "28px", border: "1px solid", borderColor: "divider" }}>
           <CardContent sx={{ p: { xs: 2.25, md: 3 } }}>

@@ -1,4 +1,5 @@
 import { getVersion } from "@tauri-apps/api/app";
+import { open as openExternal } from "@tauri-apps/plugin-shell";
 import ArticleRoundedIcon from "@mui/icons-material/ArticleRounded";
 import AssignmentRoundedIcon from "@mui/icons-material/AssignmentRounded";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
@@ -92,6 +93,15 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
       setMobileOpen(false);
     }
   }, [isDesktop, location.pathname]);
+
+  const handleOpenFeedback = async () => {
+    try {
+      await openExternal("mailto:923048992@sjtu.edu.cn");
+    } catch (error) {
+      console.error("open feedback mail failed", error);
+      messageApi.error("未能打开反馈邮箱，请确认系统已配置邮件客户端。");
+    }
+  };
 
   const zoomIn = () => setScale((prevScale) => prevScale + 0.1);
   const zoomOut = () => setScale((prevScale) => Math.max(0.1, prevScale - 0.1));
@@ -271,9 +281,15 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
 
       <Box sx={{ flex: 1 }} />
 
-      <Divider />
+      <Divider sx={{ mt: 0.5 }} />
 
-      <Stack spacing={1.25}>
+      <Stack
+        spacing={1.25}
+        sx={{
+          pb: `calc(12px + env(safe-area-inset-bottom, 0px))`,
+          pt: 0.5,
+        }}
+      >
         {!collapsed || !isDesktop ? (
           <>
             <Typography variant="caption" color="text.secondary">
@@ -311,8 +327,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
                 更新日志
               </Button>
               <Button
-                component="a"
-                href="mailto:923048992@sjtu.edu.cn"
+                onClick={() => void handleOpenFeedback()}
                 variant="outlined"
                 size="small"
                 sx={
@@ -370,8 +385,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
             </Tooltip>
             <Tooltip title="我要反馈">
               <Button
-                component="a"
-                href="mailto:923048992@sjtu.edu.cn"
+                onClick={() => void handleOpenFeedback()}
                 variant="outlined"
                 size="small"
                 sx={{

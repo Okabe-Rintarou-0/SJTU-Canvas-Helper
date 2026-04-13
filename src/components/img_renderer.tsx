@@ -23,13 +23,17 @@ export default function ImageRenderer({
 }: DocRendererProps) {
     if (!currentDocument) return null;
 
-    const base64 = prefixMap[currentDocument.fileType ?? ""] + getBase64Data(currentDocument.fileData as string);
+    const raw = currentDocument.fileData as string | undefined;
+    const base64 = raw?.startsWith("data:")
+        ? raw
+        : prefixMap[currentDocument.fileType ?? ""] + getBase64Data(raw);
     return (
         <RendererShell
             title={currentDocument.fileName ?? "Image"}
             subtitle="Image preview"
             fileType={currentDocument.fileType}
             icon={<ImageRoundedIcon />}
+            headerMode="none"
             contentSx={{ display: "grid", placeItems: "center", minHeight: 360 }}
         >
             <Box
