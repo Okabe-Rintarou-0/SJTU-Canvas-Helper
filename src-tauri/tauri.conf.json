@@ -33,7 +33,7 @@
   },
   "app": {
     "security": {
-      "csp": "default-src 'self' http: https: data: blob: 'unsafe-eval' 'unsafe-inline'"
+      "csp": "default-src 'self' http: https: data: blob: 'unsafe-eval' 'unsafe-inline'; connect-src 'self' http: https: ws: wss: wss://jaccount.sjtu.edu.cn"
     },
     "windows": [
       {

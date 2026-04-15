@@ -20,6 +20,14 @@ import { alpha, useTheme } from "@mui/material/styles";
 
 const changeLogs = [
   {
+    version: "v3.0.1",
+    date: "2026/4/15",
+    items: [
+      "修复 release 版本中二维码登录 WebSocket 连接被 CSP 拦截的问题，恢复 `wss://jaccount.sjtu.edu.cn` 连接。",
+      "优化小窗口模式下的侧边栏显示：调整抽屉宽度、补齐背景层并改进滚动行为，避免内容穿透和布局挤压。",
+    ],
+  },
+  {
     version: "v3.0.0",
     date: "2026/4/5",
     items: [
