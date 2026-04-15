@@ -74,6 +74,7 @@ const pageTitleMap: Record<string, string> = {
 export default function BasicLayout({ children }: React.PropsWithChildren) {
   const theme = useTheme();
   const isDesktop = useMediaQuery(theme.breakpoints.up("lg"));
+  const isCompactWindow = useMediaQuery(theme.breakpoints.down("sm"));
   const location = useLocation();
   const currentKey = location.pathname.split("/").filter(Boolean).pop() || "files";
   const currentTitle = pageTitleMap[currentKey] || "Canvas";
@@ -111,17 +112,20 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
 
   const effectiveDrawerWidth = useMemo(() => {
     if (!isDesktop) {
-      return drawerWidth;
+      return isCompactWindow ? 244 : drawerWidth;
     }
     return collapsed ? collapsedDrawerWidth : drawerWidth;
-  }, [collapsed, isDesktop]);
+  }, [collapsed, isCompactWindow, isDesktop]);
 
   const drawerContent = (
     <Stack
       sx={{
         height: "100%",
+        width: "100%",
         p: 2,
         gap: 2,
+        overflowX: "hidden",
+        overflowY: "auto",
         color: theme.palette.mode === "dark" ? "#e2e8f0" : "text.primary",
         bgcolor:
           theme.palette.mode === "dark"
@@ -424,7 +428,11 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
             width: effectiveDrawerWidth,
             border: "none",
             boxSizing: "border-box",
-            background: "transparent",
+            backgroundColor:
+              theme.palette.mode === "dark"
+                ? "rgba(8, 13, 24, 0.985)"
+                : alpha("#f8fbff", 0.98),
+            overflow: "hidden",
             transition: theme.transitions.create("width", {
               easing: theme.transitions.easing.sharp,
               duration: theme.transitions.duration.standard,
