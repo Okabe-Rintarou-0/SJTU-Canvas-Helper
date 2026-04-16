@@ -6,9 +6,10 @@ use std::sync::Arc;
 use error::Result;
 use model::{
     Account, AccountInfo, AnnualReport, AppConfig, Assignment, CalendarEvent, CanvasVideo, Colors,
-    Course, DiscussionTopic, File, Folder, FullDiscussion, LogLevel, ModuleItem, QRCodeScanResult,
-    RelationshipTopo, Subject, Submission, User, UserSubmissions, VideoAggregateParams,
-    VideoCourse, VideoInfo, VideoPlayInfo,
+    Course, DiscussionTopic, File, FileChatStreamChunkPayload, FileChatStreamDonePayload,
+    FileChatStreamErrorPayload, Folder, FullDiscussion, LLMChatMessage, LogLevel, ModuleItem,
+    QRCodeScanResult, RelationshipTopo, Subject, Submission, User, UserSubmissions,
+    VideoAggregateParams, VideoCourse, VideoInfo, VideoPlayInfo,
 };
 
 use dirs::config_dir;
@@ -217,6 +218,107 @@ async fn chat(prompt: String) -> Result<String> {
 #[tauri::command]
 async fn explain_file(file: File) -> Result<String> {
     APP.explain_file(&file).await
+}
+
+#[tauri::command]
+async fn chat_with_file(file: File, messages: Vec<LLMChatMessage>) -> Result<String> {
+    APP.chat_with_file(&file, &messages).await
+}
+
+#[tauri::command]
+async fn start_file_chat_stream(
+    window: Window,
+    request_id: String,
+    file: File,
+    messages: Vec<LLMChatMessage>,
+) -> Result<()> {
+    tauri::async_runtime::spawn(async move {
+        let chunk_window = window.clone();
+        let request_id_for_chunk = request_id.clone();
+        let mut emit_chunk = move |chunk: String| {
+            let _ = chunk_window.emit(
+                "file_ai_chat://chunk",
+                FileChatStreamChunkPayload {
+                    request_id: request_id_for_chunk.clone(),
+                    chunk,
+                },
+            );
+        };
+
+        let result = APP
+            .chat_with_file_stream(&file, &messages, &mut emit_chunk)
+            .await;
+
+        match result {
+            Ok(content) => {
+                let _ = window.emit(
+                    "file_ai_chat://done",
+                    FileChatStreamDonePayload {
+                        request_id,
+                        content,
+                    },
+                );
+            }
+            Err(error) => {
+                let _ = window.emit(
+                    "file_ai_chat://error",
+                    FileChatStreamErrorPayload {
+                        request_id,
+                        error: error.to_string(),
+                    },
+                );
+            }
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
+async fn start_subtitle_chat_stream(
+    window: Window,
+    request_id: String,
+    canvas_course_id: i64,
+    messages: Vec<LLMChatMessage>,
+) -> Result<()> {
+    tauri::async_runtime::spawn(async move {
+        let chunk_window = window.clone();
+        let request_id_for_chunk = request_id.clone();
+        let mut emit_chunk = move |chunk: String| {
+            let _ = chunk_window.emit(
+                "video_ai_chat://chunk",
+                FileChatStreamChunkPayload {
+                    request_id: request_id_for_chunk.clone(),
+                    chunk,
+                },
+            );
+        };
+
+        let result = APP
+            .chat_with_subtitle_stream(canvas_course_id, &messages, &mut emit_chunk)
+            .await;
+
+        match result {
+            Ok(content) => {
+                let _ = window.emit(
+                    "video_ai_chat://done",
+                    FileChatStreamDonePayload {
+                        request_id,
+                        content,
+                    },
+                );
+            }
+            Err(error) => {
+                let _ = window.emit(
+                    "video_ai_chat://error",
+                    FileChatStreamErrorPayload {
+                        request_id,
+                        error: error.to_string(),
+                    },
+                );
+            }
+        }
+    });
+    Ok(())
 }
 
 #[tauri::command]
@@ -766,6 +868,9 @@ async fn main() -> Result<()> {
             // LLM
             chat,
             explain_file,
+            chat_with_file,
+            start_file_chat_stream,
+            start_subtitle_chat_stream,
             summarize_subtitle
         ])
         .run(tauri::generate_context!())

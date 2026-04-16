@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import CloudDownloadRoundedIcon from "@mui/icons-material/CloudDownloadRounded";
 import DescriptionRoundedIcon from "@mui/icons-material/DescriptionRounded";
@@ -17,9 +18,6 @@ import {
   CardContent,
   Checkbox,
   Chip,
-  Dialog,
-  DialogContent,
-  DialogTitle,
   FormControlLabel,
   InputAdornment,
   Link as MuiLink,
@@ -35,10 +33,11 @@ import {
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
-import { useEffect, useMemo, useState } from "react";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import FileAIChatModal, {
+  FileAIChatMessage,
+} from "../components/file_ai_chat_modal";
 import BasicLayout from "../components/layout";
 import { WorkspaceHero } from "../components/workspace_hero";
 import CourseSelect from "../components/course_select";
@@ -56,10 +55,13 @@ import {
   Course,
   Entry,
   File,
+  FileChatStreamChunkPayload,
+  FileChatStreamDonePayload,
+  FileChatStreamErrorPayload,
   FileDownloadTask,
   Folder,
+  LLMChatMessage,
   LOG_LEVEL_ERROR,
-  LOG_LEVEL_INFO,
   Option,
   entryName,
   isFile,
@@ -81,14 +83,8 @@ type SnackSeverity = "success" | "info" | "warning" | "error";
 const COURSE_FILES = "course files";
 const MY_FILES = "my files";
 const EXPLAINABLE_FILE_EXTS = [".pdf", ".docx"];
-
-function LinkRenderer(props: any) {
-  return (
-    <a href={props.href} target="_blank" rel="noreferrer">
-      {props.children}
-    </a>
-  );
-}
+const FILE_SUMMARY_OPENING_MESSAGE =
+  "请先总结这份文件。若它与作业相关，请额外列出得分点、提交要求、截止时间、文件格式限制和任何容易遗漏的注意事项。";
 
 function isExplainableFile(file: File) {
   const dotPos = file.display_name.lastIndexOf(".");
@@ -97,6 +93,29 @@ function isExplainableFile(file: File) {
   }
   const ext = file.display_name.slice(dotPos);
   return EXPLAINABLE_FILE_EXTS.includes(ext);
+}
+
+function createConversationMessage(
+  role: "user" | "assistant",
+  content: string,
+  extras?: Partial<FileAIChatMessage>
+): FileAIChatMessage {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    role,
+    content,
+    createdAt: new Date().toISOString(),
+    ...extras,
+  };
+}
+
+function toLLMChatMessages(messages: FileAIChatMessage[]): LLMChatMessage[] {
+  return messages
+    .filter((message) => !message.pending)
+    .map((message) => ({
+      role: message.role,
+      content: message.content,
+    }));
 }
 
 export default function FilesPage() {
@@ -118,9 +137,11 @@ export default function FilesPage() {
   const [keyword, setKeyword] = useState<string>("");
   const [openFileOrderSelectModal, setOpenFileOrderSelectModal] =
     useState<boolean>(false);
-  const [summaryOpen, setSummaryOpen] = useState(false);
-  const [summaryContent, setSummaryContent] = useState("");
-  const [summaryTitle, setSummaryTitle] = useState("");
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatFile, setChatFile] = useState<File | null>(null);
+  const [chatMessages, setChatMessages] = useState<FileAIChatMessage[]>([]);
+  const [chatLoading, setChatLoading] = useState(false);
+  const activeChatRequestIdRef = useRef<string | null>(null);
   const [messageApi] = useAppMessage();
   const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry, setEntries } =
     usePreview();
@@ -155,6 +176,99 @@ export default function FilesPage() {
   }, [files]);
 
   useEffect(() => {
+    let unlistenChunk: UnlistenFn | undefined;
+    let unlistenDone: UnlistenFn | undefined;
+    let unlistenError: UnlistenFn | undefined;
+
+    const setupListeners = async () => {
+      unlistenChunk = await listen<FileChatStreamChunkPayload>(
+        "file_ai_chat://chunk",
+        (event) => {
+          const payload = event.payload;
+          if (payload.request_id !== activeChatRequestIdRef.current) {
+            return;
+          }
+          setChatMessages((prev) => {
+            const next = [...prev];
+            for (let i = next.length - 1; i >= 0; i -= 1) {
+              if (next[i].role === "assistant") {
+                next[i] = {
+                  ...next[i],
+                  content: `${next[i].content}${payload.chunk}`,
+                };
+                break;
+              }
+            }
+            return next;
+          });
+        }
+      );
+
+      unlistenDone = await listen<FileChatStreamDonePayload>(
+        "file_ai_chat://done",
+        (event) => {
+          const payload = event.payload;
+          if (payload.request_id !== activeChatRequestIdRef.current) {
+            return;
+          }
+          setChatLoading(false);
+          activeChatRequestIdRef.current = null;
+          setChatMessages((prev) => {
+            const next = [...prev];
+            for (let i = next.length - 1; i >= 0; i -= 1) {
+              if (next[i].role === "assistant") {
+                next[i] = {
+                  ...next[i],
+                  content: payload.content || next[i].content,
+                  pending: false,
+                };
+                break;
+              }
+            }
+            return next;
+          });
+        }
+      );
+
+      unlistenError = await listen<FileChatStreamErrorPayload>(
+        "file_ai_chat://error",
+        (event) => {
+          const payload = event.payload;
+          if (payload.request_id !== activeChatRequestIdRef.current) {
+            return;
+          }
+          setChatLoading(false);
+          activeChatRequestIdRef.current = null;
+          notify(`AI 对话出错：${payload.error}`, "error");
+          setChatMessages((prev) => {
+            const next = [...prev];
+            for (let i = next.length - 1; i >= 0; i -= 1) {
+              if (next[i].role === "assistant") {
+                next[i] = {
+                  ...next[i],
+                  content: next[i].content || `对话出错：${payload.error}`,
+                  pending: false,
+                  error: true,
+                };
+                break;
+              }
+            }
+            return next;
+          });
+        }
+      );
+    };
+
+    void setupListeners();
+
+    return () => {
+      void unlistenChunk?.();
+      void unlistenDone?.();
+      void unlistenError?.();
+    };
+  }, []);
+
+  useEffect(() => {
     if (currentFolderId > 0) {
       void handleGetFoldersAndFiles(currentFolderId);
     }
@@ -171,15 +285,83 @@ export default function FilesPage() {
   }, [section]);
 
   const handleExplainFile = async (file: File) => {
+    const openingUserMessage = createConversationMessage(
+      "user",
+      FILE_SUMMARY_OPENING_MESSAGE
+    );
+    const pendingAssistantMessage = createConversationMessage("assistant", "", {
+      pending: true,
+    });
+
+    setChatFile(file);
+    setChatOpen(true);
+    setChatLoading(true);
+    setChatMessages([openingUserMessage, pendingAssistantMessage]);
+
     try {
-      notify("正在等待 LLM 答复…", "info");
-      const response = (await invoke("explain_file", { file })) as string;
-      consoleLog(LOG_LEVEL_INFO, response);
-      setSummaryTitle(file.display_name);
-      setSummaryContent(response);
-      setSummaryOpen(true);
+      const requestId = crypto.randomUUID();
+      activeChatRequestIdRef.current = requestId;
+      await invoke("start_file_chat_stream", {
+        requestId,
+        file,
+        messages: toLLMChatMessages([openingUserMessage]),
+      });
     } catch (error) {
       notify(`总结出错：${error}，请前往设置确认 API Key。`, "error");
+      activeChatRequestIdRef.current = null;
+      setChatLoading(false);
+      setChatMessages([
+        openingUserMessage,
+        {
+          ...pendingAssistantMessage,
+          content: `总结出错：${error}`,
+          pending: false,
+          error: true,
+        },
+      ]);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const handleSendChatMessage = async (content: string) => {
+    if (!chatFile || chatLoading) {
+      return;
+    }
+
+    const userMessage = createConversationMessage("user", content);
+    const pendingAssistantMessage = createConversationMessage("assistant", "", {
+      pending: true,
+    });
+    const nextMessages = [...chatMessages, userMessage];
+
+    setChatLoading(true);
+    setChatMessages([...nextMessages, pendingAssistantMessage]);
+
+    try {
+      const requestId = crypto.randomUUID();
+      activeChatRequestIdRef.current = requestId;
+      await invoke("start_file_chat_stream", {
+        requestId,
+        file: chatFile,
+        messages: toLLMChatMessages(nextMessages),
+      });
+    } catch (error) {
+      notify(`继续对话出错：${error}`, "error");
+      activeChatRequestIdRef.current = null;
+      setChatMessages([
+        ...nextMessages,
+        {
+          ...pendingAssistantMessage,
+          content: `继续对话出错：${error}`,
+          pending: false,
+          error: true,
+        },
+      ]);
+    } finally {
+      if (!activeChatRequestIdRef.current) {
+        setChatLoading(false);
+      }
     }
   };
 
@@ -546,20 +728,14 @@ export default function FilesPage() {
         files={getSupportedMergeFiles()}
       />
 
-      <Dialog
-        open={summaryOpen}
-        onClose={() => setSummaryOpen(false)}
-        fullWidth
-        maxWidth="md"
-        PaperProps={{ sx: { borderRadius: "28px" } }}
-      >
-        <DialogTitle>AI 总结：{summaryTitle}</DialogTitle>
-        <DialogContent dividers sx={{ maxHeight: "72vh" }}>
-          <Markdown remarkPlugins={[remarkGfm]} components={{ a: LinkRenderer }}>
-            {summaryContent}
-          </Markdown>
-        </DialogContent>
-      </Dialog>
+      <FileAIChatModal
+        open={chatOpen}
+        title={chatFile?.display_name ?? ""}
+        messages={chatMessages}
+        loading={chatLoading}
+        onClose={() => setChatOpen(false)}
+        onSend={handleSendChatMessage}
+      />
 
       <Stack spacing={3} sx={{ width: "100%" }}>
         <WorkspaceHero
