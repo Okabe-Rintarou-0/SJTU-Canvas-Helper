@@ -37,8 +37,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactJson from "react-json-view-ts";
 
 import BasicLayout from "../components/layout";
-import { LoginAlert } from "../components/login_alert";
 import LogModal from "../components/log_modal";
+import { LoginAlert } from "../components/login_alert";
 import { getConfig, saveConfig, updateConfig } from "../lib/config";
 import { useConfigDispatch, useQRCode } from "../lib/hooks";
 import { useAppMessage } from "../lib/message";
@@ -50,6 +50,9 @@ type AccountMode = "create" | "select";
 const SURFACE_RADIUS = 6;
 const DEFAULT_PRIMARY = "#00b96b";
 const DEFAULT_PROXY_PORT = 3030;
+const MIN_LLM_TEMPERATURE = 0;
+const MAX_LLM_TEMPERATURE = 2;
+const LLM_TEMPERATURE_STEP = 0.1;
 const CANVAS_TOKEN_URL = "https://oc.sjtu.edu.cn/profile/settings";
 
 const cardSx = {
@@ -233,17 +236,42 @@ export default function SettingsPage() {
     [dispatch]
   );
 
+  const handleLlmTemperatureChange = useCallback(
+    (rawValue: string) => {
+      if (!formData) {
+        return;
+      }
+      if (!rawValue.trim()) {
+        updateField("llm_temperature", null);
+        return;
+      }
+      const parsedValue = Number(rawValue);
+      if (Number.isNaN(parsedValue)) {
+        return;
+      }
+      const clampedValue = Math.min(
+        MAX_LLM_TEMPERATURE,
+        Math.max(MIN_LLM_TEMPERATURE, parsedValue)
+      );
+      updateField("llm_temperature", Number(clampedValue.toFixed(1)));
+    },
+    [formData, updateField]
+  );
+
   const checkExtraLoginStatus = useCallback(
     async (silent = false) => {
       setCheckingExtraLogin(true);
+      consoleLog(LOG_LEVEL_INFO, "check_extra_login_status");
       try {
         const ok = (await invoke("check_extra_login_status")) as boolean;
         setExtraLoginReady(ok);
         if (!ok && !silent) {
           messageApi.warning("当前额外登录态不可用，请重新扫码。");
         }
+        consoleLog(LOG_LEVEL_INFO, "check_extra_login_status", ok);
         return ok;
       } catch (error) {
+        consoleLog(LOG_LEVEL_INFO, "check_extra_login_status", error);
         setExtraLoginReady(false);
         if (!silent) {
           messageApi.warning(`额外登录态检查失败：${error}`);
@@ -296,7 +324,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     setExtraLoginReady(null);
-    void checkExtraLoginStatus(true);
+    checkExtraLoginStatus(true);
   }, [checkExtraLoginStatus]);
 
   useEffect(() => {
@@ -413,7 +441,7 @@ export default function SettingsPage() {
       messageApi.open({
         key: "testing",
         type: "loading",
-        content: "正在等待 LLM 答复…",
+        content: "正在测试 LLM 连接…",
         duration: 0,
       });
       const resp = await invoke("chat", { prompt: "你好！" });
@@ -820,7 +848,7 @@ export default function SettingsPage() {
                         <InlineQRCodePanel
                           onScanSuccess={() => {
                             messageApi.success("扫码登录成功，已保存额外登录态。", 0.8);
-                            void checkExtraLoginStatus(true);
+                            checkExtraLoginStatus(true);
                           }}
                         />
                       ) : extraLoginReady === null || checkingExtraLogin ? (
@@ -946,7 +974,7 @@ export default function SettingsPage() {
                     <Box>
                       <Typography variant="h5">高级选项</Typography>
                       <Typography variant="body2" color="text.secondary">
-                        这部分用于接入 LLM 功能。
+                        这部分用于接入 OpenAI-compatible 的 LLM 功能。
                       </Typography>
                     </Box>
 
@@ -958,15 +986,15 @@ export default function SettingsPage() {
                       }}
                     >
                       <TextField
-                        label="DeepSeek API Key"
+                        label="LLM API Key"
                         name="llm_api_key"
                         type={showApiKey ? "text" : "password"}
                         value={formData?.llm_api_key ?? ""}
                         onChange={(event) =>
                           updateField("llm_api_key", event.target.value)
                         }
-                        placeholder="请输入 DeepSeek API Key…"
-                        helperText="用于启用大语言模型相关能力。"
+                        placeholder="请输入 API Key…"
+                        helperText="用于启用 OpenAI-compatible 大语言模型能力。"
                         autoComplete="off"
                         spellCheck={false}
                         InputProps={{
@@ -991,6 +1019,60 @@ export default function SettingsPage() {
                               </Tooltip>
                             </InputAdornment>
                           ),
+                        }}
+                      />
+                    </Box>
+
+                    <Box
+                      sx={{
+                        display: "grid",
+                        gap: 2,
+                        gridTemplateColumns: {
+                          xs: "minmax(0, 1fr)",
+                          md: "1fr 1fr 180px",
+                        },
+                      }}
+                    >
+                      <TextField
+                        label="LLM Base URL"
+                        name="llm_base_url"
+                        value={formData?.llm_base_url ?? ""}
+                        onChange={(event) =>
+                          updateField("llm_base_url", event.target.value)
+                        }
+                        placeholder="https://api.openai.com/v1"
+                        helperText="留空时默认使用 DeepSeek 的 OpenAI-compatible 地址。"
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                      <TextField
+                        label="LLM Model"
+                        name="llm_model"
+                        value={formData?.llm_model ?? ""}
+                        onChange={(event) =>
+                          updateField("llm_model", event.target.value)
+                        }
+                        placeholder="gpt-4o-mini / deepseek-chat"
+                        helperText="留空时默认使用 `deepseek-chat`。"
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                      <TextField
+                        label="Temperature"
+                        name="llm_temperature"
+                        type="number"
+                        value={formData?.llm_temperature ?? ""}
+                        onChange={(event) =>
+                          handleLlmTemperatureChange(event.target.value)
+                        }
+                        placeholder="留空使用默认值"
+                        helperText={`范围 ${MIN_LLM_TEMPERATURE}-${MAX_LLM_TEMPERATURE}，建议留空以兼容更严格的模型。`}
+                        autoComplete="off"
+                        spellCheck={false}
+                        inputProps={{
+                          min: MIN_LLM_TEMPERATURE,
+                          max: MAX_LLM_TEMPERATURE,
+                          step: LLM_TEMPERATURE_STEP,
                         }}
                       />
                     </Box>
@@ -1024,52 +1106,184 @@ export default function SettingsPage() {
             <Stack spacing={3}>
               <Card sx={cardSx}>
                 <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-                  <Stack spacing={2.5}>
+                  <Stack spacing={2.75}>
                     <Box>
                       <Typography variant="h5">快捷操作</Typography>
                       <Typography variant="body2" color="text.secondary">
-                        常用动作集中在这里，方便你在配置和排障之间快速切换。
+                        把最常用的保存、测试和排障入口收在一起，减少来回滚动查找。
                       </Typography>
                     </Box>
 
-                    <Box ref={saveButtonRef}>
-                      <Button
-                        fullWidth
-                        size="large"
-                        variant="contained"
-                        startIcon={<SaveRoundedIcon />}
-                        onClick={handleSaveConfig}
-                      >
-                        保存全部设置
-                      </Button>
+                    <Box
+                      ref={saveButtonRef}
+                      sx={{
+                        p: 2,
+                        borderRadius: "24px",
+                        border: "1px solid",
+                        borderColor: alpha(theme.palette.primary.main, 0.16),
+                        background: `linear-gradient(135deg, ${alpha(
+                          theme.palette.primary.main,
+                          0.14
+                        )} 0%, ${alpha(theme.palette.background.paper, 0.96)} 100%)`,
+                      }}
+                    >
+                      <Stack spacing={1.5}>
+                        <Stack
+                          direction="row"
+                          spacing={1}
+                          alignItems="center"
+                          justifyContent="space-between"
+                        >
+                          <Box>
+                            <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                              主操作
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              完成修改后优先在这里保存，避免配置和界面状态不同步。
+                            </Typography>
+                          </Box>
+                          <Chip
+                            size="small"
+                            color={dirty ? "warning" : "success"}
+                            label={dirty ? "有未保存修改" : "已同步"}
+                          />
+                        </Stack>
+
+                        <Button
+                          fullWidth
+                          size="large"
+                          variant="contained"
+                          startIcon={<SaveRoundedIcon />}
+                          onClick={handleSaveConfig}
+                          sx={{
+                            minHeight: 56,
+                            borderRadius: "18px",
+                            fontWeight: 700,
+                            boxShadow: "0 18px 36px rgba(15, 23, 42, 0.14)",
+                          }}
+                        >
+                          保存全部设置
+                        </Button>
+                      </Stack>
                     </Box>
 
-                    <Button fullWidth variant="outlined" onClick={handleTestToken}>
-                      测试 Canvas Token
-                    </Button>
-                    <Button
-                      fullWidth
-                      variant="outlined"
-                      onClick={handleTestApiKey}
-                      startIcon={<AutoAwesomeRoundedIcon />}
-                    >
-                      测试 DeepSeek API Key
-                    </Button>
-                    <Button
-                      fullWidth
-                      variant="outlined"
-                      onClick={handleOpenConfigDir}
-                      startIcon={<FolderOpenRoundedIcon />}
-                    >
-                      打开配置目录
-                    </Button>
-                    <Button
-                      fullWidth
-                      variant="outlined"
-                      onClick={() => setShowLogModal(true)}
-                    >
-                      查看运行日志
-                    </Button>
+                    <Box>
+                      <Typography
+                        variant="overline"
+                        sx={{
+                          display: "block",
+                          mb: 1.25,
+                          fontWeight: 800,
+                          letterSpacing: "0.08em",
+                          color: "text.secondary",
+                        }}
+                      >
+                        测试与排障
+                      </Typography>
+
+                      <Box
+                        sx={{
+                          display: "grid",
+                          gap: 1.25,
+                          gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+                        }}
+                      >
+                        <Button
+                          variant="outlined"
+                          onClick={handleTestToken}
+                          sx={{
+                            minHeight: 88,
+                            px: 2,
+                            py: 1.5,
+                            borderRadius: "20px",
+                            justifyContent: "flex-start",
+                            textAlign: "left",
+                            borderColor: alpha(theme.palette.divider, 0.9),
+                          }}
+                        >
+                          <Stack spacing={0.5} alignItems="flex-start">
+                            <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                              测试 Canvas Token
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              快速确认账号令牌是否可用
+                            </Typography>
+                          </Stack>
+                        </Button>
+
+                        <Button
+                          variant="outlined"
+                          onClick={handleTestApiKey}
+                          startIcon={<AutoAwesomeRoundedIcon />}
+                          sx={{
+                            minHeight: 88,
+                            px: 2,
+                            py: 1.5,
+                            borderRadius: "20px",
+                            justifyContent: "flex-start",
+                            textAlign: "left",
+                            borderColor: alpha(theme.palette.divider, 0.9),
+                          }}
+                        >
+                          <Stack spacing={0.5} alignItems="flex-start">
+                            <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                              测试 LLM 连接
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              验证 Base URL、Model 与 API Key
+                            </Typography>
+                          </Stack>
+                        </Button>
+
+                        <Button
+                          variant="outlined"
+                          onClick={handleOpenConfigDir}
+                          startIcon={<FolderOpenRoundedIcon />}
+                          sx={{
+                            minHeight: 88,
+                            px: 2,
+                            py: 1.5,
+                            borderRadius: "20px",
+                            justifyContent: "flex-start",
+                            textAlign: "left",
+                            borderColor: alpha(theme.palette.divider, 0.9),
+                          }}
+                        >
+                          <Stack spacing={0.5} alignItems="flex-start">
+                            <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                              打开配置目录
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              查看配置文件与本地存储位置
+                            </Typography>
+                          </Stack>
+                        </Button>
+
+                        <Button
+                          variant="outlined"
+                          onClick={() => setShowLogModal(true)}
+                          startIcon={<PreviewRoundedIcon />}
+                          sx={{
+                            minHeight: 88,
+                            px: 2,
+                            py: 1.5,
+                            borderRadius: "20px",
+                            justifyContent: "flex-start",
+                            textAlign: "left",
+                            borderColor: alpha(theme.palette.divider, 0.9),
+                          }}
+                        >
+                          <Stack spacing={0.5} alignItems="flex-start">
+                            <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                              查看运行日志
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              排查登录、下载和接口调用异常
+                            </Typography>
+                          </Stack>
+                        </Button>
+                      </Box>
+                    </Box>
                   </Stack>
                 </CardContent>
               </Card>

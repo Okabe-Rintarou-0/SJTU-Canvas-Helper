@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
 import ClosedCaptionRoundedIcon from "@mui/icons-material/ClosedCaptionRounded";
 import PictureAsPdfRoundedIcon from "@mui/icons-material/PictureAsPdfRounded";
@@ -33,12 +34,13 @@ import { alpha, useTheme } from "@mui/material/styles";
 import { useEffect, useRef, useState } from "react";
 import type { DraggableData, DraggableEvent } from "react-draggable";
 import Draggable from "react-draggable";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { Link as RouterLink } from "react-router-dom";
 
 import ClosableAlert from "../components/closable_alert";
 import CourseSelect from "../components/course_select";
+import FileAIChatModal, {
+  FileAIChatMessage,
+} from "../components/file_ai_chat_modal";
 import BasicLayout from "../components/layout";
 import PPTDownloadTable from "../components/ppt_download_table";
 import VideoAggregator from "../components/video_aggregator";
@@ -51,6 +53,10 @@ import { useAppMessage } from "../lib/message";
 import {
   CanvasVideo,
   DownloadTask,
+  FileChatStreamChunkPayload,
+  FileChatStreamDonePayload,
+  FileChatStreamErrorPayload,
+  LLMChatMessage,
   LOG_LEVEL_ERROR,
   VideoDownloadTask,
   VideoInfo,
@@ -97,13 +103,17 @@ export default function VideoPage() {
   const [subVideoOpacity, setSubVideoOpacity] = useState(0.8);
   const [subVideoPos, setSubVideoPos] = useState({ x: 100, y: 100 });
   const [subtitleUrl, setSubtitleUrl] = useState<string | undefined>(undefined);
-  const [summaryOpen, setSummaryOpen] = useState(false);
-  const [summaryContent, setSummaryContent] = useState("");
+  const [summaryChatOpen, setSummaryChatOpen] = useState(false);
+  const [summaryChatTitle, setSummaryChatTitle] = useState("");
+  const [summaryChatCourseId, setSummaryChatCourseId] = useState<number | null>(null);
+  const [summaryChatMessages, setSummaryChatMessages] = useState<FileAIChatMessage[]>([]);
+  const [summaryChatLoading, setSummaryChatLoading] = useState(false);
   const [showLoginRequiredDialog, setShowLoginRequiredDialog] = useState(false);
   const mainVideoRef = useRef<HTMLVideoElement>(null);
   const subVideoRef = useRef<HTMLVideoElement>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const firstPlay = useRef(true);
+  const activeSummaryRequestIdRef = useRef<string | null>(null);
 
   const LinkRenderer = (props: any) => (
     <a
@@ -114,6 +124,26 @@ export default function VideoPage() {
       {props.children}
     </a>
   );
+
+  const createConversationMessage = (
+    role: "user" | "assistant",
+    content: string,
+    extras?: Partial<FileAIChatMessage>
+  ): FileAIChatMessage => ({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    role,
+    content,
+    createdAt: new Date().toISOString(),
+    ...extras,
+  });
+
+  const toLLMChatMessages = (messages: FileAIChatMessage[]): LLMChatMessage[] =>
+    messages
+      .filter((message) => !message.pending)
+      .map((message) => ({
+        role: message.role,
+        content: message.content,
+      }));
 
   const handleLoginWebsite = async () => {
     try {
@@ -139,6 +169,99 @@ export default function VideoPage() {
       setShowLoginRequiredDialog(true);
     }
   }, [loaded, notLogin]);
+
+  useEffect(() => {
+    let unlistenChunk: UnlistenFn | undefined;
+    let unlistenDone: UnlistenFn | undefined;
+    let unlistenError: UnlistenFn | undefined;
+
+    const setupListeners = async () => {
+      unlistenChunk = await listen<FileChatStreamChunkPayload>(
+        "video_ai_chat://chunk",
+        (event) => {
+          const payload = event.payload;
+          if (payload.request_id !== activeSummaryRequestIdRef.current) {
+            return;
+          }
+          setSummaryChatMessages((prev) => {
+            const next = [...prev];
+            for (let i = next.length - 1; i >= 0; i -= 1) {
+              if (next[i].role === "assistant") {
+                next[i] = {
+                  ...next[i],
+                  content: `${next[i].content}${payload.chunk}`,
+                };
+                break;
+              }
+            }
+            return next;
+          });
+        }
+      );
+
+      unlistenDone = await listen<FileChatStreamDonePayload>(
+        "video_ai_chat://done",
+        (event) => {
+          const payload = event.payload;
+          if (payload.request_id !== activeSummaryRequestIdRef.current) {
+            return;
+          }
+          activeSummaryRequestIdRef.current = null;
+          setSummaryChatLoading(false);
+          setSummaryChatMessages((prev) => {
+            const next = [...prev];
+            for (let i = next.length - 1; i >= 0; i -= 1) {
+              if (next[i].role === "assistant") {
+                next[i] = {
+                  ...next[i],
+                  content: payload.content || next[i].content,
+                  pending: false,
+                };
+                break;
+              }
+            }
+            return next;
+          });
+        }
+      );
+
+      unlistenError = await listen<FileChatStreamErrorPayload>(
+        "video_ai_chat://error",
+        (event) => {
+          const payload = event.payload;
+          if (payload.request_id !== activeSummaryRequestIdRef.current) {
+            return;
+          }
+          activeSummaryRequestIdRef.current = null;
+          setSummaryChatLoading(false);
+          messageApi.error(`AI 总结时发生错误：${payload.error}`);
+          setSummaryChatMessages((prev) => {
+            const next = [...prev];
+            for (let i = next.length - 1; i >= 0; i -= 1) {
+              if (next[i].role === "assistant") {
+                next[i] = {
+                  ...next[i],
+                  content: next[i].content || `AI 总结时发生错误：${payload.error}`,
+                  pending: false,
+                  error: true,
+                };
+                break;
+              }
+            }
+            return next;
+          });
+        }
+      );
+    };
+
+    void setupListeners();
+
+    return () => {
+      void unlistenChunk?.();
+      void unlistenDone?.();
+      void unlistenError?.();
+    };
+  }, [messageApi]);
 
   const loginAndCheck = async (retry = false) => {
     const config = await getConfig(true);
@@ -264,22 +387,69 @@ export default function VideoPage() {
       const videoInfo = (await invoke("get_canvas_video_info", {
         videoId: selectedVideo.videoId,
       })) as VideoInfo;
-      messageApi.open({
-        key: "waiting_response",
-        type: "loading",
-        content: "AI 总结中",
-        duration: 0,
+      const openingUserMessage = createConversationMessage(
+        "user",
+        "请先总结这节课的核心内容。重点关注课程活动与通知、作业/小测/考试/签到提醒，以及主要知识点与框架；如果合适，请引用对应的字幕时间点。"
+      );
+      const pendingAssistantMessage = createConversationMessage("assistant", "", {
+        pending: true,
       });
-      const summary = (await invoke("summarize_subtitle", {
+
+      setSummaryChatTitle(selectedVideo.videoName);
+      setSummaryChatCourseId(videoInfo.courId);
+      setSummaryChatOpen(true);
+      setSummaryChatLoading(true);
+      setSummaryChatMessages([openingUserMessage, pendingAssistantMessage]);
+
+      const requestId = crypto.randomUUID();
+      activeSummaryRequestIdRef.current = requestId;
+      await invoke("start_subtitle_chat_stream", {
+        requestId,
         canvasCourseId: videoInfo.courId,
-      })) as string;
-      messageApi.destroy("waiting_response");
-      messageApi.success("AI 总结成功", 0.5);
-      setSummaryContent(summary);
-      setSummaryOpen(true);
+        messages: toLLMChatMessages([openingUserMessage]),
+      });
     } catch (error) {
-      messageApi.destroy("waiting_response");
+      activeSummaryRequestIdRef.current = null;
+      setSummaryChatLoading(false);
       messageApi.error(`AI 总结时发生错误：${error}`);
+    }
+  };
+
+  const handleSendSummaryMessage = async (content: string) => {
+    if (!summaryChatCourseId || summaryChatLoading) {
+      return;
+    }
+
+    const userMessage = createConversationMessage("user", content);
+    const pendingAssistantMessage = createConversationMessage("assistant", "", {
+      pending: true,
+    });
+    const nextMessages = [...summaryChatMessages, userMessage];
+
+    setSummaryChatLoading(true);
+    setSummaryChatMessages([...nextMessages, pendingAssistantMessage]);
+
+    try {
+      const requestId = crypto.randomUUID();
+      activeSummaryRequestIdRef.current = requestId;
+      await invoke("start_subtitle_chat_stream", {
+        requestId,
+        canvasCourseId: summaryChatCourseId,
+        messages: toLLMChatMessages(nextMessages),
+      });
+    } catch (error) {
+      activeSummaryRequestIdRef.current = null;
+      setSummaryChatLoading(false);
+      messageApi.error(`继续对话时发生错误：${error}`);
+      setSummaryChatMessages([
+        ...nextMessages,
+        {
+          ...pendingAssistantMessage,
+          content: `继续对话时发生错误：${error}`,
+          pending: false,
+          error: true,
+        },
+      ]);
     }
   };
 
@@ -1075,24 +1245,21 @@ export default function VideoPage() {
         </Card>
       </Stack>
 
-      <Dialog
-        open={summaryOpen}
-        onClose={() => setSummaryOpen(false)}
-        fullWidth
-        maxWidth="md"
-      >
-        <DialogTitle>AI 总结</DialogTitle>
-        <DialogContent>
-          <Box sx={{ "& a": { color: "primary.main" } }}>
-            <Markdown
-              remarkPlugins={[remarkGfm]}
-              components={{ code: LinkRenderer }}
-            >
-              {summaryContent}
-            </Markdown>
-          </Box>
-        </DialogContent>
-      </Dialog>
+      <FileAIChatModal
+        open={summaryChatOpen}
+        title={summaryChatTitle}
+        messages={summaryChatMessages}
+        loading={summaryChatLoading}
+        onClose={() => setSummaryChatOpen(false)}
+        onSend={handleSendSummaryMessage}
+        dialogTitle="AI 视频会话"
+        dialogDescription="围绕当前视频字幕持续追问，AI 会结合字幕内容和时间点继续回答。"
+        contextLabel="当前视频"
+        emptyText="正在为当前视频创建第一条 AI 总结消息。"
+        inputPlaceholder="继续追问这节课，例如：老师提到的作业要求是什么？考试范围出现在哪些时间点？"
+        footerIdleText="提问会保留在当前会话中，后续回答会继续参考这段视频字幕。"
+        markdownComponents={{ code: LinkRenderer as any }}
+      />
     </BasicLayout>
   );
 }

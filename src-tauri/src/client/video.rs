@@ -88,6 +88,14 @@ impl Client {
             .add_cookie_str(cookie, &Url::parse(VIDEO_BASE_URL).unwrap());
     }
 
+    // The extra login flow may bounce across jAccount and my.sjtu domains,
+    // so we attach the cookie to both hosts before probing protected pages.
+    fn attach_ja_auth_cookie(&self, cookie: &str) {
+        for url in [AUTH_URL, MY_SJTU_URL] {
+            self.jar.add_cookie_str(cookie, &Url::parse(url).unwrap());
+        }
+    }
+
     pub async fn get_uuid(&self) -> Result<Option<String>> {
         let resp = self.cli.get(MY_SJTU_URL).send().await?.error_for_status()?;
         let body = resp.text().await?;
@@ -125,8 +133,7 @@ impl Client {
     }
 
     pub async fn login_video_website(&self, cookie: &str) -> Result<Option<String>> {
-        self.jar
-            .add_cookie_str(cookie, &Url::parse(AUTH_URL).unwrap());
+        self.attach_ja_auth_cookie(cookie);
         let response = self.get_request(VIDEO_LOGIN_URL, None::<&str>).await?;
         let url = response.url();
         if let Some(domain) = url.domain() {
@@ -143,8 +150,7 @@ impl Client {
     }
 
     pub async fn login_canvas_website(&self, cookie: &str) -> Result<()> {
-        self.jar
-            .add_cookie_str(cookie, &Url::parse(AUTH_URL).unwrap());
+        self.attach_ja_auth_cookie(cookie);
         let response = self.get_request(CANVAS_LOGIN_URL, None::<&str>).await?;
         let url = response.url();
         if let Some(domain) = url.domain() {
@@ -156,9 +162,14 @@ impl Client {
     }
 
     pub async fn check_extra_login_status(&self, cookie: &str) -> Result<bool> {
-        self.jar
-            .add_cookie_str(cookie, &Url::parse(AUTH_URL).unwrap());
-        let response = self.cli.get(MY_SJTU_ACCOUNT_URL).send().await?;
+        self.attach_ja_auth_cookie(cookie);
+        // Warm up the SSO chain first. Without this request, the first direct
+        // API probe can report unauthenticated even when the cookie is valid.
+        let warmup = self.get_request(MY_SJTU_URL, None::<&str>).await?;
+        if !warmup.status().is_success() {
+            return Ok(false);
+        }
+        let response = self.get_request(MY_SJTU_ACCOUNT_URL, None::<&str>).await?;
         let status = response.status();
         if status == StatusCode::UNAUTHORIZED {
             return Ok(false);
@@ -790,7 +801,7 @@ mod tests {
     #[tokio::test]
     async fn test_download_video() -> Result<()> {
         let _ = tracing_subscriber::fmt::try_init();
-        let cli = Arc::new(Client::new_without_proxy(BASE_URL, ""));
+        let cli = Arc::new(Client::new_without_proxy(BASE_URL, "", "", "", None));
         // let video_url = "https://www.w3schools.com/html/mov_bbb.mp4";
         // a bigger one, more than one video block
         let video_url = "https://download.samplelib.com/mp4/sample-10s.mp4";

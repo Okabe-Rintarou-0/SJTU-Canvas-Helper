@@ -52,6 +52,8 @@ pub enum AppError {
     PDFOutputError(#[from] pdf_extract::OutputError),
     #[error("Docx reader error: {0}")]
     DocxReaderError(#[from] docx_rs::ReaderError),
+    #[error("LLM error: {0}")]
+    LLMError(String),
 }
 
 impl serde::Serialize for AppError {
