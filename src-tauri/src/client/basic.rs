@@ -21,11 +21,17 @@ use crate::{
 impl Client {
     #[allow(dead_code)]
     pub fn default() -> Self {
-        Self::new(BASE_URL, "")
+        Self::new(BASE_URL, "", "", "", None)
     }
 
     #[allow(dead_code)]
-    pub fn new_without_proxy<S: Into<String>>(base_url: S, llm_api_key: S) -> Self {
+    pub fn new_without_proxy<S: Into<String>>(
+        base_url: S,
+        llm_api_key: S,
+        llm_base_url: S,
+        llm_model: S,
+        llm_temperature: Option<f32>,
+    ) -> Self {
         let jar = Arc::new(cookie::Jar::default());
         let cli = reqwest::Client::builder()
             .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36")
@@ -35,7 +41,13 @@ impl Client {
             .unwrap();
         let base_url = RwLock::new(base_url.into());
         let token = RwLock::new("".to_owned());
-        let llm_cli = llm::chat::new_llm_client(llm_api_key.into()).unwrap();
+        let llm_cli = llm::chat::new_llm_client(
+            llm_api_key.into(),
+            llm_base_url.into(),
+            llm_model.into(),
+            llm_temperature,
+        )
+        .unwrap();
         let file_parser = file_parser::new_generic_file_reader();
         Self {
             cli,
@@ -47,7 +59,13 @@ impl Client {
         }
     }
 
-    pub fn new<S: Into<String>>(base_url: S, llm_api_key: S) -> Self {
+    pub fn new<S: Into<String>>(
+        base_url: S,
+        llm_api_key: S,
+        llm_base_url: S,
+        llm_model: S,
+        llm_temperature: Option<f32>,
+    ) -> Self {
         let jar = Arc::new(cookie::Jar::default());
         let cli = reqwest::Client::builder()
             .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36")
@@ -56,7 +74,13 @@ impl Client {
             .unwrap();
         let base_url = RwLock::new(base_url.into());
         let token = RwLock::new("".to_owned());
-        let llm_cli = llm::chat::new_llm_client(llm_api_key.into()).unwrap();
+        let llm_cli = llm::chat::new_llm_client(
+            llm_api_key.into(),
+            llm_base_url.into(),
+            llm_model.into(),
+            llm_temperature,
+        )
+        .unwrap();
         let file_parser = file_parser::new_generic_file_reader();
         Self {
             cli,
@@ -70,6 +94,18 @@ impl Client {
 
     pub async fn set_llm_api_key<S: Into<String>>(&self, api_key: S) {
         self.llm_cli.set_api_key(api_key.into()).await;
+    }
+
+    pub async fn set_llm_base_url<S: Into<String>>(&self, base_url: S) {
+        self.llm_cli.set_base_url(base_url.into()).await;
+    }
+
+    pub async fn set_llm_model<S: Into<String>>(&self, model: S) {
+        self.llm_cli.set_model(model.into()).await;
+    }
+
+    pub async fn set_llm_temperature(&self, temperature: Option<f32>) {
+        self.llm_cli.set_temperature(temperature).await;
     }
 
     pub async fn set_base_url<S: Into<String>>(&self, base_url: S) -> bool {

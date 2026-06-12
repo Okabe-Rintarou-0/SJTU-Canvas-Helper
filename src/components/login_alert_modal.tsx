@@ -17,7 +17,7 @@ export function LoginAlertModal({
 
   useEffect(() => {
     if (open) {
-      void showQRCode();
+      showQRCode();
     }
   }, [open, showQRCode]);
 

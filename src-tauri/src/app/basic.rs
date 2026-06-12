@@ -160,6 +160,10 @@ impl App {
         let config = App::read_config_from_file(&config_path)?;
         let base_url = Self::get_base_url(&config.account_type);
         self.client.set_base_url(base_url).await;
+        self.client.set_llm_api_key(&config.llm_api_key).await;
+        self.client.set_llm_base_url(&config.llm_base_url).await;
+        self.client.set_llm_model(&config.llm_model).await;
+        self.client.set_llm_temperature(config.llm_temperature).await;
         *self.config.write().await = config;
 
         let mut account_info = App::read_account_info()?;
@@ -195,7 +199,13 @@ impl App {
         let config = App::read_config_from_file(&config_path).unwrap_or_default();
 
         let base_url = Self::get_base_url(&config.account_type);
-        let client = Client::new(base_url, &config.llm_api_key);
+        let client = Client::new(
+            base_url,
+            &config.llm_api_key,
+            &config.llm_base_url,
+            &config.llm_model,
+            config.llm_temperature,
+        );
 
         Self {
             client: Arc::new(client),
@@ -882,6 +892,9 @@ impl App {
             self.invalidate_cache()?;
         }
         self.client.set_llm_api_key(&config.llm_api_key).await;
+        self.client.set_llm_base_url(&config.llm_base_url).await;
+        self.client.set_llm_model(&config.llm_model).await;
+        self.client.set_llm_temperature(config.llm_temperature).await;
         *self.config.write().await = config;
         Ok(())
     }
@@ -893,9 +906,33 @@ impl App {
     pub async fn explain_file(&self, file: &File) -> Result<String> {
         self.client.explain_file(file).await
     }
+
+    pub async fn chat_with_file(&self, file: &File, messages: &[LLMChatMessage]) -> Result<String> {
+        self.client.chat_with_file(file, messages).await
+    }
+
+    pub async fn chat_with_file_stream(
+        &self,
+        file: &File,
+        messages: &[LLMChatMessage],
+        on_chunk: &mut (dyn FnMut(String) + Send),
+    ) -> Result<String> {
+        self.client.chat_with_file_stream(file, messages, on_chunk).await
+    }
     
     pub async fn summarize_subtitle(&self, canvas_course_id: i64) -> Result<String> {
         self.client.summarize_subtitle(canvas_course_id).await
+    }
+
+    pub async fn chat_with_subtitle_stream(
+        &self,
+        canvas_course_id: i64,
+        messages: &[LLMChatMessage],
+        on_chunk: &mut (dyn FnMut(String) + Send),
+    ) -> Result<String> {
+        self.client
+            .chat_with_subtitle_stream(canvas_course_id, messages, on_chunk)
+            .await
     }
 
     pub fn check_path(path: &str) -> bool {

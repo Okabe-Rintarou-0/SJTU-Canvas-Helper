@@ -1,7 +1,7 @@
 {
   "name": "canvas",
   "private": true,
-  "version": "3.0.1",
+  "version": "3.0.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -41,6 +41,7 @@
     "lodash": "^4.17.21",
     "pdf-merger-js": "^5.1.2",
     "pinyin-pro": "^3.26.0",
+    "qrcode.react": "^3.1.0",
     "react": "^18.2.0",
     "react-ansi": "^3.0.2",
     "react-beautiful-dnd": "^13.1.1",

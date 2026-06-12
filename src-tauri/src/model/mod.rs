@@ -146,6 +146,12 @@ pub struct AppConfig {
     #[serde(default)]
     pub llm_api_key: String,
     #[serde(default)]
+    pub llm_base_url: String,
+    #[serde(default)]
+    pub llm_model: String,
+    #[serde(default)]
+    pub llm_temperature: Option<f32>,
+    #[serde(default)]
     pub ja_auth_cookie: String,
     #[serde(default)]
     pub video_cookies: String,
@@ -182,6 +188,9 @@ impl Default for AppConfig {
             course_assignment_file_bindings: Default::default(),
             show_alert_map: Default::default(),
             llm_api_key: Default::default(),
+            llm_base_url: Default::default(),
+            llm_model: Default::default(),
+            llm_temperature: Default::default(),
             theme: Default::default(),
             compact_mode: Default::default(),
             color_primary: Default::default(),
@@ -211,6 +220,30 @@ pub struct User {
     pub login_id: String,
     #[serde(default)]
     pub email: Option<String>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LLMChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FileChatStreamChunkPayload {
+    pub request_id: String,
+    pub chunk: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FileChatStreamDonePayload {
+    pub request_id: String,
+    pub content: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FileChatStreamErrorPayload {
+    pub request_id: String,
+    pub error: String,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

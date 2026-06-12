@@ -105,6 +105,26 @@ export interface User {
     email: Option<string>;
 }
 
+export interface LLMChatMessage {
+    role: string;
+    content: string;
+}
+
+export interface FileChatStreamChunkPayload {
+    request_id: string;
+    chunk: string;
+}
+
+export interface FileChatStreamDonePayload {
+    request_id: string;
+    content: string;
+}
+
+export interface FileChatStreamErrorPayload {
+    request_id: string;
+    error: string;
+}
+
 export interface UserSubmissions {
     user_id: number;
     username: Option<string>;
@@ -262,6 +282,9 @@ export interface AppConfig {
     course_assignment_file_bindings: Record<number, File[]>;
     show_alert_map: Record<string, boolean>;
     llm_api_key: string;
+    llm_base_url: string;
+    llm_model: string;
+    llm_temperature: Option<number>;
     theme: Option<Theme>;
     compact_mode: boolean;
     color_primary: Option<string>;

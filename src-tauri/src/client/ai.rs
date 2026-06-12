@@ -1,5 +1,9 @@
 use super::Client;
-use crate::{error::Result, model::{File, CanvasVideoSubTitle}, utils::time::format_time};
+use crate::{
+    error::Result,
+    model::{CanvasVideoSubTitle, File, LLMChatMessage},
+    utils::time::format_time,
+};
 use std::path::Path;
 
 impl Client {
@@ -19,18 +23,57 @@ impl Client {
         Ok(text)
     }
 
-    pub async fn explain_file(&self, file: &File) -> Result<String> {
+    fn default_file_summary_request(file_name: &str) -> String {
+        format!(
+            "请先总结这份文件。若它与作业相关，请额外列出得分点、提交要求、截止时间、文件格式限制和任何容易遗漏的注意事项。请使用 Markdown 输出，不要把整段内容包在代码块里。文件名：{file_name}"
+        )
+    }
+
+    fn build_file_chat_prompt(&self, file: &File, text: &str, messages: &[LLMChatMessage]) -> String {
+        let history = messages
+            .iter()
+            .map(|message| {
+                let speaker = if message.role.eq_ignore_ascii_case("assistant") {
+                    "AI"
+                } else {
+                    "User"
+                };
+                format!("{speaker}: {}", message.content.trim())
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n");
+
+        format!(
+            "你是一个大学课程助教，正在围绕同一份课程文件与学生持续对话。请优先依据文件内容回答；如果问题超出文件内容，请明确说明这一点，再给出最接近的帮助。回答请使用 Markdown，但不要把整段回答包在代码块中。\n\n文件名：{}\n\n文件内容：\n{}\n\n对话历史：\n{}",
+            file.display_name, text, history
+        )
+    }
+
+    pub async fn chat_with_file(&self, file: &File, messages: &[LLMChatMessage]) -> Result<String> {
         let text = self.read_file_content(file).await?;
-        let prompt = format!("你是一个大学课程助教，你的职责是帮助学生解释和总结课程文件的内容。如果文件是关于作业的，请列出得分点、作业提交要求等重要信息。
-            请以 `Markdown` 格式输出（不需要用代码块包起来），并控制在 200-300 字。以下是文件的相关信息：
-            文件名：{}。
-            文件内容：{}",
-                file.display_name,
-                text
-            );
-        tracing::info!("Explain Prompt: {}", prompt);
-        let resp = self.llm_cli.chat(prompt).await?;
-        Ok(resp)
+        let prompt = self.build_file_chat_prompt(file, &text, messages);
+        tracing::info!("File Chat Prompt built for: {}", file.display_name);
+        self.llm_cli.chat(prompt).await
+    }
+
+    pub async fn chat_with_file_stream(
+        &self,
+        file: &File,
+        messages: &[LLMChatMessage],
+        on_chunk: &mut (dyn FnMut(String) + Send),
+    ) -> Result<String> {
+        let text = self.read_file_content(file).await?;
+        let prompt = self.build_file_chat_prompt(file, &text, messages);
+        tracing::info!("File Stream Chat Prompt built for: {}", file.display_name);
+        self.llm_cli.chat_stream(prompt, on_chunk).await
+    }
+
+    pub async fn explain_file(&self, file: &File) -> Result<String> {
+        let messages = vec![LLMChatMessage {
+            role: "user".to_string(),
+            content: Self::default_file_summary_request(&file.display_name),
+        }];
+        self.chat_with_file(file, &messages).await
     }
 
     pub fn compress_subtitle(&self, subtitle: &[CanvasVideoSubTitle]) -> Result<String> {
@@ -72,20 +115,67 @@ impl Client {
         Ok(result.trim().to_string())
     }
 
-    pub async fn summarize_subtitle(&self, canvas_course_id: i64) -> Result<String> {
+    fn default_subtitle_summary_request() -> String {
+        "请先总结这节课的核心内容。重点关注课程活动与通知、作业/小测/考试/签到提醒，以及主要知识点与框架；如果合适，请引用对应的字幕时间点。请使用 Markdown 输出。".to_string()
+    }
+
+    fn build_subtitle_chat_prompt(
+        &self,
+        compressed_subtitle: &str,
+        messages: &[LLMChatMessage],
+    ) -> String {
+        let history = messages
+            .iter()
+            .map(|message| {
+                let speaker = if message.role.eq_ignore_ascii_case("assistant") {
+                    "AI"
+                } else {
+                    "User"
+                };
+                format!("{speaker}: {}", message.content.trim())
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n");
+
+        format!(
+            "你是一个大学课程助教，正在围绕一段课程视频字幕与学生持续对话。请优先依据字幕回答；如果问题超出字幕，请明确说明。回答请使用 Markdown。字幕中包含一些时间点，格式为 `[HH:MM:SS,FFF]`；当你引用时间点时，请保留这个格式，方便前端跳转。\n\n视频字幕：\n{}\n\n对话历史：\n{}",
+            compressed_subtitle, history
+        )
+    }
+
+    pub async fn chat_with_subtitle(
+        &self,
+        canvas_course_id: i64,
+        messages: &[LLMChatMessage],
+    ) -> Result<String> {
         let subtitle = &self.get_subtitle(canvas_course_id).await?.before_assembly_list;
         let compressed_subtitle = self.compress_subtitle(subtitle)?;
-        let prompt = format!("你是一个大学课程助教，你的职责是从上课视频字幕中总结出这节课的关键信息。
-            关键信息包含: 关于作业、小测、考试、签到等重要课程活动的信息或提示；这节课程涵盖的主要知识点及其主要框架。
-            请以 Markdown 格式输出。
-            视频字幕中包含了一些时间点，格式为 `[HH:MM:SS,FFF]`。如果你认为一条关键信息可以对应到一个时间点，请以同样的格式在这条关键信息之后输出这个时间点，并放在代码块中。如果有多个时间点，把每个时间点放在单独的代码块中。除此之外，不要使用代码块。
-            不要输出总的一级标题。可以采取如下的二级标题：“课程活动与通知”、“主要知识点与框架”。
-            保持简洁、风格专业严谨。注意不要输出额外的空格或换行。
-            以下是视频字幕：{}。",
-                compressed_subtitle
-            );
-        tracing::info!("Summarize Prompt: {}", prompt);
-        let resp = self.llm_cli.chat(prompt).await?;
-        Ok(resp)
+        let prompt = self.build_subtitle_chat_prompt(&compressed_subtitle, messages);
+        tracing::info!("Subtitle Chat Prompt built for course id: {}", canvas_course_id);
+        self.llm_cli.chat(prompt).await
+    }
+
+    pub async fn chat_with_subtitle_stream(
+        &self,
+        canvas_course_id: i64,
+        messages: &[LLMChatMessage],
+        on_chunk: &mut (dyn FnMut(String) + Send),
+    ) -> Result<String> {
+        let subtitle = &self.get_subtitle(canvas_course_id).await?.before_assembly_list;
+        let compressed_subtitle = self.compress_subtitle(subtitle)?;
+        let prompt = self.build_subtitle_chat_prompt(&compressed_subtitle, messages);
+        tracing::info!(
+            "Subtitle Stream Chat Prompt built for course id: {}",
+            canvas_course_id
+        );
+        self.llm_cli.chat_stream(prompt, on_chunk).await
+    }
+
+    pub async fn summarize_subtitle(&self, canvas_course_id: i64) -> Result<String> {
+        let messages = vec![LLMChatMessage {
+            role: "user".to_string(),
+            content: Self::default_subtitle_summary_request(),
+        }];
+        self.chat_with_subtitle(canvas_course_id, &messages).await
     }
 }
