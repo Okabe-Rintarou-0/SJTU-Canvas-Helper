@@ -11,6 +11,7 @@ import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Card,
@@ -33,12 +34,12 @@ import {
   Tooltip,
   Typography
 } from "@mui/material";
+import { ProviderIcon } from "@lobehub/icons";
 import { alpha, useTheme } from "@mui/material/styles";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactJson from "react-json-view-ts";
-
 import BasicLayout from "../components/layout";
 import LogModal from "../components/log_modal";
 import { LoginAlert } from "../components/login_alert";
@@ -57,6 +58,60 @@ const MIN_LLM_TEMPERATURE = 0;
 const MAX_LLM_TEMPERATURE = 2;
 const LLM_TEMPERATURE_STEP = 0.1;
 const CANVAS_TOKEN_URL = "https://oc.sjtu.edu.cn/profile/settings";
+
+const URL_PROVIDER_MAP: [RegExp, string][] = [
+  [/deepseek/, "deepseek"],
+  [/moonshot/, "moonshot"],
+  [/openai/, "openai"],
+  [/anthropic/, "anthropic"],
+  [/zhipu/, "zhipu"],
+  [/glm/, "zhipu"],
+  [/baidu/, "baidu"],
+  [/qianfan/, "baidu"],
+  [/qwen/, "qwen"],
+  [/aliyun/, "qwen"],
+  [/dashscope/, "qwen"],
+  [/hunyuan/, "tencent"],
+  [/tencent/, "tencent"],
+  [/doubao/, "doubao"],
+  [/ark/, "doubao"],
+  [/xai/, "xai"],
+  [/grok/, "xai"],
+  [/groq/, "groq"],
+  [/together/, "togetherai"],
+  [/perplexity/, "perplexity"],
+  [/mistral/, "mistral"],
+  [/cohere/, "cohere"],
+  [/fireworks/, "fireworksai"],
+  [/ollama/, "ollama"],
+];
+
+const PROVIDER_PRESETS: { key: string; name: string; baseUrl: string }[] = [
+  { key: "", name: "其他 (手动填写)", baseUrl: "" },
+  { key: "deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com" },
+  { key: "openai", name: "OpenAI", baseUrl: "https://api.openai.com/v1" },
+  { key: "moonshot", name: "Kimi (Moonshot)", baseUrl: "https://api.moonshot.cn/v1" },
+  { key: "anthropic", name: "Anthropic", baseUrl: "https://api.anthropic.com/v1" },
+  { key: "zhipu", name: "智谱 (Zhipu)", baseUrl: "https://open.bigmodel.cn/api/paas/v4" },
+  { key: "baidu", name: "百度千帆", baseUrl: "https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat" },
+  { key: "qwen", name: "阿里通义千问", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1" },
+  { key: "tencent", name: "腾讯混元", baseUrl: "https://api.hunyuan.cloud.tencent.com/v1" },
+  { key: "doubao", name: "字节豆包", baseUrl: "https://ark.cn-beijing.volces.com/api/v3" },
+  { key: "xai", name: "xAI (Grok)", baseUrl: "https://api.x.ai/v1" },
+  { key: "groq", name: "Groq", baseUrl: "https://api.groq.com/openai/v1" },
+  { key: "perplexity", name: "Perplexity", baseUrl: "https://api.perplexity.ai" },
+  { key: "mistral", name: "Mistral", baseUrl: "https://api.mistral.ai/v1" },
+  { key: "cohere", name: "Cohere", baseUrl: "https://api.cohere.com/v1" },
+  { key: "ollama", name: "Ollama (本地)", baseUrl: "http://localhost:11434/v1" },
+];
+
+function detectProviderKey(baseUrl: string): string | null {
+  const url = baseUrl.toLowerCase();
+  for (const [rx, key] of URL_PROVIDER_MAP) {
+    if (rx.test(url)) return key;
+  }
+  return null;
+}
 
 const cardSx = {
   borderRadius: `${SURFACE_RADIUS * 4}px`,
@@ -181,9 +236,51 @@ export default function SettingsPage() {
   const [initialSnapshot, setInitialSnapshot] = useState<string>("");
   const [createAccountName, setCreateAccountName] = useState<string>("");
   const [showToken, setShowToken] = useState<boolean>(false);
-  const [showApiKey, setShowApiKey] = useState<boolean>(false);
+  const [showNewKeyValue, setShowNewKeyValue] = useState<boolean>(false);
+  const [showAddKeyDialog, setShowAddKeyDialog] = useState<boolean>(false);
+  const [newKeyName, setNewKeyName] = useState<string>("");
+  const [newKeyValue, setNewKeyValue] = useState<string>("");
+  const [newKeyProvider, setNewKeyProvider] = useState<string>("");
+  const [newKeyBaseUrl, setNewKeyBaseUrl] = useState<string>("");
+  const [newKeyModel, setNewKeyModel] = useState<string>("");
+  const [editingName, setEditingName] = useState<string | null>(null);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editingBaseUrl, setEditingBaseUrl] = useState<string | null>(null);
+  const [editingModel, setEditingModel] = useState<string | null>(null);
   const [tokenError, setTokenError] = useState<string>("");
   const [savePathError, setSavePathError] = useState<string>("");
+  const modelsCache = useRef<Record<string, string[]>>({});
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+
+  const fetchModels = useCallback(async (baseUrl: string, apiKey?: string) => {
+    if (!baseUrl.trim()) return;
+    const cacheKey = baseUrl.replace(/\/+$/, "");
+    if (modelsCache.current[cacheKey]) {
+      setModelOptions(modelsCache.current[cacheKey]);
+      return;
+    }
+    setLoadingModels(true);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 6000);
+    try {
+      const url = `${cacheKey}/models`;
+      const headers: Record<string, string> = { "Accept": "application/json" };
+      if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+      const resp = await fetch(url, { headers, signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const body = await resp.json();
+      const models: string[] = (body.data ?? []).map((m: { id: string }) => m.id).filter(Boolean);
+      modelsCache.current[cacheKey] = models;
+      const preferred = (id: string) => /chat|latest|instruct|turbo|plus|flash|pro|4o|reasoner/i.test(id) ? 0 : 1;
+      setModelOptions(models.sort((a, b) => preferred(a) - preferred(b) || a.localeCompare(b)).slice(0, 100));
+    } catch {
+      setModelOptions([]);
+    } finally {
+      setLoadingModels(false);
+    }
+  }, []);
   const [extraLoginReady, setExtraLoginReady] = useState<boolean | null>(null);
   const [checkingExtraLogin, setCheckingExtraLogin] = useState(true);
 
@@ -304,6 +401,8 @@ export default function SettingsPage() {
         mcp_enabled: config.mcp_enabled ?? false,
         mcp_port: config.mcp_port || 3100,
         proxy_port: config.proxy_port === 0 ? DEFAULT_PROXY_PORT : config.proxy_port,
+        llm_api_keys: config.llm_api_keys ?? [],
+        llm_active_api_key: config.llm_active_api_key ?? "",
       };
 
       setCurrentAccount(accountInfo.current_account);
@@ -455,6 +554,24 @@ export default function SettingsPage() {
     } catch (e) {
       messageApi.destroy("testing");
       messageApi.error("API Key 无效，请检查后重试。");
+    }
+  };
+
+  const handleCheckBalance = async () => {
+    if (!formData) return;
+    const entry = formData.llm_api_keys.find((k) => k.name === formData.llm_active_api_key);
+    if (!entry) return;
+    const baseUrl = entry.base_url || formData.llm_base_url || "";
+    const apiKey = entry.key || formData.llm_api_key || "";
+    const provider = detectProviderKey(baseUrl) || "unknown";
+    try {
+      messageApi.open({ key: "bal", type: "loading", content: "查询余额中…", duration: 0 });
+      const resp = await invoke("check_balance", { baseUrl, apiKey, provider });
+      messageApi.destroy("bal");
+      messageApi.success(resp as string);
+    } catch (e) {
+      messageApi.destroy("bal");
+      messageApi.error(e as string);
     }
   };
 
@@ -983,89 +1100,440 @@ export default function SettingsPage() {
                       </Typography>
                     </Box>
 
-                    <Box
-                      sx={{
-                        display: "grid",
-                        gap: 2,
-                        gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "1fr 220px" },
-                      }}
-                    >
-                      <TextField
-                        label="LLM API Key"
-                        name="llm_api_key"
-                        type={showApiKey ? "text" : "password"}
-                        value={formData?.llm_api_key ?? ""}
-                        onChange={(event) =>
-                          updateField("llm_api_key", event.target.value)
-                        }
-                        placeholder="请输入 API Key…"
-                        helperText="用于启用 OpenAI-compatible 大语言模型能力。"
-                        autoComplete="off"
-                        spellCheck={false}
-                        InputProps={{
-                          endAdornment: (
-                            <InputAdornment position="end">
-                              <Tooltip
-                                title={showApiKey ? "隐藏 API Key" : "显示 API Key"}
-                              >
-                                <IconButton
-                                  aria-label={
-                                    showApiKey ? "隐藏 API Key" : "显示 API Key"
-                                  }
-                                  onClick={() => setShowApiKey((prev) => !prev)}
-                                  edge="end"
-                                >
-                                  {showApiKey ? (
-                                    <VisibilityOffRoundedIcon />
-                                  ) : (
-                                    <VisibilityRoundedIcon />
-                                  )}
-                                </IconButton>
-                              </Tooltip>
-                            </InputAdornment>
-                          ),
-                        }}
-                      />
+                    <Box>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
+                        API Key 管理
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                        添加多个 API Key 并命名，方便在多个账号之间切换。
+                      </Typography>
+
+                      <Box sx={{ display: "flex", gap: 2, alignItems: "center", mb: 3 }}>
+                        <TextField
+                          select
+                          fullWidth
+                          label="当前使用的 API Key"
+                          name="llm_active_api_key"
+                          value={formData?.llm_active_api_key ?? ""}
+                          onChange={async (event) => {
+                            const name = event.target.value;
+                            const entry = formData?.llm_api_keys.find((k) => k.name === name);
+                            if (!formData || !entry) return;
+                            const next = {
+                              ...formData,
+                              llm_active_api_key: name,
+                              llm_api_key: entry.key,
+                              ...(entry.base_url ? { llm_base_url: entry.base_url } : {}),
+                              ...(entry.model ? { llm_model: entry.model } : {}),
+                            };
+                            setFormData(next);
+                            setEditingName(null);
+                            setEditingKey(null);
+                            setEditingBaseUrl(null);
+                            setEditingModel(null);
+                            try {
+                              await saveConfig(next);
+                            } catch (e) {
+                              messageApi.error(e as string);
+                            }
+                          }}
+                        >
+                          {(formData?.llm_api_keys ?? []).length === 0 ? (
+                            <MenuItem value="" disabled>
+                              暂无已添加的 Key
+                            </MenuItem>
+                          ) : (
+                            (formData?.llm_api_keys ?? []).map((entry) => {
+                              const pv = detectProviderKey(entry.base_url || (formData?.llm_base_url ?? ""));
+                              return (
+                                <MenuItem key={entry.name} value={entry.name}>
+                                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                                    {pv ? <ProviderIcon provider={pv} size={22} /> : null}
+                                    <Typography variant="body2">{entry.name}</Typography>
+                                  </Box>
+                                </MenuItem>
+                              );
+                            })
+                          )}
+                        </TextField>
+
+                        <Button
+                          variant="outlined"
+                          onClick={() => setShowAddKeyDialog(true)}
+                          sx={{ minWidth: 100, whiteSpace: "nowrap" }}
+                        >
+                          添加 Key
+                        </Button>
+                      </Box>
+
+                      {(formData?.llm_api_keys ?? []).length > 0 && formData?.llm_active_api_key ? (
+                        (() => {
+                          const entry = formData.llm_api_keys.find((k) => k.name === formData.llm_active_api_key);
+                          if (!entry) return null;
+                          const pv = detectProviderKey(entry.base_url || (formData?.llm_base_url ?? ""));
+                          return (
+                            <Box
+                              sx={{
+                                p: 3,
+                                borderRadius: "16px",
+                                border: "1px solid",
+                                borderColor: "primary.main",
+                                bgcolor: alpha(theme.palette.primary.main, 0.06),
+                              }}
+                            >
+                              <Stack spacing={2.5}>
+                                <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+                                  {pv ? <ProviderIcon provider={pv} size={32} /> : null}
+                                  <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                                    {entry.name}
+                                  </Typography>
+                                </Box>
+                                <TextField
+                                  label="名称"
+                                  size="small"
+                                  value={editingName ?? entry.name}
+                                  onChange={(e) => setEditingName(e.target.value)}
+                                  onBlur={async () => {
+                                    if (!editingName?.trim() || !formData) return;
+                                    const updated = formData.llm_api_keys.map((k) =>
+                                      k.name === entry.name ? { ...k, name: editingName.trim() } : k
+                                    );
+                                    const newActive = formData.llm_active_api_key === entry.name ? editingName.trim() : formData.llm_active_api_key;
+                                    const next = { ...formData, llm_api_keys: updated, llm_active_api_key: newActive };
+                                    setFormData(next);
+                                    try { await saveConfig(next); } catch (e) { messageApi.error(e as string); }
+                                  }}
+                                  placeholder="Key 名称"
+                                  autoComplete="off"
+                                />
+                                <TextField
+                                  label="API Key"
+                                  size="small"
+                                  type={showNewKeyValue ? "text" : "password"}
+                                  value={editingKey ?? entry.key}
+                                  onChange={(e) => setEditingKey(e.target.value)}
+                                  onBlur={async () => {
+                                    if (!formData || editingKey === null) return;
+                                    const keyName = editingName?.trim() || entry.name;
+                                    const keyVal = editingKey.trim();
+                                    if (!keyVal) return;
+                                    const updated = formData.llm_api_keys.map((k) =>
+                                      k.name === keyName ? { ...k, key: keyVal } : k
+                                    );
+                                    const next = { ...formData, llm_api_keys: updated, llm_api_key: keyVal };
+                                    setFormData(next);
+                                    try { await saveConfig(next); } catch (e) { messageApi.error(e as string); }
+                                  }}
+                                  placeholder="sk-…"
+                                  autoComplete="off"
+                                  spellCheck={false}
+                                  InputProps={{
+                                    endAdornment: (
+                                      <InputAdornment position="end">
+                                        <Tooltip title={showNewKeyValue ? "隐藏" : "显示"}>
+                                          <IconButton
+                                            size="small"
+                                            onClick={() => setShowNewKeyValue((prev) => !prev)}
+                                            edge="end"
+                                          >
+                                            {showNewKeyValue ? (
+                                              <VisibilityOffRoundedIcon fontSize="small" />
+                                            ) : (
+                                              <VisibilityRoundedIcon fontSize="small" />
+                                            )}
+                                          </IconButton>
+                                        </Tooltip>
+                                      </InputAdornment>
+                                    ),
+                                  }}
+                                />
+                                <Box sx={{ display: "grid", gap: 1, gridTemplateColumns: "1fr 1fr" }}>
+                                  <TextField
+                                    label="Base URL"
+                                    size="small"
+                                    value={editingBaseUrl ?? (entry.base_url || (formData?.llm_base_url ?? ""))}
+                                    onChange={(e) => setEditingBaseUrl(e.target.value)}
+                                    onBlur={async () => {
+                                      if (!formData || editingBaseUrl === null) return;
+                                      const keyName = editingName?.trim() || entry.name;
+                                      const val = editingBaseUrl.trim();
+                                      const updated = formData.llm_api_keys.map((k) =>
+                                        k.name === keyName ? { ...k, base_url: val } : k
+                                      );
+                                      const next = {
+                                        ...formData,
+                                        llm_api_keys: updated,
+                                        ...(val ? { llm_base_url: val } : {}),
+                                      };
+                                      setFormData(next);
+                                      try { await saveConfig(next); } catch (e) { messageApi.error(e as string); }
+                                    }}
+                                    placeholder={formData?.llm_base_url || "https://api.deepseek.com/v1"}
+                                    autoComplete="off"
+                                  />
+                                  <Autocomplete
+                                    freeSolo
+                                    size="small"
+                                    loading={loadingModels}
+                                    options={modelOptions}
+                                    value={editingModel ?? (entry.model || (formData?.llm_model ?? ""))}
+                                    onInputChange={(_e, val) => setEditingModel(val)}
+                                    onChange={(_e, val) => {
+                                      const v = typeof val === "string" ? val : "";
+                                      setEditingModel(v);
+                                    }}
+                                    onOpen={() => {
+                                      const url = entry.base_url || formData?.llm_base_url || "";
+                                      if (url) fetchModels(url, entry.key || formData?.llm_api_key);
+                                    }}
+                                    onBlur={async () => {
+                                      if (!formData) return;
+                                      if (editingModel === null) return;
+                                      const keyName = editingName?.trim() || entry.name;
+                                      const val = editingModel.trim();
+                                      const updated = formData.llm_api_keys.map((k) =>
+                                        k.name === keyName ? { ...k, model: val } : k
+                                      );
+                                      const next = { ...formData, llm_api_keys: updated, ...(val ? { llm_model: val } : {}) };
+                                      setFormData(next);
+                                      try { await saveConfig(next); } catch (e) { messageApi.error(e as string); }
+                                    }}
+                                    renderInput={(params) => (
+                                      <TextField
+                                        {...params}
+                                        label="Model"
+                                        placeholder={formData?.llm_model || "deepseek-chat"}
+                                      />
+                                    )}
+                                  />
+                                </Box>
+                                <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    startIcon={<AutoAwesomeRoundedIcon />}
+                                    onClick={handleTestApiKey}
+                                  >
+                                    测试连接
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    onClick={handleCheckBalance}
+                                  >
+                                    查询余额
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    color="error"
+                                    variant="outlined"
+                                    startIcon={<DeleteOutlineRoundedIcon />}
+                                    onClick={() => {
+                                      const next = (formData?.llm_api_keys ?? []).filter(
+                                        (k) => k.name !== entry.name
+                                      );
+                                      updateField("llm_api_keys", next);
+                                      if (formData?.llm_active_api_key === entry.name) {
+                                        const first = next[0];
+                                        updateField("llm_active_api_key", first?.name ?? "");
+                                        updateField("llm_api_key", first?.key ?? "");
+                                        if (first?.base_url) updateField("llm_base_url", first.base_url);
+                                        if (first?.model) updateField("llm_model", first.model);
+                                      }
+                                    }}
+                                  >
+                                    删除此 Key
+                                  </Button>
+                                </Box>
+                              </Stack>
+                            </Box>
+                          );
+                        })()
+                      ) : null}
                     </Box>
 
-                    <Box
-                      sx={{
-                        display: "grid",
-                        gap: 2,
-                        gridTemplateColumns: {
-                          xs: "minmax(0, 1fr)",
-                          md: "1fr 1fr 180px",
-                        },
+                    <Dialog
+                      open={showAddKeyDialog}
+                      onClose={() => {
+                        setNewKeyName("");
+                        setNewKeyValue("");
+                        setNewKeyProvider("");
+                        setNewKeyBaseUrl("");
+                        setNewKeyModel("");
+                        setShowAddKeyDialog(false);
                       }}
+                      fullWidth
+                      maxWidth="sm"
                     >
-                      <TextField
-                        label="LLM Base URL"
-                        name="llm_base_url"
-                        value={formData?.llm_base_url ?? ""}
-                        onChange={(event) =>
-                          updateField("llm_base_url", event.target.value)
-                        }
-                        placeholder="https://api.openai.com/v1"
-                        helperText="留空时默认使用 DeepSeek 的 OpenAI-compatible 地址。"
-                        autoComplete="off"
-                        spellCheck={false}
-                      />
-                      <TextField
-                        label="LLM Model"
-                        name="llm_model"
-                        value={formData?.llm_model ?? ""}
-                        onChange={(event) =>
-                          updateField("llm_model", event.target.value)
-                        }
-                        placeholder="gpt-4o-mini / deepseek-chat"
-                        helperText="留空时默认使用 `deepseek-chat`。"
-                        autoComplete="off"
-                        spellCheck={false}
-                      />
+                      <DialogTitle>
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+                          {detectProviderKey(newKeyBaseUrl || formData?.llm_base_url || "") ? (
+                            <ProviderIcon provider={detectProviderKey(newKeyBaseUrl || formData?.llm_base_url || "")!} size={28} />
+                          ) : (
+                            <Box sx={{ width: 28, height: 28, borderRadius: "7px", bgcolor: "#6B7280", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "0.7rem", fontWeight: 800 }}>
+                              ?
+                            </Box>
+                          )}
+                          <span>添加 API Key</span>
+                        </Box>
+                      </DialogTitle>
+                      <DialogContent>
+                        <Stack spacing={2} sx={{ mt: 1 }}>
+                          <TextField
+                            select
+                            fullWidth
+                            label="服务商"
+                            value={newKeyProvider}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setNewKeyProvider(val);
+                              const preset = PROVIDER_PRESETS.find((p) => p.key === val);
+                              if (preset && preset.baseUrl) {
+                                setNewKeyBaseUrl(preset.baseUrl);
+                                setNewKeyModel("");
+                              } else {
+                                setNewKeyBaseUrl("");
+                              }
+                            }}
+                            helperText="选择主流服务商后自动填入 Base URL 和 Model 建议。"
+                          >
+                            {PROVIDER_PRESETS.map((p) => (
+                              <MenuItem key={p.key} value={p.key}>
+                                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                                  {p.key ? <ProviderIcon provider={p.key} size={20} /> : null}
+                                  <Typography variant="body2">{p.name}</Typography>
+                                </Box>
+                              </MenuItem>
+                            ))}
+                          </TextField>
+                          <TextField
+                            label="名称"
+                            name="new_key_name"
+                            value={newKeyName}
+                            onChange={(event) => setNewKeyName(event.target.value)}
+                            placeholder="例如：strong_model, weak_model"
+                            helperText="起一个好记的名字，方便后续在列表中切换。"
+                            autoComplete="off"
+                          />
+                          <TextField
+                            label="API Key"
+                            name="new_key_value"
+                            type={showNewKeyValue ? "text" : "password"}
+                            value={newKeyValue}
+                            onChange={(event) => setNewKeyValue(event.target.value)}
+                            placeholder="sk-…"
+                            autoComplete="off"
+                            spellCheck={false}
+                            InputProps={{
+                              endAdornment: (
+                                <InputAdornment position="end">
+                                  <Tooltip title={showNewKeyValue ? "隐藏" : "显示"}>
+                                    <IconButton
+                                      onClick={() => setShowNewKeyValue((prev) => !prev)}
+                                      edge="end"
+                                    >
+                                      {showNewKeyValue ? (
+                                        <VisibilityOffRoundedIcon />
+                                      ) : (
+                                        <VisibilityRoundedIcon />
+                                      )}
+                                    </IconButton>
+                                  </Tooltip>
+                                </InputAdornment>
+                              ),
+                            }}
+                          />
+                          <TextField
+                            label="Base URL"
+                            name="new_key_base_url"
+                            value={newKeyBaseUrl}
+                            onChange={(event) => {
+                              setNewKeyBaseUrl(event.target.value);
+                              setNewKeyProvider("");
+                            }}
+                            placeholder={formData?.llm_base_url || "https://api.deepseek.com"}
+                            helperText={
+                              detectProviderKey(newKeyBaseUrl || formData?.llm_base_url || "")
+                                ? `检测到：${detectProviderKey(newKeyBaseUrl || formData?.llm_base_url || "")!}`
+                                : "留空使用全局 LLM Base URL。"
+                            }
+                            autoComplete="off"
+                          />
+                          <Autocomplete
+                            freeSolo
+                            fullWidth
+                            loading={loadingModels}
+                            options={modelOptions}
+                            value={newKeyModel}
+                            onInputChange={(_e, val) => setNewKeyModel(val)}
+                            onOpen={() => {
+                              const url = newKeyBaseUrl || formData?.llm_base_url || "";
+                              if (url) fetchModels(url, newKeyValue || formData?.llm_api_key);
+                            }}
+                            renderInput={(params) => (
+                              <TextField
+                                {...params}
+                                label="Model"
+                                placeholder={formData?.llm_model || "deepseek-chat"}
+                                helperText="可输入任意模型名，或从建议中选择。"
+                              />
+                            )}
+                          />
+                        </Stack>
+                      </DialogContent>
+                      <DialogActions sx={{ px: 3, pb: 2 }}>
+                        <Button onClick={() => setShowAddKeyDialog(false)}>取消</Button>
+                        <Button
+                          variant="contained"
+                          disabled={!newKeyName.trim() || !newKeyValue.trim()}
+                          onClick={async () => {
+                            const name = newKeyName.trim();
+                            const key = newKeyValue.trim();
+                            const current = formData?.llm_api_keys ?? [];
+                            if (current.some((k) => k.name === name)) {
+                              messageApi.error("名称已存在，请使用不同的名称。");
+                              return;
+                            }
+                            const baseUrl = newKeyBaseUrl.trim();
+                            const model = newKeyModel.trim();
+                            const updated = [
+                              ...current,
+                              { name, key, base_url: baseUrl, model },
+                            ];
+                            const next = {
+                              ...formData!,
+                              llm_api_keys: updated,
+                              llm_active_api_key: name,
+                              llm_api_key: key,
+                              ...(baseUrl ? { llm_base_url: baseUrl } : {}),
+                              ...(model ? { llm_model: model } : {}),
+                            };
+                            setFormData(next);
+                            setNewKeyName("");
+                            setNewKeyValue("");
+                            setNewKeyProvider("");
+                            setNewKeyBaseUrl("");
+                            setNewKeyModel("");
+                            setShowAddKeyDialog(false);
+                            try {
+                              await saveConfig(next);
+                              messageApi.success(`已添加 API Key「${name}」。`);
+                            } catch (e) {
+                              messageApi.error(e as string);
+                            }
+                          }}
+                        >
+                          添加
+                        </Button>
+                      </DialogActions>
+                    </Dialog>
+
+                    <Box sx={{ maxWidth: 220 }}>
                       <TextField
                         label="Temperature"
                         name="llm_temperature"
                         type="number"
+                        fullWidth
                         value={formData?.llm_temperature ?? ""}
                         onChange={(event) =>
                           handleLlmTemperatureChange(event.target.value)
@@ -1108,7 +1576,7 @@ export default function SettingsPage() {
                         MCP Server
                       </Typography>
                       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                        MCP（Model Context Protocol）服务器可将 Canvas 数据能力开放给 AI 客户端。开启后默认运行在 localhost:3100。
+                        {`MCP（Model Context Protocol）服务器可将 Canvas 数据能力开放给 AI 客户端。开启后默认运行在 localhost:${formData?.mcp_port ?? 3100}。`}
                       </Typography>
                       <Box
                         sx={{

@@ -134,6 +134,16 @@ pub enum Theme {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LlmApiKeyEntry {
+    pub name: String,
+    pub key: String,
+    #[serde(default)]
+    pub base_url: String,
+    #[serde(default)]
+    pub model: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
     pub token: String,
@@ -151,6 +161,10 @@ pub struct AppConfig {
     pub llm_model: String,
     #[serde(default)]
     pub llm_temperature: Option<f32>,
+    #[serde(default)]
+    pub llm_api_keys: Vec<LlmApiKeyEntry>,
+    #[serde(default)]
+    pub llm_active_api_key: String,
     #[serde(default)]
     pub ja_auth_cookie: String,
     #[serde(default)]
@@ -204,6 +218,8 @@ impl Default for AppConfig {
             color_primary: Default::default(),
             mcp_enabled: Default::default(),
             mcp_port: 3100,
+            llm_api_keys: Default::default(),
+            llm_active_api_key: Default::default(),
         }
     }
 }

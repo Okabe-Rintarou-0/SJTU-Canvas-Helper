@@ -68,7 +68,9 @@ export default function CommentPanel({
       if (commentInputRef.current) {
         commentInputRef.current.value = "";
       }
-      await onRefresh?.(currentAttachment.user_id);
+      if (currentAttachment.user_id != null) {
+        await onRefresh?.(currentAttachment.user_id);
+      }
     } catch (e) {
       consoleLog(LOG_LEVEL_ERROR, e);
       messageApi.error(e as string);
@@ -83,7 +85,9 @@ export default function CommentPanel({
         studentId: currentAttachment.user_id,
         commentId,
       });
-      await onRefresh?.(currentAttachment.user_id);
+      if (currentAttachment.user_id != null) {
+        await onRefresh?.(currentAttachment.user_id);
+      }
       messageApi.success("删除成功！🎉", 0.5);
     } catch (e) {
       consoleLog(LOG_LEVEL_ERROR, e);
@@ -99,17 +103,17 @@ export default function CommentPanel({
           size="small"
           variant="outlined"
           startIcon={<RefreshRoundedIcon />}
-          onClick={() => onRefresh?.(attachment.user_id)}
+          onClick={() => attachment.user_id != null && onRefresh?.(attachment.user_id)}
         >
           刷新评论
         </Button>
       </Stack>
 
-      {attachment.comments.length > 0 ? (
+      {(attachment.comments?.length ?? 0) > 0 ? (
         <>
           <Divider />
           <List sx={{ width: "100%" }}>
-            {attachment.comments.map((comment) => (
+            {attachment.comments?.map((comment) => (
               <ListItem
                 key={comment.id}
                 alignItems="flex-start"
@@ -151,13 +155,13 @@ export default function CommentPanel({
                       <Typography variant="body2" color="text.primary">
                         {comment.comment}
                       </Typography>
-                      {comment.attachments.length > 0 ? (
+                      {(comment.attachments?.length ?? 0) > 0 ? (
                         <Stack direction="row" spacing={1} flexWrap="wrap">
-                          {comment.attachments.map((commentAttachment) => (
+                          {comment.attachments?.map((commentAttachment) => (
                             <Box
                               key={commentAttachment.id}
                               component="a"
-                              href={commentAttachment.preview_url}
+                              href={commentAttachment.preview_url ?? ""}
                               onMouseEnter={() =>
                                 onHoverEntry?.(attachmentToFile(commentAttachment))
                               }

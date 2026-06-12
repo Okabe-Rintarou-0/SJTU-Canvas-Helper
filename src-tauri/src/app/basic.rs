@@ -160,10 +160,7 @@ impl App {
         let config = App::read_config_from_file(&config_path)?;
         let base_url = Self::get_base_url(&config.account_type);
         self.client.set_base_url(base_url).await;
-        self.client.set_llm_api_key(&config.llm_api_key).await;
-        self.client.set_llm_base_url(&config.llm_base_url).await;
-        self.client.set_llm_model(&config.llm_model).await;
-        self.client.set_llm_temperature(config.llm_temperature).await;
+        Self::apply_llm_config(&config, &self.client).await;
         *self.config.write().await = config;
 
         let mut account_info = App::read_account_info()?;
@@ -202,12 +199,15 @@ impl App {
         tracing::info!("Read config path: {}", config_path);
         let config = App::read_config_from_file(&config_path).unwrap_or_default();
 
-        let base_url = Self::get_base_url(&config.account_type);
+        let canvas_base_url = Self::get_base_url(&config.account_type);
+        let api_key = Self::resolve_active_api_key(&config);
+        let llm_base_url = Self::resolve_active_base_url(&config);
+        let llm_model = Self::resolve_active_model(&config);
         let client = Client::new(
-            base_url,
-            &config.llm_api_key,
-            &config.llm_base_url,
-            &config.llm_model,
+            canvas_base_url,
+            &api_key,
+            &llm_base_url,
+            &llm_model,
             config.llm_temperature,
         );
 
@@ -913,6 +913,41 @@ impl App {
             .await
     }
 
+    fn resolve_active_key_entry(config: &AppConfig) -> Option<&LlmApiKeyEntry> {
+        if config.llm_active_api_key.is_empty() {
+            return None;
+        }
+        config.llm_api_keys.iter().find(|e| e.name == config.llm_active_api_key)
+    }
+
+    fn resolve_active_api_key(config: &AppConfig) -> String {
+        Self::resolve_active_key_entry(config)
+            .filter(|e| !e.key.is_empty())
+            .map(|e| e.key.clone())
+            .unwrap_or_else(|| config.llm_api_key.clone())
+    }
+
+    fn resolve_active_base_url(config: &AppConfig) -> String {
+        Self::resolve_active_key_entry(config)
+            .filter(|e| !e.base_url.is_empty())
+            .map(|e| e.base_url.clone())
+            .unwrap_or_else(|| config.llm_base_url.clone())
+    }
+
+    fn resolve_active_model(config: &AppConfig) -> String {
+        Self::resolve_active_key_entry(config)
+            .filter(|e| !e.model.is_empty())
+            .map(|e| e.model.clone())
+            .unwrap_or_else(|| config.llm_model.clone())
+    }
+
+    async fn apply_llm_config(config: &AppConfig, client: &Client) {
+        client.set_llm_api_key(&Self::resolve_active_api_key(config)).await;
+        client.set_llm_base_url(&Self::resolve_active_base_url(config)).await;
+        client.set_llm_model(&Self::resolve_active_model(config)).await;
+        client.set_llm_temperature(config.llm_temperature).await;
+    }
+
     pub async fn save_config(&self, config: AppConfig) -> Result<()> {
         let account = self.current_account.read().await.clone();
         let config_path = App::get_config_path(&account);
@@ -921,10 +956,7 @@ impl App {
         if self.client.set_base_url(base_url).await {
             self.invalidate_cache()?;
         }
-        self.client.set_llm_api_key(&config.llm_api_key).await;
-        self.client.set_llm_base_url(&config.llm_base_url).await;
-        self.client.set_llm_model(&config.llm_model).await;
-        self.client.set_llm_temperature(config.llm_temperature).await;
+        Self::apply_llm_config(&config, &self.client).await;
         let was_enabled = self.config.read().await.mcp_enabled;
         *self.config.write().await = config;
         let is_enabled = self.config.read().await.mcp_enabled;

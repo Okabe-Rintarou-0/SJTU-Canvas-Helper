@@ -271,6 +271,13 @@ export interface DownloadTask {
 export type DownloadState = "downloading" | "succeed" | "fail" | "wait_retry";
 export type Theme = "light" | "dark";
 
+export interface LlmApiKeyEntry {
+    name: string;
+    key: string;
+    base_url: string;
+    model: string;
+}
+
 export interface AppConfig {
     token: string;
     account_type: "Default" | "JI";
@@ -286,6 +293,8 @@ export interface AppConfig {
     llm_base_url: string;
     llm_model: string;
     llm_temperature: Option<number>;
+    llm_api_keys: LlmApiKeyEntry[];
+    llm_active_api_key: string;
     theme: Theme;
     compact_mode: boolean;
     color_primary: Option<string>;

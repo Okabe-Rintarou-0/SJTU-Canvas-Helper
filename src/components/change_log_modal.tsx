@@ -20,6 +20,23 @@ import { alpha, useTheme } from "@mui/material/styles";
 
 const changeLogs = [
   {
+    version: "v3.0.3",
+    date: "2026/6/12",
+    items: [
+      "新增多 API Key 管理：支持添加、命名、切换、删除多个 LLM API Key，每个 Key 绑定独立的 Base URL 和 Model。",
+      "新增 16 个主流服务商预设（DeepSeek / OpenAI / Kimi / Anthropic / 智谱 / 百度 / 通义 / 腾讯 / 豆包 / xAI / Groq / Perplexity / Mistral / Cohere / Ollama），一键填入 Base URL。",
+      "Model 字段改为 Autocomplete，打开时自动从 `{base_url}/models` 拉取可用模型列表（带 `Bearer` 鉴权），支持搜索与自由输入。",
+      "新增 24 个 MCP 工具，覆盖课程、作业、文件、文件夹、用户、讨论、日历、提交、AI 对话等全部后端能力。",
+      "新增 MCP Server 开关与端口设置页面，可在设置 → 高级选项内启用/停用，默认关闭。",
+      "修复 MCP 端口描述未跟随设置动态变化的问题。",
+      "修复 API Key 编辑卡片中未编辑字段的 onBlur 误清除数据的问题。",
+      "编辑 API Key 信息（名称 / Key / Base URL / Model）后自动保存配置。",
+      "Settings 页面新增一键复制 MCP 连接配置，附带中文 Prompt 引导 AI 客户端自动连接。",
+      "修复 AI 对话流式超时问题：LLM 客户端超时从 60s 提升到 600s。",
+      "升级 Rust 工具链至 1.96.0 以兼容 rmcp 依赖链，同步更新 bytes 至 1.9。",
+    ],
+  },
+  {
     version: "v3.0.1",
     date: "2026/4/15",
     items: [
@@ -195,13 +212,13 @@ export function ChangeLogModal({
               background:
                 theme.palette.mode === "dark"
                   ? `linear-gradient(135deg, ${alpha(
-                      theme.palette.primary.main,
-                      0.18
-                    )}, ${alpha("#0f172a", 0.92)})`
+                    theme.palette.primary.main,
+                    0.18
+                  )}, ${alpha("#0f172a", 0.92)})`
                   : `linear-gradient(135deg, ${alpha(
-                      theme.palette.primary.main,
-                      0.12
-                    )}, rgba(255,255,255,0.96))`,
+                    theme.palette.primary.main,
+                    0.12
+                  )}, rgba(255,255,255,0.96))`,
               border: "1px solid",
               borderColor: alpha(theme.palette.primary.main, 0.12),
             }}

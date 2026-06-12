@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use error::Result;
+use error::{AppError, Result};
 use model::{
     Account, AccountInfo, AnnualReport, AppConfig, Assignment, CalendarEvent, CanvasVideo, Colors,
     Course, DiscussionTopic, File, FileChatStreamChunkPayload, FileChatStreamDonePayload,
@@ -214,6 +214,77 @@ fn check_path(path: String) -> bool {
 #[tauri::command]
 async fn chat(prompt: String) -> Result<String> {
     APP.chat(prompt).await
+}
+
+#[tauri::command]
+async fn check_balance(base_url: String, api_key: String, provider: String) -> Result<String> {
+    let cli = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(15))
+        .build()?;
+    let base = base_url.trim_end_matches('/');
+    let auth = format!("Bearer {}", api_key);
+
+    match provider.as_str() {
+        "deepseek" => {
+            let resp = cli
+                .get(format!("{}/user/balance", base))
+                .header("Authorization", &auth)
+                .send()
+                .await?;
+            if !resp.status().is_success() {
+                return Err(AppError::LLMError("DeepSeek 余额查询失败，请检查 API Key。".into()));
+            }
+            let text = resp.text().await?;
+            let v: serde_json::Value = serde_json::from_str(&text)?;
+            let total: f64 = v
+                .get("balance_infos")
+                .and_then(|x| x.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|i| i.get("total_balance").and_then(|b| b.as_str()))
+                        .filter_map(|s| s.parse::<f64>().ok())
+                        .sum()
+                })
+                .unwrap_or(0.0);
+            Ok(format!("DeepSeek 余额: ¥{:.2}", total))
+        }
+        "openai" => {
+            let resp = cli
+                .get(format!("{}/dashboard/billing/subscription", base))
+                .header("Authorization", &auth)
+                .send()
+                .await?;
+            if !resp.status().is_success() {
+                return Err(AppError::LLMError("OpenAI 余额查询失败，请检查 API Key。".into()));
+            }
+            let text = resp.text().await?;
+            let v: serde_json::Value = serde_json::from_str(&text)?;
+            let limit = v.get("hard_limit_usd").and_then(|b| b.as_f64()).unwrap_or(0.0);
+            Ok(format!("OpenAI 月额度: ${:.2}", limit))
+        }
+        "moonshot" => {
+            let base = base.strip_suffix("/v1").unwrap_or(base);
+            let resp = cli
+                .get(format!("{}/v1/users/me/balance", base))
+                .header("Authorization", &auth)
+                .send()
+                .await?;
+            if !resp.status().is_success() {
+                return Err(AppError::LLMError("Kimi 余额查询失败，请检查 API Key。".into()));
+            }
+            let text = resp.text().await?;
+            let v: serde_json::Value = serde_json::from_str(&text)?;
+            let bal = v.get("balance")
+                .and_then(|b| b.as_f64().or_else(|| b.as_str()?.parse::<f64>().ok()))
+                .unwrap_or(0.0);
+            Ok(format!("Kimi 余额: ¥{:.2}", bal))
+        }
+        _ => Err(AppError::LLMError(format!(
+            "{} 暂不支持余额查询。",
+            provider
+        ))),
+    }
 }
 
 #[tauri::command]
@@ -882,6 +953,7 @@ async fn main() -> Result<()> {
             generate_annual_report,
             // LLM
             chat,
+            check_balance,
             explain_file,
             chat_with_file,
             start_file_chat_stream,
@@ -896,10 +968,14 @@ async fn main() -> Result<()> {
         .run(|_app_handle, event| {
             if let tauri::RunEvent::Exit = event {
                 tracing::info!("App exiting, cleaning up MCP server");
-                tauri::async_runtime::block_on(async {
-                    APP.stop_mcp().await;
-                    APP.stop_proxy().await;
+                let handle = std::thread::spawn(|| {
+                    let rt = tokio::runtime::Runtime::new().unwrap();
+                    rt.block_on(async {
+                        APP.stop_mcp().await;
+                        APP.stop_proxy().await;
+                    });
                 });
+                let _ = handle.join();
             }
         });
     Ok(())

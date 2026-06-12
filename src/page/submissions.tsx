@@ -17,6 +17,7 @@ import {
   Chip,
   Collapse,
   FormControl,
+  IconButton,
   InputLabel,
   Link as MuiLink,
   MenuItem,
@@ -115,7 +116,8 @@ function SubmissionGrade({
       value={value}
       disabled={disabled}
       size="small"
-      placeholder="输入成绩后按回车"
+      sx={{ width: 90 }}
+      placeholder="成绩"
       onChange={(event) => setValue(event.target.value)}
       onKeyDown={(event) => {
         if (event.key !== "Enter") {
@@ -271,6 +273,7 @@ export default function SubmissionsPage() {
     const visitSet = new Set<number>();
     items.forEach((attachment) => {
       const userId = attachment.user_id;
+      if (userId == null) return;
       if (visitSet.has(userId)) {
         return;
       }
@@ -805,7 +808,7 @@ export default function SubmissionsPage() {
                       overflow: "auto",
                     }}
                   >
-                    <Table stickyHeader sx={{ minWidth: 1200 }}>
+                    <Table stickyHeader>
                       <TableHead>
                         <TableRow>
                           <TableCell padding="checkbox">
@@ -856,14 +859,15 @@ export default function SubmissionsPage() {
                                     }}
                                   />
                                 </TableCell>
-                                <TableCell>
+                                <TableCell sx={{ maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                   <Box
+                                    sx={{ overflow: "hidden", textOverflow: "ellipsis" }}
                                     dangerouslySetInnerHTML={{
                                       __html: html(attachment.user || ""),
                                     }}
                                   />
                                 </TableCell>
-                                <TableCell sx={{ minWidth: 180 }}>
+                                <TableCell sx={{ minWidth: 100, maxWidth: 100 }}>
                                   <SubmissionGrade
                                     gradeKey={attachment.grade}
                                     gradingType={
@@ -876,8 +880,8 @@ export default function SubmissionsPage() {
                                     }
                                   />
                                 </TableCell>
-                                <TableCell sx={{ minWidth: 260 }}>
-                                  <Stack direction="row" spacing={1} alignItems="center">
+                                <TableCell sx={{ minWidth: 120, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>
+                                  <Stack direction="row" spacing={1} alignItems="center" sx={{ overflow: "hidden" }}>
                                     <MuiLink
                                       href={`${baseURL.data}/courses/${selectedCourseId}/gradebook/speed_grader?assignment_id=${selectedAssignment?.id}&student_id=${attachment.user_id}`}
                                       target="_blank"
@@ -892,8 +896,8 @@ export default function SubmissionsPage() {
                                     </MuiLink>
                                   </Stack>
                                 </TableCell>
-                                <TableCell>{formatDate(attachment.submitted_at)}</TableCell>
-                                <TableCell>
+                                <TableCell sx={{ whiteSpace: "nowrap", px: 1.5 }}>{formatDate(attachment.submitted_at)}</TableCell>
+                                <TableCell sx={{ whiteSpace: "nowrap", px: 1.5 }}>
                                   <Chip
                                     size="small"
                                     label={attachment.late ? "迟交" : "按时提交"}
@@ -901,62 +905,61 @@ export default function SubmissionsPage() {
                                     variant="outlined"
                                   />
                                 </TableCell>
-                                <TableCell align="right">
+                                <TableCell align="right" sx={{ minWidth: 132, px: 1 }}>
                                   <Stack
                                     direction="row"
-                                    spacing={1}
+                                    spacing={0.25}
                                     justifyContent="flex-end"
-                                    flexWrap="wrap"
-                                    useFlexGap
+                                    flexWrap="nowrap"
                                   >
                                     {attachment.url ? (
-                                      <Button
+                                      <Tooltip title="下载">
+                                        <IconButton
+                                          size="small"
+                                          onClick={() =>
+                                            void handleDownloadAttachment(attachment)
+                                          }
+                                        >
+                                          <DownloadRoundedIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                    ) : null}
+                                    <Tooltip title="预览">
+                                      <IconButton
                                         size="small"
-                                        variant="outlined"
-                                        startIcon={<DownloadRoundedIcon />}
                                         onClick={() =>
-                                          void handleDownloadAttachment(attachment)
+                                          setPreviewEntry(attachmentToFile(attachment))
                                         }
                                       >
-                                        下载
-                                      </Button>
-                                    ) : null}
-                                    <Button
-                                      size="small"
-                                      variant="text"
-                                      startIcon={<PreviewRoundedIcon />}
-                                      onClick={() =>
-                                        setPreviewEntry(attachmentToFile(attachment))
-                                      }
-                                    >
-                                      预览
-                                    </Button>
-                                    <Button
-                                      size="small"
-                                      variant="text"
-                                      startIcon={<RateReviewRoundedIcon />}
-                                      onClick={() => {
-                                        setAttachmentToComment(attachment.id);
-                                        setExpandedRowKeys((keys) =>
-                                          keys.includes(attachment.id)
-                                            ? keys
-                                            : [...keys, attachment.id]
-                                        );
-                                      }}
-                                    >
-                                      评论
-                                    </Button>
-                                    <Button
-                                      size="small"
-                                      variant="text"
-                                      startIcon={<OpenInNewRoundedIcon />}
-                                      component="a"
-                                      href={`${baseURL.data}/courses/${selectedCourseId}/gradebook/speed_grader?assignment_id=${selectedAssignment?.id}&student_id=${attachment.user_id}`}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                    >
-                                      SpeedGrader
-                                    </Button>
+                                        <PreviewRoundedIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="评论">
+                                      <IconButton
+                                        size="small"
+                                        onClick={() => {
+                                          setAttachmentToComment(attachment.id);
+                                          setExpandedRowKeys((keys) =>
+                                            keys.includes(attachment.id)
+                                              ? keys
+                                              : [...keys, attachment.id]
+                                          );
+                                        }}
+                                      >
+                                        <RateReviewRoundedIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="SpeedGrader">
+                                      <IconButton
+                                        size="small"
+                                        component="a"
+                                        href={`${baseURL.data}/courses/${selectedCourseId}/gradebook/speed_grader?assignment_id=${selectedAssignment?.id}&student_id=${attachment.user_id}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                      >
+                                        <OpenInNewRoundedIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
                                   </Stack>
                                 </TableCell>
                               </TableRow>
