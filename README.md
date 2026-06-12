@@ -82,6 +82,8 @@ SJTU Canvas 小帮手基于 [Tauri](https://tauri.app/) 开发，助您更便捷
 + [x] 批改作业/修改作业 DDL
 + [x] 支持密院和本部 canvas 系统
 + [x] 视频下载/播放/字幕下载/截图抓取合成PDF
++ [x] 多 API Key 管理：支持添加多个 LLM 服务商 Key，自动识别提供商并拉取可用模型列表
++ [x] MCP Server：将 Canvas 数据能力通过标准 MCP 协议开放给 AI 客户端
 + [x] 自动更新 
 
 ### 文件下载/预览
