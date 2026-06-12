@@ -1,4 +1,5 @@
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
+import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import FolderOpenRoundedIcon from "@mui/icons-material/FolderOpenRounded";
 import KeyRoundedIcon from "@mui/icons-material/KeyRounded";
@@ -1144,6 +1145,93 @@ export default function SettingsPage() {
                           inputProps={{ min: 1024, max: 65535 }}
                         />
                       </Box>
+                    </Box>
+
+                    <Box
+                      sx={{
+                        p: 2,
+                        borderRadius: "18px",
+                        bgcolor: alpha(theme.palette.background.default, 0.6),
+                        border: "1px solid",
+                        borderColor: "divider",
+                      }}
+                    >
+                      <Stack spacing={1}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                          复制 MCP 连接配置
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          粘贴到 opencode / Claude Desktop / Cline 等支持 MCP 的 AI 客户端即可自动接入。MCP 服务器仅监听本机，无需额外鉴权。
+                        </Typography>
+                        <TextField
+                          multiline
+                          fullWidth
+                          minRows={9}
+                          maxRows={16}
+                          sx={{
+                            "& .MuiInputBase-root": { fontFamily: "monospace", fontSize: "0.8125rem", lineHeight: 1.6 },
+                          }}
+                          value={(() => {
+                            if (!formData?.token) return "// 请先配置 Canvas Token 并保存";
+                            const config = {
+                              mcpServers: {
+                                "sjtu-canvas": {
+                                  type: "sse",
+                                  url: `http://localhost:${formData.mcp_port ?? 3100}`,
+                                },
+                              },
+                            };
+                            return [
+                              "我现在在本机运行了一个 Canvas MCP 服务器。",
+                              "请帮我做以下几件事：",
+                              "1. 读取下面的 MCP 服务器配置，连接到 MCP Server",
+                              "2. 连接成功后，调用 list_courses 工具列出我的所有 Canvas 课程",
+                              "3. 检查有无临近截止的作业，并提醒我",
+                              "",
+                              "MCP 配置如下：",
+                              JSON.stringify(config, null, 2),
+                            ].join("\n");
+                          })()}
+                          slotProps={{
+                            input: {
+                              readOnly: true,
+                              endAdornment: formData?.token ? (
+                                <InputAdornment position="end">
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => {
+                                    const config = {
+                                      mcpServers: {
+                                        "sjtu-canvas": {
+                                          type: "sse",
+                                          url: `http://localhost:${formData?.mcp_port ?? 3100}`,
+                                        },
+                                      },
+                                    };
+                                    const text = [
+                                      "我现在在本机运行了一个 Canvas MCP 服务器。",
+                                      "请帮我做以下几件事：",
+                                      "1. 读取下面的 MCP 服务器配置，连接到 MCP Server",
+                                      "2. 连接成功后，调用 list_courses 工具列出我的所有 Canvas 课程",
+                                      "3. 检查有无临近截止的作业，并提醒我",
+                                      "",
+                                      "MCP 配置如下：",
+                                      JSON.stringify(config, null, 2),
+                                    ].join("\n");
+                                    navigator.clipboard.writeText(text).then(
+                                      () => messageApi.success("已复制！"),
+                                      () => messageApi.error("复制失败")
+                                    );
+                                  }}
+                                >
+                                  <ContentCopyRoundedIcon />
+                                </IconButton>
+                              </InputAdornment>
+                              ) : undefined,
+                            },
+                          }}
+                        />
+                      </Stack>
                     </Box>
 
                     {renderCardSaveAction("保存高级选项")}
