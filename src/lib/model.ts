@@ -288,6 +288,8 @@ export interface AppConfig {
     theme: Option<Theme>;
     compact_mode: boolean;
     color_primary: Option<string>;
+    mcp_enabled: boolean;
+    mcp_port: number;
 }
 
 export interface AccountInfo {

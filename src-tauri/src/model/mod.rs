@@ -171,6 +171,14 @@ pub struct AppConfig {
     pub compact_mode: bool,
     #[serde(default)]
     pub color_primary: Option<String>,
+    #[serde(default)]
+    pub mcp_enabled: bool,
+    #[serde(default = "default_mcp_port")]
+    pub mcp_port: u16,
+}
+
+fn default_mcp_port() -> u16 {
+    3100
 }
 
 impl Default for AppConfig {
@@ -194,6 +202,8 @@ impl Default for AppConfig {
             theme: Default::default(),
             compact_mode: Default::default(),
             color_primary: Default::default(),
+            mcp_enabled: Default::default(),
+            mcp_port: 3100,
         }
     }
 }

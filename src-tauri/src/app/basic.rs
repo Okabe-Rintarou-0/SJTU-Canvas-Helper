@@ -171,6 +171,10 @@ impl App {
         App::save_account_info(&account_info)?;
         *self.current_account.write().await = account.clone();
         self.invalidate_cache()?;
+        // Restart MCP server if enabled (token may have changed)
+        if self.config.read().await.mcp_enabled {
+            self.restart_mcp().await?;
+        }
         Ok(())
     }
 
@@ -212,6 +216,7 @@ impl App {
             current_account: RwLock::new(account_info.current_account),
             config: RwLock::new(config),
             handle: Default::default(),
+            mcp_handle: Default::default(),
             cache: Default::default(),
         }
     }
@@ -324,6 +329,31 @@ impl App {
             handle.abort();
         }
         *handle = None;
+    }
+
+    pub async fn start_mcp(&self) -> Result<bool> {
+        if self.mcp_handle.read().await.is_some() {
+            return Ok(true);
+        }
+        let port = self.config.read().await.mcp_port;
+        let handle = crate::mcp::start_mcp_server(port);
+        *self.mcp_handle.write().await = Some(handle);
+        tracing::info!("MCP server started on port {port}");
+        Ok(true)
+    }
+
+    pub async fn stop_mcp(&self) {
+        let mut handle = self.mcp_handle.write().await;
+        if let Some(handle) = handle.as_ref() {
+            tracing::info!("Stopping MCP server");
+            handle.abort();
+        }
+        *handle = None;
+    }
+
+    pub async fn restart_mcp(&self) -> Result<bool> {
+        self.stop_mcp().await;
+        self.start_mcp().await
     }
 
     fn read_config_from_file(config_path: &str) -> Result<AppConfig> {
@@ -895,7 +925,18 @@ impl App {
         self.client.set_llm_base_url(&config.llm_base_url).await;
         self.client.set_llm_model(&config.llm_model).await;
         self.client.set_llm_temperature(config.llm_temperature).await;
+        let was_enabled = self.config.read().await.mcp_enabled;
         *self.config.write().await = config;
+        let is_enabled = self.config.read().await.mcp_enabled;
+        if was_enabled != is_enabled {
+            if is_enabled {
+                self.start_mcp().await?;
+            } else {
+                self.stop_mcp().await;
+            }
+        } else if is_enabled {
+            self.restart_mcp().await?;
+        }
         Ok(())
     }
 

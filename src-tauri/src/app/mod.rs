@@ -18,6 +18,7 @@ pub struct App {
     current_account: RwLock<Account>,
     config: RwLock<AppConfig>,
     handle: RwLock<Option<JoinHandle<()>>>,
+    mcp_handle: RwLock<Option<JoinHandle<()>>>,
     cache: Cache,
 }
 

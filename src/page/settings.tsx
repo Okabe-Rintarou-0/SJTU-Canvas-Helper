@@ -21,11 +21,13 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  FormControlLabel,
   IconButton,
   InputAdornment,
   MenuItem,
   Link as MuiLink,
   Stack,
+  Switch,
   TextField,
   Tooltip,
   Typography
@@ -298,6 +300,8 @@ export default function SettingsPage() {
         ...config,
         theme: config.theme ?? "light",
         compact_mode: config.compact_mode ?? false,
+        mcp_enabled: config.mcp_enabled ?? false,
+        mcp_port: config.mcp_port || 3100,
         proxy_port: config.proxy_port === 0 ? DEFAULT_PROXY_PORT : config.proxy_port,
       };
 
@@ -1095,6 +1099,51 @@ export default function SettingsPage() {
                         helperText="用逗号分隔，用于指定以纯文本方式打开的扩展名。"
                         autoComplete="off"
                       />
+                    </Box>
+
+                    <Divider />
+                    <Box>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
+                        MCP Server
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                        MCP（Model Context Protocol）服务器可将 Canvas 数据能力开放给 AI 客户端。开启后默认运行在 localhost:3100。
+                      </Typography>
+                      <Box
+                        sx={{
+                          display: "grid",
+                          gap: 2,
+                          gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "1fr 180px" },
+                          alignItems: "center",
+                        }}
+                      >
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={formData?.mcp_enabled ?? false}
+                              onChange={(event) =>
+                                updateField("mcp_enabled", event.target.checked)
+                              }
+                            />
+                          }
+                          label="启用 MCP Server"
+                        />
+                        <TextField
+                          label="MCP 端口"
+                          name="mcp_port"
+                          type="number"
+                          value={formData?.mcp_port ?? 3100}
+                          onChange={(event) => {
+                            const port = parseInt(event.target.value, 10);
+                            if (!isNaN(port) && port > 0 && port < 65536) {
+                              updateField("mcp_port", port);
+                            }
+                          }}
+                          disabled={!formData?.mcp_enabled}
+                          helperText="默认 3100"
+                          inputProps={{ min: 1024, max: 65535 }}
+                        />
+                      </Box>
                     </Box>
 
                     {renderCardSaveAction("保存高级选项")}

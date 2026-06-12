@@ -25,6 +25,7 @@ use crate::app::App;
 mod app;
 mod client;
 mod error;
+mod mcp;
 mod model;
 mod utils;
 
@@ -753,6 +754,16 @@ async fn list_external_module_items(course_id: i64) -> Result<Vec<ModuleItem>> {
     APP.list_external_module_items(course_id).await
 }
 
+#[tauri::command]
+async fn start_mcp_server() -> Result<bool> {
+    APP.start_mcp().await.map_err(|e| e.into())
+}
+
+#[tauri::command]
+async fn stop_mcp_server() {
+    APP.stop_mcp().await
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // set up logger
@@ -771,6 +782,9 @@ async fn main() -> Result<()> {
     tracing::info!("log setup, path: {:?}", config_dir());
 
     APP.init().await?;
+    if APP.get_config().await.mcp_enabled {
+        APP.start_mcp().await?;
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_fs::init())
@@ -872,9 +886,21 @@ async fn main() -> Result<()> {
             chat_with_file,
             start_file_chat_stream,
             start_subtitle_chat_stream,
-            summarize_subtitle
+            summarize_subtitle,
+            // MCP server
+            start_mcp_server,
+            stop_mcp_server
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                tracing::info!("App exiting, cleaning up MCP server");
+                tauri::async_runtime::block_on(async {
+                    APP.stop_mcp().await;
+                    APP.stop_proxy().await;
+                });
+            }
+        });
     Ok(())
 }

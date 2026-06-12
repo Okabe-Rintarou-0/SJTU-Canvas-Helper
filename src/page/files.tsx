@@ -742,7 +742,7 @@ export default function FilesPage() {
           chipLabel="File Workspace"
           chipIcon={<FolderOpenRoundedIcon />}
           title="文件浏览与下载工作台"
-          description="更适合课程文件筛选、批量下载、目录跳转和下载任务追踪的内容布局。"
+          description="课程文件筛选、批量下载。"
           aside={
             <Stack spacing={1} alignItems={{ xs: "flex-start", md: "flex-end" }}>
               <Chip

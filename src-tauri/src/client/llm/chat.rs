@@ -44,7 +44,10 @@ pub fn new_llm_client<S: Into<String>>(
     model: S,
     temperature: Option<f32>,
 ) -> Result<Box<dyn LLMClient>> {
-    let client = Client::builder().timeout(Duration::from_secs(60)).build()?;
+    let client = Client::builder()
+        .connect_timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(600))
+        .build()?;
     let llm_cli = OpenAICompatibleClient {
         api_key: RwLock::new(api_key.into()),
         base_url: RwLock::new(normalize_base_url(base_url.into())),
