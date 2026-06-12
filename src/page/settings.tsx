@@ -1671,7 +1671,7 @@ export default function SettingsPage() {
                                     const config = {
                                       mcpServers: {
                                         "sjtu-canvas": {
-                                          type: "sse",
+                                          type: "streamable-http",
                                           url: `http://localhost:${formData?.mcp_port ?? 3100}`,
                                         },
                                       },
