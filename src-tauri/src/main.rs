@@ -757,14 +757,15 @@ async fn list_external_module_items(course_id: i64) -> Result<Vec<ModuleItem>> {
 async fn main() -> Result<()> {
     // set up logger
     let appender = tracing_appender::rolling::never(App::config_dir()?, "app.log");
-    let (non_blocking, _guard) = tracing_appender::non_blocking(appender);
     let subscriber = tracing_subscriber::registry()
         .with(
             fmt::Layer::new()
                 .with_writer(std::io::stdout.with_max_level(Level::INFO))
                 .pretty(),
         )
-        .with(fmt::Layer::new().with_writer(non_blocking.with_max_level(Level::INFO)));
+        .with(fmt::Layer::new().with_writer(
+            appender.with_max_level(Level::INFO),
+        ));
     tracing::subscriber::set_global_default(subscriber)
         .expect("Unable to set a tracing subscriber");
     tracing::info!("log setup, path: {:?}", config_dir());
