@@ -33,7 +33,10 @@ use printpdf::*;
 use regex::Regex;
 use reqwest::{
     cookie::CookieStore,
-    header::{HeaderMap, HeaderValue, ACCEPT, ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE, RANGE, REFERER},
+    header::{
+        HeaderMap, HeaderValue, ACCEPT, ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE, RANGE,
+        REFERER,
+    },
     redirect::Policy,
     Response, StatusCode,
 };
@@ -57,7 +60,10 @@ fn parse_download_probe(status: StatusCode, headers: &HeaderMap) -> (u64, bool) 
             .map(|value| value.contains("bytes"))
             .unwrap_or(false);
 
-    if let Some(range) = headers.get(CONTENT_RANGE).and_then(|value| value.to_str().ok()) {
+    if let Some(range) = headers
+        .get(CONTENT_RANGE)
+        .and_then(|value| value.to_str().ok())
+    {
         let parts: Vec<_> = range.split('/').collect();
         if parts.len() == 2 {
             let size = parts[1].parse().unwrap_or_default();
@@ -78,6 +84,17 @@ fn parse_download_probe(status: StatusCode, headers: &HeaderMap) -> (u64, bool) 
     }
 
     (0, supports_range)
+}
+
+fn get_cookie_value(cookies: &str, name: &str) -> Option<String> {
+    cookies.split(';').find_map(|kv| {
+        let (key, value) = kv.trim().split_once('=')?;
+        if key == name {
+            Some(value.to_owned())
+        } else {
+            None
+        }
+    })
 }
 
 // Apis here are for course video
@@ -112,12 +129,8 @@ impl Client {
         let domain = Url::parse(AUTH_URL).unwrap();
         if let Some(value) = self.jar.cookies(&domain) {
             if let Ok(cookies) = value.to_str() {
-                let kvs = cookies.split(';');
-                for kv in kvs {
-                    let kv: Vec<_> = kv.trim().split('=').collect();
-                    if kv.len() >= 2 && kv[0] == "JAAuthCookie" {
-                        return Ok(Some(kv[1].to_owned()));
-                    }
+                if let Some(cookie) = get_cookie_value(cookies, "JAAuthCookie") {
+                    return Ok(Some(cookie));
                 }
             }
         }
@@ -472,7 +485,9 @@ impl Client {
         }
 
         if !supports_range {
-            tracing::info!("video source does not support range requests, fallback to single stream");
+            tracing::info!(
+                "video source does not support range requests, fallback to single stream"
+            );
             let mut response = self
                 .cli
                 .get(url)
@@ -835,6 +850,16 @@ mod tests {
         let (size, supports_range) = parse_download_probe(StatusCode::OK, &headers);
         assert_eq!(size, 5_485_935);
         assert!(!supports_range);
+    }
+
+    #[test]
+    fn test_get_cookie_value_keeps_equals_in_value() {
+        let cookies = "foo=bar; JAAuthCookie=abc==; other=value";
+
+        assert_eq!(
+            get_cookie_value(cookies, "JAAuthCookie"),
+            Some("abc==".to_owned())
+        );
     }
 
     #[test]
