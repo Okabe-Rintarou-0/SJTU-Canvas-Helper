@@ -13,6 +13,7 @@ export interface Course {
     name: string;
     course_code: string;
     enrollments: Enrollment[];
+    access_restricted_by_date: Option<boolean>;
     teachers: Teacher[];
     term: Term;
 }
@@ -127,7 +128,6 @@ export interface FileChatStreamErrorPayload {
 
 export interface UserSubmissions {
     user_id: number;
-    username: Option<string>;
     submissions: Submission[]
 }
 
@@ -166,6 +166,7 @@ export interface Assignment {
     allowed_extensions: string[];
     published: boolean;
     has_submitted_submissions: boolean;
+    submissions_download_url: string;
     submission: Option<Submission>;
     overrides: AssignmentOverride[];
     all_dates: AssignmentDate[];
@@ -184,7 +185,6 @@ export interface AssignmentDate {
 
 export interface AssignmentOverride {
     id: number;
-    pub_id: number;
     assignment_id: number;
     quiz_id: number;
     context_module_id: number;
@@ -194,7 +194,7 @@ export interface AssignmentOverride {
     title: string;
     due_at: Option<string>;
     all_day: boolean;
-    all_day_date: string;
+    all_day_date: Option<string>;
     unlock_at: Option<string>;
     lock_at: Option<string>;
 }
@@ -226,14 +226,7 @@ export interface ScoreStatistic {
 }
 
 export interface Attachment {
-    user: Option<string>;
-    user_id: number;
-    submitted_at: Option<string>;
-    grade: Option<string>;
     id: number;
-    key: React.Key;
-    late: boolean;
-    comments: SubmissionComment[];
     uuid: string;
     folder_id: Option<number>;
     display_name: string;
@@ -243,7 +236,14 @@ export interface Attachment {
     size: number;
     locked: boolean;
     mime_class: string;
-    preview_url: string;
+    user: Option<string>;
+    user_id: Option<number>;
+    submitted_at: Option<string>;
+    grade: Option<string>;
+    key: Option<React.Key>;
+    late: Option<boolean>;
+    comments: Option<SubmissionComment[]>;
+    preview_url: Option<string>;
 }
 
 export interface FileDownloadTask {
@@ -276,6 +276,7 @@ export interface AppConfig {
     account_type: "Default" | "JI";
     save_path: string;
     serve_as_plaintext: string;
+    oauth_consumer_key: string;
     ja_auth_cookie: string;
     video_cookies: string;
     proxy_port: number;
@@ -285,7 +286,7 @@ export interface AppConfig {
     llm_base_url: string;
     llm_model: string;
     llm_temperature: Option<number>;
-    theme: Option<Theme>;
+    theme: Theme;
     compact_mode: boolean;
     color_primary: Option<string>;
     mcp_enabled: boolean;
