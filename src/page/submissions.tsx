@@ -447,7 +447,7 @@ export default function SubmissionsPage() {
       notSubmitStudentsMap.set(user.id, user);
     });
     attachments.forEach((attachment) => {
-      notSubmitStudentsMap.delete(attachment.user_id);
+      if (attachment.user_id != null) notSubmitStudentsMap.delete(attachment.user_id);
     });
     return [...notSubmitStudentsMap.values()].filter(
       (student) => student.name !== "测验学生"
@@ -963,7 +963,7 @@ export default function SubmissionsPage() {
                                   </Stack>
                                 </TableCell>
                               </TableRow>
-                              {(attachment.comments.length > 0 || showInput) && (
+                              {((attachment.comments?.length ?? 0) > 0 || showInput) && (
                                 <TableRow key={`${attachment.id}-detail`}>
                                   <TableCell colSpan={7} sx={{ py: 0 }}>
                                     <Collapse in={expanded} unmountOnExit>
