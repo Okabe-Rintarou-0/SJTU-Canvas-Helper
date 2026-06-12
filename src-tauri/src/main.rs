@@ -827,7 +827,7 @@ async fn list_external_module_items(course_id: i64) -> Result<Vec<ModuleItem>> {
 
 #[tauri::command]
 async fn start_mcp_server() -> Result<bool> {
-    APP.start_mcp().await.map_err(|e| e.into())
+    APP.start_mcp().await
 }
 
 #[tauri::command]
