@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
 use error::{AppError, Result};
 use model::{
     Account, AccountInfo, AnnualReport, AppConfig, Assignment, CalendarEvent, CanvasVideo, Colors,
@@ -50,6 +51,151 @@ fn read_log_content() -> Result<String> {
 async fn is_ffmpeg_installed() -> bool {
     App::is_ffmpeg_installed()
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserBalance {
+    pub available_balance: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub voucher_balance: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cash_balance: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeepSeekBalanceInfo {
+    #[serde(default)]
+    total_balance: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeepSeekBalanceResponse {
+    #[serde(default)]
+    balance_infos: Vec<DeepSeekBalanceInfo>,
+    #[serde(default, rename = "is_available")]
+    _is_available: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+struct MoonshotBalanceData {
+    available_balance: f64,
+    #[serde(default)]
+    voucher_balance: Option<f64>,
+    #[serde(default)]
+    cash_balance: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MoonshotBalanceResponse {
+    data: MoonshotBalanceData,
+}
+
+#[derive(Debug, Deserialize)]
+struct ZhipuBalanceData {
+    #[serde(alias = "availableBalance")]
+    available_balance: f64,
+    #[serde(alias = "voucherBalance", default)]
+    voucher_balance: Option<f64>,
+    #[serde(alias = "cashBalance", default)]
+    cash_balance: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ZhipuBalanceResponse {
+data: ZhipuBalanceData,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct MiniMaxBalanceData {
+    #[serde(default)]
+    #[serde(alias = "remain_count", alias = "remaining", alias = "available_balance")]
+    available_balance: f64,
+}
+
+#[derive(Debug, Deserialize)]
+struct MiniMaxBalanceResponse {
+    #[serde(default)]
+    data: Option<MiniMaxBalanceData>,
+}
+
+async fn check_deepseek_balance(cli: &reqwest::Client, base: &str, auth: &str) -> Result<UserBalance> {
+    let resp = cli
+        .get(format!("{}/user/balance", base))
+        .header("Authorization", auth)
+        .send()
+        .await?;
+    if !resp.status().is_success() {
+        return Err(AppError::LLMError("DeepSeek 余额查询失败，请检查 API Key。".into()));
+    }
+    let body: DeepSeekBalanceResponse = serde_json::from_str(&resp.text().await?)?;
+    let available: f64 = body.balance_infos
+        .iter()
+        .filter_map(|i| i.total_balance.parse::<f64>().ok())
+        .sum();
+    Ok(UserBalance {
+        available_balance: available,
+        voucher_balance: None,
+        cash_balance: None,
+    })
+}
+
+async fn check_moonshot_balance(cli: &reqwest::Client, base: &str, auth: &str) -> Result<UserBalance> {
+    let resp = cli
+        .get(format!("{}/users/me/balance", base))
+        .header("Authorization", auth)
+        .send()
+        .await?;
+    if !resp.status().is_success() {
+        return Err(AppError::LLMError("Kimi 余额查询失败，请检查 API Key。".into()));
+    }
+    let body: MoonshotBalanceResponse = serde_json::from_str(&resp.text().await?)?;
+    Ok(UserBalance {
+        available_balance: body.data.available_balance,
+        voucher_balance: body.data.voucher_balance,
+        cash_balance: body.data.cash_balance,
+    })
+}
+
+async fn check_zhipu_balance(cli: &reqwest::Client, api_key: &str) -> Result<UserBalance> {
+    let resp = cli
+        .get("https://www.bigmodel.cn/api/biz/account/query-customer-account-report")
+        .header("Authorization", api_key)
+        .header("Content-Type", "application/json")
+        .send()
+        .await?;
+    if !resp.status().is_success() {
+        return Err(AppError::LLMError("智谱余额查询失败，请检查 API Key。".into()));
+    }
+    let text = resp.text().await?;
+    tracing::info!("Zhipu balance response: {}", text);
+    let body: ZhipuBalanceResponse = serde_json::from_str(&text)?;
+    Ok(UserBalance {
+        available_balance: body.data.available_balance,
+        voucher_balance: body.data.voucher_balance,
+        cash_balance: body.data.cash_balance,
+    })
+}
+
+async fn check_minimax_balance(cli: &reqwest::Client, auth: &str) -> Result<UserBalance> {
+    let resp = cli
+        .get("https://www.minimaxi.com/v1/api/openplatform/coding_plan/remains")
+        .header("Authorization", auth)
+        .header("Content-Type", "application/json")
+        .send()
+        .await?;
+            if !resp.status().is_success() {
+                return Err(AppError::LLMError("MiniMax 余额查询失败，请检查 API Key。".into()));
+            }
+            let text = resp.text().await?;
+            tracing::info!("MiniMax balance response: {}", text);
+            let body: MiniMaxBalanceResponse = serde_json::from_str(&text)?;
+            let d = body.data.unwrap_or_default();
+            Ok(UserBalance {
+                available_balance: d.available_balance,
+                voucher_balance: None,
+                cash_balance: None,
+            })
+        }
 
 #[tauri::command]
 async fn run_video_aggregate<R: Runtime>(
@@ -217,7 +363,7 @@ async fn chat(prompt: String) -> Result<String> {
 }
 
 #[tauri::command]
-async fn check_balance(base_url: String, api_key: String, provider: String) -> Result<String> {
+async fn check_balance(base_url: String, api_key: String, provider: String) -> Result<UserBalance> {
     let cli = reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(10))
         .timeout(std::time::Duration::from_secs(15))
@@ -226,62 +372,12 @@ async fn check_balance(base_url: String, api_key: String, provider: String) -> R
     let auth = format!("Bearer {}", api_key);
 
     match provider.as_str() {
-        "deepseek" => {
-            let resp = cli
-                .get(format!("{}/user/balance", base))
-                .header("Authorization", &auth)
-                .send()
-                .await?;
-            if !resp.status().is_success() {
-                return Err(AppError::LLMError("DeepSeek 余额查询失败，请检查 API Key。".into()));
-            }
-            let text = resp.text().await?;
-            let v: serde_json::Value = serde_json::from_str(&text)?;
-            let total: f64 = v
-                .get("balance_infos")
-                .and_then(|x| x.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|i| i.get("total_balance").and_then(|b| b.as_str()))
-                        .filter_map(|s| s.parse::<f64>().ok())
-                        .sum()
-                })
-                .unwrap_or(0.0);
-            Ok(format!("DeepSeek 余额: ¥{:.2}", total))
-        }
-        "openai" => {
-            let resp = cli
-                .get(format!("{}/dashboard/billing/subscription", base))
-                .header("Authorization", &auth)
-                .send()
-                .await?;
-            if !resp.status().is_success() {
-                return Err(AppError::LLMError("OpenAI 余额查询失败，请检查 API Key。".into()));
-            }
-            let text = resp.text().await?;
-            let v: serde_json::Value = serde_json::from_str(&text)?;
-            let limit = v.get("hard_limit_usd").and_then(|b| b.as_f64()).unwrap_or(0.0);
-            Ok(format!("OpenAI 月额度: ${:.2}", limit))
-        }
-        "moonshot" => {
-            let base = base.strip_suffix("/v1").unwrap_or(base);
-            let resp = cli
-                .get(format!("{}/v1/users/me/balance", base))
-                .header("Authorization", &auth)
-                .send()
-                .await?;
-            if !resp.status().is_success() {
-                return Err(AppError::LLMError("Kimi 余额查询失败，请检查 API Key。".into()));
-            }
-            let text = resp.text().await?;
-            let v: serde_json::Value = serde_json::from_str(&text)?;
-            let bal = v.get("balance")
-                .and_then(|b| b.as_f64().or_else(|| b.as_str()?.parse::<f64>().ok()))
-                .unwrap_or(0.0);
-            Ok(format!("Kimi 余额: ¥{:.2}", bal))
-        }
+        "deepseek" => check_deepseek_balance(&cli, &base, &auth).await,
+        "moonshot" => check_moonshot_balance(&cli, &base, &auth).await,
+        "zhipu" => check_zhipu_balance(&cli, &api_key).await,
+        "minimax" => check_minimax_balance(&cli, &auth).await,
         _ => Err(AppError::LLMError(format!(
-            "{} 暂不支持余额查询。",
+            "Provider '{}' does not support balance query yet.",
             provider
         ))),
     }

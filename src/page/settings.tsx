@@ -1,4 +1,5 @@
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
+import AccountBalanceWalletRoundedIcon from "@mui/icons-material/AccountBalanceWalletRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import FolderOpenRoundedIcon from "@mui/icons-material/FolderOpenRounded";
@@ -66,6 +67,7 @@ const URL_PROVIDER_MAP: [RegExp, string][] = [
   [/anthropic/, "anthropic"],
   [/zhipu/, "zhipu"],
   [/glm/, "zhipu"],
+  [/bigmodel/, "zhipu"],
   [/baidu/, "baidu"],
   [/qianfan/, "baidu"],
   [/qwen/, "qwen"],
@@ -84,6 +86,9 @@ const URL_PROVIDER_MAP: [RegExp, string][] = [
   [/cohere/, "cohere"],
   [/fireworks/, "fireworksai"],
   [/ollama/, "ollama"],
+  [/mimo/, "xiaomimimo"],
+  [/xiaomi/, "xiaomimimo"],
+  [/minimax/, "minimax"],
 ];
 
 const PROVIDER_PRESETS: { key: string; name: string; baseUrl: string }[] = [
@@ -103,6 +108,8 @@ const PROVIDER_PRESETS: { key: string; name: string; baseUrl: string }[] = [
   { key: "mistral", name: "Mistral", baseUrl: "https://api.mistral.ai/v1" },
   { key: "cohere", name: "Cohere", baseUrl: "https://api.cohere.com/v1" },
   { key: "ollama", name: "Ollama (本地)", baseUrl: "http://localhost:11434/v1" },
+  { key: "xiaomimimo", name: "小米 (Xiaomi MiMo)", baseUrl: "https://api.xiaomimimo.com/v1" },
+  { key: "minimax", name: "MiniMax (海螺AI)", baseUrl: "https://api.minimax.chat/v1" },
 ];
 
 function detectProviderKey(baseUrl: string): string | null {
@@ -566,9 +573,20 @@ export default function SettingsPage() {
     const provider = detectProviderKey(baseUrl) || "unknown";
     try {
       messageApi.open({ key: "bal", type: "loading", content: "查询余额中…", duration: 0 });
-      const resp = await invoke("check_balance", { baseUrl, apiKey, provider });
+      const resp = await invoke<{
+        available_balance: number;
+        voucher_balance?: number;
+        cash_balance?: number;
+      }>("check_balance", { baseUrl, apiKey, provider });
       messageApi.destroy("bal");
-      messageApi.success(resp as string);
+      const parts = [`可用余额: ¥${resp.available_balance.toFixed(2)}`];
+      if (resp.voucher_balance !== undefined) {
+        parts.push(`赠送余额: ¥${resp.voucher_balance.toFixed(2)}`);
+      }
+      if (resp.cash_balance !== undefined) {
+        parts.push(`现金余额: ¥${resp.cash_balance.toFixed(2)}`);
+      }
+      messageApi.success(parts.join(" | "));
     } catch (e) {
       messageApi.destroy("bal");
       messageApi.error(e as string);
@@ -1319,6 +1337,7 @@ export default function SettingsPage() {
                                   <Button
                                     size="small"
                                     variant="outlined"
+                                    startIcon={<AccountBalanceWalletRoundedIcon />}
                                     onClick={handleCheckBalance}
                                   >
                                     查询余额
