@@ -372,8 +372,8 @@ async fn check_balance(base_url: String, api_key: String, provider: String) -> R
     let auth = format!("Bearer {}", api_key);
 
     match provider.as_str() {
-        "deepseek" => check_deepseek_balance(&cli, &base, &auth).await,
-        "moonshot" => check_moonshot_balance(&cli, &base, &auth).await,
+        "deepseek" => check_deepseek_balance(&cli, base, &auth).await,
+        "moonshot" => check_moonshot_balance(&cli, base, &auth).await,
         "zhipu" => check_zhipu_balance(&cli, &api_key).await,
         "minimax" => check_minimax_balance(&cli, &auth).await,
         _ => Err(AppError::LLMError(format!(
