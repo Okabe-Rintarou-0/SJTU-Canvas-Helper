@@ -1,4 +1,4 @@
-import { getVersion } from "@tauri-apps/api/app";
+﻿import { getVersion } from "@tauri-apps/api/app";
 import { open as openExternal } from "@tauri-apps/plugin-shell";
 import ArticleRoundedIcon from "@mui/icons-material/ArticleRounded";
 import AssignmentRoundedIcon from "@mui/icons-material/AssignmentRounded";
@@ -11,10 +11,12 @@ import ForumRoundedIcon from "@mui/icons-material/ForumRounded";
 import GridViewRoundedIcon from "@mui/icons-material/GridViewRounded";
 import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
+import PsychologyRoundedIcon from "@mui/icons-material/PsychologyRounded";
 import QrCode2RoundedIcon from "@mui/icons-material/QrCode2Rounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import SmartDisplayRoundedIcon from "@mui/icons-material/SmartDisplayRounded";
 import TimelineRoundedIcon from "@mui/icons-material/TimelineRounded";
+import DeveloperBoardRoundedIcon from "@mui/icons-material/DeveloperBoardRounded";
 import {
   Box,
   Button,
@@ -37,6 +39,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 
 import { useKeyPress } from "../lib/hooks";
+import { useConfigSelector } from "../lib/hooks";
 import { checkForUpdates } from "../lib/utils";
 import { ChangeLogModal } from "./change_log_modal";
 
@@ -44,6 +47,7 @@ const drawerWidth = 272;
 const collapsedDrawerWidth = 92;
 
 const navigationItems = [
+  { key: "agent", label: "Canvas Agent", icon: <PsychologyRoundedIcon />, path: "/agent" },
   { key: "files", label: "文件管理", icon: <ArticleRoundedIcon />, path: "/files" },
   { key: "assignments", label: "作业列表", icon: <AssignmentRoundedIcon />, path: "/assignments" },
   { key: "discussions", label: "讨论管理", icon: <ForumRoundedIcon />, path: "/discussions" },
@@ -58,6 +62,7 @@ const navigationItems = [
 ];
 
 const pageTitleMap: Record<string, string> = {
+  agent: "Canvas Agent",
   files: "文件管理",
   assignments: "作业列表",
   discussions: "讨论管理",
@@ -69,10 +74,12 @@ const pageTitleMap: Record<string, string> = {
   qrcode: "二维码管理",
   annual: "年度总结",
   settings: "系统设置",
+  debug: "Debug 控制台",
 };
 
 export default function BasicLayout({ children }: React.PropsWithChildren) {
   const theme = useTheme();
+  const config = useConfigSelector((state) => state.config.data);
   const isDesktop = useMediaQuery(theme.breakpoints.up("lg"));
   const isCompactWindow = useMediaQuery(theme.breakpoints.down("sm"));
   const location = useLocation();
@@ -117,6 +124,17 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
     return collapsed ? collapsedDrawerWidth : drawerWidth;
   }, [collapsed, isCompactWindow, isDesktop]);
 
+
+  const displayedNavigationItems = useMemo(() => {
+    if (!config?.debug_mode) {
+      return navigationItems;
+    }
+    return [
+      ...navigationItems.slice(0, -1),
+      { key: "debug", label: "Debug 控制台", icon: <DeveloperBoardRoundedIcon />, path: "/debug" },
+      ...navigationItems.slice(-1),
+    ];
+  }, [config?.debug_mode]);
   const drawerContent = (
     <Stack
       sx={{
@@ -209,7 +227,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
       ) : null}
 
       <List sx={{ p: 0, display: "grid", gap: 0.75 }}>
-        {navigationItems.map((item) => {
+        {displayedNavigationItems.map((item) => {
           const selected = currentKey === item.key;
           const button = (
             <ListItemButton

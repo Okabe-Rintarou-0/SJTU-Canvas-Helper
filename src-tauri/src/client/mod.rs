@@ -8,6 +8,7 @@ pub mod annual;
 pub mod basic;
 mod common;
 pub mod constants;
+mod debug;
 mod file_parser;
 pub mod jbox;
 mod llm;
@@ -20,4 +21,5 @@ pub struct Client {
     token: RwLock<String>,
     llm_cli: Box<dyn LLMClient>,
     file_parser: file_parser::GenericFileParser,
+    debug_store: debug::NetworkDebugStore,
 }

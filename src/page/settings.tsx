@@ -1,4 +1,4 @@
-import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
+﻿import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import AccountBalanceWalletRoundedIcon from "@mui/icons-material/AccountBalanceWalletRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
@@ -334,7 +334,7 @@ export default function SettingsPage() {
           return prev;
         }
         const next = { ...prev, [key]: value };
-        if (key === "theme" || key === "color_primary" || key === "compact_mode") {
+        if (key === "theme" || key === "color_primary" || key === "compact_mode" || key === "debug_mode") {
           dispatch(updateConfig(next));
         }
         return next;
@@ -342,6 +342,21 @@ export default function SettingsPage() {
     },
     [dispatch]
   );
+
+  // Auto-save debug_mode immediately on toggle
+  const prevDebugModeRef = useRef(formData?.debug_mode);
+  useEffect(() => {
+    if (!formData) return;
+    if (prevDebugModeRef.current !== undefined && prevDebugModeRef.current !== formData.debug_mode) {
+      prevDebugModeRef.current = formData.debug_mode;
+      saveConfig(formData).then(
+        () => messageApi.success(formData.debug_mode ? "Debug 模式已开启" : "Debug 模式已关闭"),
+        (e) => messageApi.error("保存失败：" + e)
+      );
+    } else {
+      prevDebugModeRef.current = formData.debug_mode;
+    }
+  }, [formData?.debug_mode]);
 
   const handleLlmTemperatureChange = useCallback(
     (rawValue: string) => {
@@ -1589,6 +1604,26 @@ export default function SettingsPage() {
                       />
                     </Box>
 
+                    <Divider />
+                    <Box>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
+                        Debug 模式
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                        开启后，左侧导航栏将显示 Debug 控制台入口，自动记录最近 1000 条网络请求（请求头、请求体、响应状态），方便排查问题。
+                      </Typography>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={formData?.debug_mode ?? false}
+                            onChange={(event) =>
+                              updateField("debug_mode", event.target.checked)
+                            }
+                          />
+                        }
+                        label="启用 Debug 模式"
+                      />
+                    </Box>
                     <Divider />
                     <Box>
                       <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>

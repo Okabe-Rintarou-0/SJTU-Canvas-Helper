@@ -111,6 +111,15 @@ export interface LLMChatMessage {
     content: string;
 }
 
+export interface CanvasAgentChatMessage {
+    id: string;
+    role: "user" | "assistant";
+    content: string;
+    createdAt: string;
+    pending?: boolean;
+    error?: boolean;
+}
+
 export interface FileChatStreamChunkPayload {
     request_id: string;
     chunk: string;
@@ -300,6 +309,30 @@ export interface AppConfig {
     color_primary: Option<string>;
     mcp_enabled: boolean;
     mcp_port: number;
+    debug_mode: boolean;
+}
+
+export interface DebugHttpHeader {
+    name: string;
+    value: string;
+}
+
+export interface NetworkRequestLog {
+    id: string;
+    timestamp: string;
+    source: string;
+    method: string;
+    url: string;
+    status?: number | null;
+    ok?: boolean | null;
+    duration_ms?: number | null;
+    request_headers: DebugHttpHeader[];
+    response_headers: DebugHttpHeader[];
+    request_body?: string | null;
+    request_body_truncated: boolean;
+    response_body?: string | null;
+    response_body_truncated: boolean;
+    error?: string | null;
 }
 
 export interface AccountInfo {

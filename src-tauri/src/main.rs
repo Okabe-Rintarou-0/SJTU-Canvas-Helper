@@ -9,7 +9,8 @@ use model::{
     Account, AccountInfo, AnnualReport, AppConfig, Assignment, CalendarEvent, CanvasVideo, Colors,
     Course, DiscussionTopic, File, FileChatStreamChunkPayload, FileChatStreamDonePayload,
     FileChatStreamErrorPayload, Folder, FullDiscussion, LLMChatMessage, LogLevel, ModuleItem,
-    QRCodeScanResult, RelationshipTopo, Subject, Submission, User, UserSubmissions,
+    NetworkRequestLog, QRCodeScanResult, RelationshipTopo, Subject, Submission, User,
+    UserSubmissions,
     VideoAggregateParams, VideoCourse, VideoInfo, VideoPlayInfo,
 };
 
@@ -24,6 +25,7 @@ use tracing_subscriber::{
 
 use crate::app::App;
 mod app;
+mod canvas_agent;
 mod client;
 mod error;
 mod mcp;
@@ -348,6 +350,16 @@ async fn get_config() -> AppConfig {
 }
 
 #[tauri::command]
+async fn list_network_logs() -> Vec<NetworkRequestLog> {
+    APP.list_network_logs().await
+}
+
+#[tauri::command]
+async fn clear_network_logs() {
+    APP.clear_network_logs().await
+}
+
+#[tauri::command]
 async fn get_raw_config() -> Result<String> {
     APP.get_raw_config().await
 }
@@ -360,6 +372,14 @@ fn check_path(path: String) -> bool {
 #[tauri::command]
 async fn chat(prompt: String) -> Result<String> {
     APP.chat(prompt).await
+}
+
+#[tauri::command]
+async fn canvas_agent_chat(
+    messages: Vec<LLMChatMessage>,
+    options: Option<canvas_agent::CanvasAgentOptions>,
+) -> Result<String> {
+    canvas_agent::chat(&messages, options).await
 }
 
 #[tauri::command]
@@ -995,6 +1015,8 @@ async fn main() -> Result<()> {
             get_folder_by_id,
             get_colors,
             get_config,
+            list_network_logs,
+            clear_network_logs,
             get_raw_config,
             save_config,
             save_file_content,
@@ -1049,6 +1071,7 @@ async fn main() -> Result<()> {
             generate_annual_report,
             // LLM
             chat,
+            canvas_agent_chat,
             check_balance,
             explain_file,
             chat_with_file,

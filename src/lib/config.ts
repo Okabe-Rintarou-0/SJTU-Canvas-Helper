@@ -24,3 +24,11 @@ export async function saveConfig(config: AppConfig) {
   CONFIG = config;
   configStore.dispatch(updateConfig(cloneDeep(CONFIG)));
 }
+
+export async function listNetworkLogs() {
+  return (await invoke("list_network_logs")) as import("./model").NetworkRequestLog[];
+}
+
+export async function clearNetworkLogs() {
+  await invoke("clear_network_logs");
+}

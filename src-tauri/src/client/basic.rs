@@ -56,6 +56,7 @@ impl Client {
             token,
             llm_cli,
             file_parser,
+            debug_store: super::debug::NetworkDebugStore::new(false),
         }
     }
 
@@ -89,6 +90,7 @@ impl Client {
             token,
             llm_cli,
             file_parser,
+            debug_store: super::debug::NetworkDebugStore::new(false),
         }
     }
 
@@ -106,6 +108,18 @@ impl Client {
 
     pub async fn set_llm_temperature(&self, temperature: Option<f32>) {
         self.llm_cli.set_temperature(temperature).await;
+    }
+
+    pub fn set_debug_mode(&self, enabled: bool) {
+        self.debug_store.set_enabled(enabled);
+    }
+
+    pub async fn list_network_logs(&self) -> Vec<crate::model::NetworkRequestLog> {
+        self.debug_store.list_logs().await
+    }
+
+    pub async fn clear_network_logs(&self) {
+        self.debug_store.clear_logs().await;
     }
 
     pub async fn set_base_url<S: Into<String>>(&self, base_url: S) -> bool {

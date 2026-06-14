@@ -189,6 +189,8 @@ pub struct AppConfig {
     pub mcp_enabled: bool,
     #[serde(default = "default_mcp_port")]
     pub mcp_port: u16,
+    #[serde(default)]
+    pub debug_mode: bool,
 }
 
 fn default_mcp_port() -> u16 {
@@ -218,6 +220,7 @@ impl Default for AppConfig {
             color_primary: Default::default(),
             mcp_enabled: Default::default(),
             mcp_port: 3100,
+            debug_mode: Default::default(),
             llm_api_keys: Default::default(),
             llm_active_api_key: Default::default(),
         }
@@ -1245,4 +1248,29 @@ pub struct Module {
     pub completed_at: Option<String>,
     pub publish_final_grade: Option<bool>,
     pub published: Option<bool>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DebugHttpHeader {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NetworkRequestLog {
+    pub id: String,
+    pub timestamp: String,
+    pub source: String,
+    pub method: String,
+    pub url: String,
+    pub status: Option<u16>,
+    pub ok: Option<bool>,
+    pub duration_ms: Option<u64>,
+    pub request_headers: Vec<DebugHttpHeader>,
+    pub response_headers: Vec<DebugHttpHeader>,
+    pub request_body: Option<String>,
+    pub request_body_truncated: bool,
+    pub response_body: Option<String>,
+    pub response_body_truncated: bool,
+    pub error: Option<String>,
 }

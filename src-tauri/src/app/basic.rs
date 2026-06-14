@@ -161,6 +161,7 @@ impl App {
         let base_url = Self::get_base_url(&config.account_type);
         self.client.set_base_url(base_url).await;
         Self::apply_llm_config(&config, &self.client).await;
+        self.client.set_debug_mode(config.debug_mode);
         *self.config.write().await = config;
 
         let mut account_info = App::read_account_info()?;
@@ -210,6 +211,7 @@ impl App {
             &llm_model,
             config.llm_temperature,
         );
+        client.set_debug_mode(config.debug_mode);
 
         Self {
             client: Arc::new(client),
@@ -957,6 +959,7 @@ impl App {
             self.invalidate_cache()?;
         }
         Self::apply_llm_config(&config, &self.client).await;
+        self.client.set_debug_mode(config.debug_mode);
         let was_enabled = self.config.read().await.mcp_enabled;
         *self.config.write().await = config;
         let is_enabled = self.config.read().await.mcp_enabled;
@@ -970,6 +973,14 @@ impl App {
             self.restart_mcp().await?;
         }
         Ok(())
+    }
+
+    pub async fn list_network_logs(&self) -> Vec<NetworkRequestLog> {
+        self.client.list_network_logs().await
+    }
+
+    pub async fn clear_network_logs(&self) {
+        self.client.clear_network_logs().await;
     }
 
     pub async fn chat<S: Into<String>>(&self, prompt: S) -> Result<String> {
