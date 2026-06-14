@@ -749,11 +749,11 @@ fn build_history_prompt(messages: &[LLMChatMessage]) -> String {
         .join("\n\n");
 
     format!(
-        "请继续下面的对话。涉及 Canvas 课程、作业、文件、讨论、提交、成员、日历等信息时，请优先调用已提供的 tools，再基于结果回答。\n\n对话历史：\n{history}"
+    "请继续下面的对话。涉及 Canvas 课程、作业、文件、讨论、提交、成员、日历等信息时，请优先调用已提供的 tools，再基于结果回答。\n\n对话历史：\n{history}"
     )
 }
 
-fn resolve_active_key_entry<'a>(config: &'a AppConfig) -> Option<&'a LlmApiKeyEntry> {
+fn resolve_active_key_entry(config: &AppConfig) -> Option<&LlmApiKeyEntry> {
     if config.llm_active_api_key.is_empty() {
         return None;
     }
