@@ -18,7 +18,17 @@ import {
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 
-const changeLogs = [
+const changeLogs = [  {
+    version: "v3.0.4",
+    date: "2026/6/14",
+    items: [
+      "新增 Canvas Agent：AI 对话式操作，支持通过自然语言查询课程、作业、文件等。",
+      "新增网络请求调试面板 (Debug Page)，支持请求日志查看与 JSON 响应结构化展示。",
+      "Debug Page：响应体预览上限从 16KB 提升至 1MB。",
+      "修复 PDF Worker 加载失败的问题 (ERR_CONNECTION_REFUSED)。",
+    ],
+  },
+  
   {
     version: "v3.0.3",
     date: "2026/6/12",

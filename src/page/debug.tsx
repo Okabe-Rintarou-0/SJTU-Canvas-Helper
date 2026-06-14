@@ -34,6 +34,7 @@ import { clearNetworkLogs, listNetworkLogs } from "../lib/config";
 import { useConfigSelector } from "../lib/hooks";
 import { useAppMessage } from "../lib/message";
 import { DebugHttpHeader, NetworkRequestLog } from "../lib/model";
+import ReactJson from "react-json-view-ts";
 
 function JsonBlock({ value }: { value: unknown }) {
   return (
@@ -67,7 +68,11 @@ function formatStatus(log: NetworkRequestLog) {
   return `${log.status}`;
 }
 
-
+function hasJsonContentType(headers: DebugHttpHeader[]): boolean {
+  return headers.some(
+    (h) => h.name.toLowerCase() === "content-type" && h.value.toLowerCase().includes("application/json"),
+  );
+}
 
 function QueryParamsTable({ url: urlProp }: { url: string }) {
   const params = useMemo(() => {
@@ -580,7 +585,7 @@ export default function DebugPage() {
                        <JsonBlock value={log.request_body} />
                        {log.request_body_truncated ? (
                          <Typography variant="caption" color="warning.main">
-                           请求体过长，当前仅展示前 16KB 预览。
+                           请求体过长，当前仅展示前 1MB 预览。
                          </Typography>
                        ) : null}
                      </>
@@ -596,10 +601,32 @@ export default function DebugPage() {
                     </Typography>
                     {log.response_body ? (
                       <>
-                        <JsonBlock value={log.response_body} />
+                        {(() => {
+                          try {
+                            const parsed = JSON.parse(log.response_body!);
+                            if (hasJsonContentType(log.response_headers)) {
+                              return (
+                                <Box
+                                  sx={{
+                                    p: 1.5,
+                                    borderRadius: "16px",
+                                    bgcolor: "transparent",
+                                  }}
+                                >
+                                  <ReactJson
+                                    style={{ fontSize: "0.78rem" }}
+                                    src={parsed}
+                                    collapsed={2}
+                                  />
+                                </Box>
+                              );
+                            }
+                          } catch {}
+                          return <JsonBlock value={log.response_body} />;
+                        })()}
                         {log.response_body_truncated ? (
                           <Typography variant="caption" color="warning.main">
-                            响应体过长，当前仅展示前 16KB 预览。
+                            响应体过长，当前仅展示前 1MB 预览。
                           </Typography>
                         ) : null}
                       </>

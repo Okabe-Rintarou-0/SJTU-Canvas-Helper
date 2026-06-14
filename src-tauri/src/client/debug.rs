@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::model::{DebugHttpHeader, NetworkRequestLog};
 
 const MAX_NETWORK_LOGS: usize = 1000;
-const MAX_BODY_PREVIEW_BYTES: usize = 16 * 1024;
+const MAX_BODY_PREVIEW_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug)]
 pub struct NetworkDebugStore {
@@ -40,7 +40,7 @@ impl NetworkDebugStore {
         self.logs.write().await.clear();
     }
 
-pub async fn capture_response_body(&self, body: &[u8]) {
+    pub async fn capture_response_body(&self, body: &[u8]) {
         let mut logs = self.logs.write().await;
         // Update the most recent log entry without a response body
         if let Some(log) = logs.iter_mut().rev().find(|l| l.response_body.is_none()) {
@@ -60,72 +60,38 @@ pub async fn capture_response_body(&self, body: &[u8]) {
         let started = Instant::now();
         let result = client.execute(request).await;
 
+        let mut network_log = NetworkRequestLog {
+            id: log.id,
+            timestamp: log.timestamp,
+            source: log.source,
+            method: log.method,
+            url: log.url,
+            status: None,
+            ok: None,
+            duration_ms: Some(started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64),
+            request_headers: log.request_headers,
+            response_headers: vec![],
+            request_body: log.request_body,
+            request_body_truncated: log.request_body_truncated,
+            response_body: None,
+            response_body_truncated: false,
+            error: None,
+        };
+
         match &result {
             Ok(response) => {
-                self.push_log(NetworkRequestLog {
-                    id: log.id,
-                    timestamp: log.timestamp,
-                    source: log.source,
-                    method: log.method,
-                    url: log.url,
-                    status: Some(response.status().as_u16()),
-                    ok: Some(response.status().is_success()),
-                    duration_ms: Some(started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64),
-                    let mut req_headers = log.request_headers.clone();
-                    if let Some(req) = response.request() {
-                        if let Some(cookie_val) = req.headers().get(reqwest::header::COOKIE) {
-                            if let Ok(cookie_str) = cookie_val.to_str() {
-                                req_headers.retain(|h| h.name.to_ascii_lowercase() != "cookie");
-                                req_headers.push(DebugHttpHeader {
-                                    name: 'Cookie',
-                                    value: cookie_str.to_owned(),
-                                });
-                            }
-                        }
-                    }
-                    request_headers: req_headers,
-                    response_headers: headers_to_debug(response.headers()),
-                    request_body: log.request_body,
-                    request_body_truncated: log.request_body_truncated,
-                    response_body: None,
-                    response_body_truncated: false,
-                    error: None,
-                })
-                .await;
+                network_log.status = Some(response.status().as_u16());
+                network_log.ok = Some(response.status().is_success());
+                network_log.response_headers = headers_to_debug(response.headers());
             }
             Err(error) => {
-                self.push_log(NetworkRequestLog {
-                    id: log.id,
-                    timestamp: log.timestamp,
-                    source: log.source,
-                    method: log.method,
-                    url: log.url,
-                    status: error.status().map(|status| status.as_u16()),
-                    ok: Some(false),
-                    duration_ms: Some(started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64),
-                    let mut req_headers = log.request_headers.clone();
-                    if let Some(req) = response.request() {
-                        if let Some(cookie_val) = req.headers().get(reqwest::header::COOKIE) {
-                            if let Ok(cookie_str) = cookie_val.to_str() {
-                                req_headers.retain(|h| h.name.to_ascii_lowercase() != "cookie");
-                                req_headers.push(DebugHttpHeader {
-                                    name: 'Cookie',
-                                    value: cookie_str.to_owned(),
-                                });
-                            }
-                        }
-                    }
-                    request_headers: req_headers,
-                    response_headers: vec![],
-                    request_body: log.request_body,
-                    request_body_truncated: log.request_body_truncated,
-                    response_body: None,
-                    response_body_truncated: false,
-                    error: Some(error.to_string()),
-                })
-                .await;
+                network_log.status = error.status().map(|status| status.as_u16());
+                network_log.ok = Some(false);
+                network_log.error = Some(error.to_string());
             }
         }
+
+        self.push_log(network_log).await;
 
         result
     }
@@ -189,7 +155,6 @@ fn body_preview(request: &Request) -> (Option<String>, bool) {
     )
 }
 
-
 fn headers_to_debug(headers: &HeaderMap) -> Vec<DebugHttpHeader> {
     headers
         .iter()
@@ -206,5 +171,3 @@ fn headers_to_debug(headers: &HeaderMap) -> Vec<DebugHttpHeader> {
 fn sanitize_header_value(_name: &str, value: &str) -> String {
     value.to_owned()
 }
-
-
