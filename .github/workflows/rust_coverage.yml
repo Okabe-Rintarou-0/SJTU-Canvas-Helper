@@ -66,26 +66,9 @@ jobs:
             src-tauri/target/llvm-cov/summary.txt
           if-no-files-found: warn
 
-      - name: Publish coverage summary
+      - name: Upload to Codecov
         if: always()
-        shell: bash
-        run: |
-          echo "## Rust coverage" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          if [ -f target/llvm-cov/summary.txt ]; then
-            echo '```text' >> "$GITHUB_STEP_SUMMARY"
-            tail -n 80 target/llvm-cov/summary.txt >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "未生成覆盖率摘要。" >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-          if [ -f target/llvm-cov/lcov.info ]; then
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "- 已生成 \`lcov.info\`，可在 workflow artifacts 中下载。" >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-          if [ "${{ steps.coverage.outputs.exit_code }}" != "0" ]; then
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "> 覆盖率采集过程中出现非阻塞错误，已忽略，不影响工作流通过。" >> "$GITHUB_STEP_SUMMARY"
-          fi
+        uses: codecov/codecov-action@v5
+        with:
+          files: src-tauri/target/llvm-cov/lcov.info
+          fail_ci_if_error: false
