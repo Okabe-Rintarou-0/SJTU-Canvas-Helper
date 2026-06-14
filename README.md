@@ -6,6 +6,7 @@
 
 SJTU Canvas 小帮手基于 [Tauri](https://tauri.app/) 开发，助您更便捷地使用交大 Canvas。
 参与讨论：[水源社区](https://shuiyuan.sjtu.edu.cn/t/topic/245275)。
+官网：https://okabe-rintarou-0.github.io/SJTU-Canvas-Helper/
 
 <div align="center">
   <img align="center" src="https://img.shields.io/badge/rust-1.75-blue" alt="">
