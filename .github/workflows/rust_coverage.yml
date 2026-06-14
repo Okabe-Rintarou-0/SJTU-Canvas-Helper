@@ -70,5 +70,6 @@ jobs:
         if: always()
         uses: codecov/codecov-action@v5
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: src-tauri/target/llvm-cov/lcov.info
           fail_ci_if_error: false
