@@ -154,21 +154,15 @@ function InlineQRCodePanel({
   return (
     <Card
       sx={{
-        borderRadius: "28px",
+        borderRadius: "24px",
         border: "1px solid",
-        borderColor: alpha(theme.palette.primary.main, 0.12),
-        boxShadow: "0 24px 64px rgba(15, 23, 42, 0.08)",
-        background: `linear-gradient(135deg, ${alpha(
-          theme.palette.primary.main,
-          0.08
-        )} 0%, ${alpha(theme.palette.background.paper, 0.96)} 48%, ${alpha(
-          theme.palette.secondary.main,
-          0.08
-        )} 100%)`,
+        borderColor: "divider",
+        boxShadow: "0 10px 28px rgba(15, 23, 42, 0.05)",
+        backgroundColor: theme.palette.background.paper,
       }}
     >
-      <CardContent sx={{ p: { xs: 2.25, md: 3 } }}>
-        <Stack spacing={2}>
+      <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
+        <Stack spacing={1.75}>
           <Stack
             direction={{ xs: "column", md: "row" }}
             spacing={2}

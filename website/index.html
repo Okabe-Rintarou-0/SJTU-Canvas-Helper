@@ -1,16 +1,1209 @@
-﻿<!doctype html>
+<!DOCTYPE html>
+<!-- ==================================================================
+     LANDING PAGE · 中文 · parchment design system
+     Based on the kami landing-page template, filled from this repo README.
+     ================================================================== -->
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SJTU Canvas Helper — 让 Canvas 更好用</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<head>
+<meta charset="utf-8">
+<title>SJTU Canvas Helper · 把 Canvas 高频操作收进一款桌面工具</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="SJTU Canvas Helper 是一款基于 Tauri 的交大 Canvas 桌面助手，把下载、预览、上传、作业与课程视频相关操作整理进一套更顺手的工作流。">
+<meta property="og:title" content="SJTU Canvas Helper · 把 Canvas 高频操作收进一款桌面工具">
+<meta property="og:description" content="一款面向 SJTU Canvas 的桌面助手，让文件、作业、录屏与 AI 能力在同一套界面里协同工作。">
+<meta property="og:image" content="https://raw.githubusercontent.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/main/images/logo.png">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="SJTU Canvas Helper · 把 Canvas 高频操作收进一款桌面工具">
+<meta name="twitter:description" content="一款面向 SJTU Canvas 的桌面助手，让文件、作业、录屏与 AI 能力在同一套界面里协同工作。">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/main/images/logo.png">
+<link rel="icon" type="image/png" sizes="32x32" href="images/logo.png">
+<link rel="canonical" href="./index.html">
+<link rel="alternate" hreflang="en" href="./en.html">
+<link rel="alternate" hreflang="zh-CN" href="./index.html">
+<link rel="alternate" hreflang="x-default" href="./index.html">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:locale:alternate" content="en_US">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "SJTU Canvas Helper",
+  "applicationCategory": "EducationApplication",
+  "operatingSystem": "Windows, macOS, Linux",
+  "description": "SJTU Canvas Helper 是一款基于 Tauri 的交大 Canvas 桌面助手，把下载、预览、上传、作业与课程视频相关操作整理进一套更顺手的工作流。",
+  "url": "https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper",
+  "inLanguage": "zh-CN",
+  "author": {
+    "@type": "Person",
+    "name": "Zihong Lin",
+    "url": "https://github.com/Okabe-Rintarou-0"
+  },
+  "license": "https://opensource.org/licenses/MIT"
+}
+</script>
+<style>
+/* ========== Tokens ========== */
+
+@font-face {
+  font-family: "TsangerJinKai02";
+  src: url("https://cdn.jsdelivr.net/gh/AlfredoSequeworthy/TsangerJinKai02@main/TsangerJinKai02-W04.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "TsangerJinKai02";
+  src: url("https://cdn.jsdelivr.net/gh/AlfredoSequeworthy/TsangerJinKai02@main/TsangerJinKai02-W05.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --parchment:    #f5f4ed;
+  --ivory:        #faf9f5;
+  --warm-sand:    #e8e6dc;
+
+  --brand:        #1B365D;
+  --brand-light:  #2D5A8A;
+  --brand-tint:   #EEF2F7;
+
+  --near-black:   #141413;
+  --dark-warm:    #3d3d3a;
+  --olive:        #504e49;
+  --stone:        #6b6a64;
+
+  --border:       #e8e6dc;
+  --border-soft:  #e5e3d8;
+  --line:         #d8d5c8;
+
+  --serif: "TsangerJinKai02", "Source Han Serif SC",
+           "Noto Serif CJK SC", "Songti SC", "STSong",
+           Georgia, serif;
+  --sans:  var(--serif);
+  --mono:  "JetBrains Mono", "SF Mono", Consolas,
+           "TsangerJinKai02", "Source Han Serif SC",
+           monospace;
+  --latin-ui: "PingFang SC", system-ui, -apple-system, sans-serif;
+
+  --shot-bg: #141318;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+body {
+  background: var(--parchment);
+  color: var(--near-black);
+  font-family: var(--serif);
+  font-size: 15px;
+  line-height: 1.58;
+  letter-spacing: 0.4px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  color: var(--brand);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+a:hover { color: var(--brand-light); }
+
+.page {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 88px 64px 120px;
+}
+
+/* ========== Buttons ========== */
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--brand);
+  color: var(--ivory);
+  font-family: var(--latin-ui);
+  font-weight: 500;
+  font-size: 15px;
+  font-variant-numeric: lining-nums tabular-nums;
+  letter-spacing: 0.2px;
+  padding: 13px 28px;
+  border-radius: 999px;
+  border: 1.5px solid var(--brand);
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+  cursor: pointer;
+  min-width: 158px;
+}
+.btn-primary:hover {
+  background: var(--brand-light);
+  border-color: var(--brand-light);
+  color: var(--ivory);
+  transform: translateY(-1px);
+}
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: var(--latin-ui);
+  font-weight: 500;
+  font-size: 15px;
+  font-variant-numeric: lining-nums tabular-nums;
+  color: var(--brand);
+  background: transparent;
+  padding: 13px 28px;
+  border-radius: 999px;
+  border: 1.5px solid var(--brand);
+  transition: background 0.15s, color 0.15s, transform 0.15s;
+  cursor: pointer;
+  min-width: 158px;
+}
+.btn-ghost:hover {
+  background: var(--brand-tint);
+  color: var(--brand);
+  transform: translateY(-1px);
+}
+
+/* ========== Hero ========== */
+
+.hero {
+  padding-bottom: 48px;
+  border-bottom: 1px solid var(--border-soft);
+  margin-bottom: 80px;
+}
+.eyebrow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--latin-ui);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--stone);
+  margin: 0 0 28px;
+}
+.version-link {
+  color: var(--brand);
+  font-weight: 600;
+}
+.version-link:hover { color: var(--brand-light); }
+
+.hero-links {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.hero-links a {
+  color: var(--stone);
+  display: flex;
+  align-items: center;
+}
+.hero-links a:hover { color: var(--dark-warm); }
+
+.hero h1 {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 88px;
+  line-height: 1.05;
+  letter-spacing: 0;
+  margin: 0 0 18px;
+  color: var(--near-black);
+  opacity: 0;
+  transform: translateY(10px);
+  filter: blur(6px);
+  animation: hero-rise 900ms cubic-bezier(0.16, 1, 0.3, 1) 120ms forwards;
+}
+@keyframes hero-rise {
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+
+.hero .tagline {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 20px;
+  line-height: 1.55;
+  letter-spacing: 0.4px;
+  color: var(--olive);
+  margin: 0 0 28px;
+  max-width: 820px;
+}
+
+.hero-tokens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin: 0 0 32px;
+  font-family: var(--latin-ui);
+  font-size: 13px;
+  color: var(--stone);
+}
+.hero-tokens span {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.hero-tokens b {
+  color: var(--dark-warm);
+  font-weight: 500;
+}
+
+.hero-cta {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-top: 4px;
+}
+
+/* ========== Section primitives ========== */
+
+section { margin-bottom: 72px; }
+.section-head { margin-bottom: 24px; }
+.section-num {
+  font-family: var(--latin-ui);
+  font-weight: 400;
+  font-size: 14px;
+  color: var(--brand);
+  letter-spacing: 0.4px;
+  margin: 0 0 6px;
+}
+.section-title {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 34px;
+  line-height: 1.2;
+  color: var(--near-black);
+  margin: 0;
+  letter-spacing: 1.2px;
+}
+.section-lede {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 17px;
+  line-height: 1.55;
+  letter-spacing: 0.4px;
+  color: var(--olive);
+  margin: 14px 0 0;
+}
+.section-versus {
+  font-family: var(--serif);
+  font-size: 14px;
+  color: var(--stone);
+  margin: 14px 0 0;
+  letter-spacing: 0.1px;
+  line-height: 1.55;
+}
+.section-versus b {
+  color: var(--brand);
+  font-weight: 500;
+}
+
+/* ========== Gallery (interactive screenshot carousel) ========== */
+
+.gallery {
+  --enter-from-x: 44px;
+  --exit-to-x: -34px;
+  --sweep-angle: 100deg;
+  --sweep-from: -45%;
+  --sweep-to: 65%;
+  --caption-shift: -2px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 24px;
+  align-items: baseline;
+  margin: 0;
+  padding: 0;
+}
+.gallery[data-direction="prev"] {
+  --enter-from-x: -44px;
+  --exit-to-x: 34px;
+  --sweep-angle: 260deg;
+  --sweep-from: 65%;
+  --sweep-to: -45%;
+  --caption-shift: 2px;
+}
+
+.gallery-frame {
+  grid-column: 1 / -1;
+  position: relative;
+  background: var(--shot-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(20, 19, 19, 0.10);
+  cursor: ew-resize;
+}
+.gallery-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  background: linear-gradient(
+    var(--sweep-angle),
+    rgba(245, 244, 237, 0) 32%,
+    rgba(245, 244, 237, 0.16) 50%,
+    rgba(245, 244, 237, 0) 68%
+  );
+  opacity: 0;
+  transform: translate3d(var(--sweep-from), 0, 0);
+  transition:
+    opacity 540ms ease,
+    transform 920ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.gallery.is-switching .gallery-frame::after {
+  opacity: 1;
+  transform: translate3d(var(--sweep-to), 0, 0);
+}
+.gallery-panel {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  visibility: hidden;
+  z-index: 1;
+  transform: translate3d(var(--enter-from-x), 0, 0) scale(0.985);
+  transition:
+    opacity 620ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 880ms cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 620ms;
+  will-change: opacity, transform;
+}
+.gallery-panel.is-active {
+  opacity: 1;
+  visibility: visible;
+  position: relative;
+  z-index: 2;
+  transform: translate3d(0, 0, 0) scale(1);
+}
+.gallery-panel.was-active {
+  opacity: 0;
+  visibility: visible;
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  transform: translate3d(var(--exit-to-x), 0, 0) scale(0.985);
+  pointer-events: none;
+}
+.gallery-panel img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.gallery-caption {
+  grid-column: 1;
+  grid-row: 2;
+  min-height: 48px;
+  padding: 12px 2px 0;
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  transition: opacity 420ms ease, transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.gallery.is-switching .gallery-caption {
+  opacity: 0.72;
+  transform: translate3d(var(--caption-shift), 0, 0);
+}
+.gallery-caption .title {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 17px;
+  color: var(--near-black);
+  margin: 0;
+  letter-spacing: 0.1px;
+  flex: 0 0 auto;
+}
+.gallery-caption .line {
+  font-family: var(--serif);
+  font-size: 14px;
+  color: var(--olive);
+  font-style: italic;
+  letter-spacing: 0.4px;
+  margin: 0;
+}
+
+.gallery-tabs {
+  grid-column: 2;
+  grid-row: 2;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  justify-content: flex-end;
+}
+.gallery-tabs button {
+  appearance: none;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--olive);
+  font-family: var(--latin-ui);
+  font-size: 12px;
+  line-height: 1;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+.gallery-tabs button:hover {
+  color: var(--brand);
+  border-color: var(--line);
+}
+.gallery-tabs button.is-active {
+  color: var(--brand);
+  background: var(--brand-tint);
+  border-color: var(--line);
+}
+
+/* ========== Features (two-column definition list) ========== */
+
+.features {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--border-soft);
+}
+.features li {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  column-gap: 36px;
+  padding: 28px 0;
+  border-bottom: 1px solid var(--border-soft);
+  align-items: baseline;
+}
+.features .name {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 22px;
+  color: var(--brand);
+  margin: 0;
+  line-height: 1.25;
+}
+.features .name small {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--serif);
+  font-size: 13px;
+  color: var(--olive);
+  font-weight: 400;
+  font-style: italic;
+  line-height: 1.5;
+  letter-spacing: 0.1px;
+}
+.features .what {
+  font-family: var(--serif);
+  font-size: 15px;
+  line-height: 1.55;
+  letter-spacing: 0.4px;
+  color: var(--dark-warm);
+  margin: 0;
+}
+
+/* ========== Principles (2-column numbered grid) ========== */
+
+.principles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0;
+  border-top: 1px solid var(--border-soft);
+}
+.principles li {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  gap: 8px;
+  padding: 22px 28px 22px 0;
+  border-bottom: 1px solid var(--border-soft);
+  align-items: baseline;
+}
+.principles li:nth-child(odd) {
+  padding-right: 32px;
+  border-right: 1px solid var(--border-soft);
+}
+.principles li:nth-child(even) { padding-left: 32px; }
+.principles li:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+  border-right: none;
+  padding-right: 0;
+}
+.principles .n {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 18px;
+  color: var(--brand);
+  line-height: 1;
+}
+.principles .body b {
+  display: block;
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 15px;
+  color: var(--near-black);
+  margin-bottom: 4px;
+  letter-spacing: 0.1px;
+}
+.principles .body span {
+  font-size: 13px;
+  color: var(--olive);
+  line-height: 1.5;
+  letter-spacing: 0.4px;
+  font-weight: 400;
+}
+
+/* ========== Manifesto (brand philosophy paragraph) ========== */
+
+.manifesto {
+  font-family: var(--serif);
+  font-size: 20px;
+  line-height: 1.55;
+  letter-spacing: 0.05em;
+  color: var(--near-black);
+  margin: 0 0 28px;
+  font-weight: 400;
+}
+.manifesto em {
+  color: var(--brand);
+  font-style: normal;
+}
+
+/* ========== Code block (install instructions) ========== */
+
+pre.code {
+  background: var(--ivory);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 18px 22px;
+  font-family: var(--mono);
+  font-size: 13.5px;
+  line-height: 1.55;
+  font-variant-numeric: lining-nums tabular-nums;
+  color: var(--near-black);
+  overflow-x: auto;
+  margin: 0;
+}
+pre.code .c { color: var(--stone); }
+pre.code .k { color: var(--brand); }
+
+/* ========== Metrics (key numbers) ========== */
+
+.metrics {
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+.metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.metric-value {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 36px;
+  line-height: 1;
+  color: var(--near-black);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.metric-label {
+  font-family: var(--latin-ui);
+  font-size: 13px;
+  color: var(--stone);
+}
+
+/* ========== Demo card grid (static showcase) ========== */
+
+.demo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 18px;
+}
+.demo-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--ivory);
+  transition: box-shadow 0.2s;
+}
+.demo-card:hover {
+  box-shadow: 0 4px 24px rgba(0,0,0,0.05);
+}
+.demo-card img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-bottom: 1px solid var(--border);
+}
+.demo-card .demo-title {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 15px;
+  color: var(--near-black);
+  margin: 12px 14px 4px;
+}
+.demo-card .demo-desc {
+  font-size: 12px;
+  color: var(--olive);
+  margin: 0 14px 14px;
+  line-height: 1.4;
+}
+
+/* ========== Pricing ========== */
+
+.price-card {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 72px 32px 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.price-amount {
+  font-family: Georgia, Charter, serif;
+  font-weight: 500;
+  font-size: 112px;
+  line-height: 1;
+  color: var(--near-black);
+  margin: 0 0 24px;
+  letter-spacing: 0;
+}
+.price-vs {
+  font-family: var(--serif);
+  font-size: 17px;
+  color: var(--dark-warm);
+  margin: 0 0 40px;
+  line-height: 1.55;
+  max-width: 580px;
+}
+.price-vs s {
+  color: var(--stone);
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--stone);
+  margin: 0 2px;
+}
+.price-vs .hl {
+  color: var(--brand);
+  font-weight: 500;
+}
+.price-card .btn-primary {
+  min-width: 280px;
+  padding: 15px 28px;
+  font-size: 15.5px;
+  justify-content: center;
+}
+.price-trial {
+  font-family: var(--serif);
+  font-size: 14px;
+  color: var(--stone);
+  margin: 16px 0 0;
+}
+.price-trial a {
+  color: var(--brand);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+.price-trial a:hover { color: var(--brand-light); }
+.price-terms {
+  font-family: var(--serif);
+  font-size: 13.5px;
+  color: var(--olive);
+  margin: 28px 0 0;
+  max-width: 640px;
+  line-height: 1.5;
+  text-align: center;
+}
+.price-terms .sep {
+  color: var(--line);
+  margin: 0 4px;
+}
+
+/* ========== FAQ ========== */
+
+.faq-pair { margin-bottom: 24px; }
+.faq-pair:last-child { margin-bottom: 0; }
+.faq dt {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 16px;
+  color: var(--near-black);
+  margin: 0 0 6px;
+  letter-spacing: 0.1px;
+}
+.faq dd {
+  font-family: var(--serif);
+  font-size: 14px;
+  line-height: 1.55;
+  letter-spacing: 0.4px;
+  color: var(--olive);
+  margin: 0;
+}
+.faq code {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--brand);
+  background: var(--brand-tint);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+.faq-tail {
+  font-family: var(--serif);
+  font-size: 13px;
+  color: var(--stone);
+  margin: 28px 0 0;
+}
+.faq-tail a { color: var(--brand); }
+
+/* ========== Footer ========== */
+
+footer.foot {
+  margin-top: 56px;
+  padding-top: 40px;
+  border-top: 1px solid var(--border-soft);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 48px;
+  font-family: var(--serif);
+  font-size: 13px;
+  color: var(--stone);
+}
+.foot .mark {
+  display: grid;
+  grid-template-columns: 56px auto;
+  grid-template-rows: auto auto;
+  column-gap: 14px;
+  align-items: start;
+}
+.foot .mark .mark-icon {
+  grid-row: 1 / span 2;
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  color: var(--brand);
+  padding: 8px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(238, 242, 247, 0.96), rgba(232, 230, 220, 0.88));
+  border: 1px solid rgba(27, 54, 93, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+.foot .mark .wm-name {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 28px;
+  color: var(--near-black);
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+.foot .mark .wm-line {
+  font-size: 13px;
+  color: var(--olive);
+  margin-top: 2px;
+}
+.foot .colophon {
+  text-align: right;
+  max-width: 480px;
+}
+.foot .colophon .links {
+  font-family: var(--latin-ui);
+  color: var(--dark-warm);
+  margin-bottom: 16px;
+  line-height: 1.55;
+}
+.foot .colophon .links a {
+  color: var(--dark-warm);
+}
+.foot .colophon .links a:hover { color: var(--brand); }
+.foot .colophon .ethos {
+  color: var(--olive);
+  font-style: italic;
+  line-height: 1.55;
+  max-width: 360px;
+  margin-left: auto;
+}
+
+/* ========== Print ========== */
+
+@media print {
+  body { background: #f5f4ed; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .page { padding: 0; max-width: 100%; }
+  section { page-break-inside: auto; margin-bottom: 36px; }
+  .hero, .section-head, .demo-card, .price-card, blockquote, pre { break-inside: avoid; page-break-inside: avoid; }
+  .gallery-frame::after { display: none; }
+}
+
+/* ========== Responsive ========== */
+
+@media (max-width: 880px) {
+  .page { padding: 64px 32px 80px; }
+  .hero { margin-bottom: 56px; padding-bottom: 32px; }
+  .hero h1 { font-size: 56px; letter-spacing: 0; }
+  .hero .tagline { font-size: 17px; }
+
+  section { margin-bottom: 56px; }
+  .section-title { font-size: 30px; letter-spacing: 0.8px; }
+
+  .gallery { grid-template-columns: 1fr; }
+  .gallery-caption,
+  .gallery-tabs { grid-column: 1; grid-row: auto; }
+  .gallery-tabs { gap: 6px; justify-content: flex-start; }
+  .gallery-tabs button { padding: 8px 10px; }
+
+  .features li {
+    grid-template-columns: 1fr;
+    row-gap: 8px;
+    padding: 22px 0;
+  }
+
+  .principles { grid-template-columns: 1fr; }
+  .principles li:nth-child(odd) { border-right: none; padding-right: 0; }
+  .principles li:nth-child(even) { padding-left: 0; }
+
+  .price-card { padding: 48px 16px 40px; }
+  .price-amount { font-size: 72px; letter-spacing: 0; margin-bottom: 18px; }
+  .price-vs { font-size: 15px; margin-bottom: 32px; }
+  .price-card .btn-primary { min-width: 240px; }
+  .price-terms { font-size: 12.5px; line-height: 1.5; margin-top: 24px; }
+
+  .foot {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 32px;
+    padding-top: 32px;
+    margin-top: 48px;
+  }
+  .foot .colophon { text-align: left; max-width: 100%; }
+  .foot .colophon .ethos { margin-left: 0; }
+  .foot { align-items: flex-start; }
+}
+
+@media (max-width: 480px) {
+  .hero h1 { font-size: 48px; }
+  .hero .tagline { font-size: 16px; }
+  .hero-cta { flex-direction: row; align-items: center; gap: 12px; }
+  .btn-primary,
+  .btn-ghost { min-width: 0; flex: 1; padding: 13px 16px; justify-content: center; }
+  .gallery-caption {
+    min-height: auto;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero h1 { animation: none; opacity: 1; transform: none; filter: none; }
+  .gallery-frame::after { display: none; }
+  .gallery-panel,
+  .gallery-caption { transition: none; transform: none; }
+}
+</style>
+</head>
+<body>
+<main class="page">
+
+  <header class="hero">
+    <div class="eyebrow">
+      <span>SJTU Canvas Desktop Helper · <a class="version-link" href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases">v3.0.4</a></span>
+      <span class="hero-links">
+        <a href="./en.html">EN</a>
+        <a href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://okabe-rintarou-0.github.io/SJTU-Canvas-Helper/" target="_blank" rel="noopener">官网</a>
+      </span>
+    </div>
+
+    <h1>SJTU Canvas Helper</h1>
+
+    <p class="tagline">把下载、预览、上传、作业与课程视频这些零散操作，整理成一套更顺手的交大 Canvas 桌面工作流。</p>
+
+    <div class="hero-tokens">
+      <span><b>Tauri</b> 桌面应用</span>
+      <span><b>Windows · macOS · Arch</b> 多平台安装</span>
+      <span><b>AI / MCP</b> 为后续工作流留出接口</span>
+    </div>
+
+    <div class="hero-cta">
+      <a class="btn-ghost" href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper">查看源码</a>
+      <a class="btn-primary" href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases">下载 Release</a>
+    </div>
+  </header>
+
+  <section>
+    <div class="section-head">
+      <p class="section-num">00 · Workflow</p>
+      <h2 class="section-title">一个窗口里，把最常用的课程动作接起来</h2>
+      <p class="section-lede">它不是只补一个按钮，而是把 Canvas 里最频繁、最碎片化的几段流程重新连成线：先看文件，再下载；先汇总作业，再处理提交；先拿到视频，再延伸到字幕与截图。</p>
+    </div>
+
+    <div class="gallery" data-gallery>
+      <div class="gallery-frame" aria-live="polite">
+        <figure class="gallery-panel is-active" data-title="文件下载与预览" data-line="像 Quick Look 一样，先看清楚，再决定要不要落盘。">
+          <img src="images/file.png" alt="SJTU Canvas Helper 文件下载与预览界面" loading="eager" decoding="async">
+        </figure>
+        <figure class="gallery-panel" data-title="交大云盘一键上传" data-line="课程文件流到交大云盘，不再来回切页面。" aria-hidden="true">
+          <img src="images/jbox.png" alt="SJTU Canvas Helper 一键上传交大云盘界面" loading="lazy" decoding="async">
+        </figure>
+        <figure class="gallery-panel" data-title="课程录屏与字幕" data-line="视频、字幕与截图，聚在同一条学习链路里。" aria-hidden="true">
+          <img src="images/video.png" alt="SJTU Canvas Helper 课程录屏与视频工具界面" loading="lazy" decoding="async">
+        </figure>
+        <figure class="gallery-panel" data-title="作业查看与批改" data-line="从提交到评分，把教师和助教的高频动作压缩成更短路径。" aria-hidden="true">
+          <img src="images/submission.png" alt="SJTU Canvas Helper 作业查看与批改界面" loading="lazy" decoding="async">
+        </figure>
+      </div>
+      <div class="gallery-caption">
+        <p class="title" data-gallery-title></p>
+        <p class="line" data-gallery-line></p>
+      </div>
+      <div class="gallery-tabs" aria-label="选择截图">
+        <button type="button" class="is-active" aria-pressed="true">预览</button>
+        <button type="button" aria-pressed="false">上传</button>
+        <button type="button" aria-pressed="false">视频</button>
+        <button type="button" aria-pressed="false">作业</button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <p class="section-num">01 · Features</p>
+      <h2 class="section-title">它解决了很多网页端使用上的痛点</h2>
+    </div>
+
+    <ol class="features">
+      <li>
+        <p class="name">下载与预览<small>先看，再存。</small></p>
+        <p class="what">文件下载、文件预览与压缩包浏览被放到同一段体验里。PDF、DOCX、Markdown、XLSX、代码、图片、Notebook 与 ZIP / RAR / 7Z 等主流格式都可以在落盘前先看一眼，减少“下载后才发现不是我要的那个”的往返。</p>
+      </li>
+      <li>
+        <p class="name">上传与云盘流转<small>少一次跳转。</small></p>
+        <p class="what">对需要在课程平台与交大云盘之间来回移动文件的人来说，一键上传把最机械的切换收起来了。它不是炫技功能，而是把高频、重复、容易出错的动作变短。</p>
+      </li>
+      <li>
+        <p class="name">作业与 DDL 管理<small>把截止时间拉近眼前。</small></p>
+        <p class="what">查看作业、提交作业、批改作业、修改 DDL 与 DDL 日历被放进一套连续操作里。学生能少翻几层页面，教师与助教也能把处理提交流程收得更紧。</p>
+      </li>
+      <li>
+        <p class="name">课程视频工具<small>录屏也该被整理。</small></p>
+        <p class="what">视频下载、播放、字幕下载，以及截图抓取并合成为 PDF，都围绕课程录屏这一真实场景展开。它让“从视频里提取资料”这件事，不必再靠多工具拼接完成。</p>
+      </li>
+      <li>
+        <p class="name">AI 与 MCP 接口<small>不止是 GUI。</small></p>
+        <p class="what">README 里已经明确写到多 API Key 管理与 MCP Server。前者让不同 LLM 服务商的接入更轻，后者则把 Canvas 数据能力通过标准协议开放给 AI 客户端，让这款桌面工具具备继续向自动化工作流延展的空间。</p>
+      </li>
+      <li>
+        <p class="name">跨平台与自动更新<small>装一次，后面轻一点。</small></p>
+        <p class="what">项目基于 Tauri，面向 Windows、macOS 与 Arch Linux 提供安装路径。Windows 推荐 `.msi`，并支持自动更新，这意味着它既不是一次性的脚本，也不是只能靠源码运行的开发者玩具。</p>
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <p class="section-num">02 · Principles</p>
+      <h2 class="section-title">这款工具真正有价值的，不只是“功能多”</h2>
+    </div>
+
+    <ol class="principles">
+      <li>
+        <span class="n">1</span>
+        <span class="body"><b>从高频摩擦点下手</b><span>下载、预览、上传、作业、录屏，这些都不是边角需求，而是 Canvas 使用里最常重复的动作。</span></span>
+      </li>
+      <li>
+        <span class="n">2</span>
+        <span class="body"><b>桌面体验优先</b><span>它用 Tauri 把这些流程收进本地应用，而不是继续依赖浏览器页签、脚本片段和临时网页工具的拼接。</span></span>
+      </li>
+      <li>
+        <span class="n">3</span>
+        <span class="body"><b>同时照顾学生与教学侧</b><span>README 同时覆盖文件处理、作业提交与批改、DDL 修改等场景，说明它服务的不只是“下载党”，而是一整条课程协作链路。</span></span>
+      </li>
+      <li>
+        <span class="n">4</span>
+        <span class="body"><b>给 AI 工作流预留接口</b><span>多 API Key 管理与 MCP Server 让它不只是一层图形界面，还可以成为 AI 读取、理解与调用 Canvas 数据的桥。</span></span>
+      </li>
+      <li>
+        <span class="n">5</span>
+        <span class="body"><b>开源且可审视</b><span>MIT License、GitHub Releases、源码仓库与社区讨论入口都放在公开面上，这让使用、反馈与继续迭代有了可信的基础。</span></span>
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <p class="section-num">03 · Start</p>
+      <h2 class="section-title">开始使用，不需要先成为这套项目的开发者</h2>
+    </div>
+
+    <div class="price-card">
+      <p class="price-amount">v3.0.4</p>
+      <p class="price-vs">从 <span class="hl">GitHub Releases</span> 下载安装包即可开始。Windows 推荐使用 <code>.msi</code> 以获得自动更新；macOS 与 Arch Linux 也已经在 README 中给出安装路径。</p>
+      <a class="btn-primary" href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases">前往 Release</a>
+      <p class="price-trial">首次启动后，填写 <code>Canvas Token</code> 与文件下载目录。</p>
+      <p class="price-terms">源码以 MIT License 开放 <span class="sep">·</span> 基于 Tauri 构建 <span class="sep">·</span> 若要本地开发，可按 README 安装 Node.js 与 Rust，并运行 <code>yarn tauri dev</code></p>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <p class="section-num">04 · FAQ</p>
+      <h2 class="section-title">在下载之前，最值得先知道的几件事</h2>
+    </div>
+
+    <dl class="faq">
+      <div class="faq-pair">
+        <dt>它和直接在浏览器里使用 Canvas，有什么差别？</dt>
+        <dd>浏览器版仍然是源头，但这款工具把最常重复的动作重新编排了。你可以更快地预览文件、整理下载、处理作业、处理录屏，以及把部分能力延伸到 AI / MCP 工作流里。</dd>
+      </div>
+      <div class="faq-pair">
+        <dt>它主要适合谁？</dt>
+        <dd>从 README 的功能范围看，它适合经常需要处理课程文件与作业的学生，也适合需要查看提交、批改与调整 DDL 的教师和助教。</dd>
+      </div>
+      <div class="faq-pair">
+        <dt>支持哪些平台？</dt>
+        <dd>README 已明确给出 Windows、macOS 与 Arch Linux 的安装说明。Windows 推荐下载 <code>.msi</code> 安装包，便于后续自动更新。</dd>
+      </div>
+      <div class="faq-pair">
+        <dt>第一次使用需要准备什么？</dt>
+        <dd>首次配置需要填写你的 <code>Canvas Token</code>，并设置文件下载保存目录。这是 README 中唯一被明确要求先配置的关键项。</dd>
+      </div>
+      <div class="faq-pair">
+        <dt>AI 相关能力具体指什么？</dt>
+        <dd>项目支持多 API Key 管理，并能自动识别服务商和拉取模型列表；同时提供 MCP Server，把 Canvas 数据能力开放给 AI 客户端调用。</dd>
+      </div>
+      <div class="faq-pair">
+        <dt>可以自己构建或二次开发吗？</dt>
+        <dd>可以。仓库使用 MIT License，README 也给出了开发环境要求与启动方式：安装 Rust、Node.js，然后运行 <code>yarn tauri dev</code> 或等价命令即可开始本地开发。</dd>
+      </div>
+    </dl>
+    <p class="faq-tail">想继续往下看，可以直接查阅 <a href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/blob/main/README.md" target="_blank" rel="noopener">README</a>，或访问 <a href="https://deepwiki.com/Okabe-Rintarou-0/SJTU-Canvas-Helper" target="_blank" rel="noopener">DeepWiki</a> 了解项目结构。</p>
+  </section>
+
+  <footer class="foot">
+    <div class="mark">
+      <svg class="mark-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M12 2.8l1.82 4.46 4.46 1.82-4.46 1.82L12 15.36l-1.82-4.46-4.46-1.82 4.46-1.82L12 2.8Z" fill="currentColor"/>
+        <path d="M18.2 12.3l.96 2.35 2.35.96-2.35.96-.96 2.35-.96-2.35-2.35-.96 2.35-.96.96-2.35Z" fill="currentColor" opacity=".78"/>
+        <path d="M5.7 13.9l.78 1.9 1.9.78-1.9.78-.78 1.9-.78-1.9-1.9-.78 1.9-.78.78-1.9Z" fill="currentColor" opacity=".62"/>
+      </svg>
+      <span class="wm-name">SJTU Canvas Helper</span>
+      <span class="wm-line">给交大 Canvas 更顺手的桌面入口。</span>
+    </div>
+    <div class="colophon">
+      <div class="links">
+        <a href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper" target="_blank" rel="noopener">GitHub</a> &middot;
+        <a href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases" target="_blank" rel="noopener">Releases</a> &middot;
+        <a href="https://okabe-rintarou-0.github.io/SJTU-Canvas-Helper/" target="_blank" rel="noopener">官网</a> &middot;
+        <a href="https://shuiyuan.sjtu.edu.cn/t/topic/245275" target="_blank" rel="noopener">水源讨论</a> &middot;
+        <a href="https://deepwiki.com/Okabe-Rintarou-0/SJTU-Canvas-Helper" target="_blank" rel="noopener">DeepWiki</a>
+      </div>
+      <p class="ethos">把零散的课程操作，整理成一套顺手、可信、可扩展的桌面工具。</p>
+    </div>
+  </footer>
+
+</main>
+
+<script>
+(function(){
+  var gallery = document.querySelector('[data-gallery]');
+  if (!gallery) return;
+  var frame = gallery.querySelector('.gallery-frame');
+  var panels = Array.prototype.slice.call(gallery.querySelectorAll('.gallery-panel'));
+  var tabs = Array.prototype.slice.call(gallery.querySelectorAll('.gallery-tabs button'));
+  var title = gallery.querySelector('[data-gallery-title]');
+  var line = gallery.querySelector('[data-gallery-line]');
+  var index = 0;
+  var timer = null;
+  var transitionTimer = null;
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  if (panels.length === 0) return;
+  if (panels.length === 1) {
+    panels[0].classList.add('is-active');
+    panels[0].setAttribute('aria-hidden', 'false');
+    if (title) title.textContent = panels[0].dataset.title || '';
+    if (line) line.textContent = panels[0].dataset.line || '';
+    tabs.forEach(function(t) {
+      t.classList.add('is-active');
+      t.setAttribute('aria-pressed', 'true');
+    });
+    return;
+  }
+
+  if (panels.length > 0 && title) {
+    title.textContent = panels[0].dataset.title || '';
+    if (line) line.textContent = panels[0].dataset.line || '';
+  }
+
+  function activate(next) {
+    if (next === index) return;
+    var previous = index;
+    var direction = (next - previous + panels.length) % panels.length;
+    gallery.dataset.direction = direction > panels.length / 2 ? 'prev' : 'next';
+    if (transitionTimer) window.clearTimeout(transitionTimer);
+    panels.forEach(function(p) { p.classList.remove('was-active'); });
+    var outgoing = panels[previous];
+    if (outgoing) outgoing.classList.add('was-active');
+    gallery.classList.add('is-switching');
+    transitionTimer = window.setTimeout(function() {
+      gallery.classList.remove('is-switching');
+      if (outgoing) outgoing.classList.remove('was-active');
+      transitionTimer = null;
+    }, 920);
+    index = next;
+    panels.forEach(function(p, i) {
+      var active = i === index;
+      p.classList.toggle('is-active', active);
+      p.setAttribute('aria-hidden', active ? 'false' : 'true');
+    });
+    tabs.forEach(function(t, i) {
+      var active = i === index;
+      t.classList.toggle('is-active', active);
+      t.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    if (title) title.textContent = panels[index].dataset.title || '';
+    if (line) line.textContent = panels[index].dataset.line || '';
+  }
+
+  function start() {
+    if (reduceMotion || timer) return;
+    timer = window.setInterval(function() {
+      activate((index + 1) % panels.length);
+    }, 4500);
+  }
+  function stop() {
+    if (!timer) return;
+    window.clearInterval(timer);
+    timer = null;
+  }
+
+  tabs.forEach(function(tab, i) {
+    tab.addEventListener('click', function() { stop(); activate(i); start(); });
+  });
+  if (frame) {
+    frame.addEventListener('click', function(e) {
+      var box = frame.getBoundingClientRect();
+      var next = e.clientX < box.left + box.width / 2
+        ? (index - 1 + panels.length) % panels.length
+        : (index + 1) % panels.length;
+      stop(); activate(next); start();
+    });
+  }
+  gallery.addEventListener('mouseenter', stop);
+  gallery.addEventListener('mouseleave', start);
+  gallery.addEventListener('focusin', stop);
+  gallery.addEventListener('focusout', start);
+  start();
+})();
+</script>
+</body>
 </html>

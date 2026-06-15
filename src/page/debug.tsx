@@ -318,22 +318,16 @@ export default function DebugPage() {
       <Stack spacing={3}>
         <Card
           sx={{
-            borderRadius: "30px",
+            borderRadius: "24px",
             overflow: "hidden",
             border: "1px solid",
-            borderColor: alpha(theme.palette.primary.main, 0.14),
-            background: `linear-gradient(135deg, ${alpha(
-              theme.palette.primary.main,
-              0.14
-            )} 0%, ${alpha(theme.palette.background.paper, 0.96)} 55%, ${alpha(
-              "#0f172a",
-              theme.palette.mode === "dark" ? 0.34 : 0.06
-            )} 100%)`,
-            boxShadow: "0 28px 70px rgba(15, 23, 42, 0.12)",
+            borderColor: "divider",
+            backgroundColor: theme.palette.background.paper,
+            boxShadow: "0 10px 28px rgba(15, 23, 42, 0.05)",
           }}
         >
-          <CardContent sx={{ p: { xs: 2.5, md: 3.5 } }}>
-            <Stack spacing={2.5}>
+          <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
+            <Stack spacing={2.25}>
               <Stack
                 direction={{ xs: "column", md: "row" }}
                 spacing={2}
@@ -342,19 +336,19 @@ export default function DebugPage() {
               >
                 <Box>
                   <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1 }}>
-                    <Box
-                      sx={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: "16px",
-                        display: "grid",
-                        placeItems: "center",
-                        bgcolor: alpha(theme.palette.primary.main, 0.16),
-                        color: "primary.main",
-                      }}
-                    >
-                      <BugReportRoundedIcon />
-                    </Box>
+                        <Box
+                          sx={{
+                            width: 44,
+                            height: 44,
+                            borderRadius: "16px",
+                            display: "grid",
+                            placeItems: "center",
+                            bgcolor: alpha(theme.palette.primary.main, 0.08),
+                            color: "primary.main",
+                          }}
+                        >
+                          <BugReportRoundedIcon />
+                        </Box>
                     <Box>
                       <Typography variant="h4" sx={{ fontWeight: 800 }}>
                         Debug 控制台

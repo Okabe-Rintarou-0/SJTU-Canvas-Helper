@@ -501,45 +501,24 @@ export default function AnnualPage() {
           ref={annualRef}
           sx={{
             overflow: "hidden",
-            borderRadius: "32px",
+            borderRadius: "24px",
             border: "1px solid",
-            borderColor: alpha(theme.palette.primary.main, 0.18),
-            background:
-              theme.palette.mode === "dark"
-                ? "linear-gradient(180deg, rgba(8,15,28,0.96) 0%, rgba(9,25,46,0.96) 54%, rgba(7,17,29,1) 100%)"
-                : "linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(241,245,249,0.98) 54%, rgba(226,232,240,0.98) 100%)",
-            boxShadow:
-              theme.palette.mode === "dark"
-                ? "0 30px 90px rgba(2, 8, 23, 0.55)"
-                : "0 30px 90px rgba(15, 23, 42, 0.12)",
-            position: "relative",
+            borderColor: "divider",
+            backgroundColor: theme.palette.background.paper,
+            boxShadow: "0 10px 28px rgba(15, 23, 42, 0.05)",
           }}
         >
-          <Box
-            sx={{
-              position: "absolute",
-              inset: 0,
-              background:
-                "radial-gradient(circle at top center, rgba(255,255,255,0.14), transparent 26%), linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.08) 100%)",
-              pointerEvents: "none",
-            }}
-          />
           <CardContent sx={{ p: 0 }}>
             <Stack
               id={ANNUAL_EXPORT_ROOT_ID}
               ref={annualExportRef}
-              spacing={4}
+              spacing={3}
               sx={{
-                position: "relative",
                 width: "100%",
                 minWidth: 0,
                 boxSizing: "border-box",
                 overflow: "hidden",
-                p: { xs: 2.5, md: 4 },
-                background:
-                  theme.palette.mode === "dark"
-                    ? "linear-gradient(180deg, rgba(8,15,28,0.96) 0%, rgba(9,25,46,0.96) 54%, rgba(7,17,29,1) 100%)"
-                    : "linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(241,245,249,0.98) 54%, rgba(226,232,240,0.98) 100%)",
+                p: { xs: 2.25, md: 3 },
               }}
             >
               <Stack
@@ -551,16 +530,15 @@ export default function AnnualPage() {
                   <Chip
                     icon={<MovieCreationRoundedIcon />}
                     label="Year In Review"
-                    color="primary"
                     variant="outlined"
-                    sx={{ width: "fit-content", backdropFilter: "blur(10px)" }}
+                    sx={{ width: "fit-content" }}
                   />
                   <Typography
                     variant="h3"
                     sx={{
                       fontWeight: 800,
-                      letterSpacing: "-0.04em",
-                      lineHeight: 1.04,
+                      letterSpacing: "-0.03em",
+                      lineHeight: 1.08,
                       textWrap: "balance",
                     }}
                   >
@@ -579,14 +557,10 @@ export default function AnnualPage() {
                   sx={{
                     minWidth: { xs: "100%", md: 220 },
                     p: 2,
-                    borderRadius: "24px",
+                    borderRadius: "20px",
                     border: "1px solid",
-                    borderColor: alpha(theme.palette.common.white, 0.12),
-                    bgcolor:
-                      theme.palette.mode === "dark"
-                        ? alpha("#0f172a", 0.72)
-                        : alpha("#ffffff", 0.72),
-                    backdropFilter: "blur(12px)",
+                    borderColor: "divider",
+                    bgcolor: alpha(theme.palette.background.default, 0.6),
                   }}
                 >
                   <Stack spacing={1.25}>

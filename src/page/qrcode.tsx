@@ -72,24 +72,15 @@ export default function QRCodePage() {
       <Stack spacing={3}>
         <Card
           sx={{
-            borderRadius: "30px",
+            borderRadius: "24px",
             border: "1px solid",
             borderColor: "divider",
-            background:
-              theme.palette.mode === "dark"
-                ? `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.2)}, ${alpha(
-                  theme.palette.background.paper,
-                  0.94
-                )})`
-                : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.1)}, ${alpha(
-                  "#ffffff",
-                  0.94
-                )})`,
-            boxShadow: "0 24px 60px rgba(15, 23, 42, 0.08)",
+            backgroundColor: theme.palette.background.paper,
+            boxShadow: "0 10px 28px rgba(15, 23, 42, 0.05)",
           }}
         >
-          <CardContent sx={{ p: { xs: 2.5, md: 3.5 } }}>
-            <Stack spacing={2.5}>
+          <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
+            <Stack spacing={2.25}>
               <Stack
                 direction={{ xs: "column", md: "row" }}
                 justifyContent="space-between"
@@ -99,13 +90,12 @@ export default function QRCodePage() {
                   <Chip
                     icon={<QrCode2RoundedIcon />}
                     label="QR Gallery"
-                    color="primary"
                     variant="outlined"
                     sx={{ width: "fit-content" }}
                   />
                   <Typography
                     variant="h4"
-                    sx={{ fontWeight: 700, letterSpacing: "-0.03em" }}
+                    sx={{ fontWeight: 700, letterSpacing: "-0.02em" }}
                   >
                     二维码识别结果
                   </Typography>

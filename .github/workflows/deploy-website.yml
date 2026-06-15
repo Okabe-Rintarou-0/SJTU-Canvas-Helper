@@ -1,4 +1,4 @@
-﻿name: Deploy Website
+name: Deploy Website
 
 on:
   push:
@@ -6,7 +6,9 @@ on:
       - main
       - release
     paths:
-      - "website/**"
+      - "website/index.html"
+      - "website/en.html"
+      - "images/**"
       - ".github/workflows/deploy-website.yml"
   workflow_dispatch:
 
@@ -19,32 +21,23 @@ concurrency:
   group: "pages"
   cancel-in-progress: false
 
-defaults:
-  run:
-    working-directory: website
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: "yarn"
-          cache-dependency-path: website/yarn.lock
-
-      - name: Install dependencies
-        run: yarn install --frozen-lockfile
-
-      - name: Build
-        run: yarn build
+      - name: Prepare static site
+        run: |
+          mkdir -p site
+          cp website/index.html site/index.html
+          cp website/en.html site/en.html
+          cp -r images site/images
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: website/dist
+          path: site
 
   deploy:
     environment:

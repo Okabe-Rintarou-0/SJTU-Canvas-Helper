@@ -544,20 +544,12 @@ export default function SubmissionsPage() {
         <Card
           sx={{
             ...surfaceCardSx,
-            background:
-              theme.palette.mode === "dark"
-                ? `linear-gradient(135deg, ${alpha(
-                    theme.palette.primary.main,
-                    0.18
-                  )}, ${alpha("#0f172a", 0.9)})`
-                : `linear-gradient(135deg, ${alpha(
-                    theme.palette.primary.main,
-                    0.1
-                  )}, rgba(255,255,255,0.96))`,
+            backgroundColor: theme.palette.background.paper,
+            boxShadow: "0 10px 28px rgba(15, 23, 42, 0.05)",
           }}
         >
-          <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-            <Stack spacing={3}>
+          <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
+            <Stack spacing={2.25}>
               <Stack
                 direction={{ xs: "column", lg: "row" }}
                 justifyContent="space-between"
@@ -606,14 +598,14 @@ export default function SubmissionsPage() {
                   <Card
                     key={item.label}
                     sx={{
-                      borderRadius: "22px",
-                      backgroundColor: alpha(theme.palette.background.paper, 0.8),
+                      borderRadius: "18px",
+                      backgroundColor: alpha(theme.palette.background.default, 0.55),
                       border: "1px solid",
-                      borderColor: alpha(theme.palette.divider, 0.5),
+                      borderColor: alpha(theme.palette.divider, 0.8),
                       boxShadow: "none",
                     }}
                   >
-                    <CardContent sx={{ p: 2.25 }}>
+                    <CardContent sx={{ p: 2 }}>
                       <Typography variant="overline" color="text.secondary">
                         {item.label}
                       </Typography>

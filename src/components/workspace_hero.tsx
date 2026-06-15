@@ -32,21 +32,15 @@ export function WorkspaceHero({
   return (
     <Card
       sx={{
-        borderRadius: "28px",
+        borderRadius: "24px",
         border: "1px solid",
         borderColor: "divider",
-        background:
-          theme.palette.mode === "dark"
-            ? `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.18)}, ${alpha(
-                "#0f172a",
-                0.9
-              )})`
-            : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.1)}, rgba(255,255,255,0.96))`,
-        boxShadow: "0 24px 60px rgba(15, 23, 42, 0.08)",
+        backgroundColor: theme.palette.background.paper,
+        boxShadow: "0 10px 28px rgba(15, 23, 42, 0.05)",
       }}
     >
-      <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-        <Stack spacing={3}>
+      <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
+        <Stack spacing={2.25}>
           <Stack
             direction={{ xs: "column", lg: "row" }}
             justifyContent="space-between"
@@ -57,11 +51,10 @@ export function WorkspaceHero({
               <Chip
                 icon={chipIcon}
                 label={chipLabel}
-                color="primary"
                 variant="outlined"
                 sx={{ width: "fit-content" }}
               />
-              <Typography variant="h4" sx={{ fontWeight: 700, letterSpacing: "-0.03em" }}>
+              <Typography variant="h4" sx={{ fontWeight: 700, letterSpacing: "-0.02em" }}>
                 {title}
               </Typography>
               {description ? (
@@ -86,11 +79,11 @@ export function WorkspaceHero({
             ) : null}
           </Stack>
 
-          {stats?.length ? (
-            <Box
-              sx={{
-                display: "grid",
-                gap: 2,
+            {stats?.length ? (
+              <Box
+                sx={{
+                  display: "grid",
+                  gap: 2,
                 gridTemplateColumns: {
                   xs: "repeat(2, minmax(0, 1fr))",
                   lg: `repeat(${Math.min(stats.length, 4)}, minmax(0, 1fr))`,
@@ -101,14 +94,14 @@ export function WorkspaceHero({
                 <Card
                   key={String(item.label)}
                   sx={{
-                    borderRadius: "22px",
-                    backgroundColor: alpha(theme.palette.background.paper, 0.8),
+                    borderRadius: "18px",
+                    backgroundColor: alpha(theme.palette.background.default, 0.55),
                     border: "1px solid",
-                    borderColor: alpha(theme.palette.divider, 0.5),
+                    borderColor: alpha(theme.palette.divider, 0.8),
                     boxShadow: "none",
                   }}
                 >
-                  <CardContent sx={{ p: 2.25 }}>
+                  <CardContent sx={{ p: 2 }}>
                     {item.icon ? (
                       <Stack direction="row" spacing={1.5} alignItems="center">
                         <Box
