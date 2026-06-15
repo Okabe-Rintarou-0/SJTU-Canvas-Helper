@@ -95,12 +95,24 @@ def update_website_htmls(version):
 
             old_ver_num = re.search(r'v([\d.]+)', old_ver).group(1)
 
-            with open(html_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-
             print(f"Updated website/{filename}: {old_ver_num} -> {version}")
         else:
             print(f"Warning: Could not find version in website/{filename}")
+            old_ver_num = '?'
+
+        # Match: class="version-link" ... >vX.Y.Z</a> (eyebrow section)
+        pattern2 = r'(class="version-link"[^>]*>)v[\d]+\.[\d]+\.[\d]+(-[a-zA-Z0-9.]+)?(</a>)'
+        match2 = re.search(pattern2, content)
+
+        if match2:
+            old_ver2 = match2.group(0)
+            new_ver2 = f'{match2.group(1)}v{version}{match2.group(3)}'
+            content = content.replace(old_ver2, new_ver2)
+            old_ver2_num = re.search(r'v([\d.]+)', old_ver2).group(1)
+            print(f"Updated website/{filename} (version-link): {old_ver2_num} -> {version}")
+
+        with open(html_path, 'w', encoding='utf-8') as f:
+            f.write(content)
 
 def main():
     if len(sys.argv) != 2:
