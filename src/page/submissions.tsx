@@ -204,7 +204,7 @@ export default function SubmissionsPage() {
     setEntries,
   } = usePreview(
     previewFooter,
-    { height: "67vh", marginTop: "0px" },
+    undefined,
     shouldMonitor
   );
 

@@ -77,7 +77,7 @@ export default function PreviewModal({
   }, [files, open]);
 
   const viewer = useMemo(() => {
-    const body = footer ? bodyStyle : { height: "78vh", marginTop: "0px" };
+    const body = bodyStyle ?? { height: "78vh", marginTop: "0px" };
     const key = files.map((file) => file.url).join("|");
 
     return (
@@ -106,7 +106,8 @@ export default function PreviewModal({
         sx: {
           width: "92vw",
           maxWidth: "1400px",
-          minHeight: "88vh",
+          height: "88vh",
+          maxHeight: "88vh",
           borderRadius: "30px",
           overflow: "hidden",
           bgcolor:
@@ -174,15 +175,14 @@ export default function PreviewModal({
         sx={{
           px: 0,
           py: 0,
-          display: "flex",
-          flexDirection: "column",
+          overflowY: "auto",
           bgcolor:
             theme.palette.mode === "dark"
               ? alpha("#020617", 0.28)
               : alpha("#eff6ff", 0.42),
         }}
       >
-        <Box sx={{ flex: 1, minHeight: 0 }}>{viewer}</Box>
+        <Box>{viewer}</Box>
         {footer ? (
           <Box
             sx={{
