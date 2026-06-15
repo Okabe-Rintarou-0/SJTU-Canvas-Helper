@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 import json
 import re
 import sys
@@ -30,17 +30,14 @@ def update_cargo_toml(version):
     old_version = None
     
     for i, line in enumerate(lines):
-        # Check if we're entering the [package] section
         if line.strip() == '[package]':
             in_package_section = True
             continue
         
-        # Check if we're leaving the [package] section
         if in_package_section and line.strip().startswith('['):
             in_package_section = False
             continue
         
-        # Only update version in [package] section
         if in_package_section and line.strip().startswith('version = '):
             old_version = line.strip().split('"')[1]
             lines[i] = f'version = "{version}"\n'
@@ -77,6 +74,34 @@ def validate_version(version):
         return False
     return True
 
+def update_website_htmls(version):
+    """Update version in website/index.html and website/en.html"""
+    repo_root = os.path.dirname(os.path.dirname(__file__))
+
+    for filename in ['index.html', 'en.html']:
+        html_path = os.path.join(repo_root, 'website', filename)
+
+        with open(html_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Match: <p class="price-amount">vX.Y.Z(-suffix)?</p>
+        pattern = r'(<p class="price-amount">)v[\d]+\.[\d]+\.[\d]+(-[a-zA-Z0-9.]+)?(</p>)'
+        match = re.search(pattern, content)
+
+        if match:
+            old_ver = match.group(0)
+            new_ver = f'{match.group(1)}v{version}{match.group(3)}'
+            content = content.replace(old_ver, new_ver)
+
+            old_ver_num = re.search(r'v([\d.]+)', old_ver).group(1)
+
+            with open(html_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+
+            print(f"Updated website/{filename}: {old_ver_num} -> {version}")
+        else:
+            print(f"Warning: Could not find version in website/{filename}")
+
 def main():
     if len(sys.argv) != 2:
         print("Usage: python bump_version.py <new_version>")
@@ -92,6 +117,7 @@ def main():
         update_package_json(new_version)
         update_cargo_toml(new_version)
         update_tauri_conf(new_version)
+        update_website_htmls(new_version)
         print("\nAll files updated successfully!")
     except Exception as e:
         print(f"Error: {e}")
