@@ -1,6 +1,6 @@
 <div align="center">
   <img src="images/logo.png" width="300px"/>
-  <h1>Sjtu Canvas Helper</h1>
+  <h1>SJTU Canvas Helper</h1>
   <p><b>还在为下载学生上传的大量压缩包而苦恼吗？</b></p>
 </div>
 
