@@ -5,8 +5,8 @@
 </div>
 
 SJTU Canvas 小帮手基于 [Tauri](https://tauri.app/) 开发，助您更便捷地使用交大 Canvas。
-参与讨论：[水源社区](https://shuiyuan.sjtu.edu.cn/t/topic/245275)。
-官网：https://okabe-rintarou-0.github.io/SJTU-Canvas-Helper/
+参与讨论：[水源社区](https://shuiyuan.sjtu.edu.cn/t/topic/245275)，[官网](https://okabe-rintarou-0.github.io/SJTU-Canvas-Helper/)。
+
 
 <div align="center">
   <img align="center" src="https://img.shields.io/badge/rust-1.75-blue" alt="">
@@ -17,15 +17,21 @@ SJTU Canvas 小帮手基于 [Tauri](https://tauri.app/) 开发，助您更便捷
 
 ## 安装指南
 
-![](./images/installation.png)
-
-### 基础安装
+| 操作系统类型 | 推荐下载（点击直接下载最新版） | 说明 |
+| :--- | :--- | :--- |
+| **Windows (64位 - 现代主流电脑)** | [SJTU.Canvas.Helper_3.0.5_x64_en-US.msi](https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases/download/app-v3.0.5/SJTU.Canvas.Helper_3.0.5_x64_en-US.msi) | **首选推荐**。微软标准安装包。如果安装遇到问题，可尝试同页面的 `_x64-setup.exe`。 |
+| **Windows (32位 - 老旧电脑)** | [SJTU.Canvas.Helper_3.0.5_x86_en-US.msi](https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases/download/app-v3.0.5/SJTU.Canvas.Helper_3.0.5_x86_en-US.msi) | 仅在您的电脑是较老旧的 32位 操作系统时选择。 |
+| **macOS (苹果电脑 - M1/M2/M3芯片)** | [SJTU.Canvas.Helper_3.0.5_aarch64.dmg](https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases/download/app-v3.0.5/SJTU.Canvas.Helper_3.0.5_aarch64.dmg) | 适用于采用 **Apple Silicon**（M系列芯片）的现代 Mac 电脑。 |
+| **macOS (苹果电脑 - Intel芯片)** | [SJTU.Canvas.Helper_x64.app.tar.gz](https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases/download/app-v3.0.5/SJTU.Canvas.Helper_x64.app.tar.gz) | 适用于较老款、采用 **Intel** 芯片的 Mac 电脑。 |
+| **Linux (Ubuntu / Debian 等)** | [SJTU.Canvas.Helper_3.0.5_amd64.deb](https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases/download/app-v3.0.5/SJTU.Canvas.Helper_3.0.5_amd64.deb) | 适用于基于 Debian 体系的 Linux 发行版，双击或用 `dpkg` 安装。 |
+| **Linux (RedHat / Fedora / CentOS)**| [SJTU.Canvas.Helper-3.0.5-1.x86_64.rpm](https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases/download/app-v3.0.5/SJTU.Canvas.Helper-3.0.5-1.x86_64.rpm) | 适用于基于 RedHat 体系的 Linux 发行版。 |
+| **Linux (通用免安装版)** | [SJTU.Canvas.Helper_3.0.5_amd64.AppImage](https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases/download/app-v3.0.5/SJTU.Canvas.Helper_3.0.5_amd64.AppImage) | 适用于任何主流 Linux 发行版，赋予执行权限后可直接双击运行。 |
 
 1. 前往 [Release](https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases) 页面下载并安装一次即可，后续主版本更新将自动拉取，无需重复下载
 
 2. **Windows 系统**：
    - 推荐下载 `.msi` 安装包，支持自动更新功能
-   - 也可选择免安装便携版：`SJTU.Canvas.Helper_v_x.x.x_x64_portable.zip`
+   - 也可选择免安装便携版：`SJTU.Canvas.Helper_v_3.0.5_x64_portable.zip`
 
 3. **MacOS 系统**：
    - 下载对应版本安装包

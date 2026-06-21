@@ -114,6 +114,51 @@ def update_website_htmls(version):
         with open(html_path, 'w', encoding='utf-8') as f:
             f.write(content)
 
+def update_readme(version):
+    """Update version strings in README.md"""
+    readme_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'README.md')
+
+    with open(readme_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    # Find old version from the first download link
+    match = re.search(r'SJTU\.Canvas\.Helper_(\d+\.\d+\.\d+)_x64_en-US\.msi', content)
+    if not match:
+        print("Warning: Could not find current version in README.md")
+        return
+
+    old_version = match.group(1)
+
+    old_count = 0
+
+    # Update GitHub release URL paths
+    if f'app-v{old_version}' in content:
+        old_count += content.count(f'app-v{old_version}')
+        content = content.replace(f'app-v{old_version}', f'app-v{version}')
+
+    # Update filenames: SJTU.Canvas.Helper_X.Y.Z_*
+    if f'Helper_{old_version}_' in content:
+        old_count += content.count(f'Helper_{old_version}_')
+        content = content.replace(f'Helper_{old_version}_', f'Helper_{version}_')
+
+    # Update filenames: SJTU.Canvas.Helper-X.Y.Z-*
+    if f'Helper-{old_version}-' in content:
+        old_count += content.count(f'Helper-{old_version}-')
+        content = content.replace(f'Helper-{old_version}-', f'Helper-{version}-')
+
+    # Update portable zip: Helper_v_X.Y.Z_*
+    if f'_v_{old_version}_' in content:
+        old_count += content.count(f'_v_{old_version}_')
+        content = content.replace(f'_v_{old_version}_', f'_v_{version}_')
+
+    with open(readme_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+
+    if old_count > 0:
+        print(f"Updated README.md: {old_version} -> {version} ({old_count} replacements)")
+    else:
+        print(f"Warning: No version patterns found to replace in README.md")
+
 def main():
     if len(sys.argv) != 2:
         print("Usage: python bump_version.py <new_version>")
@@ -130,6 +175,7 @@ def main():
         update_cargo_toml(new_version)
         update_tauri_conf(new_version)
         update_website_htmls(new_version)
+        update_readme(new_version)
         print("\nAll files updated successfully!")
     except Exception as e:
         print(f"Error: {e}")
