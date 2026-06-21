@@ -817,8 +817,7 @@ mod tests {
     async fn test_download_video() -> Result<()> {
         let _ = tracing_subscriber::fmt::try_init();
         let cli = Arc::new(Client::new_without_proxy(BASE_URL, "", "", "", None));
-        // a bigger one, more than one video block
-        let video_url = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
+        let video_url = "https://www.w3schools.com/html/mov_bbb.mp4";
         let save_path = "test_download_video.mp4";
         let video_info = VideoPlayInfo {
             rtmp_url_hdv: video_url.to_owned(),
