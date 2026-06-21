@@ -74,3 +74,6 @@ tauri-plugin-updater = "2"
 
 [target.'cfg(any(target_os = "windows", target_os = "linux"))'.dev-dependencies]
 injectorpp = "0.4.0"
+
+[dev-dependencies]
+httpmock = "0.7"

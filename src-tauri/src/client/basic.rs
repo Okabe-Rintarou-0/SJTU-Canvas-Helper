@@ -979,6 +979,160 @@ impl Client {
 }
 
 #[cfg(test)]
+mod mock_tests {
+    use super::super::Client;
+    use httpmock::prelude::*;
+    use serde_json::json;
+
+    fn create_test_client(mock_server_url: &str) -> Client {
+        Client::new_without_proxy(mock_server_url, "", "", "", None)
+    }
+
+    #[tokio::test]
+    async fn test_list_courses() {
+        let server = MockServer::start();
+        let token = "test_token_12345";
+
+        let page1_mock = server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/courses")
+                .query_param("include[]", "teachers")
+                .query_param("include[]", "term")
+                .query_param("page", "1")
+                .query_param("per_page", "100");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .json_body(json!([
+                    {
+                        "id": 1,
+                        "uuid": "course-uuid-1",
+                        "name": "Mathematics 101",
+                        "course_code": "MATH101",
+                        "enrollments": [],
+                        "teachers": [
+                            {
+                                "id": 10,
+                                "anonymous_id": "anon-teacher-1",
+                                "display_name": "Prof. Smith",
+                                "avatar_image_url": "",
+                                "html_url": ""
+                            }
+                        ],
+                        "term": {
+                            "id": 2024,
+                            "name": "Fall 2024",
+                            "start_at": "2024-09-01T00:00:00Z",
+                            "end_at": null,
+                            "created_at": "2024-06-01T00:00:00Z",
+                            "workflow_state": "active"
+                        },
+                        "syllabus_body": ""
+                    },
+                    {
+                        "id": 2,
+                        "uuid": "course-uuid-2",
+                        "name": "Restricted Course",
+                        "course_code": "RESTRCT",
+                        "enrollments": [],
+                        "teachers": [
+                            {
+                                "id": 20,
+                                "anonymous_id": "anon-teacher-2",
+                                "display_name": "Prof. Jones",
+                                "avatar_image_url": "",
+                                "html_url": ""
+                            }
+                        ],
+                        "term": {
+                            "id": 2024,
+                            "name": "Fall 2024",
+                            "start_at": "2024-09-01T00:00:00Z",
+                            "end_at": null,
+                            "created_at": "2024-06-01T00:00:00Z",
+                            "workflow_state": "active"
+                        },
+                        "syllabus_body": "",
+                        "access_restricted_by_date": true
+                    }
+                ]));
+        });
+
+        let page2_mock = server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/courses")
+                .query_param("include[]", "teachers")
+                .query_param("include[]", "term")
+                .query_param("page", "2")
+                .query_param("per_page", "100");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .json_body(json!([]));
+        });
+
+        let client = create_test_client(&server.base_url());
+        let courses = client.list_courses(token).await.unwrap();
+
+        assert_eq!(courses.len(), 1);
+        assert_eq!(courses[0].id, 1);
+        assert_eq!(courses[0].name, "Mathematics 101");
+        assert_eq!(courses[0].teachers[0].display_name, "Prof. Smith");
+
+        page1_mock.assert();
+        page2_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_get_course_syllabus() {
+        let server = MockServer::start();
+        let token = "test_token_12345";
+        let course_id = 42i64;
+
+        let mock = server.mock(|when, then| {
+            when.method(GET)
+                .path(format!("/api/v1/courses/{course_id}"))
+                .query_param("include[]", "syllabus_body");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .json_body(json!({
+                    "id": course_id,
+                    "uuid": "course-uuid-syllabus",
+                    "name": "Physics 201",
+                    "course_code": "PHYS201",
+                    "enrollments": [],
+                    "teachers": [
+                        {
+                            "id": 30,
+                            "anonymous_id": "anon-physics",
+                            "display_name": "Dr. Einstein",
+                            "avatar_image_url": "",
+                            "html_url": ""
+                        }
+                    ],
+                    "term": {
+                        "id": 2024,
+                        "name": "Fall 2024",
+                        "start_at": "2024-09-01T00:00:00Z",
+                        "end_at": null,
+                        "created_at": "2024-06-01T00:00:00Z",
+                        "workflow_state": "active"
+                    },
+                    "syllabus_body": "<p>Welcome to Physics 201! This course covers...</p>"
+                }));
+        });
+
+        let client = create_test_client(&server.base_url());
+        let course = client.get_course_syllabus(course_id, token).await.unwrap();
+
+        assert_eq!(course.id, course_id);
+        assert_eq!(course.name, "Physics 201");
+        assert_eq!(course.syllabus_body, "<p>Welcome to Physics 201! This course covers...</p>");
+        assert_eq!(course.teachers[0].display_name, "Dr. Einstein");
+
+        mock.assert();
+    }
+}
+
+#[cfg(test)]
 mod test {
     use crate::{
         client::Client,
