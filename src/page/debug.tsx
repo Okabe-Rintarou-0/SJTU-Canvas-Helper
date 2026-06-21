@@ -615,7 +615,7 @@ export default function DebugPage() {
                                 </Box>
                               );
                             }
-                          } catch {}
+                          } catch { /* noop */ }
                           return <JsonBlock value={log.response_body} />;
                         })()}
                         {log.response_body_truncated ? (

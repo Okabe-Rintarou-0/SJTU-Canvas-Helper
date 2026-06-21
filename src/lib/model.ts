@@ -16,6 +16,7 @@ export interface Course {
     access_restricted_by_date: Option<boolean>;
     teachers: Teacher[];
     term: Term;
+    syllabus_body?: string;
 }
 
 interface Term {

@@ -102,7 +102,7 @@ export default function FileDownloadTable({
     updateTaskProgress(file.uuid, 0);
 
     let retries = 0;
-    let maxRetries = 5;
+    const maxRetries = 5;
     let backoffCoef = 1;
     while (retries < maxRetries) {
       try {

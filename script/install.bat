@@ -1,5 +1,5 @@
 @echo off
-set "VERSION=3.0.5"
+set "VERSION=3.0.6"
 set "URL=https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases/download/app-v%VERSION%/SJTU.Canvas.Helper_%VERSION%_x64_en-US.msi"
 set "MSI=SJTU.Canvas.Helper_%VERSION%_x64_en-US.msi"
 

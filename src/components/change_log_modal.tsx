@@ -19,6 +19,20 @@ import {
 import { alpha, useTheme } from "@mui/material/styles";
 
 const changeLogs = [{
+  version: "v3.0.6",
+  date: "2026/6/21",
+  items: [
+    "新增教学大纲（Syllabus）页面，支持查看课程教学大纲内容。",
+    "新增 Windows 一键安装脚本 (script/install.bat)。",
+    "新增 macOS 一键安装脚本 (script/install_mac.sh)。",
+    "新增前端 ESLint + Husky 代码规范与提交检查。",
+    "新增 CONTRIBUTING.md 贡献指南。",
+    "新增前端 CI (ESLint + TypeScript 类型检查)。",
+    "版本升级脚本 (bump_version.py) 同步更新 README 与安装脚本版本号。",
+    "README 下载表格新增 OS 图标，优化排版与说明文字。",
+  ]
+},
+{
   version: "v3.0.5",
   date: "2026/6/15",
   items: [

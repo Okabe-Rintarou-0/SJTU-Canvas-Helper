@@ -149,7 +149,7 @@ function InlineQRCodePanel({
 
   useEffect(() => {
     void showQRCode();
-  }, [showQRCode]);
+  }, []);
 
   return (
     <Card
@@ -309,6 +309,8 @@ export default function SettingsPage() {
     return JSON.stringify(formData) !== initialSnapshot;
   }, [formData, initialSnapshot]);
 
+  const loading = !formData;
+
   const parsedRawConfig = useMemo(() => {
     if (!rawConfig) {
       return null;
@@ -350,7 +352,7 @@ export default function SettingsPage() {
     } else {
       prevDebugModeRef.current = formData.debug_mode;
     }
-  }, [formData?.debug_mode]);
+  }, [formData?.debug_mode, formData, messageApi]);
 
   const handleLlmTemperatureChange = useCallback(
     (rawValue: string) => {
@@ -442,10 +444,13 @@ export default function SettingsPage() {
     initConfig();
   }, []);
 
+  const checkExtraLoginOnce = useRef(false);
   useEffect(() => {
+    if (checkExtraLoginOnce.current) return;
+    checkExtraLoginOnce.current = true;
     setExtraLoginReady(null);
     checkExtraLoginStatus(true);
-  }, [checkExtraLoginStatus]);
+  }, []);
 
   useEffect(() => {
     latestFormDataRef.current = formData;
@@ -706,6 +711,11 @@ export default function SettingsPage() {
   return (
     <BasicLayout>
       {contextHolder}
+      {loading ? (
+        <Box sx={{ minHeight: "100%", display: "grid", placeItems: "center" }}>
+          <CircularProgress />
+        </Box>
+      ) : (
       <Box
         sx={{
           minHeight: "100%",
@@ -2102,6 +2112,7 @@ export default function SettingsPage() {
           </DialogActions>
         </Dialog>
       </Box>
+      )}
     </BasicLayout>
   );
 }

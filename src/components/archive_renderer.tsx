@@ -48,10 +48,6 @@ export default function ArchiveRenderer({
   mainState: { currentDocument },
 }: DocRendererProps) {
   const theme = useTheme();
-  if (!currentDocument || !currentDocument.fileData) {
-    return null;
-  }
-
   const [selectedPath, setSelectedPath] = useState("");
   const [messageApi, contextHolder] = useAppMessage();
   const [treeData, setTreeData] = useState<ArchiveTreeNode | undefined>();
@@ -68,12 +64,27 @@ export default function ArchiveRenderer({
   ).toString();
 
   useEffect(() => {
+    if (!currentDocument || !currentDocument.fileData) {
+      return;
+    }
     if (!archiveInitializedRef.current) {
       Archive.init({ workerUrl: archiveWorkerUrl });
       archiveInitializedRef.current = true;
     }
     void parse();
   }, [currentDocument]);
+
+  useEffect(() => {
+    return () => {
+      if (selectedDoc) {
+        URL.revokeObjectURL(selectedDoc.uri);
+      }
+    };
+  }, [selectedDoc]);
+
+  if (!currentDocument || !currentDocument.fileData) {
+    return null;
+  }
 
   const checkIsBanned = (fileName: string, isDir: boolean) => {
     if (
@@ -143,7 +154,8 @@ export default function ArchiveRenderer({
     return newDoc;
   };
 
-  const parse = async () => {
+  async function parse() {
+    if (!currentDocument || !currentDocument.fileData) return;
     setLoading(true);
     setError(undefined);
     setSelectedDoc((oldDoc) => setDocAndGC(oldDoc, undefined));
@@ -217,14 +229,6 @@ export default function ArchiveRenderer({
       messageApi.error(`下载失败：${e}`);
     }
   };
-
-  useEffect(() => {
-    return () => {
-      if (selectedDoc) {
-        URL.revokeObjectURL(selectedDoc.uri);
-      }
-    };
-  }, [selectedDoc]);
 
   const toggleExpanded = (key: string) => {
     setExpandedKeys((prev) => {

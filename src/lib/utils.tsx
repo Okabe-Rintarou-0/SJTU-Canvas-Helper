@@ -26,7 +26,7 @@ import {
 import { AppMessageApi } from "./message";
 
 export function isMergableFileType(fileType: string): boolean {
-  for (let ext of ["pptx", "pdf", "docx"]) {
+  for (const ext of ["pptx", "pdf", "docx"]) {
     if (fileType.toLowerCase().endsWith(ext)) {
       return true;
     }
@@ -52,9 +52,9 @@ export function sleep(time: number) {
 }
 
 export function base64ToBuffer(base64: string) {
-  let binaryString = atob(base64);
-  let length = binaryString.length;
-  let bytes = new Uint8Array(length);
+  const binaryString = atob(base64);
+  const length = binaryString.length;
+  const bytes = new Uint8Array(length);
 
   for (let i = 0; i < length; i++) {
     bytes[i] = binaryString.charCodeAt(i);
@@ -75,7 +75,7 @@ const aliasMap: Record<string, string> = {
 
 export async function getFileType(filename: string) {
   const extension = filename.split(".").pop()?.toLowerCase() ?? "";
-  let serveAsPlaintext = (await getConfig()).serve_as_plaintext.split(",");
+  const serveAsPlaintext = (await getConfig()).serve_as_plaintext.split(",");
   if (extension && aliasMap[extension]) {
     return aliasMap[extension];
   } else if (
@@ -98,7 +98,7 @@ export function getBase64Data(raw?: string) {
 }
 
 export function decodeBase64DataAsBinary(raw: string) {
-  let base64 = getBase64Data(raw);
+  const base64 = getBase64Data(raw);
   let data;
   try {
     data = atob(base64);
@@ -109,7 +109,7 @@ export function decodeBase64DataAsBinary(raw: string) {
 }
 
 export function decodeBase64Data(raw: string) {
-  let base64 = getBase64Data(raw);
+  const base64 = getBase64Data(raw);
   let data;
   try {
     data = decode(base64);
@@ -120,11 +120,11 @@ export function decodeBase64Data(raw: string) {
 }
 
 export function dataURLtoFile(dataurl: string, filename: string) {
-  var arr = dataurl.split(","),
-    mime = arr[0].match(/:(.*?);/)?.[1],
-    bstr = atob(arr[arr.length - 1]),
-    n = bstr.length,
-    u8arr = new Uint8Array(n);
+  const arr = dataurl.split(",");
+  const mime = arr[0].match(/:(.*?);/)?.[1];
+  const bstr = atob(arr[arr.length - 1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
   while (n--) {
     u8arr[n] = bstr.charCodeAt(n);
   }
@@ -166,7 +166,7 @@ export function assignmentIsEnded(assignment: Assignment) {
 }
 
 export async function savePathValidator(_: any, savePath: string) {
-  let valid = await invoke("check_path", { path: savePath });
+  const valid = await invoke("check_path", { path: savePath });
   return valid
     ? Promise.resolve()
     : Promise.reject(new Error("保存路径无效！请检查目录是否存在！"));
@@ -330,7 +330,7 @@ export async function checkForUpdates(messageApi: AppMessageApi) {
 }
 
 export function consoleLog(logLevel: LogLevel, ...messages: any[]) {
-  let message = messages
+  const message = messages
     .map((msg) => {
       if (typeof msg === "object") {
         return JSON.stringify(msg);
@@ -361,7 +361,7 @@ function detectExternalType(item: ModuleItem) {
   const supportedExt = [".pdf", ".doc", ".docx", ".pptx", ".txt", ".zip", ".7z", ".tar"];
   if (!item.external_url) return ["", undefined];
   let idx = item.external_url.lastIndexOf('/');
-  let fileName = item.external_url.slice(idx + 1);
+  const fileName = item.external_url.slice(idx + 1);
   idx = fileName.lastIndexOf('.');
   if (idx == -1) {
     return [fileName, "Link"];

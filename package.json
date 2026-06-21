@@ -1,13 +1,22 @@
 {
   "name": "canvas",
   "private": true,
-  "version": "3.0.5",
+  "version": "3.0.6",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "typecheck": "tsc --noEmit",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix"
+    ]
   },
   "dependencies": {
     "@antv/g6": "^4.8.24",
@@ -67,6 +76,7 @@
   },
   "devDependencies": {
     "@actions/github": "^5.1.1",
+    "@eslint/js": "^10.0.1",
     "@tauri-apps/cli": "^2.0.0",
     "@types/react": "^18.2.15",
     "@types/react-dom": "^18.2.7",
@@ -74,9 +84,15 @@
     "adm-zip": "^0.5.10",
     "all-contributors-cli": "^6.26.1",
     "esbuild-plugin-react-virtualized": "^1.0.4",
+    "eslint": "^10.5.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
     "fs-extra": "^11.3.3",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.8",
     "rollup-plugin-copy": "^3.5.0",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.61.1",
     "vite": "^5.0.0",
     "vite-plugin-static-copy": "^1.0.1"
   }

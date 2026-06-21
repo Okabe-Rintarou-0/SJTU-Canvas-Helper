@@ -8,17 +8,17 @@ import RendererShell from "./renderer_shell";
 export default function DocxRenderer({
     mainState: { currentDocument },
 }: DocRendererProps) {
-    if (!currentDocument || !currentDocument.fileData) return null;
-
     const containerRef = useRef<HTMLDivElement>(null);
-    const data = decodeBase64DataAsBinary(currentDocument.fileData as string);
+
+    const data = currentDocument?.fileData ? decodeBase64DataAsBinary(currentDocument.fileData as string) : null;
 
     useEffect(() => {
-        if (containerRef.current) {
-            containerRef.current.innerHTML = "";
-            renderAsync(data, containerRef.current);
-        }
+        if (!containerRef.current || !data) return;
+        containerRef.current.innerHTML = "";
+        renderAsync(data, containerRef.current);
     }, [data]);
+
+    if (!currentDocument || !currentDocument.fileData) return null;
 
     return (
         <RendererShell

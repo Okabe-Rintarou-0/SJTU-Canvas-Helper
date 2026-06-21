@@ -9,9 +9,9 @@ use crate::{
     client::constants::CHUNK_SIZE,
     error::{AppError, Result},
     model::{
-        Assignment, CalendarEvent, Colors, Course, DiscussionTopic, File, Folder, FoldersAndFiles,
-        FullDiscussion, Module, ModuleItem, ProgressPayload, RelationshipEdge, RelationshipNode,
-        RelationshipNodeType, RelationshipTopo, Submission, SubmissionUploadResult,
+        Assignment, CalendarEvent, Colors, Course, DiscussionTopic, File, Folder,
+        FoldersAndFiles, FullDiscussion, Module, ModuleItem, ProgressPayload, RelationshipEdge,
+        RelationshipNode, RelationshipNodeType, RelationshipTopo, Submission, SubmissionUploadResult,
         SubmissionUploadSuccessResponse, User, UserSubmissions,
     },
     utils::{self, file::get_file_name},
@@ -658,6 +658,15 @@ impl Client {
             .filter(|course: &Course| !course.is_access_restricted())
             .collect();
         Ok(filtered_courses)
+    }
+
+    pub async fn get_course_syllabus(&self, course_id: i64, token: &str) -> Result<Course> {
+        let url = format!(
+            "{}/api/v1/courses/{}?include[]=syllabus_body",
+            self.base_url.read().await,
+            course_id,
+        );
+        self.get_json_with_token(&url, None::<&str>, token).await
     }
 
     async fn get_user_submissions_url(&self, course_id: i64, student_ids: &[i64]) -> String {

@@ -12,6 +12,7 @@ import QRCodePage from "../page/qrcode";
 import RelationshipPage from "../page/relationship";
 import SettingsPage from "../page/settings";
 import SubmissionsPage from "../page/submissions";
+import SyllabusPage from "../page/syllabus";
 import UsersPage from "../page/users";
 import VideoPage from "../page/video";
 
@@ -29,6 +30,7 @@ const routesConfig = [
     { path: "/relationship", element: <RelationshipPage /> },
     { path: "/settings", element: <SettingsPage /> },
     { path: "/submissions", element: <SubmissionsPage /> },
+    { path: "/syllabus", element: <SyllabusPage /> },
     { path: "/users", element: <UsersPage /> },
     { path: "/video", element: <VideoPage /> },
 ];

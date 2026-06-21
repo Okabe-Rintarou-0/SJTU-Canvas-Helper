@@ -38,10 +38,6 @@ const SHEET_TO_JSON_OPTS: Sheet2JSONOpts = {
 export default function XlsxRenderer({
   mainState: { currentDocument },
 }: DocRendererProps) {
-  if (!currentDocument || !currentDocument.fileData) {
-    return null;
-  }
-
   const [currentData, setCurrentData] = useState<XlsxData | undefined>();
   const [workBook, setWorkBook] = useState<WorkBook | undefined>();
   const [currentSheet, setCurrentSheet] = useState("");
@@ -51,6 +47,7 @@ export default function XlsxRenderer({
   const [messageApi, contextHolder] = useAppMessage();
 
   useEffect(() => {
+    if (!currentDocument || !currentDocument.fileData) return;
     setLoading(true);
     setCurrentData(undefined);
     setWorkBook(undefined);
@@ -80,6 +77,18 @@ export default function XlsxRenderer({
     setPage(0);
   }, [currentSheet, currentData?.rows.length]);
 
+  const paginatedRows = useMemo(() => {
+    if (!currentData) {
+      return [];
+    }
+    const start = page * rowsPerPage;
+    return currentData.rows.slice(start, start + rowsPerPage);
+  }, [currentData, page, rowsPerPage]);
+
+  if (!currentDocument || !currentDocument.fileData) {
+    return null;
+  }
+
   const extractHeader = (ws: WorkSheet): string[] => {
     const header: string[] = [];
     const ref = ws["!ref"];
@@ -100,7 +109,7 @@ export default function XlsxRenderer({
     return header;
   };
 
-  const handleSetSheet = (workbook: WorkBook, sheetName: string) => {
+  function handleSetSheet(workbook: WorkBook, sheetName: string) {
     const sheet = workbook.Sheets[sheetName];
     if (!sheet) {
       messageApi.error(`Sheet "${sheetName}" not found`);
@@ -119,15 +128,7 @@ export default function XlsxRenderer({
         }`
       );
     }
-  };
-
-  const paginatedRows = useMemo(() => {
-    if (!currentData) {
-      return [];
-    }
-    const start = page * rowsPerPage;
-    return currentData.rows.slice(start, start + rowsPerPage);
-  }, [currentData, page, rowsPerPage]);
+  }
 
   return (
     <RendererShell

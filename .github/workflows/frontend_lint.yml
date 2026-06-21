@@ -1,0 +1,25 @@
+name: Frontend lint
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  frontend_lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+      - name: ESLint
+        run: yarn lint
+      - name: TypeScript check
+        run: yarn typecheck

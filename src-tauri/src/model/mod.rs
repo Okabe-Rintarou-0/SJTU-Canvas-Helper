@@ -18,6 +18,8 @@ pub struct Course {
     pub teachers: Vec<Teacher>,
     #[serde(default)]
     pub term: Term,
+    #[serde(default)]
+    pub syllabus_body: String,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

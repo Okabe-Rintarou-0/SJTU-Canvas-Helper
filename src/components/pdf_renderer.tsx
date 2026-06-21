@@ -27,14 +27,13 @@ export default function PdfRenderer(props: DocRendererProps) {
     const [scale, setScale] = useState(1);
     const [blobUrl, setBlobUrl] = useState<string | null>(null);
 
-    if (!currentDocument || currentDocument.fileData === undefined) return null;
-
     const data = useMemo(
-        () => base64ToBuffer(getBase64Data(currentDocument.fileData as string)),
-        [currentDocument.fileData]
+        () => base64ToBuffer(getBase64Data(currentDocument?.fileData as string ?? "")),
+        [currentDocument?.fileData]
     );
 
     useEffect(() => {
+        if (!currentDocument || currentDocument.fileData === undefined) return;
         const pdfBlob = new Blob([data], { type: "application/pdf" });
         const nextBlobUrl = URL.createObjectURL(pdfBlob);
         setBlobUrl(nextBlobUrl);
@@ -42,7 +41,7 @@ export default function PdfRenderer(props: DocRendererProps) {
         return () => {
             URL.revokeObjectURL(nextBlobUrl);
         };
-    }, [data]);
+    }, [currentDocument, data]);
 
     useEffect(() => {
         const updateWidth = () => {
@@ -63,6 +62,8 @@ export default function PdfRenderer(props: DocRendererProps) {
             window.removeEventListener("resize", updateWidth);
         };
     }, []);
+
+    if (!currentDocument || currentDocument.fileData === undefined) return null;
 
     return (
         <RendererShell

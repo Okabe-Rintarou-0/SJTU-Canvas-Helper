@@ -675,6 +675,12 @@ impl App {
             .await
     }
 
+    pub async fn get_course_syllabus(&self, course_id: i64) -> Result<Course> {
+        self.client
+            .get_course_syllabus(course_id, &self.config.read().await.token)
+            .await
+    }
+
     pub async fn list_course_assignments(&self, course_id: i64) -> Result<Vec<Assignment>> {
         self.client
             .list_course_assignments(course_id, &self.config.read().await.token)

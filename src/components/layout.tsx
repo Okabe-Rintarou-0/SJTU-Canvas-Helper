@@ -2,6 +2,7 @@
 import { open as openExternal } from "@tauri-apps/plugin-shell";
 import ArticleRoundedIcon from "@mui/icons-material/ArticleRounded";
 import AssignmentRoundedIcon from "@mui/icons-material/AssignmentRounded";
+import AutoStoriesRoundedIcon from "@mui/icons-material/AutoStoriesRounded";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
@@ -55,6 +56,7 @@ const navigationItems = [
   { key: "users", label: "成员导出", icon: <GroupsRoundedIcon />, path: "/users" },
   { key: "grades", label: "成绩管理", icon: <FactCheckRoundedIcon />, path: "/grades" },
   { key: "submissions", label: "提交批改", icon: <CloudDownloadRoundedIcon />, path: "/submissions" },
+  { key: "syllabus", label: "教学大纲", icon: <AutoStoriesRoundedIcon />, path: "/syllabus" },
   { key: "video", label: "视频管理", icon: <SmartDisplayRoundedIcon />, path: "/video" },
   { key: "qrcode", label: "二维码管理", icon: <QrCode2RoundedIcon />, path: "/qrcode" },
   { key: "annual", label: "年度总结", icon: <TimelineRoundedIcon />, path: "/annual" },
@@ -70,6 +72,7 @@ const pageTitleMap: Record<string, string> = {
   users: "成员导出",
   grades: "成绩管理",
   submissions: "提交批改",
+  syllabus: "教学大纲",
   video: "视频管理",
   qrcode: "二维码管理",
   annual: "年度总结",

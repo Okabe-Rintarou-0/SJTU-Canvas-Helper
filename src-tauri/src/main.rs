@@ -305,6 +305,11 @@ async fn list_course_students(course_id: i64) -> Result<Vec<User>> {
 }
 
 #[tauri::command]
+async fn get_course_syllabus(course_id: i64) -> Result<Course> {
+    APP.get_course_syllabus(course_id).await
+}
+
+#[tauri::command]
 async fn list_course_assignments(course_id: i64) -> Result<Vec<Assignment>> {
     APP.list_course_assignments(course_id).await
 }
@@ -990,6 +995,7 @@ async fn main() -> Result<()> {
             read_account_info,
             list_accounts,
             list_courses,
+            get_course_syllabus,
             list_user_submissions,
             get_full_discussion,
             list_discussion_topics,

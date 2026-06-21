@@ -296,7 +296,7 @@ export function useMerger({
     setTotalSteps(files.length);
     setCurrentStep(0);
     setMerging(true);
-    for (let file of files) {
+    for (const file of files) {
       try {
         setMsg(`正在添加 "${file.display_name}" ...`);
         if (file.display_name.endsWith(".pptx")) {
@@ -349,9 +349,9 @@ export function useMerger({
     if (!result || !resultBlob) {
       return;
     }
-    let buffer = await resultBlob.arrayBuffer();
-    let content = Array.from<number>(new Uint8Array(buffer));
-    let fileName = result.display_name;
+    const buffer = await resultBlob.arrayBuffer();
+    const content = Array.from<number>(new Uint8Array(buffer));
+    const fileName = result.display_name;
     try {
       const chunkSize = 4 * 1024 * 1024; // 4MB
       const length = content.length;
@@ -364,8 +364,8 @@ export function useMerger({
       setTotalSteps(chunkNumber);
       setCurrentStep(0);
       for (let i = 0; i < chunkNumber; i++) {
-        let start = chunkSize * i;
-        let end = start + chunkSize;
+        const start = chunkSize * i;
+        const end = start + chunkSize;
         const chunk = content.slice(start, end);
         await invoke("save_file_content", { content: chunk, fileName });
         setCurrentStep(i + 1);
@@ -462,7 +462,7 @@ export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {
     setError("");
     setQrcode("");
     hasRetriedRef.current = false;
-    let nextUuid = (await invoke("get_uuid")) as string | null;
+    const nextUuid = (await invoke("get_uuid")) as string | null;
     consoleLog(LOG_LEVEL_ERROR, nextUuid)
     if (nextUuid) {
       uuidRef.current = nextUuid;
@@ -476,14 +476,14 @@ export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {
 
   const handleScanSuccess = async () => {
     try {
-      let JAAuthCookie = (await invoke("express_login", { uuid: uuidRef.current || uuid })) as
+      const JAAuthCookie = (await invoke("express_login", { uuid: uuidRef.current || uuid })) as
         | string
         | null;
       if (!JAAuthCookie) {
         return;
       }
       consoleLog(LOG_LEVEL_INFO, "读取到 JAAuthCookie: ", JAAuthCookie);
-      let config = await getConfig();
+      const config = await getConfig();
       config.ja_auth_cookie = JAAuthCookie;
       await saveConfig(config);
       onScanSuccess?.();
@@ -495,7 +495,7 @@ export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {
   useEffect(() => {
     if (readyState == ReadyState.OPEN) {
       sendMessage(UPDATE_QRCODE_MESSAGE);
-      let handle = setInterval(() => {
+      const handle = setInterval(() => {
         refreshQRCode();
       }, SEND_INTERVAL);
       return () => {
@@ -515,7 +515,7 @@ export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {
   useEffect(() => {
     if (lastMessage) {
       try {
-        let loginMessage = JSON.parse(lastMessage.data) as LoginMessage;
+        const loginMessage = JSON.parse(lastMessage.data) as LoginMessage;
         switch (loginMessage.type.toUpperCase()) {
           case "UPDATE_QR_CODE":
             handleUpdateQrcode(loginMessage);
@@ -549,8 +549,8 @@ export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {
   }, [loading, qrcode, wsURL]);
 
   const handleUpdateQrcode = (loginMessage: LoginMessage) => {
-    let payload = loginMessage.payload;
-    let qrcode = `${QRCODE_BASE_URL}?uuid=${uuidRef.current || uuid}&ts=${payload.ts}&sig=${payload.sig}`;
+    const payload = loginMessage.payload;
+    const qrcode = `${QRCODE_BASE_URL}?uuid=${uuidRef.current || uuid}&ts=${payload.ts}&sig=${payload.sig}`;
     setQrcode(qrcode);
     setLoading(false);
     setError("");
@@ -569,7 +569,7 @@ export function useLoginModal({ onLogin }: { onLogin?: () => void }) {
   const [open, setOpen] = useState<boolean>(false);
   const showModal = () => setOpen(true);
   const closeModal = () => setOpen(false);
-  let modal = (
+  const modal = (
     <LoginAlertModal open={open} onCancelLogin={closeModal} onLogin={onLogin} />
   );
 
@@ -605,6 +605,13 @@ export function useData<T>(command: string, shouldFetch: boolean, args?: any) {
     error,
     mutate,
   };
+}
+
+export function useCourseSyllabus(courseId?: number) {
+  const [args, setArgs] = useState<any>({ courseId });
+  useEffect(() => { setArgs({ courseId }); }, [courseId]);
+  const shouldFetch = courseId != undefined && courseId > 0;
+  return useData<Course>("get_course_syllabus", shouldFetch, args);
 }
 
 export function useCourses() {

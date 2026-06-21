@@ -17,8 +17,8 @@ export default function GradeStatisticChart({ statistic, subTitleRenderer }: {
         }
         const step = 0.5;
         grades.map(grade => {
-            let section = grade / step;
-            let count = gradeMap.get(section) ?? 0;
+            const section = grade / step;
+            const count = gradeMap.get(section) ?? 0;
             gradeMap.set(section, count + 1);
         });
 
@@ -26,15 +26,15 @@ export default function GradeStatisticChart({ statistic, subTitleRenderer }: {
     }
 
     const getGradeDistributionOptions = (grades: number[]) => {
-        let distribution = computeGradeDistribution(grades);
+        const distribution = computeGradeDistribution(grades);
         let maxSection = 0;
-        for (let section of distribution.keys()) {
+        for (const section of distribution.keys()) {
             if (section > maxSection) {
                 maxSection = section;
             }
         }
-        let labels = [];
-        let values = [];
+        const labels = [];
+        const values = [];
         const step = 0.5;
 
         for (let i = 0; i <= maxSection; i++) {

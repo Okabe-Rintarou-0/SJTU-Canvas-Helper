@@ -19,7 +19,7 @@ export default function ClosableAlert(props: ClosableAlertProps) {
     getConfig(true).then((config) => {
       consoleLog(LOG_LEVEL_INFO, config);
       if (
-        !config.show_alert_map.hasOwnProperty(props.configKey) ||
+        !Object.prototype.hasOwnProperty.call(config.show_alert_map, props.configKey) ||
         config.show_alert_map[props.configKey]
       ) {
         setShow(true);

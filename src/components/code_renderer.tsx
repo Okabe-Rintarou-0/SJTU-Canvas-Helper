@@ -10,8 +10,8 @@ import RendererShell from "./renderer_shell";
 export default function CodeRenderer({
     mainState: { currentDocument },
 }: DocRendererProps) {
-    if (!currentDocument || currentDocument.fileData === undefined) return null;
     const theme = useTheme();
+    if (!currentDocument || currentDocument.fileData === undefined) return null;
     const data = decodeBase64Data(currentDocument.fileData as string);
 
     return (
