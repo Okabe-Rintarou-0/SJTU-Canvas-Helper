@@ -34,7 +34,8 @@ SJTU Canvas 小帮手基于 [Tauri](https://tauri.app/) 开发，助您更便捷
    - 也可选择免安装便携版：`SJTU.Canvas.Helper_v_3.0.5_x64_portable.zip`
 
 3. **MacOS 系统**：
-   - 下载对应版本安装包
+   - 下载对应版本安装包 
+   - 或打开终端（terminal）运行 `bash script/install_mac.sh` 自动下载安装（自动识别 Intel / Apple Silicon 芯片）
    - 若遇到打不开的问题，可参考 [在 Mac 上安全地打开 App](https://support.apple.com/zh-cn/102445)
    - 若显示已损坏，尝试执行以下命令：
      ```shell

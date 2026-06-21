@@ -114,6 +114,46 @@ def update_website_htmls(version):
         with open(html_path, 'w', encoding='utf-8') as f:
             f.write(content)
 
+def update_install_bat(version):
+    """Update version in script/install.bat"""
+    bat_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'script', 'install.bat')
+
+    with open(bat_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    match = re.search(r'set "VERSION=(\d+\.\d+\.\d+)"', content)
+    if not match:
+        print("Warning: Could not find version in script/install.bat")
+        return
+
+    old_version = match.group(1)
+    content = content.replace(f'set "VERSION={old_version}"', f'set "VERSION={version}"')
+
+    with open(bat_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+
+    print(f"Updated script/install.bat: {old_version} -> {version}")
+
+def update_install_mac_sh(version):
+    """Update version in script/install_mac.sh"""
+    sh_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'script', 'install_mac.sh')
+
+    with open(sh_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    match = re.search(r'VERSION="(\d+\.\d+\.\d+)"', content)
+    if not match:
+        print("Warning: Could not find version in script/install_mac.sh")
+        return
+
+    old_version = match.group(1)
+    content = content.replace(f'VERSION="{old_version}"', f'VERSION="{version}"')
+
+    with open(sh_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+
+    print(f"Updated script/install_mac.sh: {old_version} -> {version}")
+
 def update_readme(version):
     """Update version strings in README.md"""
     readme_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'README.md')
@@ -175,6 +215,8 @@ def main():
         update_cargo_toml(new_version)
         update_tauri_conf(new_version)
         update_website_htmls(new_version)
+        update_install_bat(new_version)
+        update_install_mac_sh(new_version)
         update_readme(new_version)
         print("\nAll files updated successfully!")
     except Exception as e:
