@@ -162,7 +162,7 @@ impl Client {
         course_id: i64,
         assignment_id: i64,
         student_id: i64,
-        grade: &str,
+        grade: Option<&str>,
         comment: Option<&str>,
         token: &str,
     ) -> Result<()> {
@@ -172,13 +172,19 @@ impl Client {
             course_id,
             assignment_id
         );
-        let form = match comment {
-            Some(comment) => vec![
-                (format!("grade_data[{student_id}][posted_grade]"), grade),
-                (format!("grade_data[{student_id}][text_comment]"), comment),
-            ],
-            None => vec![(format!("grade_data[{student_id}][posted_grade]"), grade)],
-        };
+        let mut form = Vec::new();
+        if let Some(grade) = grade {
+            form.push((
+                format!("grade_data[{student_id}][posted_grade]"),
+                grade.to_owned(),
+            ));
+        }
+        if let Some(comment) = comment {
+            form.push((
+                format!("grade_data[{student_id}][text_comment]"),
+                comment.to_owned(),
+            ));
+        }
         self.post_form_with_token(&url, None::<&str>, &form, token)
             .await?
             .error_for_status()?;
@@ -1127,6 +1133,139 @@ mod mock_tests {
         assert_eq!(course.name, "Physics 201");
         assert_eq!(course.syllabus_body, "<p>Welcome to Physics 201! This course covers...</p>");
         assert_eq!(course.teachers[0].display_name, "Dr. Einstein");
+
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_update_grade_with_grade_and_comment() {
+        let server = MockServer::start();
+        let token = "test_token_12345";
+        let course_id = 1i64;
+        let assignment_id = 10i64;
+        let student_id = 100i64;
+
+        let mock = server.mock(|when, then| {
+            when.method(POST)
+                .path(format!(
+                    "/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions/update_grades"
+                ))
+                .body_contains("grade_data%5B100%5D%5Bposted_grade%5D=95")
+                .body_contains("grade_data%5B100%5D%5Btext_comment%5D=Good+job");
+            then.status(200);
+        });
+
+        let client = create_test_client(&server.base_url());
+        client
+            .update_grade(course_id, assignment_id, student_id, Some("95"), Some("Good job"), token)
+            .await
+            .unwrap();
+
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_update_grade_with_grade_only() {
+        let server = MockServer::start();
+        let token = "test_token_12345";
+        let course_id = 1i64;
+        let assignment_id = 10i64;
+        let student_id = 100i64;
+
+        let mock = server.mock(|when, then| {
+            when.method(POST)
+                .path(format!(
+                    "/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions/update_grades"
+                ))
+                .body("grade_data%5B100%5D%5Bposted_grade%5D=88.5");
+            then.status(200);
+        });
+
+        let client = create_test_client(&server.base_url());
+        client
+            .update_grade(course_id, assignment_id, student_id, Some("88.5"), None, token)
+            .await
+            .unwrap();
+
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_update_grade_with_comment_only() {
+        let server = MockServer::start();
+        let token = "test_token_12345";
+        let course_id = 1i64;
+        let assignment_id = 10i64;
+        let student_id = 100i64;
+
+        let mock = server.mock(|when, then| {
+            when.method(POST)
+                .path(format!(
+                    "/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions/update_grades"
+                ))
+                .body("grade_data%5B100%5D%5Btext_comment%5D=Great+work");
+            then.status(200);
+        });
+
+        let client = create_test_client(&server.base_url());
+        client
+            .update_grade(course_id, assignment_id, student_id, None, Some("Great work"), token)
+            .await
+            .unwrap();
+
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_update_grade_api_error() {
+        let server = MockServer::start();
+        let token = "test_token_12345";
+        let course_id = 1i64;
+        let assignment_id = 10i64;
+        let student_id = 100i64;
+
+        let mock = server.mock(|when, then| {
+            when.method(POST)
+                .path(format!(
+                    "/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions/update_grades"
+                ))
+                .body_contains("grade_data%5B100%5D%5Bposted_grade%5D=90");
+            then.status(400)
+                .json_body(json!({"errors": [{"message": "invalid args"}]}));
+        });
+
+        let client = create_test_client(&server.base_url());
+        let result = client
+            .update_grade(course_id, assignment_id, student_id, Some("90"), None, token)
+            .await;
+
+        assert!(result.is_err());
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_update_grade_empty_body() {
+        let server = MockServer::start();
+        let token = "test_token_12345";
+        let course_id = 1i64;
+        let assignment_id = 10i64;
+        let student_id = 100i64;
+
+        let mock = server.mock(|when, then| {
+            when.method(POST)
+                .path(format!(
+                    "/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions/update_grades"
+                ))
+                .body("")
+                .header("Authorization", format!("Bearer {token}"));
+            then.status(200);
+        });
+
+        let client = create_test_client(&server.base_url());
+        client
+            .update_grade(course_id, assignment_id, student_id, None, None, token)
+            .await
+            .unwrap();
 
         mock.assert();
     }

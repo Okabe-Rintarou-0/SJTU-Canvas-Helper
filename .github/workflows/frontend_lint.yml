@@ -23,3 +23,5 @@ jobs:
         run: yarn lint
       - name: TypeScript check
         run: yarn typecheck
+      - name: Frontend tests
+        run: yarn test

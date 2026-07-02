@@ -693,14 +693,14 @@ async fn update_grade(
     course_id: i64,
     assignment_id: i64,
     student_id: i64,
-    grade: String,
+    grade: Option<String>,
     comment: Option<String>,
 ) -> Result<()> {
     APP.update_grade(
         course_id,
         assignment_id,
         student_id,
-        &grade,
+        grade.as_deref(),
         comment.as_deref(),
     )
     .await

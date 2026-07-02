@@ -19,6 +19,15 @@ import {
 import { alpha, useTheme } from "@mui/material/styles";
 
 const changeLogs = [{
+  version: "v3.0.7",
+  date: "2026/7/2",
+  items: [
+    "修复：update_grade 评论时传空 grade 导致 Canvas API 报错，grade 改为可选参数。",
+    "新增前端测试框架 (vitest + testing-library)，首个 CodeRenderer 测试覆盖。",
+    "新增 Rust update_grade mock 测试 (httpmock)，覆盖 grade + comment / 仅 grade / 仅 comment / 空 body / API 报错五种场景。",
+    "CI 补全前端测试步骤。",
+  ]
+}, {
   version: "v3.0.6",
   date: "2026/6/21",
   items: [

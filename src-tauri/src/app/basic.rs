@@ -464,7 +464,7 @@ impl App {
         course_id: i64,
         assignment_id: i64,
         student_id: i64,
-        grade: &str,
+        grade: Option<&str>,
         comment: Option<&str>,
     ) -> Result<()> {
         self.client

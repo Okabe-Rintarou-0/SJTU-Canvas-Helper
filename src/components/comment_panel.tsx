@@ -61,7 +61,6 @@ export default function CommentPanel({
         courseId,
         assignmentId,
         studentId: currentAttachment.user_id,
-        grade: currentAttachment.grade ?? "",
         comment,
       });
       messageApi.success("评论成功！🎉", 0.5);

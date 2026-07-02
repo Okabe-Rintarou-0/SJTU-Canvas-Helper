@@ -1044,10 +1044,9 @@ export default function SettingsPage() {
                     <Box>
                       <Typography variant="h5">界面偏好</Typography>
                       <Typography variant="body2" color="text.secondary">
-                        调整主题、主色和紧凑模式，让工作区更贴近你的使用习惯。
+                        调整主题和主色调，让工作区更贴近你的使用习惯。
                       </Typography>
                     </Box>
-
                     <Box
                       sx={{
                         display: "grid",
