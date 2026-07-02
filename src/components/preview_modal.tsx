@@ -94,7 +94,7 @@ export default function PreviewModal({
         documents={docs}
       />
     );
-  }, [bodyStyle, docs, files, footer]);
+  }, [bodyStyle, docs, files]);
 
   return (
     <Dialog
