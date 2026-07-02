@@ -283,6 +283,12 @@ export function getBigFileIcon(file: FileModel) {
   return <InsertDriveFileRoundedIcon sx={{ fontSize: 39 }} />;
 }
 
+export function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export function scrollToTop() {
   window.scrollTo(0, 0);
 }

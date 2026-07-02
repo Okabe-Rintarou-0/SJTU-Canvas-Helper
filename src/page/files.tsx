@@ -68,6 +68,7 @@ import {
 } from "../lib/model";
 import {
   consoleLog,
+  formatSize,
   getFileIcon,
   isMergableFileType,
   scrollToTop,
@@ -956,18 +957,23 @@ export default function FilesPage() {
                                 >
                                   {getFileIcon(file)}
                                 </Box>
-                                <MuiLink
-                                  href={href}
-                                  target="_blank"
-                                  underline="hover"
-                                  color="inherit"
-                                  onMouseEnter={() => onHoverEntry(entry)}
-                                  onMouseLeave={onLeaveEntry}
-                                  sx={{ fontWeight: 600 }}
-                                >
-                                  {filePrefix}
-                                  {file.display_name}
-                                </MuiLink>
+                                <Box>
+                                  <MuiLink
+                                    href={href}
+                                    target="_blank"
+                                    underline="hover"
+                                    color="inherit"
+                                    onMouseEnter={() => onHoverEntry(entry)}
+                                    onMouseLeave={onLeaveEntry}
+                                    sx={{ fontWeight: 600 }}
+                                  >
+                                    {filePrefix}
+                                    {file.display_name}
+                                  </MuiLink>
+                                  <Typography variant="caption" display="block" color="text.secondary">
+                                    {formatSize(file.size)}
+                                  </Typography>
+                                </Box>
                               </Stack>
                             </TableCell>
                             <TableCell align="right">

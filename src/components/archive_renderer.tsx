@@ -23,11 +23,11 @@ import {
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import { Archive } from "libarchive.js";
-import { Fragment, ReactNode, useEffect, useRef, useState } from "react";
+import { Fragment, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAppMessage } from "../lib/message";
 import { LOG_LEVEL_ERROR } from "../lib/model";
-import { consoleLog, dataURLtoFile, getFileType } from "../lib/utils";
+import { consoleLog, dataURLtoFile, formatSize, getFileType } from "../lib/utils";
 import { ArchiveSupportedRenderers } from "./renderers";
 
 interface BlackListEntry {
@@ -40,8 +40,8 @@ interface ArchiveTreeNode {
   key: string;
   children: ArchiveTreeNode[];
   isDir: boolean;
+  size?: number;
 }
-
 const BLACK_LIST: BlackListEntry[] = [{ name: "node_modules", dir: true }];
 
 export default function ArchiveRenderer({
@@ -82,10 +82,6 @@ export default function ArchiveRenderer({
     };
   }, [selectedDoc]);
 
-  if (!currentDocument || !currentDocument.fileData) {
-    return null;
-  }
-
   const checkIsBanned = (fileName: string, isDir: boolean) => {
     if (
       BLACK_LIST.find(
@@ -124,6 +120,7 @@ export default function ArchiveRenderer({
           key: path,
           children: [],
           isDir,
+          size: isDir ? undefined : entry.size,
         };
 
         if (isDir) {
@@ -187,21 +184,31 @@ export default function ArchiveRenderer({
   const onSelect = async (path: string) => {
     const fileReader = fileMap?.get(path);
     if (fileReader) {
-      const file = await fileReader.extract();
-      const fileData = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result ?? ""));
-        reader.onerror = () => reject(reader.error ?? new Error("读取压缩包子文件失败"));
-        reader.readAsDataURL(file);
-      });
-      const doc = {
-        uri: URL.createObjectURL(file),
-        fileName: file.name,
-        fileType: await getFileType(file.name),
-        fileData,
-      } as IDocument;
-      setSelectedDoc((oldDoc) => setDocAndGC(oldDoc, doc));
-      setSelectedPath(path);
+      try {
+        const file = await fileReader.extract();
+        const fileData = await Promise.race([
+          new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result ?? ""));
+            reader.onerror = () => reject(reader.error ?? new Error("读取压缩包子文件失败"));
+            reader.readAsDataURL(file);
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("读取压缩包子文件超时")), 10000)
+          ),
+        ]);
+        const doc = {
+          uri: URL.createObjectURL(file),
+          fileName: file.name,
+          fileType: await getFileType(file.name),
+          fileData,
+        } as IDocument;
+        setSelectedDoc((oldDoc) => setDocAndGC(oldDoc, doc));
+        setSelectedPath(path);
+      } catch (e) {
+        consoleLog(LOG_LEVEL_ERROR, e);
+        messageApi.error(`文件 "${path}" 加载失败：${e instanceof Error ? e.message : String(e)}`);
+      }
     } else {
       setSelectedDoc((oldDoc) => setDocAndGC(oldDoc, undefined));
       if (fileReader === null) {
@@ -242,60 +249,68 @@ export default function ArchiveRenderer({
     });
   };
 
-  const renderTree = (nodes: ArchiveTreeNode[], depth = 0): ReactNode =>
-    nodes.map((node) => {
-      const expanded = expandedKeys.has(node.key);
-      const selected = selectedPath === node.key;
+  const treeContent = useMemo(() => {
+    const renderTree = (nodes: ArchiveTreeNode[], depth = 0): ReactNode =>
+      nodes.map((node) => {
+        const expanded = expandedKeys.has(node.key);
+        const selected = selectedPath === node.key;
 
-      if (node.isDir) {
+        if (node.isDir) {
+          return (
+            <Fragment key={node.key}>
+              <ListItemButton
+                onClick={() => toggleExpanded(node.key)}
+                sx={{
+                  pl: 1.5 + depth * 2,
+                  borderRadius: "16px",
+                  mb: 0.5,
+                }}
+              >
+                <ListItemIcon sx={{ minWidth: 34 }}>
+                  <FolderRoundedIcon color="primary" />
+                </ListItemIcon>
+                <ListItemText
+                  primary={node.title}
+                  primaryTypographyProps={{ fontSize: 14, fontWeight: 600 }}
+                />
+                {expanded ? <ExpandLessRoundedIcon /> : <ExpandMoreRoundedIcon />}
+              </ListItemButton>
+              {expanded ? renderTree(node.children, depth + 1) : null}
+            </Fragment>
+          );
+        }
+
         return (
-          <Fragment key={node.key}>
-            <ListItemButton
-              onClick={() => toggleExpanded(node.key)}
-              sx={{
-                pl: 1.5 + depth * 2,
-                borderRadius: "16px",
-                mb: 0.5,
-              }}
-            >
-              <ListItemIcon sx={{ minWidth: 34 }}>
-                <FolderRoundedIcon color="primary" />
-              </ListItemIcon>
-              <ListItemText
-                primary={node.title}
-                primaryTypographyProps={{ fontSize: 14, fontWeight: 600 }}
-              />
-              {expanded ? <ExpandLessRoundedIcon /> : <ExpandMoreRoundedIcon />}
-            </ListItemButton>
-            {expanded ? renderTree(node.children, depth + 1) : null}
-          </Fragment>
+          <ListItemButton
+            key={node.key}
+            selected={selected}
+            onClick={() => void onSelect(node.key)}
+            sx={{
+              pl: 1.5 + depth * 2,
+              borderRadius: "16px",
+              mb: 0.5,
+              "&.Mui-selected": {
+                bgcolor: alpha(theme.palette.primary.main, 0.12),
+              },
+            }}
+          >
+            <ListItemIcon sx={{ minWidth: 34 }}>
+              <InsertDriveFileRoundedIcon color="action" />
+            </ListItemIcon>
+            <ListItemText
+              primary={node.title}
+              secondary={node.size != null ? formatSize(node.size) : undefined}
+              primaryTypographyProps={{ fontSize: 14, fontWeight: selected ? 700 : 500 }}
+              secondaryTypographyProps={{ fontSize: 11 }}
+            />
+          </ListItemButton>
         );
-      }
+      });
 
-      return (
-        <ListItemButton
-          key={node.key}
-          selected={selected}
-          onClick={() => void onSelect(node.key)}
-          sx={{
-            pl: 1.5 + depth * 2,
-            borderRadius: "16px",
-            mb: 0.5,
-            "&.Mui-selected": {
-              bgcolor: alpha(theme.palette.primary.main, 0.12),
-            },
-          }}
-        >
-          <ListItemIcon sx={{ minWidth: 34 }}>
-            <InsertDriveFileRoundedIcon color="action" />
-          </ListItemIcon>
-          <ListItemText
-            primary={node.title}
-            primaryTypographyProps={{ fontSize: 14, fontWeight: selected ? 700 : 500 }}
-          />
-        </ListItemButton>
-      );
-    });
+    return treeData ? renderTree(treeData.children) : null;
+  }, [treeData, expandedKeys, selectedPath, theme.palette.mode]);
+
+  if (!currentDocument || !currentDocument.fileData) return null;
 
   return (
     <>
@@ -374,7 +389,7 @@ export default function ArchiveRenderer({
                       overflow: "auto",
                     }}
                   >
-                    {renderTree(treeData.children)}
+                    {treeContent}
                   </List>
                 ) : (
                   <Box
@@ -399,27 +414,29 @@ export default function ArchiveRenderer({
                 border: "1px solid",
                 borderColor: "divider",
                 boxShadow: "none",
-                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+                minHeight: 0,
               }}
             >
-              <CardContent sx={{ p: 0, height: "100%" }}>
-                <Stack
-                  direction="row"
-                  justifyContent="space-between"
-                  alignItems="center"
-                  sx={{ px: 2, py: 1.75 }}
-                >
-                  <Stack spacing={0.35}>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
-                      文件预览
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {selectedDoc?.fileName || "选择左侧文件开始预览"}
-                    </Typography>
-                  </Stack>
-                  <ArticleRoundedIcon color="action" />
+              <Stack
+                direction="row"
+                justifyContent="space-between"
+                alignItems="center"
+                sx={{ px: 2, py: 1.75, flexShrink: 0 }}
+              >
+                <Stack spacing={0.35}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                    文件预览
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {selectedDoc?.fileName || "选择左侧文件开始预览"}
+                  </Typography>
                 </Stack>
-                <Divider />
+                <ArticleRoundedIcon color="action" />
+              </Stack>
+              <Divider />
+              <Box sx={{ flex: 1, minHeight: 0 }}>
                 {selectedDoc ? (
                   <DocViewer
                     key={selectedDoc.uri}
@@ -456,7 +473,7 @@ export default function ArchiveRenderer({
                     </Stack>
                   </Box>
                 )}
-              </CardContent>
+              </Box>
             </Card>
           </Box>
         )}
