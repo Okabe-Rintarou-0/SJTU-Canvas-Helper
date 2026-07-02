@@ -186,6 +186,10 @@ function Previewer({
       if (!monitorBlankKeyRef.current) {
         return;
       }
+      const target = ev.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) {
+        return;
+      }
       if (ev.key === " " && !ev.repeat) {
         ev.stopPropagation();
         ev.preventDefault();
@@ -234,6 +238,10 @@ function Previewer({
     return undefined;
   }, [previewEntry]);
 
+  const previewFiles = useMemo(() => {
+    return currentFile ? [currentFile] : [];
+  }, [currentFile]);
+
   const handleCancelPreview = useCallback(() => {
     setPreviewEntry(undefined);
   }, [setPreviewEntry]);
@@ -244,7 +252,7 @@ function Previewer({
       {shouldOpen && (
         <PreviewModal
           open={shouldOpen}
-          files={[currentFile]}
+          files={previewFiles}
           footer={footer}
           bodyStyle={bodyStyle}
           title={currentFile.display_name}

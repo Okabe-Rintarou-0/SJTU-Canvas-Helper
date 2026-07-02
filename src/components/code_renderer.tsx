@@ -23,12 +23,69 @@ const LAZY_THRESHOLD_LINES = 5_000;
 const LAZY_THRESHOLD_CHARS = 500_000;
 const VISIBLE_BUFFER = 20;
 
+function highlightDom(container: HTMLElement, query: string, activeIdx: number) {
+  container.querySelectorAll("mark.code-search-mark").forEach((el) => {
+    const parent = el.parentNode;
+    if (parent) {
+      parent.replaceChild(document.createTextNode(el.textContent ?? ""), el);
+      parent.normalize();
+    }
+  });
+
+  if (!query.trim()) return;
+
+  const q = query.toLowerCase();
+  let matchCount = 0;
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+  const toWrap: { text: Text; startIdx: number }[] = [];
+  while (walker.nextNode()) {
+    const text = walker.currentNode as Text;
+    const content = text.textContent ?? "";
+    const lower = content.toLowerCase();
+    let pos = 0;
+    while (true) {
+      const idx = lower.indexOf(q, pos);
+      if (idx === -1) break;
+      toWrap.push({ text, startIdx: idx });
+      pos = idx + 1;
+    }
+  }
+
+  toWrap.sort((a, b) => b.startIdx - a.startIdx);
+
+  for (const { text, startIdx } of toWrap) {
+    const content = text.textContent ?? "";
+    const endIdx = startIdx + query.length;
+    const after = content.slice(endIdx);
+    const match = content.slice(startIdx, endIdx);
+    const before = content.slice(0, startIdx);
+    const isActive = matchCount === activeIdx;
+
+    const mark = document.createElement("mark");
+    mark.className = "code-search-mark";
+    mark.textContent = match;
+    mark.style.backgroundColor = isActive ? "rgba(245,158,11,0.55)" : "rgba(245,158,11,0.28)";
+    mark.style.color = "inherit";
+    mark.style.borderRadius = "2px";
+    mark.style.padding = "0 1px";
+
+    const frag = document.createDocumentFragment();
+    if (before) frag.appendChild(document.createTextNode(before));
+    frag.appendChild(mark);
+    if (after) frag.appendChild(document.createTextNode(after));
+
+    text.parentNode?.replaceChild(frag, text);
+    matchCount++;
+  }
+}
+
 export default function CodeRenderer({
   mainState: { currentDocument },
 }: DocRendererProps) {
   const theme = useTheme();
   const searchRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const syntaxRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [currentMatch, setCurrentMatch] = useState(0);
   const [showHighlight, setShowHighlight] = useState(false);
@@ -64,14 +121,29 @@ export default function CodeRenderer({
     }
   }, [matches.length, currentMatch]);
 
+  // DOM-based search highlighting for SyntaxHighlighter mode
+  useEffect(() => {
+    if (isLarge || !syntaxRef.current) return;
+    highlightDom(syntaxRef.current, searchQuery, currentMatch);
+  }, [searchQuery, currentMatch, data, isLarge]);
+
+  // scroll to current match for SyntaxHighlighter mode
+  useEffect(() => {
+    if (matches.length === 0 || !syntaxRef.current) return;
+    const marks = syntaxRef.current.querySelectorAll("mark.code-search-mark");
+    const active = marks[currentMatch] as HTMLElement | undefined;
+    if (active) {
+      active.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }, [currentMatch, matches, data]);
+
+  // scroll to current match for virtual-scroll mode
   useEffect(() => {
     if (matches.length === 0 || !containerRef.current) return;
     const idx = matches[currentMatch];
     const textBefore = data.slice(0, idx);
     const lineBreaks = (textBefore.match(/\n/g) || []).length;
-    const lineHeight = 21;
-    const scrollTarget = lineBreaks * lineHeight - 100;
-    containerRef.current.scrollTop = Math.max(0, scrollTarget);
+    containerRef.current.scrollTop = Math.max(0, lineBreaks * lineHeight - 200);
   }, [currentMatch, matches, data]);
 
   useEffect(() => {
@@ -99,74 +171,6 @@ export default function CodeRenderer({
       });
     },
     [matches.length]
-  );
-
-  const renderHighlightedText = useCallback(
-    (text: string, isCurrent: (matchIdx: number) => boolean) => {
-      if (!searchQuery.trim()) {
-        return (
-          <Typography
-            component="code"
-            variant="body2"
-            sx={{ fontFamily: "inherit", whiteSpace: "pre" }}
-          >
-            {text}
-          </Typography>
-        );
-      }
-
-      const segments: React.ReactNode[] = [];
-      let lastEnd = 0;
-      const q = searchQuery.toLowerCase();
-      const lowerText = text.toLowerCase();
-      let matchCount = -1;
-
-      while (true) {
-        const idx = lowerText.indexOf(q, lastEnd);
-        if (idx === -1) break;
-        matchCount++;
-
-        if (idx > lastEnd) {
-          segments.push(<span key={`t-${lastEnd}`}>{text.slice(lastEnd, idx)}</span>);
-        }
-
-        const isActive = isCurrent(matchCount);
-        segments.push(
-          <mark
-            key={`m-${idx}`}
-            data-match
-            data-active={isActive ? "true" : "false"}
-            style={{
-              backgroundColor: isActive
-                ? alpha(theme.palette.warning.main, 0.55)
-                : alpha(theme.palette.warning.main, 0.28),
-              color: "inherit",
-              borderRadius: 2,
-              padding: "0 1px",
-            }}
-          >
-            {text.slice(idx, idx + searchQuery.length)}
-          </mark>
-        );
-
-        lastEnd = idx + searchQuery.length;
-      }
-
-      if (lastEnd < text.length) {
-        segments.push(<span key={`t-${lastEnd}`}>{text.slice(lastEnd)}</span>);
-      }
-
-      return (
-        <Typography
-          component="code"
-          variant="body2"
-          sx={{ fontFamily: "inherit", whiteSpace: "pre" }}
-        >
-          {segments}
-        </Typography>
-      );
-    },
-    [searchQuery, theme.palette.warning.main]
   );
 
   const searchBar = (
@@ -230,30 +234,39 @@ export default function CodeRenderer({
     </Box>
   );
 
-  const isSearchActive = searchQuery.trim().length > 0;
-
   const totalHeight = lines.length * lineHeight;
   const visibleLines = useMemo(() => {
     const start = Math.max(0, Math.floor(scrollTop / lineHeight) - VISIBLE_BUFFER);
     const end = Math.min(lines.length, Math.ceil((scrollTop + (containerRef.current?.clientHeight ?? 600)) / lineHeight) + VISIBLE_BUFFER);
     return lines.slice(start, end + 1);
   }, [lines, scrollTop]);
-  const visibleOffset = useMemo(() => {
-    return Math.max(0, Math.floor(scrollTop / lineHeight) - VISIBLE_BUFFER) * lineHeight;
-  }, [scrollTop]);
+  const visibleOffset = useMemo(
+    () => Math.max(0, Math.floor(scrollTop / lineHeight) - VISIBLE_BUFFER) * lineHeight,
+    [scrollTop]
+  );
 
   const handleScroll = useCallback(() => {
-    if (containerRef.current) {
-      setScrollTop(containerRef.current.scrollTop);
-    }
+    if (containerRef.current) setScrollTop(containerRef.current.scrollTop);
   }, []);
 
-  const codeContent = (
-    <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      {searchBar}
-      {isSearchActive || (isLarge && !showHighlight) ? (
-        <>
-          {isLarge && !showHighlight && !isSearchActive && (
+  const isSearchActive = searchQuery.trim().length > 0;
+
+  if (!currentDocument || currentDocument.fileData === undefined) return null;
+
+  return (
+    <RendererShell
+      title={currentDocument.fileName ?? "Code"}
+      subtitle="Source preview"
+      fileType={currentDocument.fileType}
+      icon={<CodeRoundedIcon />}
+      headerMode="none"
+      contentSx={{ p: 0 }}
+    >
+      <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
+        {searchBar}
+
+        {isLarge && !showHighlight ? (
+          <>
             <Typography
               variant="caption"
               sx={{
@@ -275,82 +288,89 @@ export default function CodeRenderer({
                 显示语法高亮
               </Button>
             </Typography>
-          )}
-          <Box
-            ref={containerRef}
-            onScroll={handleScroll}
-            component="pre"
-            sx={{
-              m: 0,
-              p: 2.5,
-              flex: 1,
-              overflow: "auto",
-              fontFamily: "Consolas, Monaco, 'Andale Mono', monospace",
-              fontSize: 13,
-              lineHeight: `${lineHeight}px`,
-              whiteSpace: "pre",
-              wordWrap: "normal",
-            }}
-          >
-            <Box sx={{ height: totalHeight, position: "relative" }}>
-              <Box sx={{ position: "absolute", top: 0, left: 0, right: 0, transform: `translateY(${visibleOffset}px)` }}>
-                {visibleLines.map((line, i) => (
-                  <Box key={i} sx={{ display: "flex" }}>
-                    <Typography
-                      component="span"
-                      variant="caption"
-                      sx={{
-                        minWidth: 48,
-                        textAlign: "right",
-                        pr: 1.5,
-                        color: "text.disabled",
-                        userSelect: "none",
-                        fontFamily: "inherit",
-                        fontSize: "inherit",
-                      }}
-                    >
-                      {Math.max(1, Math.floor(scrollTop / lineHeight) - VISIBLE_BUFFER + i + 1)}
-                    </Typography>
-                    {renderHighlightedText(line, (matchIdx) => matchIdx === currentMatch)}
-                  </Box>
-                ))}
+            <Box
+              ref={containerRef}
+              onScroll={handleScroll}
+              component="pre"
+              sx={{
+                m: 0, p: 2.5, flex: 1, overflow: "auto",
+                fontFamily: "Consolas, Monaco, 'Andale Mono', monospace",
+                fontSize: 13, lineHeight: `${lineHeight}px`,
+                whiteSpace: "pre", wordWrap: "normal",
+              }}
+            >
+              <Box sx={{ height: totalHeight, position: "relative" }}>
+                <Box sx={{ position: "absolute", top: 0, left: 0, right: 0, transform: `translateY(${visibleOffset}px)` }}>
+                  {visibleLines.map((line, i) => {
+                    const lineNum = Math.max(1, Math.floor(scrollTop / lineHeight) - VISIBLE_BUFFER + i + 1);
+                    const lineContent = line;
+                    let content: React.ReactNode = lineContent;
+
+                    // search highlight for virtual scroll mode
+                    if (isSearchActive) {
+                      const q = searchQuery.toLowerCase();
+                      const lower = lineContent.toLowerCase();
+                      const parts: React.ReactNode[] = [];
+                      let pos = 0;
+                      while (true) {
+                        const idx = lower.indexOf(q, pos);
+                        if (idx === -1) break;
+                        if (idx > pos) parts.push(<span key={`t-${pos}`}>{lineContent.slice(pos, idx)}</span>);
+                        parts.push(
+                          <mark
+                            key={`m-${idx}`}
+                            style={{
+                              backgroundColor: alpha("#f59e0b", 0.28),
+                              color: "inherit", borderRadius: 2, padding: "0 1px",
+                            }}
+                          >
+                            {lineContent.slice(idx, idx + searchQuery.length)}
+                          </mark>
+                        );
+                        pos = idx + searchQuery.length;
+                      }
+                      if (pos < lineContent.length) parts.push(<span key={`t-${pos}`}>{lineContent.slice(pos)}</span>);
+                      if (parts.length > 0) content = parts;
+                    }
+
+                    return (
+                      <Box key={i} sx={{ display: "flex" }}>
+                        <Typography component="span" variant="caption"
+                          sx={{ minWidth: 48, textAlign: "right", pr: 1.5, color: "text.disabled", userSelect: "none", fontFamily: "inherit", fontSize: "inherit" }}
+                        >
+                          {lineNum}
+                        </Typography>
+                        <Typography component="code" variant="body2"
+                          sx={{ fontFamily: "inherit", whiteSpace: "pre" }}
+                        >
+                          {content}
+                        </Typography>
+                      </Box>
+                    );
+                  })}
+                </Box>
               </Box>
             </Box>
+          </>
+        ) : (
+          <Box ref={syntaxRef} sx={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+            <SyntaxHighlighter
+              language={currentDocument.fileType}
+              style={theme.palette.mode === "dark" ? oneDark : coy}
+              showLineNumbers
+              customStyle={{
+                margin: 0,
+                minHeight: "100%",
+                borderRadius: 16,
+                padding: "20px",
+                background: "transparent",
+              }}
+            >
+              {data}
+            </SyntaxHighlighter>
           </Box>
-        </>
-      ) : (
-        <SyntaxHighlighter
-            language={(currentDocument as NonNullable<typeof currentDocument>).fileType}
-            style={theme.palette.mode === "dark" ? oneDark : coy}
-            showLineNumbers
-            customStyle={{
-              margin: 0,
-              minHeight: "100%",
-              borderRadius: 16,
-              padding: "20px",
-              background: "transparent",
-              flex: 1,
-            }}
-          >
-            {data}
-          </SyntaxHighlighter>
-      )}
-    </Box>
-  );
-
-  if (!currentDocument || currentDocument.fileData === undefined) return null;
-  const doc = currentDocument!;
-
-  return (
-    <RendererShell
-      title={doc.fileName ?? "Code"}
-      subtitle="Source preview"
-      fileType={doc.fileType}
-      icon={<CodeRoundedIcon />}
-      headerMode="none"
-      contentSx={{ p: 0 }}
-    >
-      {codeContent}
+        )}
+      </Box>
     </RendererShell>
   );
 }

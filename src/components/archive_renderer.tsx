@@ -11,7 +11,6 @@ import {
   Box,
   Button,
   Card,
-  CardContent,
   CircularProgress,
   Divider,
   List,
@@ -354,43 +353,38 @@ export default function ArchiveRenderer({
                 border: "1px solid",
                 borderColor: "divider",
                 boxShadow: "none",
-                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+                minHeight: 0,
               }}
             >
-              <CardContent sx={{ p: 0, height: "100%" }}>
-                <Stack
-                  direction="row"
-                  justifyContent="space-between"
-                  alignItems="center"
-                  sx={{ px: 2, py: 1.75 }}
-                >
-                  <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
-                    压缩包目录
-                  </Typography>
-                  {selectedDoc ? (
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      startIcon={<DownloadRoundedIcon />}
-                      onClick={() => void handleDownloadSubFile()}
-                    >
-                      下载
-                    </Button>
-                  ) : null}
-                </Stack>
-                <Divider />
-                {treeData?.children && treeData.children.length > 0 ? (
-                  <List
-                    disablePadding
-                    sx={{
-                      px: 1,
-                      py: 1,
-                      maxHeight: { lg: 620 },
-                      overflow: "auto",
-                    }}
+              <Stack
+                direction="row"
+                justifyContent="space-between"
+                alignItems="center"
+                sx={{ px: 2, pt: 0.25, pb: 1.75, flexShrink: 0 }}
+              >
+                <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                  压缩包目录
+                </Typography>
+                {selectedDoc ? (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<DownloadRoundedIcon />}
+                    onClick={() => void handleDownloadSubFile()}
                   >
+                    下载
+                  </Button>
+                ) : null}
+              </Stack>
+              <Divider />
+              {treeData?.children && treeData.children.length > 0 ? (
+                <Box sx={{ flex: 1, minHeight: 0, overflow: "auto", px: 1, py: 1 }}>
+                  <List disablePadding>
                     {treeContent}
                   </List>
+                </Box>
                 ) : (
                   <Box
                     sx={{
@@ -405,7 +399,6 @@ export default function ArchiveRenderer({
                     </Typography>
                   </Box>
                 )}
-              </CardContent>
             </Card>
 
             <Card
