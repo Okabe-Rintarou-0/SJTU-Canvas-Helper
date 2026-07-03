@@ -30,7 +30,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { alpha, useTheme } from "@mui/material/styles";
+import { useTheme } from "@mui/material/styles";
 import { useEffect, useRef, useState } from "react";
 import type { DraggableData, DraggableEvent } from "react-draggable";
 import Draggable from "react-draggable";
@@ -64,13 +64,7 @@ import {
 } from "../lib/model";
 import { consoleLog, srtToVtt } from "../lib/utils";
 
-const surfaceCardSx = {
-  borderRadius: "28px",
-  border: "1px solid",
-  borderColor: "divider",
-  boxShadow: "0 24px 60px rgba(15, 23, 42, 0.08)",
-  backgroundImage: "none",
-};
+import { surfaceCardSx } from "../lib/styles";
 
 function timestampToSeconds(timestamp: string): number {
   const match = timestamp.match(/^\[(\d{2}):(\d{2}):(\d{2}),(\d{1,3})\]$/);
@@ -777,7 +771,7 @@ export default function VideoPage() {
         {loaded && notLogin ? (
           <Alert
             severity="info"
-            sx={{ borderRadius: "20px" }}
+            sx={{ borderRadius: "8px" }}
             action={
               <Button component={RouterLink} to="/settings" color="inherit" size="small">
                 前往设置
@@ -822,7 +816,6 @@ export default function VideoPage() {
           sx={{
             ...surfaceCardSx,
             backgroundColor: theme.palette.background.paper,
-            boxShadow: "0 10px 28px rgba(15, 23, 42, 0.05)",
           }}
         >
           <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
@@ -875,11 +868,9 @@ export default function VideoPage() {
                   <Card
                     key={item.label}
                     sx={{
-                      borderRadius: "18px",
-                      backgroundColor: alpha(theme.palette.background.default, 0.55),
+                      borderRadius: "8px",
                       border: "1px solid",
-                      borderColor: alpha(theme.palette.divider, 0.8),
-                      boxShadow: "none",
+                      borderColor: "divider",
                     }}
                   >
                     <CardContent sx={{ p: 2 }}>
@@ -984,7 +975,7 @@ export default function VideoPage() {
 
                   <Box
                     sx={{
-                      borderRadius: "22px",
+                      borderRadius: "8px",
                       border: "1px solid",
                       borderColor: "divider",
                       overflow: "auto",
@@ -1108,7 +1099,7 @@ export default function VideoPage() {
                   <Box
                     className={videoStyles.videoPlayerContainer}
                     sx={{
-                      borderRadius: "22px",
+                      borderRadius: "8px",
                       overflow: "hidden",
                       bgcolor: "#000",
                     }}

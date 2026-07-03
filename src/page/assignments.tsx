@@ -31,7 +31,6 @@ import {
   TableRow,
   Typography,
 } from "@mui/material";
-import { alpha, useTheme } from "@mui/material/styles";
 import dayjs from "dayjs";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -61,16 +60,9 @@ import {
   getBaseDate,
 } from "../lib/utils";
 
-const surfaceCardSx = {
-  borderRadius: "28px",
-  border: "1px solid",
-  borderColor: "divider",
-  boxShadow: "0 24px 60px rgba(15, 23, 42, 0.08)",
-  backgroundImage: "none",
-};
+import { surfaceCardSx } from "../lib/styles";
 
 export default function AssignmentsPage() {
-  const theme = useTheme();
   const [messageApi, contextHolder] = useAppMessage();
   const [operating, setOperating] = useState(false);
   const [onlyShowUnfinished, setOnlyShowUnfinished] = useState(true);
@@ -361,7 +353,7 @@ export default function AssignmentsPage() {
     return (
       <Box
         sx={{
-          borderRadius: "20px",
+          borderRadius: "8px",
           border: "1px solid",
           borderColor: "divider",
           overflow: "hidden",
@@ -699,10 +691,9 @@ export default function AssignmentsPage() {
                         <Box
                           sx={{
                             p: 2.25,
-                            borderRadius: "22px",
-                            bgcolor: alpha(theme.palette.primary.main, 0.04),
+                            borderRadius: "8px",
                             border: "1px solid",
-                            borderColor: alpha(theme.palette.primary.main, 0.1),
+                            borderColor: "divider",
                           }}
                         >
                           <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>
@@ -746,7 +737,7 @@ export default function AssignmentsPage() {
                               sx={{
                                 border: "1px solid",
                                 borderColor: "divider",
-                                borderRadius: "20px",
+                                borderRadius: "8px",
                                 overflow: "hidden",
                                 p: 0,
                               }}

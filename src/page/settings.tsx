@@ -37,6 +37,7 @@ import {
 } from "@mui/material";
 import { ProviderIcon } from "@lobehub/icons";
 import { alpha, useTheme } from "@mui/material/styles";
+import { surfaceCardSx } from "../lib/styles";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -52,7 +53,6 @@ import { consoleLog, savePathValidator } from "../lib/utils";
 
 type AccountMode = "create" | "select";
 
-const SURFACE_RADIUS = 6;
 const DEFAULT_PRIMARY = "#00b96b";
 const DEFAULT_PROXY_PORT = 3030;
 const MIN_LLM_TEMPERATURE = 0;
@@ -121,9 +121,7 @@ function detectProviderKey(baseUrl: string): string | null {
 }
 
 const cardSx = {
-  borderRadius: `${SURFACE_RADIUS * 4}px`,
-  border: "1px solid",
-  borderColor: "divider",
+  ...surfaceCardSx,
   boxShadow: "0 24px 60px rgba(15, 23, 42, 0.08)",
 };
 

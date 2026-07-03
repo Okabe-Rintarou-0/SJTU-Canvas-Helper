@@ -49,13 +49,7 @@ const monthOptions = [
   "12 月",
 ];
 
-const cardSx = {
-  borderRadius: "28px",
-  border: "1px solid",
-  borderColor: "divider",
-  boxShadow: "0 22px 50px rgba(15, 23, 42, 0.08)",
-  backgroundImage: "none",
-};
+import { surfaceCardSx as cardSx } from "../lib/styles";
 
 function getCourseId(event: CalendarEvent) {
   const parts = event.context_code.split("_");
@@ -384,8 +378,8 @@ export default function CalendarPage() {
                             sx={{
                               px: 1.25,
                               py: 1,
-                              borderRadius: "16px",
-                              bgcolor: alpha("#2563eb", 0.07),
+                                  borderRadius: "8px",
+                                  bgcolor: "action.hover",
                               textAlign: "center",
                             }}
                           >
@@ -417,22 +411,17 @@ export default function CalendarPage() {
                               sx={{
                                 minHeight: { xs: 132, md: 156 },
                                 cursor: "pointer",
-                                borderRadius: "22px",
+                                borderRadius: "8px",
                                 border: "1px solid",
                                 borderColor: isSelected
                                   ? "primary.main"
-                                  : isToday
-                                    ? alpha("#2563eb", 0.3)
-                                    : "divider",
+                                  : "divider",
                                 bgcolor: isSelected
-                                  ? alpha("#2563eb", 0.06)
+                                  ? "action.selected"
                                   : isCurrentMonth
                                     ? "background.paper"
-                                    : alpha("#cbd5e1", 0.38),
-                                boxShadow: isSelected
-                                  ? "0 16px 34px rgba(37, 99, 235, 0.12)"
-                                  : "none",
-                                transition: "border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease",
+                                    : "action.disabledBackground",
+                                transition: "border-color 0.2s ease, transform 0.2s ease",
                                 "&:hover": {
                                   transform: "translateY(-2px)",
                                   borderColor: "primary.main",
@@ -553,13 +542,9 @@ export default function CalendarPage() {
                               key={event.id}
                               sx={{
                                 p: 1.5,
-                                borderRadius: "18px",
+                                borderRadius: "8px",
                                 border: "1px solid",
                                 borderColor: "divider",
-                                bgcolor: alpha(
-                                  colors?.custom_colors[event.context_code] || "#2563eb",
-                                  0.06
-                                ),
                               }}
                             >
                               <Stack spacing={0.7}>

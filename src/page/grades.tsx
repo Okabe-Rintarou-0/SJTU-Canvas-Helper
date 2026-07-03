@@ -23,7 +23,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { alpha, useTheme } from "@mui/material/styles";
+import { useTheme } from "@mui/material/styles";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useEffect, useMemo, useState } from "react";
 
@@ -58,13 +58,7 @@ interface ExportInfo {
   folderPath: string;
 }
 
-const surfaceCardSx = {
-  borderRadius: "28px",
-  border: "1px solid",
-  borderColor: "divider",
-  boxShadow: "0 24px 60px rgba(15, 23, 42, 0.08)",
-  backgroundImage: "none",
-};
+import { surfaceCardSx } from "../lib/styles";
 
 export default function GradePage() {
   const theme = useTheme();
@@ -358,7 +352,6 @@ export default function GradePage() {
           sx={{
             ...surfaceCardSx,
             backgroundColor: theme.palette.background.paper,
-            boxShadow: "0 10px 28px rgba(15, 23, 42, 0.05)",
           }}
         >
           <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
@@ -410,11 +403,9 @@ export default function GradePage() {
                   <Card
                     key={item.label}
                     sx={{
-                      borderRadius: "18px",
-                      backgroundColor: alpha(theme.palette.background.default, 0.55),
+                      borderRadius: "8px",
                       border: "1px solid",
-                      borderColor: alpha(theme.palette.divider, 0.8),
-                      boxShadow: "none",
+                      borderColor: "divider",
                     }}
                   >
                     <CardContent sx={{ p: 2 }}>
@@ -477,7 +468,7 @@ export default function GradePage() {
                   <>
                     <Box
                       sx={{
-                        borderRadius: "22px",
+                        borderRadius: "8px",
                         border: "1px solid",
                         borderColor: "divider",
                         overflow: "auto",
@@ -680,10 +671,9 @@ export default function GradePage() {
                 {statistics.total.total > 0 ? (
                   <Card
                     sx={{
-                      borderRadius: "22px",
+                      borderRadius: "8px",
                       border: "1px solid",
                       borderColor: "divider",
-                      boxShadow: "none",
                     }}
                   >
                     <CardContent>
@@ -706,10 +696,9 @@ export default function GradePage() {
                   <Card
                     key={assignment.id}
                     sx={{
-                      borderRadius: "22px",
+                      borderRadius: "8px",
                       border: "1px solid",
                       borderColor: "divider",
-                      boxShadow: "none",
                     }}
                   >
                     <CardContent>

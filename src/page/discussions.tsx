@@ -34,13 +34,7 @@ import {
 } from "../lib/model";
 import { consoleLog, formatDate } from "../lib/utils";
 
-const surfaceCardSx = {
-  borderRadius: "28px",
-  border: "1px solid",
-  borderColor: "divider",
-  boxShadow: "0 24px 60px rgba(15, 23, 42, 0.08)",
-  backgroundImage: "none",
-};
+import { surfaceCardSx } from "../lib/styles";
 
 function DiscussionBubble({
   author,
@@ -453,10 +447,9 @@ export default function DiscussionsPage() {
                   <Box
                     sx={{
                       p: 2.25,
-                      borderRadius: "22px",
-                      bgcolor: alpha(theme.palette.primary.main, 0.04),
+                      borderRadius: "8px",
                       border: "1px solid",
-                      borderColor: alpha(theme.palette.primary.main, 0.1),
+                      borderColor: "divider",
                     }}
                   >
                     <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.25 }}>

@@ -20,6 +20,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useMemo, useState } from "react";
 
 import CourseSelect from "../components/course_select";
+import { surfaceCardSx, innerBoxSx } from "../lib/styles";
 import BasicLayout from "../components/layout";
 import { useCourses } from "../lib/hooks";
 import { QRCodeScanResult } from "../lib/model";
@@ -70,15 +71,7 @@ export default function QRCodePage() {
   return (
     <BasicLayout>
       <Stack spacing={3}>
-        <Card
-          sx={{
-            borderRadius: "24px",
-            border: "1px solid",
-            borderColor: "divider",
-            backgroundColor: theme.palette.background.paper,
-            boxShadow: "0 10px 28px rgba(15, 23, 42, 0.05)",
-          }}
-        >
+        <Card sx={surfaceCardSx}>
           <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
             <Stack spacing={2.25}>
               <Stack
@@ -120,15 +113,7 @@ export default function QRCodePage() {
                   gridTemplateColumns: { xs: "minmax(0, 1fr)", xl: "1.15fr 0.85fr" },
                 }}
               >
-                <Box
-                  sx={{
-                    p: 2,
-                    borderRadius: "22px",
-                    border: "1px solid",
-                    borderColor: "divider",
-                    bgcolor: alpha(theme.palette.background.paper, 0.78),
-                  }}
-                >
+                <Box sx={{ p: 2, ...innerBoxSx }}>
                   <CourseSelect
                     courses={courses.data}
                     disabled={operating}
@@ -137,15 +122,7 @@ export default function QRCodePage() {
                   />
                 </Box>
 
-                <Box
-                  sx={{
-                    p: 2,
-                    borderRadius: "22px",
-                    border: "1px solid",
-                    borderColor: "divider",
-                    bgcolor: alpha(theme.palette.background.paper, 0.78),
-                  }}
-                >
+                <Box sx={{ p: 2, ...innerBoxSx }}>
                   <TextField
                     fullWidth
                     value={keyword}
@@ -188,16 +165,11 @@ export default function QRCodePage() {
                       key={scanResult.file.id}
                       onClick={() => setPreviewImage(scanResult)}
                       sx={{
-                        borderRadius: "24px",
+                        borderRadius: "12px",
                         overflow: "hidden",
                         cursor: "pointer",
                         border: "1px solid",
                         borderColor: "divider",
-                        transition: "transform 0.2s ease, box-shadow 0.2s ease",
-                        "&:hover": {
-                          transform: "translateY(-4px)",
-                          boxShadow: "0 20px 40px rgba(15, 23, 42, 0.12)",
-                        },
                       }}
                     >
                       <Box
@@ -242,7 +214,7 @@ export default function QRCodePage() {
         onClose={() => setPreviewImage(null)}
         fullWidth
         maxWidth="md"
-        PaperProps={{ sx: { borderRadius: "28px" } }}
+        PaperProps={{ sx: { borderRadius: "12px" } }}
       >
         <DialogTitle>{previewImage?.file.display_name}</DialogTitle>
         <DialogContent dividers>

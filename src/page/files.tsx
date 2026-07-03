@@ -73,6 +73,7 @@ import {
   isMergableFileType,
   scrollToTop,
 } from "../lib/utils";
+import { surfaceCardSx, innerBoxSx } from "../lib/styles";
 
 interface DownloadInfo {
   course?: Course;
@@ -738,11 +739,11 @@ export default function FilesPage() {
         onSend={handleSendChatMessage}
       />
 
-      <Stack spacing={3} sx={{ width: "100%" }}>
+      <Stack spacing={2} sx={{ width: "100%" }}>
         <WorkspaceHero
-          chipLabel="File Workspace"
+          chipLabel="文件管理"
           chipIcon={<FolderOpenRoundedIcon />}
-          title="文件浏览与下载工作台"
+          title="文件浏览与下载"
           description="课程文件筛选、批量下载。"
           aside={
             <Stack spacing={1} alignItems={{ xs: "flex-start", md: "flex-end" }}>
@@ -764,9 +765,9 @@ export default function FilesPage() {
           stats={statItems}
         />
 
-        <Card sx={{ borderRadius: "28px", border: "1px solid", borderColor: "divider" }}>
-          <CardContent sx={{ p: { xs: 2.25, md: 3 } }}>
-            <Stack spacing={2.5}>
+        <Card sx={surfaceCardSx}>
+          <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
+            <Stack spacing={2}>
               <Tabs
                 value={section}
                 onChange={(_, value) => setSection(value)}
@@ -785,15 +786,7 @@ export default function FilesPage() {
                   alignItems: "start",
                 }}
               >
-                <Box
-                  sx={{
-                    p: 2,
-                    borderRadius: "22px",
-                    bgcolor: alpha(theme.palette.background.default, 0.72),
-                    border: "1px solid",
-                    borderColor: "divider",
-                  }}
-                >
+                <Box sx={{ p: 2, ...innerBoxSx }}>
                   {section === COURSE_FILES ? (
                     <CourseSelect
                       onChange={handleCourseSelect}
@@ -802,7 +795,7 @@ export default function FilesPage() {
                       value={selectedCourseId > 0 ? selectedCourseId : undefined}
                     />
                   ) : (
-                    <Alert severity="info" sx={{ borderRadius: "16px" }}>
+                    <Alert severity="info" sx={{ borderRadius: "8px" }}>
                       当前正在浏览“我的文件”，系统会自动载入你的个人目录结构。
                     </Alert>
                   )}
@@ -815,15 +808,7 @@ export default function FilesPage() {
                     gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "repeat(2, minmax(0, 1fr))" },
                   }}
                 >
-                  <Box
-                    sx={{
-                      p: 2,
-                      borderRadius: "22px",
-                      bgcolor: alpha(theme.palette.background.default, 0.72),
-                      border: "1px solid",
-                      borderColor: "divider",
-                    }}
-                  >
+                  <Box sx={{ p: 2, ...innerBoxSx }}>
                     <Stack spacing={1.25}>
                       <FormControlLabel
                         control={
@@ -848,15 +833,7 @@ export default function FilesPage() {
                     </Stack>
                   </Box>
 
-                  <Box
-                    sx={{
-                      p: 2,
-                      borderRadius: "22px",
-                      bgcolor: alpha(theme.palette.background.default, 0.72),
-                      border: "1px solid",
-                      borderColor: "divider",
-                    }}
-                  >
+                  <Box sx={{ p: 2, ...innerBoxSx }}>
                     <TextField
                       fullWidth
                       placeholder="输入文件关键词…"
@@ -919,7 +896,7 @@ export default function FilesPage() {
 
               <Box
                 sx={{
-                  borderRadius: "22px",
+                  borderRadius: "8px",
                   border: "1px solid",
                   borderColor: "divider",
                   overflow: "hidden",
@@ -1102,17 +1079,12 @@ export default function FilesPage() {
           </CardContent>
         </Card>
 
-        <Card sx={{ borderRadius: "28px", border: "1px solid", borderColor: "divider" }}>
-          <CardContent sx={{ p: { xs: 2.25, md: 3 } }}>
-            <Stack spacing={2.5}>
-              <Box>
-                <Typography variant="h5">文档合并</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  选中多个可合并文件后，在这里调整顺序并执行 Word / PDF / PPTX 混合合并。
-                </Typography>
-              </Box>
+        <Card sx={surfaceCardSx}>
+          <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
+            <Stack spacing={2}>
+              <Typography variant="h6">文档合并</Typography>
               {selectedFileCount > 0 && noSelectedMergeFiles ? (
-                <Alert severity="info" sx={{ borderRadius: "16px" }}>
+                <Alert severity="info" sx={{ borderRadius: "8px" }}>
                   当前已选文件中，可用于合并的 Word/PDF/PPTX 文件不足 2 个。
                 </Alert>
               ) : null}
@@ -1121,15 +1093,10 @@ export default function FilesPage() {
           </CardContent>
         </Card>
 
-        <Card sx={{ borderRadius: "28px", border: "1px solid", borderColor: "divider" }}>
-          <CardContent sx={{ p: { xs: 2.25, md: 3 } }}>
-            <Stack spacing={2.5}>
-              <Box>
-                <Typography variant="h5">下载任务</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  在这里追踪下载进度、重试失败任务，或直接打开保存后的文件。
-                </Typography>
-              </Box>
+        <Card sx={surfaceCardSx}>
+          <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
+            <Stack spacing={2}>
+              <Typography variant="h6">下载任务</Typography>
               <FileDownloadTable
                 tasks={downloadTasks}
                 handleRemoveTask={handleRemoveTask}

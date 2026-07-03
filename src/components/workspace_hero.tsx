@@ -1,6 +1,5 @@
 import { Box, Card, CardContent, Chip, Stack, Typography } from "@mui/material";
-import { alpha, useTheme } from "@mui/material/styles";
-import { ReactElement, ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 
 interface WorkspaceHeroStat {
   label: ReactNode;
@@ -27,16 +26,12 @@ export function WorkspaceHero({
   stats,
   footer,
 }: WorkspaceHeroProps) {
-  const theme = useTheme();
-
   return (
     <Card
       sx={{
-        borderRadius: "24px",
+        borderRadius: "12px",
         border: "1px solid",
         borderColor: "divider",
-        backgroundColor: theme.palette.background.paper,
-        boxShadow: "0 10px 28px rgba(15, 23, 42, 0.05)",
       }}
     >
       <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
@@ -54,7 +49,7 @@ export function WorkspaceHero({
                 variant="outlined"
                 sx={{ width: "fit-content" }}
               />
-              <Typography variant="h4" sx={{ fontWeight: 700, letterSpacing: "-0.02em" }}>
+              <Typography variant="h4" sx={{ fontWeight: 700 }}>
                 {title}
               </Typography>
               {description ? (
@@ -91,57 +86,50 @@ export function WorkspaceHero({
               }}
             >
               {stats.map((item) => (
-                <Card
+                <Box
                   key={String(item.label)}
                   sx={{
-                    borderRadius: "18px",
-                    backgroundColor: alpha(theme.palette.background.default, 0.55),
+                    p: 2,
+                    borderRadius: "8px",
                     border: "1px solid",
-                    borderColor: alpha(theme.palette.divider, 0.8),
-                    boxShadow: "none",
+                    borderColor: "divider",
                   }}
                 >
-                  <CardContent sx={{ p: 2 }}>
-                    {item.icon ? (
-                      <Stack direction="row" spacing={1.5} alignItems="center">
-                        <Box
-                          sx={{
-                            width: 46,
-                            height: 46,
-                            borderRadius: "16px",
-                            display: "grid",
-                            placeItems: "center",
-                            bgcolor: alpha(theme.palette.primary.main, 0.12),
-                            color: "primary.main",
-                            "& svg": { fontSize: 24 },
-                          }}
-                        >
-                          {item.icon}
-                        </Box>
-                        <Stack spacing={0.25} sx={{ minWidth: 0 }}>
-                          <Typography variant="body2" color="text.secondary">
-                            {item.label}
-                          </Typography>
-                          <Typography
-                            variant="h6"
-                            sx={{ lineHeight: 1.2, wordBreak: "break-word" }}
-                          >
-                            {item.value}
-                          </Typography>
-                        </Stack>
-                      </Stack>
-                    ) : (
-                      <>
-                        <Typography variant="overline" color="text.secondary">
+                  {item.icon ? (
+                    <Stack direction="row" spacing={1.5} alignItems="center">
+                      <Box
+                        sx={{
+                          display: "grid",
+                          placeItems: "center",
+                          color: "text.secondary",
+                          "& svg": { fontSize: 20 },
+                        }}
+                      >
+                        {item.icon}
+                      </Box>
+                      <Stack spacing={0.25} sx={{ minWidth: 0 }}>
+                        <Typography variant="body2" color="text.secondary">
                           {item.label}
                         </Typography>
-                        <Typography variant="h4" sx={{ fontWeight: 800, mt: 1 }}>
+                        <Typography
+                          variant="body1"
+                          sx={{ fontWeight: 600, wordBreak: "break-word" }}
+                        >
                           {item.value}
                         </Typography>
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
+                      </Stack>
+                    </Stack>
+                  ) : (
+                    <>
+                      <Typography variant="overline" color="text.secondary">
+                        {item.label}
+                      </Typography>
+                      <Typography variant="h6" sx={{ fontWeight: 600, mt: 0.5 }}>
+                        {item.value}
+                      </Typography>
+                    </>
+                  )}
+                </Box>
               ))}
             </Box>
           ) : null}

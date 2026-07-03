@@ -21,7 +21,8 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { alpha, useTheme } from "@mui/material/styles";
+import { useTheme } from "@mui/material/styles";
+import { surfaceCardSx } from "../lib/styles";
 import { save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import ReactEcharts from "echarts-for-react";
@@ -340,7 +341,7 @@ export default function AnnualPage() {
         key: "persona",
         title: "年度时间人格",
         subtitle: `${selectedYear} Canvas 回顾卡`,
-        accent: "linear-gradient(135deg, rgba(37,99,235,0.92) 0%, rgba(14,165,233,0.92) 100%)",
+        accent: "#2563eb",
         value: dominantTime,
         description: `这一年里，你有 ${dayCount} 次在白天提交，${nightCount} 次在夜晚提交。节奏与状态，决定了你在这一年里的行动方式。`,
         badge: "Time Persona",
@@ -349,7 +350,7 @@ export default function AnnualPage() {
         key: "focus",
         title: "年度主线课程",
         subtitle: `${selectedYear} Course Spotlight`,
-        accent: "linear-gradient(135deg, rgba(245,158,11,0.92) 0%, rgba(239,68,68,0.88) 100%)",
+        accent: "#f59e0b",
         value: topCourseStatistic?.courseName ?? "暂无数据",
         description: topCourseStatistic
           ? `你在这门课里完成了 ${topCourseStatistic.submittedCount} 次提交，面对 ${topCourseStatistic.assignmentCount} 个作业节点，它是这一年里最频繁出现的学习主线。`
@@ -360,7 +361,7 @@ export default function AnnualPage() {
         key: "completion",
         title: "年度完成度",
         subtitle: `${selectedYear} Completion Snapshot`,
-        accent: "linear-gradient(135deg, rgba(16,185,129,0.92) 0%, rgba(20,184,166,0.92) 100%)",
+        accent: "#10b981",
         value: `${completionRate}%`,
         description: `你完成了 ${totalSubmits}/${totalAssignments || 0} 次提交，活跃了 ${activeDayCount} 天，累计得分率 ${scoreRate}%。这一张更像年度成绩海报。`,
         badge: "Progress Score",
@@ -501,11 +502,7 @@ export default function AnnualPage() {
           ref={annualRef}
           sx={{
             overflow: "hidden",
-            borderRadius: "24px",
-            border: "1px solid",
-            borderColor: "divider",
-            backgroundColor: theme.palette.background.paper,
-            boxShadow: "0 10px 28px rgba(15, 23, 42, 0.05)",
+            ...surfaceCardSx,
           }}
         >
           <CardContent sx={{ p: 0 }}>
@@ -557,10 +554,10 @@ export default function AnnualPage() {
                   sx={{
                     minWidth: { xs: "100%", md: 220 },
                     p: 2,
-                    borderRadius: "20px",
+                    borderRadius: "8px",
                     border: "1px solid",
                     borderColor: "divider",
-                    bgcolor: alpha(theme.palette.background.default, 0.6),
+                    bgcolor: "background.paper",
                   }}
                 >
                   <Stack spacing={1.25}>
@@ -669,14 +666,10 @@ export default function AnnualPage() {
                         key={item.label}
                         sx={{
                           p: 2.2,
-                          borderRadius: "24px",
+                          borderRadius: "12px",
                           border: "1px solid",
-                          borderColor: alpha(theme.palette.common.white, 0.1),
-                          bgcolor:
-                            theme.palette.mode === "dark"
-                              ? alpha("#0f172a", 0.72)
-                              : alpha("#ffffff", 0.76),
-                          backdropFilter: "blur(10px)",
+                          borderColor: "divider",
+                          bgcolor: "background.paper",
                         }}
                       >
                         <Stack spacing={1.1}>
@@ -684,10 +677,9 @@ export default function AnnualPage() {
                             sx={{
                               width: 52,
                               height: 52,
-                              borderRadius: "18px",
+                              borderRadius: "8px",
                               display: "grid",
                               placeItems: "center",
-                              bgcolor: alpha(theme.palette.primary.main, 0.14),
                               color: "primary.main",
                               "& svg": { fontSize: 28 },
                             }}
@@ -719,14 +711,10 @@ export default function AnnualPage() {
                     <Box
                       sx={{
                         p: { xs: 2.25, md: 3 },
-                        borderRadius: "28px",
+                        borderRadius: "12px",
                         border: "1px solid",
-                        borderColor: alpha(theme.palette.common.white, 0.12),
-                        bgcolor:
-                          theme.palette.mode === "dark"
-                            ? alpha("#0b1322", 0.78)
-                            : alpha("#ffffff", 0.72),
-                        backdropFilter: "blur(12px)",
+                        borderColor: "divider",
+                        bgcolor: "background.paper",
                       }}
                     >
                       <Typography
@@ -746,10 +734,9 @@ export default function AnnualPage() {
                                 sx={{
                                   width: 48,
                                   height: 48,
-                                  borderRadius: "16px",
+                                  borderRadius: "8px",
                                   display: "grid",
                                   placeItems: "center",
-                                  bgcolor: alpha(theme.palette.primary.main, 0.12),
                                   color: "primary.main",
                                 }}
                               >
@@ -761,7 +748,7 @@ export default function AnnualPage() {
                                     width: 2,
                                     flex: 1,
                                     minHeight: 36,
-                                    bgcolor: alpha(theme.palette.primary.main, 0.16),
+                                    bgcolor: "divider",
                                     my: 0.5,
                                   }}
                                 />
@@ -792,14 +779,10 @@ export default function AnnualPage() {
                     <Box
                       sx={{
                         p: { xs: 2.25, md: 3 },
-                        borderRadius: "28px",
+                        borderRadius: "12px",
                         border: "1px solid",
-                        borderColor: alpha(theme.palette.common.white, 0.12),
-                        bgcolor:
-                          theme.palette.mode === "dark"
-                            ? alpha("#0b1322", 0.78)
-                            : alpha("#ffffff", 0.72),
-                        backdropFilter: "blur(12px)",
+                        borderColor: "divider",
+                        bgcolor: "background.paper",
                       }}
                     >
                       <Stack spacing={2}>
@@ -831,10 +814,9 @@ export default function AnnualPage() {
                         <Box
                           sx={{
                             p: 2.5,
-                            borderRadius: "30px",
+                            borderRadius: "12px",
                             color: "#f8fafc",
                             background: storyCards[selectedStoryCard].accent,
-                            boxShadow: "0 30px 80px rgba(15,23,42,0.24)",
                             overflow: "hidden",
                             minWidth: 0,
                           }}
@@ -892,14 +874,10 @@ export default function AnnualPage() {
                   <Box
                     sx={{
                       p: { xs: 2.25, md: 3 },
-                      borderRadius: "28px",
+                      borderRadius: "12px",
                       border: "1px solid",
-                      borderColor: alpha(theme.palette.common.white, 0.12),
-                      bgcolor:
-                        theme.palette.mode === "dark"
-                          ? alpha("#0b1322", 0.78)
-                          : alpha("#ffffff", 0.72),
-                      backdropFilter: "blur(12px)",
+                      borderColor: "divider",
+                      bgcolor: "background.paper",
                     }}
                   >
                     <Typography
@@ -934,14 +912,10 @@ export default function AnnualPage() {
                     <Box
                       sx={{
                         p: { xs: 2.25, md: 3 },
-                        borderRadius: "28px",
+                        borderRadius: "12px",
                         border: "1px solid",
-                        borderColor: alpha(theme.palette.common.white, 0.12),
-                        bgcolor:
-                          theme.palette.mode === "dark"
-                            ? alpha("#0b1322", 0.78)
-                            : alpha("#ffffff", 0.72),
-                        backdropFilter: "blur(12px)",
+                        borderColor: "divider",
+                        bgcolor: "background.paper",
                       }}
                     >
                       <Typography
@@ -965,14 +939,10 @@ export default function AnnualPage() {
                     <Box
                       sx={{
                         p: { xs: 2.25, md: 3 },
-                        borderRadius: "28px",
+                        borderRadius: "12px",
                         border: "1px solid",
-                        borderColor: alpha(theme.palette.common.white, 0.12),
-                        bgcolor:
-                          theme.palette.mode === "dark"
-                            ? alpha("#0b1322", 0.78)
-                            : alpha("#ffffff", 0.72),
-                        backdropFilter: "blur(12px)",
+                        borderColor: "divider",
+                        bgcolor: "background.paper",
                       }}
                     >
                       <Typography
@@ -992,14 +962,10 @@ export default function AnnualPage() {
                   <Box
                     sx={{
                       p: { xs: 2.25, md: 3 },
-                      borderRadius: "28px",
+                      borderRadius: "12px",
                       border: "1px solid",
-                      borderColor: alpha(theme.palette.common.white, 0.12),
-                      bgcolor:
-                        theme.palette.mode === "dark"
-                          ? alpha("#0b1322", 0.78)
-                          : alpha("#ffffff", 0.72),
-                      backdropFilter: "blur(12px)",
+                      borderColor: "divider",
+                      bgcolor: "background.paper",
                     }}
                   >
                     <Typography

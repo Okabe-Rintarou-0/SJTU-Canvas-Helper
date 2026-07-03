@@ -34,7 +34,7 @@ import {
   Typography,
   useMediaQuery,
 } from "@mui/material";
-import { alpha, useTheme } from "@mui/material/styles";
+import { useTheme } from "@mui/material/styles";
 import { useAppMessage } from "../lib/message";
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -147,19 +147,9 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
         gap: 2,
         overflowX: "hidden",
         overflowY: "auto",
-        color: theme.palette.mode === "dark" ? "#e2e8f0" : "text.primary",
-        bgcolor:
-          theme.palette.mode === "dark"
-            ? "rgba(8, 13, 24, 0.985)"
-            : alpha("#f8fbff", 0.96),
-        borderRight:
-          theme.palette.mode === "dark"
-            ? "1px solid rgba(148, 163, 184, 0.08)"
-            : `1px solid ${alpha(theme.palette.divider, 0.5)}`,
-        boxShadow:
-          theme.palette.mode === "dark"
-            ? "inset -1px 0 0 rgba(148, 163, 184, 0.06), 18px 0 40px rgba(2, 6, 23, 0.32)"
-            : "none",
+        color: "text.primary",
+        borderRight: "1px solid",
+        borderColor: "divider",
       }}
     >
       <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
@@ -173,27 +163,12 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
             transition: "opacity 0.2s ease",
           }}
         >
-          <Box
-            sx={{
-              width: 42,
-              height: 42,
-              borderRadius: "16px",
-              display: "grid",
-              placeItems: "center",
-              bgcolor: alpha(theme.palette.primary.main, 0.12),
-              color: "primary.main",
-            }}
-          >
-            <GridViewRoundedIcon />
-          </Box>
+          <GridViewRoundedIcon color="primary" />
           <Box sx={{ minWidth: 0 }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
               Canvas Helper
             </Typography>
-            <Typography
-              variant="caption"
-              color={theme.palette.mode === "dark" ? "rgba(226,232,240,0.66)" : "text.secondary"}
-            >
+            <Typography variant="caption" color="text.secondary">
               Workspace
             </Typography>
           </Box>
@@ -211,22 +186,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
       </Stack>
 
       {!collapsed || !isDesktop ? (
-        <Chip
-          label={currentTitle}
-          color="primary"
-          variant="outlined"
-          sx={{
-            width: "fit-content",
-            bgcolor:
-              theme.palette.mode === "dark"
-                ? alpha(theme.palette.primary.main, 0.12)
-                : undefined,
-            borderColor:
-              theme.palette.mode === "dark"
-                ? alpha(theme.palette.primary.main, 0.28)
-                : undefined,
-          }}
-        />
+        <Chip label={currentTitle} color="primary" variant="outlined" size="small" sx={{ width: "fit-content" }} />
       ) : null}
 
       <List sx={{ p: 0, display: "grid", gap: 0.75 }}>
@@ -239,37 +199,15 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
               to={item.path}
               selected={selected}
               sx={{
-                minHeight: 52,
+                minHeight: 44,
                 px: collapsed && isDesktop ? 1.25 : 1.5,
-                py: 1,
-                borderRadius: "18px",
+                py: 0.75,
+                borderRadius: "8px",
                 justifyContent: collapsed && isDesktop ? "center" : "flex-start",
-                color:
-                  theme.palette.mode === "dark"
-                    ? alpha("#e2e8f0", selected ? 1 : 0.86)
-                    : "inherit",
+                color: "inherit",
                 "&.Mui-selected": {
-                  bgcolor:
-                    theme.palette.mode === "dark"
-                      ? alpha(theme.palette.primary.main, 0.2)
-                      : alpha(theme.palette.primary.main, 0.12),
+                  bgcolor: "action.selected",
                   color: "primary.main",
-                  boxShadow:
-                    theme.palette.mode === "dark"
-                      ? `inset 0 0 0 1px ${alpha(theme.palette.primary.main, 0.18)}`
-                      : "none",
-                },
-                "&:hover": {
-                  bgcolor:
-                    theme.palette.mode === "dark"
-                      ? alpha("#94a3b8", 0.12)
-                      : alpha(theme.palette.primary.main, 0.04),
-                },
-                "&.Mui-selected:hover": {
-                  bgcolor:
-                    theme.palette.mode === "dark"
-                      ? alpha(theme.palette.primary.main, 0.24)
-                      : alpha(theme.palette.primary.main, 0.16),
                 },
               }}
             >
@@ -321,49 +259,13 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
               当前版本 {version || "读取中"}
             </Typography>
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              <Button
-                onClick={() => checkForUpdates(messageApi)}
-                variant="outlined"
-                size="small"
-                sx={
-                  theme.palette.mode === "dark"
-                    ? {
-                        borderColor: alpha("#94a3b8", 0.2),
-                        color: alpha("#e2e8f0", 0.92),
-                      }
-                    : undefined
-                }
-              >
+              <Button onClick={() => checkForUpdates(messageApi)} variant="outlined" size="small">
                 检查更新
               </Button>
-              <Button
-                onClick={() => setShowChangeLog(true)}
-                variant="outlined"
-                size="small"
-                sx={
-                  theme.palette.mode === "dark"
-                    ? {
-                        borderColor: alpha("#94a3b8", 0.2),
-                        color: alpha("#e2e8f0", 0.92),
-                      }
-                    : undefined
-                }
-              >
+              <Button onClick={() => setShowChangeLog(true)} variant="outlined" size="small">
                 更新日志
               </Button>
-              <Button
-                onClick={() => void handleOpenFeedback()}
-                variant="outlined"
-                size="small"
-                sx={
-                  theme.palette.mode === "dark"
-                    ? {
-                        borderColor: alpha("#94a3b8", 0.2),
-                        color: alpha("#e2e8f0", 0.92),
-                      }
-                    : undefined
-                }
-              >
+              <Button onClick={() => void handleOpenFeedback()} variant="outlined" size="small">
                 我要反馈
               </Button>
             </Stack>
@@ -371,59 +273,17 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
         ) : (
           <Stack spacing={1} alignItems="center">
             <Tooltip title="检查更新">
-              <Button
-                onClick={() => checkForUpdates(messageApi)}
-                variant="outlined"
-                size="small"
-                sx={{
-                  minWidth: 0,
-                  px: 1.2,
-                  ...(theme.palette.mode === "dark"
-                    ? {
-                        borderColor: alpha("#94a3b8", 0.2),
-                        color: alpha("#e2e8f0", 0.92),
-                      }
-                    : undefined),
-                }}
-              >
+              <Button onClick={() => checkForUpdates(messageApi)} variant="outlined" size="small" sx={{ minWidth: 0, px: 1.2 }}>
                 更
               </Button>
             </Tooltip>
             <Tooltip title="更新日志">
-              <Button
-                onClick={() => setShowChangeLog(true)}
-                variant="outlined"
-                size="small"
-                sx={{
-                  minWidth: 0,
-                  px: 1.2,
-                  ...(theme.palette.mode === "dark"
-                    ? {
-                        borderColor: alpha("#94a3b8", 0.2),
-                        color: alpha("#e2e8f0", 0.92),
-                      }
-                    : undefined),
-                }}
-              >
+              <Button onClick={() => setShowChangeLog(true)} variant="outlined" size="small" sx={{ minWidth: 0, px: 1.2 }}>
                 志
               </Button>
             </Tooltip>
             <Tooltip title="我要反馈">
-              <Button
-                onClick={() => void handleOpenFeedback()}
-                variant="outlined"
-                size="small"
-                sx={{
-                  minWidth: 0,
-                  px: 1.2,
-                  ...(theme.palette.mode === "dark"
-                    ? {
-                        borderColor: alpha("#94a3b8", 0.2),
-                        color: alpha("#e2e8f0", 0.92),
-                      }
-                    : undefined),
-                }}
-              >
+              <Button onClick={() => void handleOpenFeedback()} variant="outlined" size="small" sx={{ minWidth: 0, px: 1.2 }}>
                 反
               </Button>
             </Tooltip>
@@ -449,10 +309,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
             width: effectiveDrawerWidth,
             border: "none",
             boxSizing: "border-box",
-            backgroundColor:
-              theme.palette.mode === "dark"
-                ? "rgba(8, 13, 24, 0.985)"
-                : alpha("#f8fbff", 0.98),
+            backgroundColor: "background.paper",
             overflow: "hidden",
             transition: theme.transitions.create("width", {
               easing: theme.transitions.easing.sharp,
@@ -486,14 +343,8 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
           sx={{
             p: { xs: 1.5, md: 2.5 },
             minHeight: "calc(100vh - 32px)",
-            borderRadius: { xs: "24px", md: "30px" },
-            bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === "dark" ? 0.9 : 0.88),
-            border: "1px solid transparent",
-            boxShadow:
-              theme.palette.mode === "dark"
-                ? "0 24px 60px rgba(2, 8, 23, 0.32)"
-                : "0 24px 60px rgba(15, 23, 42, 0.06)",
-            backdropFilter: "blur(18px)",
+            borderRadius: { xs: "12px", md: "12px" },
+            bgcolor: "background.paper",
             zoom: scale,
             transformOrigin: "top left",
           }}
