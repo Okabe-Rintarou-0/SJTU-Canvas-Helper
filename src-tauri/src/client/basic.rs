@@ -167,25 +167,20 @@ impl Client {
         token: &str,
     ) -> Result<()> {
         let url = format!(
-            "{}/api/v1/courses/{}/assignments/{}/submissions/update_grades",
+            "{}/api/v1/courses/{}/assignments/{}/submissions/{}",
             self.base_url.read().await,
             course_id,
-            assignment_id
+            assignment_id,
+            student_id,
         );
-        let mut form = Vec::new();
+        let mut form: Vec<(String, String)> = Vec::new();
         if let Some(grade) = grade {
-            form.push((
-                format!("grade_data[{student_id}][posted_grade]"),
-                grade.to_owned(),
-            ));
+            form.push(("submission[posted_grade]".to_owned(), grade.to_owned()));
         }
         if let Some(comment) = comment {
-            form.push((
-                format!("grade_data[{student_id}][text_comment]"),
-                comment.to_owned(),
-            ));
+            form.push(("comment[text_comment]".to_owned(), comment.to_owned()));
         }
-        self.post_form_with_token(&url, None::<&str>, &form, token)
+        self.put_form_with_token(&url, None::<&str>, &form, token)
             .await?
             .error_for_status()?;
         Ok(())
@@ -1146,12 +1141,12 @@ mod mock_tests {
         let student_id = 100i64;
 
         let mock = server.mock(|when, then| {
-            when.method(POST)
+            when.method(PUT)
                 .path(format!(
-                    "/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions/update_grades"
+                    "/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions/{student_id}"
                 ))
-                .body_contains("grade_data%5B100%5D%5Bposted_grade%5D=95")
-                .body_contains("grade_data%5B100%5D%5Btext_comment%5D=Good+job");
+                .body_contains("submission%5Bposted_grade%5D=95")
+                .body_contains("comment%5Btext_comment%5D=Good+job");
             then.status(200);
         });
 
@@ -1173,11 +1168,11 @@ mod mock_tests {
         let student_id = 100i64;
 
         let mock = server.mock(|when, then| {
-            when.method(POST)
+            when.method(PUT)
                 .path(format!(
-                    "/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions/update_grades"
+                    "/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions/{student_id}"
                 ))
-                .body("grade_data%5B100%5D%5Bposted_grade%5D=88.5");
+                .body("submission%5Bposted_grade%5D=88.5");
             then.status(200);
         });
 
@@ -1199,11 +1194,11 @@ mod mock_tests {
         let student_id = 100i64;
 
         let mock = server.mock(|when, then| {
-            when.method(POST)
+            when.method(PUT)
                 .path(format!(
-                    "/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions/update_grades"
+                    "/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions/{student_id}"
                 ))
-                .body("grade_data%5B100%5D%5Btext_comment%5D=Great+work");
+                .body("comment%5Btext_comment%5D=Great+work");
             then.status(200);
         });
 
@@ -1225,11 +1220,11 @@ mod mock_tests {
         let student_id = 100i64;
 
         let mock = server.mock(|when, then| {
-            when.method(POST)
+            when.method(PUT)
                 .path(format!(
-                    "/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions/update_grades"
+                    "/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions/{student_id}"
                 ))
-                .body_contains("grade_data%5B100%5D%5Bposted_grade%5D=90");
+                .body_contains("submission%5Bposted_grade%5D=90");
             then.status(400)
                 .json_body(json!({"errors": [{"message": "invalid args"}]}));
         });
@@ -1252,9 +1247,9 @@ mod mock_tests {
         let student_id = 100i64;
 
         let mock = server.mock(|when, then| {
-            when.method(POST)
+            when.method(PUT)
                 .path(format!(
-                    "/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions/update_grades"
+                    "/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions/{student_id}"
                 ))
                 .body("")
                 .header("Authorization", format!("Bearer {token}"));

@@ -19,6 +19,14 @@ import {
 import { alpha, useTheme } from "@mui/material/styles";
 
 const changeLogs = [{
+  version: "v3.0.8",
+  date: "2026/7/2",
+  items: [
+    "修复预览 modal 中点击评论输入框导致上方 renderer 消失的问题（稳定 files 数组引用，移除 viewer useMemo 多余依赖）。",
+    "修复全局键盘监听在输入框中按 Space 键误关闭预览的问题。",
+    "Canvas API 更新：update_grade 改用 PUT /submissions/:user_id，参数改为 submission[posted_grade] 和 comment[text_comment]。",
+  ]
+}, {
   version: "v3.0.7",
   date: "2026/7/2",
   items: [
