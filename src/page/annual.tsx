@@ -397,7 +397,7 @@ export default function AnnualPage() {
     const exportHeight = Math.ceil(element.getBoundingClientRect().height);
     return html2canvas(element, {
       backgroundColor:
-        options?.backgroundColor ?? (theme.palette.mode === "dark" ? "#07111d" : "#f4f7fb"),
+        options?.backgroundColor ?? (theme.palette.mode === "dark" ? "#11141a" : "#f2efe6"),
       scale: options?.scale ?? 2,
       useCORS: true,
       logging: false,
@@ -472,7 +472,7 @@ export default function AnnualPage() {
       }
       const canvas = await captureAnnualCard({
         scale: 1.2,
-        backgroundColor: theme.palette.mode === "dark" ? "#07111d" : "#ffffff",
+        backgroundColor: theme.palette.mode === "dark" ? "#11141a" : "#fffdf8",
       });
       const imgData = canvas.toDataURL("image/jpeg", 0.88);
       const pdf = new jsPDF({
@@ -533,7 +533,7 @@ export default function AnnualPage() {
                   <Typography
                     variant="h3"
                     sx={{
-                      fontWeight: 800,
+                      fontWeight: 700,
                       letterSpacing: "-0.03em",
                       lineHeight: 1.08,
                       textWrap: "balance",
@@ -829,7 +829,7 @@ export default function AnnualPage() {
                                 </Typography>
                                 <Typography
                                   variant="h4"
-                                  sx={{ fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1.05, mt: 0.75 }}
+                                  sx={{ fontWeight: 700, letterSpacing: "-0.04em", lineHeight: 1.05, mt: 0.75 }}
                                 >
                                   {storyCards[selectedStoryCard].title}
                                 </Typography>
@@ -848,7 +848,7 @@ export default function AnnualPage() {
 
                             <Typography
                               variant="h2"
-                              sx={{ fontWeight: 900, letterSpacing: "-0.06em", lineHeight: 1 }}
+                              sx={{ fontWeight: 700, letterSpacing: "-0.06em", lineHeight: 1 }}
                             >
                               {storyCards[selectedStoryCard].value}
                             </Typography>

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineRounded";
+import ForumRoundedIcon from "@mui/icons-material/ForumRounded";
 import LaunchRoundedIcon from "@mui/icons-material/LaunchRounded";
 import MarkEmailUnreadRoundedIcon from "@mui/icons-material/MarkEmailUnreadRounded";
 import PushPinRoundedIcon from "@mui/icons-material/PushPinRounded";
@@ -218,14 +219,14 @@ export default function DiscussionsPage() {
       {contextHolder}
       <Stack spacing={3}>
         <WorkspaceHero
-          chipLabel="Discussion Workspace"
+          chipLabel="讨论管理"
+          chipIcon={<ForumRoundedIcon />}
           title="讨论区"
           description="更清晰地查看课程讨论主题、发言流和未读情况。"
           aside={
             <Box
               sx={{
-                width: "100%",
-                maxWidth: { xs: "100%", lg: 680 },
+                width: { xs: "100%", lg: 680 },
                 alignSelf: { xs: "stretch", lg: "flex-start" },
               }}
             >

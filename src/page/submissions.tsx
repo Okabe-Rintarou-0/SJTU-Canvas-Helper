@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import ArticleRoundedIcon from "@mui/icons-material/ArticleRounded";
+import CheckCircleOutlineRoundedIcon from "@mui/icons-material/CheckCircleOutlineRounded";
+import CloudDownloadRoundedIcon from "@mui/icons-material/CloudDownloadRounded";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
 import PreviewRoundedIcon from "@mui/icons-material/PreviewRounded";
@@ -33,7 +35,6 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
 import { html, pinyin } from "pinyin-pro";
 import { ReactNode, useEffect, useMemo, useState } from "react";
 
@@ -44,6 +45,7 @@ import CourseSelect from "../components/course_select";
 import FileDownloadTable from "../components/file_download_table";
 import GradeStatisticChart from "../components/grade_statistic";
 import BasicLayout from "../components/layout";
+import { WorkspaceHero } from "../components/workspace_hero";
 import { getConfig, saveConfig } from "../lib/config";
 import { SUBMISSION_PAGE_HINT_ALERT_KEY } from "../lib/constants";
 import { useAppMessage } from "../lib/message";
@@ -132,7 +134,6 @@ function SubmissionGrade({
 import { surfaceCardSx } from "../lib/styles";
 
 export default function SubmissionsPage() {
-  const theme = useTheme();
   const [messageApi, contextHolder] = useAppMessage();
   const [operating, setOperating] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
@@ -535,79 +536,50 @@ export default function SubmissionsPage() {
           }
         />
 
-        <Card
-          sx={{
-            ...surfaceCardSx,
-            backgroundColor: theme.palette.background.paper,
-          }}
-        >
-          <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
-            <Stack spacing={2.25}>
-              <Stack
-                direction={{ xs: "column", lg: "row" }}
-                justifyContent="space-between"
-                spacing={2}
-              >
-                <Box>
-                  <Typography variant="h4" sx={{ fontWeight: 800 }}>
-                    作业批改
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    集中查看提交文件、批量下载、快速打分和管理评论。
-                  </Typography>
-                </Box>
-                <Box
-                  sx={{
-                    width: "100%",
-                    maxWidth: { xs: "100%", lg: 680 },
-                    alignSelf: { xs: "stretch", lg: "flex-start" },
-                  }}
-                >
-                  <CourseSelect
-                    onChange={(courseId) => void handleCourseSelect(courseId)}
-                    disabled={operating}
-                    courses={courses.data}
-                    value={selectedCourseId === -1 ? undefined : selectedCourseId}
-                  />
-                </Box>
-              </Stack>
-
-              <Box
-                sx={{
-                  display: "grid",
-                  gap: 2,
-                  gridTemplateColumns: {
-                    xs: "repeat(2, minmax(0, 1fr))",
-                    lg: "repeat(4, minmax(0, 1fr))",
-                  },
-                }}
-              >
-                {[
-                  { label: "提交文件", value: attachments.length },
-                  { label: "已选文件", value: selectedAttachments.length },
-                  { label: "未交学生", value: notSubmitStudents.length },
-                  { label: "下载任务", value: downloadTasks.length },
-                ].map((item) => (
-                  <Card
-                    key={item.label}
-                    sx={{
-                      borderRadius: "8px",
-                      border: "1px solid",
-                      borderColor: "divider",
-                    }}
-                  >
-                    <CardContent sx={{ p: 2 }}>
-                      <Typography variant="overline" color="text.secondary">
-                        {item.label}
-                      </Typography>
-                      <Typography variant="h4" sx={{ fontWeight: 800, mt: 1 }}>
-                        {item.value}
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                ))}
-              </Box>
-
+        <WorkspaceHero
+          chipLabel="提交批改"
+          chipIcon={<CloudDownloadRoundedIcon />}
+          title="作业批改"
+          description="集中查看提交文件、批量下载、快速打分和管理评论。"
+          aside={
+            <Box
+              sx={{
+                width: { xs: "100%", lg: 680 },
+                alignSelf: { xs: "stretch", lg: "flex-start" },
+              }}
+            >
+              <CourseSelect
+                onChange={(courseId) => void handleCourseSelect(courseId)}
+                disabled={operating}
+                courses={courses.data}
+                value={selectedCourseId === -1 ? undefined : selectedCourseId}
+              />
+            </Box>
+          }
+          stats={[
+            {
+              label: "提交文件",
+              value: attachments.length,
+              icon: <ArticleRoundedIcon />,
+            },
+            {
+              label: "已选文件",
+              value: selectedAttachments.length,
+              icon: <CheckCircleOutlineRoundedIcon />,
+            },
+            {
+              label: "未交学生",
+              value: notSubmitStudents.length,
+              icon: <WarningAmberRoundedIcon />,
+            },
+            {
+              label: "下载任务",
+              value: downloadTasks.length,
+              icon: <CloudDownloadRoundedIcon />,
+            },
+          ]}
+          footer={
+            <Stack spacing={1.5}>
               <Box
                 sx={{
                   display: "grid",
@@ -709,8 +681,8 @@ export default function SubmissionsPage() {
                 </Button>
               </Stack>
             </Stack>
-          </CardContent>
-        </Card>
+          }
+        />
 
         {selectedCourseId > 0 && selectedAssignment ? (
           <Card sx={surfaceCardSx}>

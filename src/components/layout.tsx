@@ -34,7 +34,7 @@ import {
   Typography,
   useMediaQuery,
 } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
+import { alpha, useTheme } from "@mui/material/styles";
 import { useAppMessage } from "../lib/message";
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -163,7 +163,23 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
             transition: "opacity 0.2s ease",
           }}
         >
-          <GridViewRoundedIcon color="primary" />
+          <Box
+            sx={{
+              width: 38,
+              height: 38,
+              borderRadius: "10px",
+              display: "grid",
+              placeItems: "center",
+              flexShrink: 0,
+              color: "primary.main",
+              bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
+              border: "1px solid",
+              borderColor: (theme) => alpha(theme.palette.primary.main, 0.22),
+              "& svg": { fontSize: 22 },
+            }}
+          >
+            <GridViewRoundedIcon />
+          </Box>
           <Box sx={{ minWidth: 0 }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
               Canvas Helper
@@ -203,11 +219,24 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
                 px: collapsed && isDesktop ? 1.25 : 1.5,
                 py: 0.75,
                 borderRadius: "8px",
+                position: "relative",
                 justifyContent: collapsed && isDesktop ? "center" : "flex-start",
                 color: "inherit",
+                transition: "background-color 0.18s ease, color 0.18s ease",
                 "&.Mui-selected": {
                   bgcolor: "action.selected",
                   color: "primary.main",
+                  "&::before": {
+                    content: collapsed && isDesktop ? "none" : '""',
+                    position: "absolute",
+                    left: 0,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    height: 18,
+                    width: 3,
+                    borderRadius: 999,
+                    bgcolor: "primary.main",
+                  },
                 },
               }}
             >
@@ -311,6 +340,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
             boxSizing: "border-box",
             backgroundColor: "background.paper",
             overflow: "hidden",
+            borderRadius: 0,
             transition: theme.transitions.create("width", {
               easing: theme.transitions.easing.sharp,
               duration: theme.transitions.duration.standard,
@@ -340,6 +370,8 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
         ) : null}
 
         <Box
+          key={location.pathname}
+          className="page-enter"
           sx={{
             p: { xs: 1.5, md: 2.5 },
             minHeight: "calc(100vh - 32px)",

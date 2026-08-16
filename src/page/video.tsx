@@ -2,8 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
 import ClosedCaptionRoundedIcon from "@mui/icons-material/ClosedCaptionRounded";
+import CloudDownloadRoundedIcon from "@mui/icons-material/CloudDownloadRounded";
 import PictureAsPdfRoundedIcon from "@mui/icons-material/PictureAsPdfRounded";
 import PsychologyRoundedIcon from "@mui/icons-material/PsychologyRounded";
+import SmartDisplayRoundedIcon from "@mui/icons-material/SmartDisplayRounded";
 import SwapHorizRoundedIcon from "@mui/icons-material/SwapHorizRounded";
 import VideoLibraryRoundedIcon from "@mui/icons-material/VideoLibraryRounded";
 import {
@@ -30,7 +32,6 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
 import { useEffect, useRef, useState } from "react";
 import type { DraggableData, DraggableEvent } from "react-draggable";
 import Draggable from "react-draggable";
@@ -45,6 +46,7 @@ import BasicLayout from "../components/layout";
 import PPTDownloadTable from "../components/ppt_download_table";
 import VideoAggregator from "../components/video_aggregator";
 import VideoDownloadTable from "../components/video_download_table";
+import { WorkspaceHero } from "../components/workspace_hero";
 import videoStyles from "../css/video_player.module.css";
 import { getConfig, saveConfig } from "../lib/config";
 import { VIDEO_PAGE_HINT_ALERT_KEY } from "../lib/constants";
@@ -77,7 +79,6 @@ function timestampToSeconds(timestamp: string): number {
 }
 
 export default function VideoPage() {
-  const theme = useTheme();
   const [videoDownloadTasks, setVideoDownloadTasks] = useState<VideoDownloadTask[]>([]);
   const [pptDownloadTasks, setPPTDownloadTasks] = useState<DownloadTask[]>([]);
   const [operating, setOperating] = useState(false);
@@ -812,79 +813,50 @@ export default function VideoPage() {
           </DialogActions>
         </Dialog>
 
-        <Card
-          sx={{
-            ...surfaceCardSx,
-            backgroundColor: theme.palette.background.paper,
-          }}
-        >
-          <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
-            <Stack spacing={2.25}>
-              <Stack
-                direction={{ xs: "column", lg: "row" }}
-                justifyContent="space-between"
-                spacing={2}
-              >
-                <Box>
-                  <Typography variant="h4" sx={{ fontWeight: 800 }}>
-                    视频中心
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    选择课程录像，下载视频、字幕、PPT，并支持双屏同步播放。
-                  </Typography>
-                </Box>
-                {!notLogin ? (
-                  <Box
-                    sx={{
-                      width: "100%",
-                      maxWidth: { xs: "100%", lg: 680 },
-                      alignSelf: { xs: "stretch", lg: "flex-start" },
-                    }}
-                  >
-                    <CourseSelect
-                      courses={courses.data}
-                      onChange={(courseId) => void handleSelectCourse(courseId)}
-                    />
-                  </Box>
-                ) : null}
-              </Stack>
-
+        <WorkspaceHero
+          chipLabel="视频管理"
+          chipIcon={<SmartDisplayRoundedIcon />}
+          title="视频中心"
+          description="选择课程录像，下载视频、字幕、PPT，并支持双屏同步播放。"
+          aside={
+            !notLogin ? (
               <Box
                 sx={{
-                  display: "grid",
-                  gap: 2,
-                  gridTemplateColumns: {
-                    xs: "repeat(2, minmax(0, 1fr))",
-                    lg: "repeat(4, minmax(0, 1fr))",
-                  },
+                width: { xs: "100%", lg: 680 },
+                alignSelf: { xs: "stretch", lg: "flex-start" },
                 }}
               >
-                {[
-                  { label: "课程视频", value: videos.length },
-                  { label: "播放片段", value: plays.length },
-                  { label: "视频任务", value: videoDownloadTasks.length },
-                  { label: "PPT 任务", value: pptDownloadTasks.length },
-                ].map((item) => (
-                  <Card
-                    key={item.label}
-                    sx={{
-                      borderRadius: "8px",
-                      border: "1px solid",
-                      borderColor: "divider",
-                    }}
-                  >
-                    <CardContent sx={{ p: 2 }}>
-                      <Typography variant="overline" color="text.secondary">
-                        {item.label}
-                      </Typography>
-                      <Typography variant="h4" sx={{ fontWeight: 800, mt: 1 }}>
-                        {item.value}
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                ))}
+                <CourseSelect
+                  courses={courses.data}
+                  onChange={(courseId) => void handleSelectCourse(courseId)}
+                />
               </Box>
-
+            ) : undefined
+          }
+          stats={[
+            {
+              label: "课程视频",
+              value: videos.length,
+              icon: <VideoLibraryRoundedIcon />,
+            },
+            {
+              label: "播放片段",
+              value: plays.length,
+              icon: <ClosedCaptionRoundedIcon />,
+            },
+            {
+              label: "视频任务",
+              value: videoDownloadTasks.length,
+              icon: <CloudDownloadRoundedIcon />,
+            },
+            {
+              label: "PPT 任务",
+              value: pptDownloadTasks.length,
+              icon: <PictureAsPdfRoundedIcon />,
+            },
+          ]}
+          footer={
+            <Stack spacing={1.5}>
               {!notLogin ? (
                 <Box
                   sx={{
@@ -956,8 +928,8 @@ export default function VideoPage() {
                 <Chip label={selectedCourse.name} color="primary" variant="outlined" />
               ) : null}
             </Stack>
-          </CardContent>
-        </Card>
+          }
+        />
 
         {!notLogin ? (
           <>

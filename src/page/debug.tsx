@@ -1,4 +1,4 @@
-﻿import BugReportRoundedIcon from "@mui/icons-material/BugReportRounded";
+﻿import DeveloperBoardRoundedIcon from "@mui/icons-material/DeveloperBoardRounded";
 import ClearAllRoundedIcon from "@mui/icons-material/ClearAllRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import TerminalRoundedIcon from "@mui/icons-material/TerminalRounded";
@@ -30,6 +30,7 @@ import { alpha, useTheme } from "@mui/material/styles";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import BasicLayout from "../components/layout";
+import { WorkspaceHero } from "../components/workspace_hero";
 import { clearNetworkLogs, listNetworkLogs } from "../lib/config";
 import { useConfigSelector } from "../lib/hooks";
 import { useAppMessage } from "../lib/message";
@@ -316,6 +317,22 @@ export default function DebugPage() {
     <BasicLayout>
       {contextHolder}
       <Stack spacing={3}>
+        <WorkspaceHero
+          chipLabel="Debug 控制台"
+          chipIcon={<DeveloperBoardRoundedIcon />}
+          title="Debug 控制台"
+          description="查看最近 1000 条网络请求，快速排查请求头、请求体和响应状态。"
+          aside={
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              <Chip
+                color={config?.debug_mode ? "success" : "default"}
+                label={config?.debug_mode ? "Debug 模式已开启" : "Debug 模式未开启"}
+              />
+              <Chip color="primary" variant="outlined" label={`当前 ${logs.length} 条`} />
+            </Stack>
+          }
+        />
+
         <Card
           sx={{
             borderRadius: "24px",
@@ -328,47 +345,6 @@ export default function DebugPage() {
         >
           <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
             <Stack spacing={2.25}>
-              <Stack
-                direction={{ xs: "column", md: "row" }}
-                spacing={2}
-                justifyContent="space-between"
-                alignItems={{ xs: "flex-start", md: "center" }}
-              >
-                <Box>
-                  <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1 }}>
-                        <Box
-                          sx={{
-                            width: 44,
-                            height: 44,
-                            borderRadius: "16px",
-                            display: "grid",
-                            placeItems: "center",
-                            bgcolor: alpha(theme.palette.primary.main, 0.08),
-                            color: "primary.main",
-                          }}
-                        >
-                          <BugReportRoundedIcon />
-                        </Box>
-                    <Box>
-                      <Typography variant="h4" sx={{ fontWeight: 800 }}>
-                        Debug 控制台
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        查看最近 1000 条网络请求，快速排查请求头、请求体和响应状态。
-                      </Typography>
-                    </Box>
-                  </Stack>
-                </Box>
-
-                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                  <Chip
-                    color={config?.debug_mode ? "success" : "default"}
-                    label={config?.debug_mode ? "Debug 模式已开启" : "Debug 模式未开启"}
-                  />
-                  <Chip color="primary" variant="outlined" label={`当前 ${logs.length} 条`} />
-                </Stack>
-              </Stack>
-
               {!config?.debug_mode ? (
                 <Alert severity="info" sx={{ borderRadius: "18px" }}>
                   请先在设置页面开启 Debug 模式，之后新的网络请求才会被记录到这里。

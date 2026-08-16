@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import AssignmentRoundedIcon from "@mui/icons-material/AssignmentRounded";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import EditCalendarRoundedIcon from "@mui/icons-material/EditCalendarRounded";
 import ExpandLessRoundedIcon from "@mui/icons-material/ExpandLessRounded";
@@ -475,14 +476,14 @@ export default function AssignmentsPage() {
 
       <Stack spacing={3}>
         <WorkspaceHero
-          chipLabel="Assignment Workspace"
+          chipLabel="作业管理"
+          chipIcon={<AssignmentRoundedIcon />}
           title="作业工作台"
           description="集中查看课程作业、提交状态、得分概览和历史评论。"
           aside={
             <Box
               sx={{
-                width: "100%",
-                maxWidth: { xs: "100%", lg: 640 },
+                width: { xs: "100%", lg: 640 },
                 alignSelf: { xs: "stretch", lg: "flex-start" },
               }}
             >

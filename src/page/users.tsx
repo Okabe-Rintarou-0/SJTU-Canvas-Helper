@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import CheckCircleOutlineRoundedIcon from "@mui/icons-material/CheckCircleOutlineRounded";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import GroupRoundedIcon from "@mui/icons-material/GroupRounded";
 import {
@@ -17,14 +18,13 @@ import {
   TablePagination,
   TableRow,
   TextField,
-  Typography,
   InputAdornment,
 } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import CourseSelect from "../components/course_select";
 import BasicLayout from "../components/layout";
+import { WorkspaceHero } from "../components/workspace_hero";
 import { useCurrentTermCourses } from "../lib/hooks";
 import { useAppMessage } from "../lib/message";
 import { ExportUsersConfig, User } from "../lib/model";
@@ -33,7 +33,6 @@ import { formatDate } from "../lib/utils";
 import { surfaceCardSx } from "../lib/styles";
 
 export default function UsersPage() {
-  const theme = useTheme();
   const [messageApi, contextHolder] = useAppMessage();
   const [operating, setOperating] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
@@ -124,98 +123,57 @@ export default function UsersPage() {
     <BasicLayout>
       {contextHolder}
       <Stack spacing={3}>
-        <Card
-          sx={{
-            ...surfaceCardSx,
-            backgroundColor: theme.palette.background.paper,
-          }}
-        >
-          <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
-            <Stack spacing={2.25}>
-              <Stack
-                direction={{ xs: "column", lg: "row" }}
-                justifyContent="space-between"
-                spacing={2}
-              >
-                <Box>
-                  <Typography variant="h4" sx={{ fontWeight: 800 }}>
-                    人员导出
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    选择课程后即可查看成员信息，并导出全部或选中的人员名单。
-                  </Typography>
-                </Box>
-                <Box
-                  sx={{
-                    width: "100%",
-                    maxWidth: { xs: "100%", lg: 680 },
-                    alignSelf: { xs: "stretch", lg: "flex-start" },
-                  }}
-                >
-                  <CourseSelect
-                    onChange={(courseId) => void handleCourseSelect(courseId)}
-                    disabled={operating}
-                    courses={courses.data}
-                    value={selectedCourseId === -1 ? undefined : selectedCourseId}
-                  />
-                </Box>
-              </Stack>
-
-              <Box
-                sx={{
-                  display: "grid",
-                  gap: 2,
-                  gridTemplateColumns: {
-                    xs: "repeat(2, minmax(0, 1fr))",
-                    lg: "repeat(4, minmax(0, 1fr))",
-                  },
-                }}
-              >
-                {[
-                  { label: "总人数", value: users.length },
-                  { label: "已选择", value: selectedUsers.length },
-                  { label: "当前课程", value: selectedCourse ? 1 : 0 },
-                  { label: "导出格式", value: "Excel" },
-                ].map((item) => (
-                  <Card
-                    key={item.label}
-                    sx={{
-                      borderRadius: "8px",
-                      border: "1px solid",
-                      borderColor: "divider",
-                    }}
-                  >
-                    <CardContent sx={{ p: 2 }}>
-                      <Typography variant="overline" color="text.secondary">
-                        {item.label}
-                      </Typography>
-                      <Typography variant="h4" sx={{ fontWeight: 800, mt: 1 }}>
-                        {item.value}
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                ))}
-              </Box>
-
-              <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
-                {selectedCourse ? (
-                  <Chip
-                    icon={<GroupRoundedIcon />}
-                    label={selectedCourse.name}
-                    color="primary"
-                    variant="outlined"
-                  />
-                ) : (
-                  <Chip label="请选择课程" variant="outlined" />
-                )}
+        <WorkspaceHero
+          chipLabel="成员导出"
+          chipIcon={<GroupRoundedIcon />}
+          title="人员导出"
+          description="选择课程后即可查看成员信息，并导出全部或选中的人员名单。"
+          aside={
+            <Box
+              sx={{
+                width: { xs: "100%", lg: 680 },
+                alignSelf: { xs: "stretch", lg: "flex-start" },
+              }}
+            >
+              <CourseSelect
+                onChange={(courseId) => void handleCourseSelect(courseId)}
+                disabled={operating}
+                courses={courses.data}
+                value={selectedCourseId === -1 ? undefined : selectedCourseId}
+              />
+            </Box>
+          }
+          stats={[
+            {
+              label: "总人数",
+              value: users.length,
+              icon: <GroupRoundedIcon />,
+            },
+            {
+              label: "已选择",
+              value: selectedUsers.length,
+              icon: <CheckCircleOutlineRoundedIcon />,
+            },
+          ]}
+          footer={
+            <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
+              {selectedCourse ? (
                 <Chip
-                  label={`已选择 ${selectedUsers.length} / ${users.length}`}
+                  icon={<GroupRoundedIcon />}
+                  label={selectedCourse.name}
+                  color="primary"
                   variant="outlined"
                 />
-              </Stack>
+              ) : (
+                <Chip label="请选择课程" variant="outlined" />
+              )}
+              <Chip
+                label={`已选择 ${selectedUsers.length} / ${users.length}`}
+                variant="outlined"
+              />
             </Stack>
-          </CardContent>
-        </Card>
+          }
+        />
 
         <Card sx={surfaceCardSx}>
           <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>

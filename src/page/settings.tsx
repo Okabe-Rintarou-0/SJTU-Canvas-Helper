@@ -7,6 +7,7 @@ import KeyRoundedIcon from "@mui/icons-material/KeyRounded";
 import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
 import PreviewRoundedIcon from "@mui/icons-material/PreviewRounded";
 import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
+import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import TipsAndUpdatesRoundedIcon from "@mui/icons-material/TipsAndUpdatesRounded";
 import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
@@ -36,7 +37,7 @@ import {
   Typography
 } from "@mui/material";
 import { ProviderIcon } from "@lobehub/icons";
-import { alpha, useTheme } from "@mui/material/styles";
+import { alpha, useTheme, type Theme } from "@mui/material/styles";
 import { surfaceCardSx } from "../lib/styles";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -44,6 +45,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactJson from "react-json-view-ts";
 import BasicLayout from "../components/layout";
 import LogModal from "../components/log_modal";
+import { WorkspaceHero } from "../components/workspace_hero";
 import { LoginAlert } from "../components/login_alert";
 import { getConfig, saveConfig, updateConfig } from "../lib/config";
 import { useConfigDispatch, useQRCode } from "../lib/hooks";
@@ -122,7 +124,10 @@ function detectProviderKey(baseUrl: string): string | null {
 
 const cardSx = {
   ...surfaceCardSx,
-  boxShadow: "0 24px 60px rgba(15, 23, 42, 0.08)",
+  boxShadow: (theme: Theme) =>
+    theme.palette.mode === "dark"
+      ? "inset 0 1px 0 rgba(255,255,255,0.04)"
+      : "0 12px 32px rgba(28, 30, 36, 0.06)",
 };
 
 const fullWidthChipSx = {
@@ -221,7 +226,6 @@ export default function SettingsPage() {
   const [messageApi, contextHolder] = useAppMessage();
   const tokenFieldRef = useRef<HTMLDivElement>(null);
   const savePathFieldRef = useRef<HTMLDivElement>(null);
-  const saveButtonRef = useRef<HTMLDivElement>(null);
   const latestFormDataRef = useRef<AppConfig | null>(null);
   const initialSnapshotRef = useRef<string>("");
   const [accounts, setAccounts] = useState<string[]>([]);
@@ -698,7 +702,7 @@ export default function SettingsPage() {
           variant="contained"
           onClick={handleSaveConfig}
           startIcon={<SaveRoundedIcon />}
-          sx={{ minWidth: { xs: "100%", sm: 164 } }}
+          sx={{ minWidth: { xs: "100%", sm: 168 } }}
         >
           {label}
         </Button>
@@ -721,6 +725,12 @@ export default function SettingsPage() {
         }}
       >
         <Stack spacing={3}>
+          <WorkspaceHero
+            chipLabel="系统设置"
+            chipIcon={<SettingsRoundedIcon />}
+            title="系统设置"
+            description="配置账号连接、界面偏好与高级选项。"
+          />
           <Box
             sx={{
               display: "grid",
@@ -925,6 +935,16 @@ export default function SettingsPage() {
                         <MenuItem value="Default">本部</MenuItem>
                         <MenuItem value="JI">密院</MenuItem>
                       </TextField>
+                    </Box>
+
+                    <Box>
+                      <Button
+                        variant="outlined"
+                        onClick={handleTestToken}
+                        startIcon={<AutoAwesomeRoundedIcon />}
+                      >
+                        测试 Canvas Token
+                      </Button>
                     </Box>
 
                     <Box
@@ -1766,220 +1786,36 @@ export default function SettingsPage() {
             <Stack spacing={3}>
               <Card sx={cardSx}>
                 <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-                  <Stack spacing={2.75}>
+                  <Stack spacing={2}>
                     <Box>
-                      <Typography variant="h5">快捷操作</Typography>
+                      <Typography variant="h5">实用工具</Typography>
                       <Typography variant="body2" color="text.secondary">
-                        把最常用的保存、测试和排障入口收在一起，减少来回滚动查找。
+                        打开配置文件目录，或查看运行日志以排查问题。
                       </Typography>
                     </Box>
 
                     <Box
-                      ref={saveButtonRef}
                       sx={{
-                        p: 2,
-                        borderRadius: "24px",
-                        border: "1px solid",
-                        borderColor: alpha(theme.palette.primary.main, 0.16),
-                        background: `linear-gradient(135deg, ${alpha(
-                          theme.palette.primary.main,
-                          0.14
-                        )} 0%, ${alpha(theme.palette.background.paper, 0.96)} 100%)`,
+                        display: "grid",
+                        gap: 1.25,
+                        gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
                       }}
                     >
-                      <Stack spacing={1.5}>
-                        <Stack
-                          direction="row"
-                          spacing={1}
-                          alignItems="center"
-                          justifyContent="space-between"
-                        >
-                          <Box>
-                            <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
-                              主操作
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                              完成修改后优先在这里保存，避免配置和界面状态不同步。
-                            </Typography>
-                          </Box>
-                          <Chip
-                            size="small"
-                            color={dirty ? "warning" : "success"}
-                            label={dirty ? "有未保存修改" : "已同步"}
-                          />
-                        </Stack>
-
-                        <Button
-                          fullWidth
-                          size="large"
-                          variant="contained"
-                          startIcon={<SaveRoundedIcon />}
-                          onClick={handleSaveConfig}
-                          sx={{
-                            minHeight: 56,
-                            borderRadius: "18px",
-                            fontWeight: 700,
-                            boxShadow: "0 18px 36px rgba(15, 23, 42, 0.14)",
-                          }}
-                        >
-                          保存全部设置
-                        </Button>
-                      </Stack>
-                    </Box>
-
-                    <Box>
-                      <Typography
-                        variant="overline"
-                        sx={{
-                          display: "block",
-                          mb: 1.25,
-                          fontWeight: 800,
-                          letterSpacing: "0.08em",
-                          color: "text.secondary",
-                        }}
+                      <Button
+                        variant="outlined"
+                        onClick={handleOpenConfigDir}
+                        startIcon={<FolderOpenRoundedIcon />}
                       >
-                        测试与排障
-                      </Typography>
-
-                      <Box
-                        sx={{
-                          display: "grid",
-                          gap: 1.25,
-                          gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
-                        }}
+                        打开配置目录
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        onClick={() => setShowLogModal(true)}
+                        startIcon={<PreviewRoundedIcon />}
                       >
-                        <Button
-                          variant="outlined"
-                          onClick={handleTestToken}
-                          sx={{
-                            minHeight: 88,
-                            px: 2,
-                            py: 1.5,
-                            borderRadius: "20px",
-                            justifyContent: "flex-start",
-                            textAlign: "left",
-                            borderColor: alpha(theme.palette.divider, 0.9),
-                          }}
-                        >
-                          <Stack spacing={0.5} alignItems="flex-start">
-                            <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                              测试 Canvas Token
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              快速确认账号令牌是否可用
-                            </Typography>
-                          </Stack>
-                        </Button>
-
-                        <Button
-                          variant="outlined"
-                          onClick={handleTestApiKey}
-                          startIcon={<AutoAwesomeRoundedIcon />}
-                          sx={{
-                            minHeight: 88,
-                            px: 2,
-                            py: 1.5,
-                            borderRadius: "20px",
-                            justifyContent: "flex-start",
-                            textAlign: "left",
-                            borderColor: alpha(theme.palette.divider, 0.9),
-                          }}
-                        >
-                          <Stack spacing={0.5} alignItems="flex-start">
-                            <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                              测试 LLM 连接
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              验证 Base URL、Model 与 API Key
-                            </Typography>
-                          </Stack>
-                        </Button>
-
-                        <Button
-                          variant="outlined"
-                          onClick={handleOpenConfigDir}
-                          startIcon={<FolderOpenRoundedIcon />}
-                          sx={{
-                            minHeight: 88,
-                            px: 2,
-                            py: 1.5,
-                            borderRadius: "20px",
-                            justifyContent: "flex-start",
-                            textAlign: "left",
-                            borderColor: alpha(theme.palette.divider, 0.9),
-                          }}
-                        >
-                          <Stack spacing={0.5} alignItems="flex-start">
-                            <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                              打开配置目录
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              查看配置文件与本地存储位置
-                            </Typography>
-                          </Stack>
-                        </Button>
-
-                        <Button
-                          variant="outlined"
-                          onClick={() => setShowLogModal(true)}
-                          startIcon={<PreviewRoundedIcon />}
-                          sx={{
-                            minHeight: 88,
-                            px: 2,
-                            py: 1.5,
-                            borderRadius: "20px",
-                            justifyContent: "flex-start",
-                            textAlign: "left",
-                            borderColor: alpha(theme.palette.divider, 0.9),
-                          }}
-                        >
-                          <Stack spacing={0.5} alignItems="flex-start">
-                            <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                              查看运行日志
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              排查登录、下载和接口调用异常
-                            </Typography>
-                          </Stack>
-                        </Button>
-                      </Box>
+                        查看运行日志
+                      </Button>
                     </Box>
-                  </Stack>
-                </CardContent>
-              </Card>
-
-              <Card sx={cardSx}>
-                <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-                  <Stack spacing={2}>
-                    <Box>
-                      <Typography variant="h5">配置状态</Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        帮助你快速判断当前配置是否完整，以及页面是否存在未保存修改。
-                      </Typography>
-                    </Box>
-
-                    <Stack spacing={1.25} sx={{ width: "100%" }}>
-                      <Chip
-                        color={dirty ? "warning" : "success"}
-                        label={dirty ? "有未保存修改" : "已与本地配置同步"}
-                        sx={fullWidthChipSx}
-                      />
-                      <Chip
-                        color={formData?.token ? "success" : "default"}
-                        label={formData?.token ? "Token 已填写" : "Token 待填写"}
-                        sx={fullWidthChipSx}
-                      />
-                      <Chip
-                        color={formData?.save_path ? "success" : "default"}
-                        label={formData?.save_path ? "保存目录已配置" : "保存目录待配置"}
-                        sx={fullWidthChipSx}
-                      />
-                      <Chip
-                        color={formData?.llm_api_key ? "info" : "default"}
-                        label={formData?.llm_api_key ? "LLM 功能已接入" : "LLM 功能未接入"}
-                        sx={fullWidthChipSx}
-                      />
-                    </Stack>
                   </Stack>
                 </CardContent>
               </Card>
@@ -2031,34 +1867,6 @@ export default function SettingsPage() {
                 </CardContent>
               </Card>
 
-              <Card
-                sx={{
-                  ...cardSx,
-                  borderColor: alpha(theme.palette.error.main, 0.24),
-                  bgcolor: alpha(theme.palette.error.main, 0.04),
-                }}
-              >
-                <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-                  <Stack spacing={2}>
-                    <Box>
-                      <Typography variant="h5">危险操作</Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        删除账号会移除当前账户配置。默认账号不允许删除，以避免误操作。
-                      </Typography>
-                    </Box>
-
-                    <Button
-                      color="error"
-                      variant="contained"
-                      onClick={handleDeleteAccount}
-                      disabled={currentAccount === "Default"}
-                      startIcon={<DeleteOutlineRoundedIcon />}
-                    >
-                      删除当前账号
-                    </Button>
-                  </Stack>
-                </CardContent>
-              </Card>
             </Stack>
           </Box>
         </Stack>

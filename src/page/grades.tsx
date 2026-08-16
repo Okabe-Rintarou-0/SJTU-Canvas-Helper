@@ -1,6 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
+import AssignmentRoundedIcon from "@mui/icons-material/AssignmentRounded";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
+import FactCheckRoundedIcon from "@mui/icons-material/FactCheckRounded";
+import GroupRoundedIcon from "@mui/icons-material/GroupRounded";
 import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
+import ScheduleRoundedIcon from "@mui/icons-material/ScheduleRounded";
 import {
   Alert,
   Box,
@@ -23,13 +27,13 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useEffect, useMemo, useState } from "react";
 
 import CourseSelect from "../components/course_select";
 import BasicLayout from "../components/layout";
 import GradeStatisticChart from "../components/grade_statistic";
+import { WorkspaceHero } from "../components/workspace_hero";
 import { getConfig } from "../lib/config";
 import { useAppMessage } from "../lib/message";
 import {
@@ -61,7 +65,6 @@ interface ExportInfo {
 import { surfaceCardSx } from "../lib/styles";
 
 export default function GradePage() {
-  const theme = useTheme();
   const [selectedCourseId, setSelectedCourseId] = useState<number | undefined>();
   const [studentIds, setStudentIds] = useState<number[]>([]);
   const [currentView, setCurrentView] = useState("overview");
@@ -348,104 +351,73 @@ export default function GradePage() {
     <BasicLayout>
       {contextHolder}
       <Stack spacing={3}>
-        <Card
-          sx={{
-            ...surfaceCardSx,
-            backgroundColor: theme.palette.background.paper,
-          }}
-        >
-          <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
-            <Stack spacing={2.25}>
-              <Stack
-                direction={{ xs: "column", lg: "row" }}
-                justifyContent="space-between"
-                spacing={2}
-              >
-                <Box>
-                  <Typography variant="h4" sx={{ fontWeight: 800 }}>
-                    评分册
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    批量查看学生作业成绩、录入分数，并导出 Excel 成绩表。
-                  </Typography>
-                </Box>
-                <Box
-                  sx={{
-                    width: "100%",
-                    maxWidth: { xs: "100%", lg: 640 },
-                    alignSelf: { xs: "stretch", lg: "flex-start" },
-                  }}
-                >
-                  <CourseSelect
-                    courses={courses.data}
-                    onChange={setSelectedCourseId}
-                    value={selectedCourseId}
-                  />
-                </Box>
-              </Stack>
-
-              <Box
-                sx={{
-                  display: "grid",
-                  gap: 2,
-                  gridTemplateColumns: {
-                    xs: "repeat(2, minmax(0, 1fr))",
-                    lg: "repeat(4, minmax(0, 1fr))",
-                  },
-                }}
-              >
-                {[
-                  { label: "作业数量", value: gradeSummary.totalAssignments },
-                  { label: "学生人数", value: gradeSummary.totalStudents },
-                  { label: "已评分条目", value: gradeSummary.gradedCount },
-                  { label: "已截止作业", value: gradeSummary.pendingAssignments },
-                ].map((item) => (
-                  <Card
-                    key={item.label}
-                    sx={{
-                      borderRadius: "8px",
-                      border: "1px solid",
-                      borderColor: "divider",
-                    }}
-                  >
-                    <CardContent sx={{ p: 2 }}>
-                      <Typography variant="overline" color="text.secondary">
-                        {item.label}
-                      </Typography>
-                      <Typography variant="h4" sx={{ fontWeight: 800, mt: 1 }}>
-                        {item.value}
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                ))}
-              </Box>
-
-              <Stack
-                direction={{ xs: "column", md: "row" }}
-                justifyContent="space-between"
-                spacing={1.5}
-              >
-                {selectedCourse ? (
-                  <Chip
-                    label={selectedCourse.name}
-                    color="primary"
-                    variant="outlined"
-                  />
-                ) : (
-                  <Chip label="请选择课程" variant="outlined" />
-                )}
-                <Button
+        <WorkspaceHero
+          chipLabel="成绩管理"
+          chipIcon={<FactCheckRoundedIcon />}
+          title="评分册"
+          description="批量查看学生作业成绩、录入分数，并导出 Excel 成绩表。"
+          aside={
+            <Box
+              sx={{
+                width: { xs: "100%", lg: 640 },
+                alignSelf: { xs: "stretch", lg: "flex-start" },
+              }}
+            >
+              <CourseSelect
+                courses={courses.data}
+                onChange={setSelectedCourseId}
+                value={selectedCourseId}
+              />
+            </Box>
+          }
+          stats={[
+            {
+              label: "作业数量",
+              value: gradeSummary.totalAssignments,
+              icon: <AssignmentRoundedIcon />,
+            },
+            {
+              label: "学生人数",
+              value: gradeSummary.totalStudents,
+              icon: <GroupRoundedIcon />,
+            },
+            {
+              label: "已评分条目",
+              value: gradeSummary.gradedCount,
+              icon: <FactCheckRoundedIcon />,
+            },
+            {
+              label: "已截止作业",
+              value: gradeSummary.pendingAssignments,
+              icon: <ScheduleRoundedIcon />,
+            },
+          ]}
+          footer={
+            <Stack
+              direction={{ xs: "column", md: "row" }}
+              justifyContent="space-between"
+              spacing={1.5}
+            >
+              {selectedCourse ? (
+                <Chip
+                  label={selectedCourse.name}
+                  color="primary"
                   variant="outlined"
-                  startIcon={<RefreshRoundedIcon />}
-                  onClick={() => userSubmissions.mutate()}
-                  disabled={isLoading}
-                >
-                  刷新数据
-                </Button>
-              </Stack>
+                />
+              ) : (
+                <Chip label="请选择课程" variant="outlined" />
+              )}
+              <Button
+                variant="outlined"
+                startIcon={<RefreshRoundedIcon />}
+                onClick={() => userSubmissions.mutate()}
+                disabled={isLoading}
+              >
+                刷新数据
+              </Button>
             </Stack>
-          </CardContent>
-        </Card>
+          }
+        />
 
         <Card sx={surfaceCardSx}>
           <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>

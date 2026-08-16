@@ -254,7 +254,7 @@ export default function CalendarPage() {
       <Box sx={{ minHeight: "100%", color: "text.primary" }}>
         <Stack spacing={3}>
           <WorkspaceHero
-            chipLabel="Calendar Workspace"
+            chipLabel="日程管理"
             chipIcon={<CalendarMonthRoundedIcon />}
             title="日历与 DDL 工作台"
             description="更适合扫读、排程和追踪作业截止日期的月历视图。"
@@ -320,7 +320,7 @@ export default function CalendarPage() {
               gap: 3,
               gridTemplateColumns: {
                 xs: "minmax(0, 1fr)",
-                xl: "minmax(0, 1.5fr) minmax(320px, 0.78fr)",
+                xl: "minmax(0, 2.2fr) minmax(300px, 0.55fr)",
               },
             }}
           >

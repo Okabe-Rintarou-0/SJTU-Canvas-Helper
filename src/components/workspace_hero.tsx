@@ -1,4 +1,5 @@
 import { Box, Card, CardContent, Chip, Stack, Typography } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import type { ReactElement, ReactNode } from "react";
 
 interface WorkspaceHeroStat {
@@ -90,18 +91,33 @@ export function WorkspaceHero({
                   key={String(item.label)}
                   sx={{
                     p: 2,
-                    borderRadius: "8px",
+                    borderRadius: "10px",
                     border: "1px solid",
                     borderColor: "divider",
+                    bgcolor: "background.paper",
+                    transition:
+                      "transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease",
+                    "&:hover": {
+                      transform: "translateY(-2px)",
+                      boxShadow: (theme) => theme.shadows[2],
+                      borderColor: (theme) =>
+                        alpha(theme.palette.primary.main, 0.35),
+                    },
                   }}
                 >
                   {item.icon ? (
                     <Stack direction="row" spacing={1.5} alignItems="center">
                       <Box
                         sx={{
+                          width: 38,
+                          height: 38,
+                          borderRadius: "10px",
                           display: "grid",
                           placeItems: "center",
-                          color: "text.secondary",
+                          flexShrink: 0,
+                          color: "primary.main",
+                          bgcolor: (theme) =>
+                            alpha(theme.palette.primary.main, 0.1),
                           "& svg": { fontSize: 20 },
                         }}
                       >

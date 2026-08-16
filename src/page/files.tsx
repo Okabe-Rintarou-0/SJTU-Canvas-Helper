@@ -5,7 +5,6 @@ import CloudDownloadRoundedIcon from "@mui/icons-material/CloudDownloadRounded";
 import DescriptionRoundedIcon from "@mui/icons-material/DescriptionRounded";
 import FolderOpenRoundedIcon from "@mui/icons-material/FolderOpenRounded";
 import HomeRoundedIcon from "@mui/icons-material/HomeRounded";
-import Inventory2RoundedIcon from "@mui/icons-material/Inventory2Rounded";
 import KeyboardBackspaceRoundedIcon from "@mui/icons-material/KeyboardBackspaceRounded";
 import PreviewRoundedIcon from "@mui/icons-material/PreviewRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
@@ -699,11 +698,6 @@ export default function FilesPage() {
       icon: <FolderOpenRoundedIcon />,
     },
     {
-      label: "可见项目",
-      value: `${filteredEntries.length}`,
-      icon: <Inventory2RoundedIcon />,
-    },
-    {
       label: "已选文件",
       value: `${selectedFileCount}`,
       icon: <CloudDownloadRoundedIcon />,
@@ -1035,12 +1029,28 @@ export default function FilesPage() {
                     {filteredEntries.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={3}>
-                          <Box sx={{ py: 6, textAlign: "center" }}>
-                            <DescriptionRoundedIcon color="disabled" />
-                            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                          <Stack alignItems="center" spacing={1.5} sx={{ py: 8, textAlign: "center" }}>
+                            <Box
+                              sx={{
+                                width: 56,
+                                height: 56,
+                                borderRadius: "18px",
+                                display: "grid",
+                                placeItems: "center",
+                                color: "text.secondary",
+                                bgcolor: alpha(theme.palette.primary.main, 0.06),
+                                "& svg": { fontSize: 28 },
+                              }}
+                            >
+                              <DescriptionRoundedIcon />
+                            </Box>
+                            <Typography variant="body2" color="text.secondary">
                               当前条件下没有找到可显示的文件或文件夹。
                             </Typography>
-                          </Box>
+                            <Typography variant="caption" color="text.disabled">
+                              可尝试切换目录、关闭「只显示可下载文件」或更换搜索关键词。
+                            </Typography>
+                          </Stack>
                         </TableCell>
                       </TableRow>
                     ) : null}
@@ -1082,7 +1092,10 @@ export default function FilesPage() {
         <Card sx={surfaceCardSx}>
           <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
             <Stack spacing={2}>
-              <Typography variant="h6">文档合并</Typography>
+              <Stack direction="row" spacing={1.5} alignItems="center">
+                <Box sx={{ width: 4, height: 18, borderRadius: 999, bgcolor: "primary.main" }} />
+                <Typography variant="h6">文档合并</Typography>
+              </Stack>
               {selectedFileCount > 0 && noSelectedMergeFiles ? (
                 <Alert severity="info" sx={{ borderRadius: "8px" }}>
                   当前已选文件中，可用于合并的 Word/PDF/PPTX 文件不足 2 个。
@@ -1096,7 +1109,10 @@ export default function FilesPage() {
         <Card sx={surfaceCardSx}>
           <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
             <Stack spacing={2}>
-              <Typography variant="h6">下载任务</Typography>
+              <Stack direction="row" spacing={1.5} alignItems="center">
+                <Box sx={{ width: 4, height: 18, borderRadius: 999, bgcolor: "primary.main" }} />
+                <Typography variant="h6">下载任务</Typography>
+              </Stack>
               <FileDownloadTable
                 tasks={downloadTasks}
                 handleRemoveTask={handleRemoveTask}

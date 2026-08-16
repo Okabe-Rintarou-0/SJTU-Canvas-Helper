@@ -1,3 +1,8 @@
+:root {
+    --font-display: "Iowan Old Style", "Palatino Linotype", "Georgia", "STZhongsong", "SimSun", "Songti SC", serif;
+    --font-body: "Aptos", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+
 svg {
     vertical-align: baseline;
 }
@@ -9,4 +14,73 @@ svg {
 /* https://github.com/ant-design/ant-design/issues/12373 */
 .ant-picker-calendar-header .ant-radio-group {
     display: none !important
+}
+
+/* Refined scrollbars that keep a low visual footprint */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(120, 128, 140, 0.35) transparent;
+}
+
+*::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+    background: rgba(120, 128, 140, 0.28);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background: rgba(120, 128, 140, 0.5);
+    border: 3px solid transparent;
+    background-clip: content-box;
+}
+
+/* Subtle paper grain so flat surfaces read as "stock" rather than vector */
+body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 2147483646;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+    opacity: 0.018;
+}
+
+/* One choreographed entrance per route change */
+.page-enter {
+    animation: page-enter 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes page-enter {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .page-enter {
+        animation: none;
+    }
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
 }

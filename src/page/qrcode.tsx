@@ -20,6 +20,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useMemo, useState } from "react";
 
 import CourseSelect from "../components/course_select";
+import { WorkspaceHero } from "../components/workspace_hero";
 import { surfaceCardSx, innerBoxSx } from "../lib/styles";
 import BasicLayout from "../components/layout";
 import { useCourses } from "../lib/hooks";
@@ -71,41 +72,35 @@ export default function QRCodePage() {
   return (
     <BasicLayout>
       <Stack spacing={3}>
+        <WorkspaceHero
+          chipLabel="二维码管理"
+          chipIcon={<QrCode2RoundedIcon />}
+          title="二维码识别"
+          description="从课程图片中识别二维码，并支持按文件名搜索与逐张核对。"
+          aside={
+            <Stack spacing={1} alignItems={{ xs: "flex-start", md: "flex-end" }}>
+              <Chip
+                label={selectedCourse ? "已选择课程" : "等待选择课程"}
+                color={selectedCourse ? "success" : "default"}
+                variant={selectedCourse ? "filled" : "outlined"}
+              />
+              <Typography variant="body2" color="text.secondary">
+                {selectedCourse ? selectedCourse.name : "请选择一个课程以读取二维码图片。"}
+              </Typography>
+            </Stack>
+          }
+          stats={[
+            {
+              label: "识别结果",
+              value: scanResults.length,
+              icon: <QrCode2RoundedIcon />,
+            },
+          ]}
+        />
+
         <Card sx={surfaceCardSx}>
-          <CardContent sx={{ p: { xs: 2.25, md: 2.75 } }}>
-            <Stack spacing={2.25}>
-              <Stack
-                direction={{ xs: "column", md: "row" }}
-                justifyContent="space-between"
-                spacing={2}
-              >
-                <Stack spacing={1}>
-                  <Chip
-                    icon={<QrCode2RoundedIcon />}
-                    label="QR Gallery"
-                    variant="outlined"
-                    sx={{ width: "fit-content" }}
-                  />
-                  <Typography
-                    variant="h4"
-                    sx={{ fontWeight: 700, letterSpacing: "-0.02em" }}
-                  >
-                    二维码识别结果
-                  </Typography>
-                </Stack>
-
-                <Stack spacing={1} alignItems={{ xs: "flex-start", md: "flex-end" }}>
-                  <Chip
-                    label={selectedCourse ? "已选择课程" : "等待选择课程"}
-                    color={selectedCourse ? "success" : "default"}
-                    variant={selectedCourse ? "filled" : "outlined"}
-                  />
-                  <Typography variant="body2" color="text.secondary">
-                    {selectedCourse ? selectedCourse.name : "请选择一个课程以读取二维码图片。"}
-                  </Typography>
-                </Stack>
-              </Stack>
-
+          <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
+            <Stack spacing={2}>
               <Box
                 sx={{
                   display: "grid",

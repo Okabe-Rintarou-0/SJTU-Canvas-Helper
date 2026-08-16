@@ -1,7 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import ForumRoundedIcon from "@mui/icons-material/ForumRounded";
-import PsychologyRoundedIcon from "@mui/icons-material/PsychologyRounded";
 import SchoolRoundedIcon from "@mui/icons-material/SchoolRounded";
 import SendRoundedIcon from "@mui/icons-material/SendRounded";
 import SmartToyRoundedIcon from "@mui/icons-material/SmartToyRounded";
@@ -83,6 +82,10 @@ function TypingDots() {
                 transform: "translateY(-4px)",
                 opacity: 1,
               },
+            },
+            "@media (prefers-reduced-motion: reduce)": {
+              animation: "none",
+              opacity: 0.5,
             },
           }}
         />
@@ -212,11 +215,6 @@ export default function CanvasAgentPage() {
         value: `${messages.filter((item) => item.role === "user").length}`,
         icon: <ForumRoundedIcon />,
       },
-      {
-        label: "服务模式",
-        value: "智能问答",
-        icon: <PsychologyRoundedIcon />,
-      },
     ],
     [courses.data.length, messages]
   );
@@ -314,7 +312,7 @@ export default function CanvasAgentPage() {
     <BasicLayout>
       <Stack spacing={3} sx={{ width: "100%" }}>
         <WorkspaceHero
-          chipLabel="Canvas Agent"
+          chipLabel="智能助手"
           chipIcon={<AutoAwesomeRoundedIcon />}
           title="Canvas 智能聊天工作台"
           description="在这里你可以直接用自然语言提问，让它帮你查看课程信息、整理作业待办、查找文件资料，并快速回答和 Canvas 学习相关的问题。"
@@ -440,19 +438,10 @@ export default function CanvasAgentPage() {
                 }}
               >
                 <Stack
-                  direction={{ xs: "column", md: "row" }}
-                  spacing={1}
-                  justifyContent="space-between"
-                  alignItems={{ xs: "flex-start", md: "center" }}
+                  direction="row"
+                  justifyContent="flex-end"
+                  alignItems="center"
                 >
-                  <Box>
-                    <Typography variant="h6" sx={{ fontWeight: 800 }}>
-                      对话区
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      你可以像聊天一样直接提问，它会尽量结合你当前的 Canvas 学习内容给出更有用的回答。
-                    </Typography>
-                  </Box>
                   <Chip
                     icon={<SmartToyRoundedIcon />}
                     label={loading ? "处理中" : "智能助手在线"}
