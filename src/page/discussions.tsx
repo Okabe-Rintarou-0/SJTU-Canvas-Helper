@@ -24,7 +24,7 @@ import { useMemo, useState } from "react";
 import CourseSelect from "../components/course_select";
 import BasicLayout from "../components/layout";
 import { WorkspaceHero } from "../components/workspace_hero";
-import { useCourses, useMe } from "../lib/hooks";
+import { useCourses, useMe, useSelectedCourse, useAutoLoadCourse } from "../lib/hooks";
 import { useAppMessage } from "../lib/message";
 import {
   DiscussionTopic,
@@ -130,7 +130,7 @@ export default function DiscussionsPage() {
   const [operating, setOperating] = useState(false);
   const [selectedTopicId, setSelectedTopicId] = useState<number | "">("");
   const [fullDiscussion, setFullDiscussion] = useState<FullDiscussion>();
-  const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
+  const { selectedCourseId, setSelectedCourseId } = useSelectedCourse();
   const courses = useCourses();
   const me = useMe();
 
@@ -177,7 +177,7 @@ export default function DiscussionsPage() {
     }
   };
 
-  const handleCourseSelect = async (courseId: number) => {
+  const loadCourse = async (courseId: number) => {
     setOperating(true);
     setSelectedCourseId(courseId);
     setTopics([]);
@@ -191,6 +191,11 @@ export default function DiscussionsPage() {
       setOperating(false);
     }
   };
+
+  useAutoLoadCourse(
+    (courseId) => void loadCourse(courseId),
+    courses.data.length > 0
+  );
 
   const handleGetFullDiscussion = async (topicId: number) => {
     try {
@@ -231,7 +236,7 @@ export default function DiscussionsPage() {
               }}
             >
               <CourseSelect
-                onChange={(courseId) => void handleCourseSelect(courseId)}
+                onChange={(courseId) => setSelectedCourseId(courseId)}
                 disabled={operating}
                 courses={courses.data}
                 value={selectedCourseId === -1 ? undefined : selectedCourseId}

@@ -23,13 +23,13 @@ import CourseSelect from "../components/course_select";
 import { WorkspaceHero } from "../components/workspace_hero";
 import { surfaceCardSx, innerBoxSx } from "../lib/styles";
 import BasicLayout from "../components/layout";
-import { useCourses } from "../lib/hooks";
+import { useCourses, useSelectedCourse, useAutoLoadCourse } from "../lib/hooks";
 import { QRCodeScanResult } from "../lib/model";
 
 export default function QRCodePage() {
   const theme = useTheme();
   const [operating, setOperating] = useState(false);
-  const [selectedCourseId, setSelectedCourseId] = useState<number | undefined>();
+  const { selectedCourseId, setSelectedCourseId } = useSelectedCourse();
   const [scanResults, setScanResults] = useState<QRCodeScanResult[]>([]);
   const [keyword, setKeyword] = useState("");
   const [previewImage, setPreviewImage] = useState<QRCodeScanResult | null>(null);
@@ -49,11 +49,16 @@ export default function QRCodePage() {
   };
 
   const handleCourseSelect = async (courseId: number) => {
+    setSelectedCourseId(courseId);
     if (courses.data.find((course) => course.id === courseId)) {
-      setSelectedCourseId(courseId);
       await handleGetQRCode(courseId);
     }
   };
+
+  useAutoLoadCourse(
+    (courseId) => void handleCourseSelect(courseId),
+    courses.data.length > 0
+  );
 
   const selectedCourse = useMemo(
     () => courses.data.find((course) => course.id === selectedCourseId),
@@ -112,8 +117,8 @@ export default function QRCodePage() {
                   <CourseSelect
                     courses={courses.data}
                     disabled={operating}
-                    onChange={handleCourseSelect}
-                    value={selectedCourseId}
+                    onChange={(courseId) => setSelectedCourseId(courseId)}
+                    value={selectedCourseId > 0 ? selectedCourseId : undefined}
                   />
                 </Box>
 

@@ -1,12 +1,8 @@
-import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
-import MenuBookRoundedIcon from "@mui/icons-material/MenuBookRounded";
-import UpdateRoundedIcon from "@mui/icons-material/UpdateRounded";
 import {
   Box,
   Button,
   Card,
   CardContent,
-  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -19,6 +15,15 @@ import {
 import { alpha, useTheme } from "@mui/material/styles";
 
 const changeLogs = [{
+  version: "v3.0.9",
+  date: "2026/8/22",
+  items: [
+    "界面全面改版：小清新 + 简约风格，精简冗余元素堆砌，信息层级更清晰，上手更快。",
+    "新增轻量动效：页面切换、侧边栏与工作台头部错峰入场，卡片悬浮抬升，按钮按压反馈。",
+    "侧边栏、工作台头部与文件管理页视觉统一简化，移除冗余标签与嵌套边框。",
+    "对话框、卡片等组件圆角与阴影统一收窄，降低视觉噪音。",
+  ],
+}, {
   version: "v3.0.8",
   date: "2026/7/2",
   items: [
@@ -260,118 +265,81 @@ export function ChangeLogModal({
   const latest = changeLogs[0];
 
   return (
-    <Dialog open={open} onClose={onCancel} fullWidth maxWidth="lg">
-      <DialogTitle sx={{ pb: 0 }}>
-        <Stack spacing={2}>
-          <Box
-            sx={{
-              p: { xs: 2, md: 2.5 },
-              borderRadius: "24px",
-              background:
-                theme.palette.mode === "dark"
-                  ? `linear-gradient(135deg, ${alpha(
-                    theme.palette.primary.main,
-                    0.18
-                  )}, ${alpha("#0f172a", 0.92)})`
-                  : `linear-gradient(135deg, ${alpha(
-                    theme.palette.primary.main,
-                    0.12
-                  )}, rgba(255,255,255,0.96))`,
-              border: "1px solid",
-              borderColor: alpha(theme.palette.primary.main, 0.12),
-            }}
-          >
-            <Stack spacing={1.25}>
-              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                <Chip
-                  icon={<MenuBookRoundedIcon />}
-                  label="Product Journal"
-                  color="primary"
-                  variant="outlined"
-                />
-                <Chip
-                  icon={<UpdateRoundedIcon />}
-                  label={`${changeLogs.length} 次记录`}
-                  variant="outlined"
-                />
-              </Stack>
-              <Typography variant="h5" sx={{ fontWeight: 800 }}>
-                更新日志
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                这里按时间线记录 Canvas Helper 的功能演进、修复和体验改进。
-              </Typography>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-                <Card
-                  sx={{
-                    minWidth: 0,
-                    flex: 1,
-                    borderRadius: "20px",
-                    border: "1px solid",
-                    borderColor: alpha(theme.palette.divider, 0.5),
-                    boxShadow: "none",
-                    backgroundColor: alpha(theme.palette.background.paper, 0.82),
-                  }}
-                >
-                  <CardContent sx={{ p: 2 }}>
-                    <Typography variant="overline" color="text.secondary">
-                      最新版本
-                    </Typography>
-                    <Typography variant="h6" sx={{ fontWeight: 800, mt: 0.75 }}>
-                      {latest.version}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {latest.date}
-                    </Typography>
-                  </CardContent>
-                </Card>
-                <Card
-                  sx={{
-                    minWidth: 0,
-                    flex: 1,
-                    borderRadius: "20px",
-                    border: "1px solid",
-                    borderColor: alpha(theme.palette.divider, 0.5),
-                    boxShadow: "none",
-                    backgroundColor: alpha(theme.palette.background.paper, 0.82),
-                  }}
-                >
-                  <CardContent sx={{ p: 2 }}>
-                    <Typography variant="overline" color="text.secondary">
-                      本期导读
-                    </Typography>
-                    <Stack spacing={0.5} sx={{ mt: 0.75 }}>
-                      {latest.items.slice(0, 2).map((item, index) => (
-                        <Typography key={index} variant="body2">
-                          {typeof item === "string" ? item : item}
-                        </Typography>
-                      ))}
-                    </Stack>
-                  </CardContent>
-                </Card>
-              </Stack>
-            </Stack>
-          </Box>
+    <Dialog open={open} onClose={onCancel} fullWidth maxWidth="md">
+      <DialogTitle sx={{ pt: 3, px: 3, pb: 1.5 }}>
+        <Stack spacing={0.75}>
+          <Stack direction="row" spacing={0.75} alignItems="center">
+            <Box
+              sx={{
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                bgcolor: "primary.main",
+                flexShrink: 0,
+              }}
+            />
+            <Typography
+              variant="caption"
+              sx={{ fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase" }}
+            >
+              Changelog
+            </Typography>
+          </Stack>
+          <Typography variant="h4" sx={{ fontWeight: 600 }}>
+            更新日志
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            按时间线记录 Canvas Helper 的功能演进、修复与体验改进。
+          </Typography>
         </Stack>
       </DialogTitle>
 
-      <DialogContent sx={{ pt: 3 }}>
-        <Stack spacing={2}>
+      <DialogContent sx={{ pt: 2, px: 3, pb: 1 }}>
+        <Stack spacing={1.5}>
+          <Box
+            sx={{
+              p: 2,
+              borderRadius: "14px",
+              border: "1px solid",
+              borderColor: alpha(theme.palette.primary.main, 0.25),
+              bgcolor: alpha(theme.palette.primary.main, 0.06),
+            }}
+          >
+            <Stack spacing={0.75}>
+              <Stack direction="row" spacing={1.25} alignItems="baseline" flexWrap="wrap" useFlexGap>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                  最新 {latest.version}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {latest.date}
+                </Typography>
+              </Stack>
+              <Stack component="ul" spacing={0.5} sx={{ m: 0, pl: 2.5 }}>
+                {latest.items.slice(0, 3).map((item, index) => (
+                  <Typography key={index} component="li" variant="body2" sx={{ lineHeight: 1.7 }}>
+                    {typeof item === "string" ? item : item}
+                  </Typography>
+                ))}
+              </Stack>
+            </Stack>
+          </Box>
+
           {changeLogs.map((log, index) => (
             <Card
               key={`${log.version}-${log.date}`}
               sx={{
-                borderRadius: "24px",
+                borderRadius: "16px",
                 border: "1px solid",
                 borderColor:
                   index === 0
-                    ? alpha(theme.palette.primary.main, 0.2)
-                    : alpha(theme.palette.divider, 0.6),
-                boxShadow:
+                    ? alpha(theme.palette.primary.main, 0.3)
+                    : "divider",
+                bgcolor:
                   index === 0
-                    ? `0 18px 40px ${alpha(theme.palette.primary.main, 0.12)}`
-                    : "none",
+                    ? alpha(theme.palette.primary.main, 0.04)
+                    : "background.paper",
                 backgroundImage: "none",
+                boxShadow: "none",
               }}
             >
               <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
@@ -382,16 +350,23 @@ export function ChangeLogModal({
                     spacing={1}
                   >
                     <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                      <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                      <Typography variant="h6" sx={{ fontWeight: 700 }}>
                         {log.version}
                       </Typography>
                       {index === 0 ? (
-                        <Chip
-                          size="small"
-                          color="primary"
-                          icon={<AutoAwesomeRoundedIcon />}
-                          label="Latest"
-                        />
+                        <Stack direction="row" spacing={0.5} alignItems="center">
+                          <Box
+                            sx={{
+                              width: 6,
+                              height: 6,
+                              borderRadius: "50%",
+                              bgcolor: "primary.main",
+                            }}
+                          />
+                          <Typography variant="caption" sx={{ color: "primary.main", fontWeight: 600 }}>
+                            最新
+                          </Typography>
+                        </Stack>
                       ) : null}
                     </Stack>
                     <Typography variant="body2" color="text.secondary">
@@ -423,7 +398,7 @@ export function ChangeLogModal({
       <DialogActions sx={{ px: 3, pb: 3 }}>
         <Button onClick={onCancel}>关闭</Button>
         <Button variant="contained" onClick={onOk}>
-          我知道了
+          知道了
         </Button>
       </DialogActions>
     </Dialog>

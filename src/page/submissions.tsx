@@ -54,6 +54,8 @@ import {
   useMe,
   usePreview,
   useTAOrTeacherCourses,
+  useSelectedCourse,
+  useAutoLoadCourse,
 } from "../lib/hooks";
 import {
   Assignment,
@@ -138,7 +140,7 @@ export default function SubmissionsPage() {
   const [operating, setOperating] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [selectedCourseId, setSelectedCourseId] = useState(-1);
+  const { selectedCourseId, setSelectedCourseId } = useSelectedCourse();
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [downloadTasks, setDownloadTasks] = useState<FileDownloadTask[]>([]);
   const [selectedAssignment, setSelectedAssignment] = useState<
@@ -397,6 +399,11 @@ export default function SubmissionsPage() {
     setOperating(false);
   };
 
+  useAutoLoadCourse(
+    (courseId) => void handleCourseSelect(courseId),
+    courses.data.length > 0
+  );
+
   const handleAssignmentSelect = async (assignmentId: number) => {
     setOperating(true);
     setStatistic(undefined);
@@ -549,7 +556,7 @@ export default function SubmissionsPage() {
               }}
             >
               <CourseSelect
-                onChange={(courseId) => void handleCourseSelect(courseId)}
+                onChange={(courseId) => setSelectedCourseId(courseId)}
                 disabled={operating}
                 courses={courses.data}
                 value={selectedCourseId === -1 ? undefined : selectedCourseId}

@@ -25,7 +25,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import CourseSelect from "../components/course_select";
 import BasicLayout from "../components/layout";
 import { WorkspaceHero } from "../components/workspace_hero";
-import { useCurrentTermCourses } from "../lib/hooks";
+import { TableSkeleton } from "../components/skeleton";
+import { useCurrentTermCourses, useSelectedCourse, useAutoLoadCourse } from "../lib/hooks";
 import { useAppMessage } from "../lib/message";
 import { ExportUsersConfig, User } from "../lib/model";
 import { formatDate } from "../lib/utils";
@@ -37,7 +38,7 @@ export default function UsersPage() {
   const [operating, setOperating] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
-  const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
+  const { selectedCourseId, setSelectedCourseId } = useSelectedCourse();
   const [exportConfig, setExportConfig] = useState<ExportUsersConfig>({
     save_name: "用户名单",
   } as ExportUsersConfig);
@@ -74,6 +75,11 @@ export default function UsersPage() {
       await handleGetUsers(courseId);
     },
     [courses.data, handleGetUsers]
+  );
+
+  useAutoLoadCourse(
+    (courseId) => void handleCourseSelect(courseId),
+    courses.data.length > 0
   );
 
   const handleExport = useCallback(
@@ -136,7 +142,7 @@ export default function UsersPage() {
               }}
             >
               <CourseSelect
-                onChange={(courseId) => void handleCourseSelect(courseId)}
+                onChange={(courseId) => setSelectedCourseId(courseId)}
                 disabled={operating}
                 courses={courses.data}
                 value={selectedCourseId === -1 ? undefined : selectedCourseId}
@@ -178,7 +184,9 @@ export default function UsersPage() {
         <Card sx={surfaceCardSx}>
           <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
             <Stack spacing={3}>
-              {users.length > 0 ? (
+              {operating && users.length === 0 ? (
+                <TableSkeleton rows={8} cols={6} />
+              ) : users.length > 0 ? (
                 <>
                   <Box
                     sx={{

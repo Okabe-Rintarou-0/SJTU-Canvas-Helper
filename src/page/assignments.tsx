@@ -40,9 +40,10 @@ import CourseSelect from "../components/course_select";
 import { GradeOverviewChart } from "../components/grade_overview";
 import BasicLayout from "../components/layout";
 import { WorkspaceHero } from "../components/workspace_hero";
+import { ListSkeleton } from "../components/skeleton";
 import ModifyDDLModal from "../components/modify_ddl_modal";
 import { SubmitModal } from "../components/submit_modal";
-import { useBaseURL, useCourses, useMe, usePreview } from "../lib/hooks";
+import { useBaseURL, useCourses, useMe, usePreview, useSelectedCourse, useAutoLoadCourse } from "../lib/hooks";
 import { useAppMessage } from "../lib/message";
 import {
   Assignment,
@@ -68,7 +69,7 @@ export default function AssignmentsPage() {
   const [operating, setOperating] = useState(false);
   const [onlyShowUnfinished, setOnlyShowUnfinished] = useState(true);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
+  const { selectedCourseId, setSelectedCourseId } = useSelectedCourse();
   const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry } =
     usePreview();
   const [linksMap, setLinksMap] = useState<Record<number, Attachment[]>>({});
@@ -90,15 +91,12 @@ export default function AssignmentsPage() {
   const baseURL = useBaseURL();
 
   useEffect(() => {
-    if (courses.data.length > 0) {
-      const courseId = Number.parseInt(searchParams.get("id") ?? "");
-      if (courseId > 0) {
-        setSearchParams({});
-        setSelectedCourseId(courseId);
-        void handleGetAssignments(courseId, onlyShowUnfinished);
-      }
+    const courseId = Number.parseInt(searchParams.get("id") ?? "");
+    if (courseId > 0) {
+      setSearchParams({});
+      setSelectedCourseId(courseId);
     }
-  }, [courses.data, onlyShowUnfinished, searchParams, setSearchParams]);
+  }, [searchParams, setSearchParams, setSelectedCourseId]);
 
   useEffect(() => {
     const nextGradeMap = new Map<number, GradeStatus>();
@@ -197,14 +195,20 @@ export default function AssignmentsPage() {
     }
   };
 
-  const handleCourseSelect = async (courseId: number) => {
+  const handleCourseSelect = (courseId: number) => {
     const selectedCourse = courses.data.find((course) => course.id === courseId);
     if (!selectedCourse) {
       return;
     }
     setSelectedCourseId(courseId);
-    await handleGetAssignments(courseId, onlyShowUnfinished);
   };
+
+  useAutoLoadCourse(
+    (courseId) => {
+      void handleGetAssignments(courseId, onlyShowUnfinished);
+    },
+    courses.data.length > 0
+  );
 
   const handleSetOnlyShowUnfinished = async (
     event: React.ChangeEvent<HTMLInputElement>
@@ -553,6 +557,9 @@ export default function AssignmentsPage() {
         </Card>
 
         <Stack spacing={2.25}>
+          {operating && assignments.length === 0 ? (
+            <ListSkeleton items={3} />
+          ) : null}
           {assignments.map((assignment) => {
             const expanded = expandedAssignmentIds.includes(assignment.id);
             const submission = assignment.submission ?? undefined;

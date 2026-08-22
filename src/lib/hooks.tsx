@@ -42,7 +42,7 @@ import {
   UserSubmissions,
   isFile,
 } from "./model";
-import { ConfigDispatch, ConfigState } from "./store";
+import { ConfigDispatch, ConfigState, courseSlice } from "./store";
 import { consoleLog, isMergableFileType, moduleItem2File } from "./utils";
 
 const UPDATE_QRCODE_MESSAGE = '{ "type": "UPDATE_QR_CODE" }';
@@ -784,6 +784,38 @@ export const useAnnualReport = (year: number) => {
 
 export const useConfigDispatch: () => ConfigDispatch = useDispatch;
 export const useConfigSelector: TypedUseSelectorHook<ConfigState> = useSelector;
+
+export function useSelectedCourse() {
+  const selectedCourseId = useConfigSelector(
+    (state) => state.course.selectedCourseId
+  );
+  const dispatch = useConfigDispatch();
+  const setSelectedCourseId = useCallback(
+    (courseId: number) =>
+      dispatch(courseSlice.actions.setSelectedCourseId(courseId)),
+    [dispatch]
+  );
+  return { selectedCourseId, setSelectedCourseId };
+}
+
+export function useAutoLoadCourse(
+  load: (courseId: number) => void,
+  ready?: boolean
+) {
+  const { selectedCourseId } = useSelectedCourse();
+  const loadedRef = useRef(-1);
+  useEffect(() => {
+    if (
+      ready !== false &&
+      selectedCourseId > 0 &&
+      loadedRef.current !== selectedCourseId
+    ) {
+      loadedRef.current = selectedCourseId;
+      load(selectedCourseId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCourseId, ready]);
+}
 
 export function useExternalFiles(courseId?: number) {
   const [args, setArgs] = useState<any>({ courseId });

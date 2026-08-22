@@ -50,7 +50,7 @@ import { WorkspaceHero } from "../components/workspace_hero";
 import videoStyles from "../css/video_player.module.css";
 import { getConfig, saveConfig } from "../lib/config";
 import { VIDEO_PAGE_HINT_ALERT_KEY } from "../lib/constants";
-import { useCourses } from "../lib/hooks";
+import { useCourses, useSelectedCourse, useAutoLoadCourse } from "../lib/hooks";
 import { useAppMessage } from "../lib/message";
 import {
   CanvasVideo,
@@ -86,7 +86,7 @@ export default function VideoPage() {
   const [messageApi, contextHolder] = useAppMessage();
   const [plays, setPlays] = useState<VideoPlayInfo[]>([]);
   const [selectedVideo, setSelectedVideo] = useState<CanvasVideo | undefined>();
-  const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
+  const { selectedCourseId, setSelectedCourseId } = useSelectedCourse();
   const [videos, setVideos] = useState<CanvasVideo[]>([]);
   const [notLogin, setNotLogin] = useState(true);
   const [loaded, setLoaded] = useState(false);
@@ -286,6 +286,11 @@ export default function VideoPage() {
     await handleGetVideos(selected);
     setOperating(false);
   };
+
+  useAutoLoadCourse(
+    (courseId) => void handleSelectCourse(courseId),
+    courses.data.length > 0
+  );
 
   const handleGetVideoInfo = async (video: CanvasVideo) => {
     try {
@@ -828,7 +833,8 @@ export default function VideoPage() {
               >
                 <CourseSelect
                   courses={courses.data}
-                  onChange={(courseId) => void handleSelectCourse(courseId)}
+                  onChange={(courseId) => setSelectedCourseId(courseId)}
+                  value={selectedCourseId > 0 ? selectedCourseId : undefined}
                 />
               </Box>
             ) : undefined

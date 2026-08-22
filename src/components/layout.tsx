@@ -21,7 +21,6 @@ import DeveloperBoardRoundedIcon from "@mui/icons-material/DeveloperBoardRounded
 import {
   Box,
   Button,
-  Chip,
   Divider,
   Drawer,
   IconButton,
@@ -152,175 +151,151 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
         borderColor: "divider",
       }}
     >
-      <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
-        <Stack
-          direction="row"
-          alignItems="center"
-          spacing={1.25}
-          sx={{
-            minWidth: 0,
-            opacity: collapsed && isDesktop ? 0 : 1,
-            transition: "opacity 0.2s ease",
-          }}
-        >
-          <Box
+        <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
+          <Stack
+            direction="row"
+            alignItems="center"
+            spacing={1.25}
             sx={{
-              width: 38,
-              height: 38,
-              borderRadius: "10px",
-              display: "grid",
-              placeItems: "center",
-              flexShrink: 0,
-              color: "primary.main",
-              bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
-              border: "1px solid",
-              borderColor: (theme) => alpha(theme.palette.primary.main, 0.22),
-              "& svg": { fontSize: 22 },
+              minWidth: 0,
+              opacity: collapsed && isDesktop ? 0 : 1,
+              transition: "opacity 0.2s ease",
             }}
           >
-            <GridViewRoundedIcon />
-          </Box>
-          <Box sx={{ minWidth: 0 }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-              Canvas Helper
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Workspace
-            </Typography>
-          </Box>
-        </Stack>
-
-        {isDesktop ? (
-          <IconButton onClick={() => setCollapsed((prev) => !prev)}>
-            {collapsed ? <ChevronRightRoundedIcon /> : <ChevronLeftRoundedIcon />}
-          </IconButton>
-        ) : (
-          <IconButton onClick={() => setMobileOpen(false)}>
-            <ChevronLeftRoundedIcon />
-          </IconButton>
-        )}
-      </Stack>
-
-      {!collapsed || !isDesktop ? (
-        <Chip label={currentTitle} color="primary" variant="outlined" size="small" sx={{ width: "fit-content" }} />
-      ) : null}
-
-      <List sx={{ p: 0, display: "grid", gap: 0.75 }}>
-        {displayedNavigationItems.map((item) => {
-          const selected = currentKey === item.key;
-          const button = (
-            <ListItemButton
-              key={item.key}
-              component={Link}
-              to={item.path}
-              selected={selected}
+            <Box
               sx={{
-                minHeight: 44,
-                px: collapsed && isDesktop ? 1.25 : 1.5,
-                py: 0.75,
-                borderRadius: "8px",
-                position: "relative",
-                justifyContent: collapsed && isDesktop ? "center" : "flex-start",
-                color: "inherit",
-                transition: "background-color 0.18s ease, color 0.18s ease",
-                "&.Mui-selected": {
-                  bgcolor: "action.selected",
-                  color: "primary.main",
-                  "&::before": {
-                    content: collapsed && isDesktop ? "none" : '""',
-                    position: "absolute",
-                    left: 0,
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    height: 18,
-                    width: 3,
-                    borderRadius: 999,
-                    bgcolor: "primary.main",
-                  },
-                },
+                width: 34,
+                height: 34,
+                borderRadius: "10px",
+                display: "grid",
+                placeItems: "center",
+                flexShrink: 0,
+                color: "primary.main",
+                bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
+                "& svg": { fontSize: 20 },
               }}
             >
-              <ListItemIcon
+              <GridViewRoundedIcon />
+            </Box>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                Canvas Helper
+              </Typography>
+            </Box>
+          </Stack>
+
+          {isDesktop ? (
+            <IconButton onClick={() => setCollapsed((prev) => !prev)} size="small">
+              {collapsed ? <ChevronRightRoundedIcon /> : <ChevronLeftRoundedIcon />}
+            </IconButton>
+          ) : (
+            <IconButton onClick={() => setMobileOpen(false)} size="small">
+              <ChevronLeftRoundedIcon />
+            </IconButton>
+          )}
+        </Stack>
+
+        <List sx={{ p: 0, display: "grid", gap: 0.5 }}>
+          {displayedNavigationItems.map((item, index) => {
+            const selected = currentKey === item.key;
+            const button = (
+              <ListItemButton
+                key={item.key}
+                component={Link}
+                to={item.path}
+                selected={selected}
+                className="nav-enter"
+                style={{ "--rise-delay": `${index * 30}ms` } as React.CSSProperties}
                 sx={{
-                  minWidth: collapsed && isDesktop ? 0 : 38,
-                  color: "inherit",
-                  justifyContent: "center",
+                  minHeight: 42,
+                  px: collapsed && isDesktop ? 1.25 : 1.5,
+                  py: 0.5,
+                  borderRadius: "12px",
+                  justifyContent: collapsed && isDesktop ? "center" : "flex-start",
+                  color: selected ? "primary.main" : "inherit",
+                  transition:
+                    "background-color 0.18s ease, color 0.18s ease, transform 0.18s ease",
+                  "&:hover": {
+                    transform: "translateX(2px)",
+                  },
+                  "&.Mui-selected": {
+                    bgcolor: "action.selected",
+                    color: "primary.main",
+                    fontWeight: 700,
+                    "&:hover": {
+                      bgcolor: "action.selected",
+                    },
+                  },
                 }}
               >
-                {item.icon}
-              </ListItemIcon>
-              {collapsed && isDesktop ? null : (
-                <ListItemText
-                  primary={item.label}
-                  primaryTypographyProps={{
-                    fontSize: 15,
-                    fontWeight: selected ? 700 : 500,
+                <ListItemIcon
+                  sx={{
+                    minWidth: collapsed && isDesktop ? 0 : 38,
+                    color: "inherit",
+                    justifyContent: "center",
                   }}
-                />
-              )}
-            </ListItemButton>
-          );
+                >
+                  {item.icon}
+                </ListItemIcon>
+                {collapsed && isDesktop ? null : (
+                  <ListItemText
+                    primary={item.label}
+                    primaryTypographyProps={{
+                      fontSize: 14.5,
+                      fontWeight: selected ? 700 : 500,
+                      letterSpacing: "0.02em",
+                      lineHeight: 1.45,
+                      noWrap: true,
+                    }}
+                  />
+                )}
+              </ListItemButton>
+            );
 
-          return collapsed && isDesktop ? (
-            <Tooltip key={item.key} title={item.label} placement="right">
-              {button}
-            </Tooltip>
-          ) : (
-            button
-          );
-        })}
-      </List>
+            return collapsed && isDesktop ? (
+              <Tooltip key={item.key} title={item.label} placement="right">
+                {button}
+              </Tooltip>
+            ) : (
+              button
+            );
+          })}
+        </List>
 
-      <Box sx={{ flex: 1 }} />
+        <Box sx={{ flex: 1 }} />
 
-      <Divider sx={{ mt: 0.5 }} />
+        <Divider sx={{ mt: 0.5 }} />
 
-      <Stack
-        spacing={1.25}
-        sx={{
-          pb: `calc(12px + env(safe-area-inset-bottom, 0px))`,
-          pt: 0.5,
-        }}
-      >
-        {!collapsed || !isDesktop ? (
-          <>
-            <Typography variant="caption" color="text.secondary">
-              当前版本 {version || "读取中"}
-            </Typography>
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              <Button onClick={() => checkForUpdates(messageApi)} variant="outlined" size="small">
-                检查更新
-              </Button>
-              <Button onClick={() => setShowChangeLog(true)} variant="outlined" size="small">
-                更新日志
-              </Button>
-              <Button onClick={() => void handleOpenFeedback()} variant="outlined" size="small">
-                我要反馈
-              </Button>
-            </Stack>
-          </>
-        ) : (
-          <Stack spacing={1} alignItems="center">
-            <Tooltip title="检查更新">
-              <Button onClick={() => checkForUpdates(messageApi)} variant="outlined" size="small" sx={{ minWidth: 0, px: 1.2 }}>
-                更
-              </Button>
-            </Tooltip>
-            <Tooltip title="更新日志">
-              <Button onClick={() => setShowChangeLog(true)} variant="outlined" size="small" sx={{ minWidth: 0, px: 1.2 }}>
-                志
-              </Button>
-            </Tooltip>
-            <Tooltip title="我要反馈">
-              <Button onClick={() => void handleOpenFeedback()} variant="outlined" size="small" sx={{ minWidth: 0, px: 1.2 }}>
-                反
-              </Button>
-            </Tooltip>
+        <Stack
+          spacing={1}
+          sx={{
+            pb: `calc(12px + env(safe-area-inset-bottom, 0px))`,
+            pt: 0.5,
+          }}
+        >
+          <Typography variant="caption" color="text.secondary">
+            v{version || "…"} · Canvas Helper
+          </Typography>
+          <Stack
+            direction="row"
+            spacing={0.5}
+            flexWrap="wrap"
+            useFlexGap
+            justifyContent="space-between"
+          >
+            <Button onClick={() => checkForUpdates(messageApi)} size="small" sx={{ minWidth: 0, px: 1 }}>
+              检查更新
+            </Button>
+            <Button onClick={() => setShowChangeLog(true)} size="small" sx={{ minWidth: 0, px: 1 }}>
+              更新日志
+            </Button>
+            <Button onClick={() => void handleOpenFeedback()} size="small" sx={{ minWidth: 0, px: 1 }}>
+              反馈
+            </Button>
           </Stack>
-        )}
+        </Stack>
       </Stack>
-    </Stack>
-  );
+    );
 
   return (
     <Box sx={{ display: "flex", minHeight: "100vh" }}>
@@ -364,7 +339,9 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
             <IconButton onClick={() => setMobileOpen(true)}>
               <MenuRoundedIcon />
             </IconButton>
-            <Chip label={currentTitle} color="primary" variant="outlined" />
+            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+              {currentTitle}
+            </Typography>
             <Box sx={{ width: 40 }} />
           </Stack>
         ) : null}
@@ -375,8 +352,10 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
           sx={{
             p: { xs: 1.5, md: 2.5 },
             minHeight: "calc(100vh - 32px)",
-            borderRadius: { xs: "12px", md: "12px" },
+            borderRadius: "16px",
             bgcolor: "background.paper",
+            border: "1px solid",
+            borderColor: "divider",
             zoom: scale,
             transformOrigin: "top left",
           }}

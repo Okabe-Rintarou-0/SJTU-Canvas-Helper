@@ -12,7 +12,6 @@ import {
   Card,
   CardContent,
   Chip,
-  CircularProgress,
   Divider,
   InputAdornment,
   Stack,
@@ -34,6 +33,7 @@ import CourseSelect from "../components/course_select";
 import BasicLayout from "../components/layout";
 import GradeStatisticChart from "../components/grade_statistic";
 import { WorkspaceHero } from "../components/workspace_hero";
+import { TableSkeleton } from "../components/skeleton";
 import { getConfig } from "../lib/config";
 import { useAppMessage } from "../lib/message";
 import {
@@ -41,6 +41,7 @@ import {
   useStudents,
   useTAOrTeacherCourses,
   useUserSubmissions,
+  useSelectedCourse,
 } from "../lib/hooks";
 import {
   Assignment,
@@ -65,7 +66,7 @@ interface ExportInfo {
 import { surfaceCardSx } from "../lib/styles";
 
 export default function GradePage() {
-  const [selectedCourseId, setSelectedCourseId] = useState<number | undefined>();
+  const { selectedCourseId, setSelectedCourseId } = useSelectedCourse();
   const [studentIds, setStudentIds] = useState<number[]>([]);
   const [currentView, setCurrentView] = useState("overview");
   const [messageApi, contextHolder] = useAppMessage();
@@ -82,9 +83,10 @@ export default function GradePage() {
   });
 
   const courses = useTAOrTeacherCourses();
-  const students = useStudents(selectedCourseId);
-  const userSubmissions = useUserSubmissions(selectedCourseId, studentIds);
-  const assignments = useAssignments(selectedCourseId);
+  const activeCourseId = selectedCourseId > 0 ? selectedCourseId : undefined;
+  const students = useStudents(activeCourseId);
+  const userSubmissions = useUserSubmissions(activeCourseId, studentIds);
+  const assignments = useAssignments(activeCourseId);
 
   const selectedCourse = courses.data.find(
     (course) => course.id === selectedCourseId
@@ -366,7 +368,7 @@ export default function GradePage() {
               <CourseSelect
                 courses={courses.data}
                 onChange={setSelectedCourseId}
-                value={selectedCourseId}
+                value={activeCourseId}
               />
             </Box>
           }
@@ -431,9 +433,7 @@ export default function GradePage() {
             </Tabs>
 
             {isLoading ? (
-              <Box sx={{ py: 10, display: "grid", placeItems: "center" }}>
-                <CircularProgress />
-              </Box>
+              <TableSkeleton rows={8} cols={6} />
             ) : currentView === "overview" ? (
               <Stack spacing={3}>
                 {rows.length > 0 ? (

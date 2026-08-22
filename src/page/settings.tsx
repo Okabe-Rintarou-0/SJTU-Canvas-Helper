@@ -127,7 +127,7 @@ const cardSx = {
   boxShadow: (theme: Theme) =>
     theme.palette.mode === "dark"
       ? "inset 0 1px 0 rgba(255,255,255,0.04)"
-      : "0 12px 32px rgba(28, 30, 36, 0.06)",
+      : "0 6px 18px rgba(31, 42, 36, 0.05)",
 };
 
 const fullWidthChipSx = {

@@ -20,11 +20,11 @@ function App() {
     const primary = config?.color_primary ?? "#00b96b";
 
     const divider =
-      mode === "dark" ? "rgba(232, 234, 240, 0.1)" : "rgba(38, 40, 46, 0.1)";
-    const textPrimary = mode === "dark" ? "#ece8e1" : "#27282e";
-    const textSecondary = mode === "dark" ? "#9aa1ad" : "#66636b";
+      mode === "dark" ? "rgba(224, 236, 229, 0.1)" : "rgba(31, 42, 36, 0.09)";
+    const textPrimary = mode === "dark" ? "#e8f0ea" : "#1f2a24";
+    const textSecondary = mode === "dark" ? "#93a79c" : "#6f7f76";
     const hoverFill =
-      mode === "dark" ? "rgba(255,255,255,0.05)" : "rgba(38,40,46,0.045)";
+      mode === "dark" ? "rgba(232, 244, 237, 0.06)" : "rgba(31, 42, 36, 0.045)";
 
     return createTheme({
       palette: {
@@ -33,17 +33,29 @@ function App() {
           main: primary,
         },
         secondary: {
-          main: "#2563eb",
+          main: "#3f8f6b",
+        },
+        success: {
+          main: "#2f9e6f",
+        },
+        warning: {
+          main: "#d99a3d",
+        },
+        error: {
+          main: "#d96a5a",
+        },
+        info: {
+          main: "#4a8fbf",
         },
         background:
           mode === "dark"
             ? {
-                default: "#11141a",
-                paper: "#1a1f28",
+                default: "#0f1613",
+                paper: "#16201b",
               }
             : {
-                default: "#f2efe6",
-                paper: "#fffdf8",
+                default: "#f5f9f7",
+                paper: "#ffffff",
               },
         text: {
           primary: textPrimary,
@@ -52,11 +64,11 @@ function App() {
         divider,
         action: {
           hover: hoverFill,
-          selected: mode === "dark" ? alpha(primary, 0.18) : alpha(primary, 0.09),
+          selected: mode === "dark" ? alpha(primary, 0.2) : alpha(primary, 0.1),
         },
       },
       shape: {
-        borderRadius: 16,
+        borderRadius: 14,
       },
       typography: {
         fontFamily: FONT_BODY,
@@ -141,10 +153,10 @@ function App() {
         MuiCssBaseline: {
           styleOverrides: {
             body: {
-              backgroundColor: mode === "dark" ? "#11141a" : "#f2efe6",
-              backgroundImage: `radial-gradient(1100px 560px at 12% -8%, ${
-                mode === "dark" ? alpha(primary, 0.1) : alpha(primary, 0.055)
-              }, transparent 62%)`,
+              backgroundColor: mode === "dark" ? "#0f1613" : "#f5f9f7",
+              backgroundImage: `radial-gradient(900px 460px at 15% -10%, ${
+                mode === "dark" ? alpha(primary, 0.08) : alpha(primary, 0.05)
+              }, transparent 60%)`,
               color: textPrimary,
               WebkitFontSmoothing: "antialiased",
               MozOsxFontSmoothing: "grayscale",
@@ -167,7 +179,7 @@ function App() {
               boxShadow:
                 mode === "dark"
                   ? "inset 0 1px 0 rgba(255,255,255,0.03)"
-                  : "0 1px 2px rgba(28, 30, 36, 0.04)",
+                  : "0 1px 2px rgba(31, 42, 36, 0.04)",
             },
           },
         },
@@ -185,10 +197,10 @@ function App() {
               },
             },
             containedPrimary: {
-              color: mode === "dark" ? "#11141a" : "#fffdf8",
-              backgroundColor: mode === "dark" ? "#ece9e2" : "#24272d",
+              color: "#ffffff",
+              backgroundColor: primary,
               "&:hover": {
-                backgroundColor: mode === "dark" ? "#f8f5ef" : "#15171b",
+                backgroundColor: alpha(primary, 0.82),
               },
             },
           },
@@ -276,6 +288,24 @@ function App() {
             paper: {
               borderRadius: 12,
               backgroundImage: "none",
+            },
+          },
+        },
+        MuiMenuItem: {
+          styleOverrides: {
+            root: {
+              fontSize: 14.5,
+              letterSpacing: "0.02em",
+              lineHeight: 1.4,
+              minHeight: 40,
+            },
+          },
+        },
+        MuiAutocomplete: {
+          styleOverrides: {
+            option: {
+              fontSize: 14.5,
+              letterSpacing: "0.02em",
             },
           },
         },

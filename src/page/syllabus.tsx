@@ -3,20 +3,20 @@ import {
   Box,
   Card,
   CardContent,
-  CircularProgress,
   Typography,
 } from "@mui/material";
-import { useState } from "react";
 
 import CourseSelect from "../components/course_select";
 import BasicLayout from "../components/layout";
 import { WorkspaceHero } from "../components/workspace_hero";
-import { useCourseSyllabus, useCourses } from "../lib/hooks";
+import { ListSkeleton } from "../components/skeleton";
+import { useCourseSyllabus, useCourses, useSelectedCourse } from "../lib/hooks";
 
 export default function SyllabusPage() {
-  const [selectedCourseId, setSelectedCourseId] = useState(-1);
+  const { selectedCourseId, setSelectedCourseId } = useSelectedCourse();
   const { data: courses } = useCourses();
-  const { data: syllabusCourse, isLoading } = useCourseSyllabus(selectedCourseId);
+  const syllabusCourseId = selectedCourseId > 0 ? selectedCourseId : undefined;
+  const { data: syllabusCourse, isLoading } = useCourseSyllabus(syllabusCourseId);
 
   return (
     <BasicLayout>
@@ -35,7 +35,7 @@ export default function SyllabusPage() {
             >
               <CourseSelect
                 courses={courses}
-                value={selectedCourseId}
+                value={syllabusCourseId}
                 onChange={setSelectedCourseId}
               />
             </Box>
@@ -54,8 +54,8 @@ export default function SyllabusPage() {
             </CardContent>
           </Card>
         ) : isLoading ? (
-          <Box sx={{ mt: 2, display: "grid", placeItems: "center", minHeight: 200 }}>
-            <CircularProgress />
+          <Box sx={{ mt: 2 }}>
+            <ListSkeleton items={2} />
           </Box>
         ) : syllabusCourse?.syllabus_body ? (
           <Card sx={{ mt: 2, borderRadius: "24px", boxShadow: "none", border: "1px solid", borderColor: "divider" }}>

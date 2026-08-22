@@ -20,6 +20,7 @@ import {
   FormControlLabel,
   InputAdornment,
   Link as MuiLink,
+  Skeleton,
   Stack,
   Tab,
   Tabs,
@@ -48,6 +49,7 @@ import {
   useExternalFiles,
   useMerger,
   usePreview,
+  useSelectedCourse,
 } from "../lib/hooks";
 import { useAppMessage } from "../lib/message";
 import {
@@ -72,7 +74,7 @@ import {
   isMergableFileType,
   scrollToTop,
 } from "../lib/utils";
-import { surfaceCardSx, innerBoxSx } from "../lib/styles";
+import { surfaceCardSx } from "../lib/styles";
 
 interface DownloadInfo {
   course?: Course;
@@ -122,7 +124,7 @@ function toLLMChatMessages(messages: FileAIChatMessage[]): LLMChatMessage[] {
 export default function FilesPage() {
   const theme = useTheme();
   const [section, setSection] = useState<string>(COURSE_FILES);
-  const [selectedCourseId, setSelectedCourseId] = useState<number>(-1);
+  const { selectedCourseId, setSelectedCourseId } = useSelectedCourse();
   const [selectedEntries, setSelectedEntries] = useState<Entry[]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -278,12 +280,12 @@ export default function FilesPage() {
   useEffect(() => {
     if (section === MY_FILES) {
       void initAllMyFolders();
-    } else if (selectedCourseId !== -1) {
+    } else if (selectedCourseId > 0) {
       void handleCourseSelect(selectedCourseId);
     } else {
       clearFilesAndFolders();
     }
-  }, [section]);
+  }, [section, selectedCourseId, courses.data.length]);
 
   const handleExplainFile = async (file: File) => {
     const openingUserMessage = createConversationMessage(
@@ -776,73 +778,64 @@ export default function FilesPage() {
                 sx={{
                   display: "grid",
                   gap: 2,
-                  gridTemplateColumns: { xs: "minmax(0, 1fr)", xl: "1.2fr 1fr" },
-                  alignItems: "start",
+                  gridTemplateColumns: { xs: "minmax(0, 1fr)", xl: "1.1fr 1.4fr" },
+                  alignItems: "center",
                 }}
               >
-                <Box sx={{ p: 2, ...innerBoxSx }}>
-                  {section === COURSE_FILES ? (
-                    <CourseSelect
-                      onChange={handleCourseSelect}
-                      disabled={operating}
-                      courses={courses.data}
-                      value={selectedCourseId > 0 ? selectedCourseId : undefined}
-                    />
-                  ) : (
-                    <Alert severity="info" sx={{ borderRadius: "8px" }}>
-                      当前正在浏览“我的文件”，系统会自动载入你的个人目录结构。
-                    </Alert>
-                  )}
-                </Box>
+                {section === COURSE_FILES ? (
+                  <CourseSelect
+                    onChange={(courseId) => setSelectedCourseId(courseId)}
+                    disabled={operating}
+                    courses={courses.data}
+                    value={selectedCourseId > 0 ? selectedCourseId : undefined}
+                  />
+                ) : (
+                  <Alert severity="info" sx={{ borderRadius: "10px" }}>
+                    当前正在浏览“我的文件”，系统会自动载入你的个人目录结构。
+                  </Alert>
+                )}
 
-                <Box
-                  sx={{
-                    display: "grid",
-                    gap: 1.5,
-                    gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "repeat(2, minmax(0, 1fr))" },
-                  }}
+                <Stack
+                  direction={{ xs: "column", sm: "row" }}
+                  spacing={2}
+                  alignItems={{ xs: "stretch", sm: "center" }}
                 >
-                  <Box sx={{ p: 2, ...innerBoxSx }}>
-                    <Stack spacing={1.25}>
-                      <FormControlLabel
-                        control={
-                          <Checkbox
-                            checked={downloadableOnly}
-                            disabled={operating}
-                            onChange={(event) => setDownloadableOnly(event.target.checked)}
-                          />
-                        }
-                        label="只显示可下载文件"
-                      />
-                      <FormControlLabel
-                        control={
-                          <Checkbox
-                            checked={showExternal}
-                            disabled={operating}
-                            onChange={(event) => setShowExternal(event.target.checked)}
-                          />
-                        }
-                        label="显示外部文件"
-                      />
-                    </Stack>
-                  </Box>
-
-                  <Box sx={{ p: 2, ...innerBoxSx }}>
-                    <TextField
-                      fullWidth
-                      placeholder="输入文件关键词…"
-                      value={keyword}
-                      onChange={(event) => setKeyword(event.target.value)}
-                      InputProps={{
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <SearchRoundedIcon color="action" />
-                          </InputAdornment>
-                        ),
-                      }}
+                  <Stack direction="row" spacing={2.5} sx={{ flexShrink: 0 }}>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={downloadableOnly}
+                          disabled={operating}
+                          onChange={(event) => setDownloadableOnly(event.target.checked)}
+                        />
+                      }
+                      label="只显示可下载"
                     />
-                  </Box>
-                </Box>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={showExternal}
+                          disabled={operating}
+                          onChange={(event) => setShowExternal(event.target.checked)}
+                        />
+                      }
+                      label="显示外部文件"
+                    />
+                  </Stack>
+                  <TextField
+                    fullWidth
+                    placeholder="输入文件关键词…"
+                    value={keyword}
+                    onChange={(event) => setKeyword(event.target.value)}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchRoundedIcon color="action" />
+                        </InputAdornment>
+                      ),
+                    }}
+                  />
+                </Stack>
               </Box>
 
               <Stack
@@ -1026,7 +1019,26 @@ export default function FilesPage() {
                       );
                     })}
 
-                    {filteredEntries.length === 0 ? (
+                    {operating && filteredEntries.length === 0 ? (
+                      Array.from({ length: 6 }).map((_, i) => (
+                        <TableRow key={`skeleton-${i}`}>
+                          <TableCell padding="checkbox">
+                            <Skeleton variant="circular" width={18} height={18} />
+                          </TableCell>
+                          <TableCell>
+                            <Skeleton variant="text" width="55%" sx={{ fontSize: 20 }} />
+                          </TableCell>
+                          <TableCell align="right">
+                            <Stack direction="row" spacing={1.5} justifyContent="flex-end">
+                              <Skeleton variant="rounded" width={56} height={30} />
+                              <Skeleton variant="rounded" width={80} height={30} />
+                            </Stack>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : null}
+
+                    {!operating && filteredEntries.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={3}>
                           <Stack alignItems="center" spacing={1.5} sx={{ py: 8, textAlign: "center" }}>
@@ -1092,10 +1104,7 @@ export default function FilesPage() {
         <Card sx={surfaceCardSx}>
           <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
             <Stack spacing={2}>
-              <Stack direction="row" spacing={1.5} alignItems="center">
-                <Box sx={{ width: 4, height: 18, borderRadius: 999, bgcolor: "primary.main" }} />
-                <Typography variant="h6">文档合并</Typography>
-              </Stack>
+              <Typography variant="h6">文档合并</Typography>
               {selectedFileCount > 0 && noSelectedMergeFiles ? (
                 <Alert severity="info" sx={{ borderRadius: "8px" }}>
                   当前已选文件中，可用于合并的 Word/PDF/PPTX 文件不足 2 个。
@@ -1109,10 +1118,7 @@ export default function FilesPage() {
         <Card sx={surfaceCardSx}>
           <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
             <Stack spacing={2}>
-              <Stack direction="row" spacing={1.5} alignItems="center">
-                <Box sx={{ width: 4, height: 18, borderRadius: 999, bgcolor: "primary.main" }} />
-                <Typography variant="h6">下载任务</Typography>
-              </Stack>
+              <Typography variant="h6">下载任务</Typography>
               <FileDownloadTable
                 tasks={downloadTasks}
                 handleRemoveTask={handleRemoveTask}

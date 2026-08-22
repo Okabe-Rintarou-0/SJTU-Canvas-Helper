@@ -1,10 +1,16 @@
 :root {
     --font-display: "Iowan Old Style", "Palatino Linotype", "Georgia", "STZhongsong", "SimSun", "Songti SC", serif;
     --font-body: "Aptos", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --rise-delay: 0ms;
 }
 
 svg {
     vertical-align: baseline;
+}
+
+html {
+    scroll-behavior: smooth;
 }
 
 .ant-table-thead>tr>th {
@@ -19,7 +25,7 @@ svg {
 /* Refined scrollbars that keep a low visual footprint */
 * {
     scrollbar-width: thin;
-    scrollbar-color: rgba(120, 128, 140, 0.35) transparent;
+    scrollbar-color: rgba(111, 127, 118, 0.32) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -32,14 +38,14 @@ svg {
 }
 
 *::-webkit-scrollbar-thumb {
-    background: rgba(120, 128, 140, 0.28);
+    background: rgba(111, 127, 118, 0.26);
     border-radius: 999px;
     border: 3px solid transparent;
     background-clip: content-box;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-    background: rgba(120, 128, 140, 0.5);
+    background: rgba(111, 127, 118, 0.45);
     border: 3px solid transparent;
     background-clip: content-box;
 }
@@ -52,18 +58,48 @@ body::after {
     z-index: 2147483646;
     pointer-events: none;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
-    opacity: 0.018;
+    opacity: 0.012;
+}
+
+/* Visible focus ring for keyboard users */
+:focus-visible {
+    outline: 2px solid rgba(0, 185, 107, 0.55);
+    outline-offset: 2px;
+    border-radius: 6px;
+}
+
+/* Press feedback on interactive elements */
+.MuiButtonBase-root:active:not(:disabled) {
+    transform: translateY(1px) scale(0.98);
+    transition-duration: 60ms;
 }
 
 /* One choreographed entrance per route change */
 .page-enter {
-    animation: page-enter 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+    animation: page-enter 0.38s var(--ease-out);
 }
 
 @keyframes page-enter {
     from {
         opacity: 0;
-        transform: translateY(8px);
+        transform: translateY(10px) scale(0.995);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Staggered rise used by heroes and lists. Set --rise-delay per item. */
+.rise {
+    animation: rise 0.5s var(--ease-out) both;
+    animation-delay: var(--rise-delay, 0ms);
+}
+
+@keyframes rise {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
     }
     to {
         opacity: 1;
@@ -71,9 +107,29 @@ body::after {
     }
 }
 
+/* Gentle lift for hoverable cards */
+.card-lift {
+    transition: transform 0.22s var(--ease-out), box-shadow 0.22s var(--ease-out), border-color 0.22s ease;
+}
+
+.card-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(31, 42, 36, 0.08);
+}
+
+/* Sidebar nav entrance */
+.nav-enter {
+    animation: rise 0.4s var(--ease-out) both;
+    animation-delay: var(--rise-delay, 0ms);
+}
+
 @media (prefers-reduced-motion: reduce) {
-    .page-enter {
-        animation: none;
+    .page-enter,
+    .rise,
+    .nav-enter,
+    .card-lift {
+        animation: none !important;
+        transition: none !important;
     }
     *,
     *::before,
