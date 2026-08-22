@@ -21,16 +21,14 @@ import {
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import ReactAnsi from "react-ansi";
 
 import { useAppMessage } from "../lib/message";
+import { useWebviewEvent } from "../lib/events";
 import { LOG_LEVEL_INFO, VideoAggregateParams } from "../lib/model";
 import { consoleLog } from "../lib/utils";
 import { PathSelector } from "./path_selector";
-
-const appWindow = getCurrentWebviewWindow();
 
 type FfmpegState = "unknown" | "installed" | "uninstalled";
 
@@ -89,14 +87,9 @@ export default function VideoAggregator() {
     return ok;
   };
 
-  useEffect(() => {
-    const unlistenOutput = appWindow.listen<string>("ffmpeg://output", ({ payload }) => {
-      setOutput((current) => current + payload);
-    });
-    return () => {
-      unlistenOutput.then((fn) => fn());
-    };
-  }, []);
+  useWebviewEvent("ffmpeg://output", (payload) => {
+    setOutput((current) => current + payload);
+  });
 
   const handleSubmit = async () => {
     const params = {

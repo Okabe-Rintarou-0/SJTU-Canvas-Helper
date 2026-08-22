@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import FolderOpenRoundedIcon from "@mui/icons-material/FolderOpenRounded";
 import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
@@ -26,12 +25,10 @@ import {
   File,
   FileDownloadTask,
   LOG_LEVEL_ERROR,
-  ProgressPayload,
 } from "../lib/model";
 import { useAppMessage } from "../lib/message";
+import { useWebviewEvent } from "../lib/events";
 import { consoleLog, sleep } from "../lib/utils";
-
-const appWindow = getCurrentWebviewWindow();
 
 function taskStateMeta(state: DownloadState) {
   switch (state) {
@@ -71,20 +68,12 @@ export default function FileDownloadTable({
     selectedTaskKeys.includes(task.key)
   );
 
-  useEffect(() => {
-    const unlisten = appWindow.listen<ProgressPayload>(
-      "download://progress",
-      ({ payload }) => {
-        updateTaskProgress(
-          payload.uuid,
-          Math.ceil((payload.processed / payload.total) * 100)
-        );
-      }
+  useWebviewEvent("download://progress", (payload) => {
+    updateTaskProgress(
+      payload.uuid,
+      Math.ceil((payload.processed / payload.total) * 100)
     );
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, []);
+  });
 
   useEffect(() => {
     setCurrentTasks(tasks);

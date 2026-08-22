@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
 import ClosedCaptionRoundedIcon from "@mui/icons-material/ClosedCaptionRounded";
 import CloudDownloadRoundedIcon from "@mui/icons-material/CloudDownloadRounded";
@@ -52,12 +51,10 @@ import { getConfig, saveConfig } from "../lib/config";
 import { VIDEO_PAGE_HINT_ALERT_KEY } from "../lib/constants";
 import { useCourses, useSelectedCourse, useAutoLoadCourse } from "../lib/hooks";
 import { useAppMessage } from "../lib/message";
+import { useTauriEvent } from "../lib/events";
 import {
   CanvasVideo,
   DownloadTask,
-  FileChatStreamChunkPayload,
-  FileChatStreamDonePayload,
-  FileChatStreamErrorPayload,
   LLMChatMessage,
   LOG_LEVEL_ERROR,
   VideoDownloadTask,
@@ -165,98 +162,70 @@ export default function VideoPage() {
     }
   }, [loaded, notLogin]);
 
-  useEffect(() => {
-    let unlistenChunk: UnlistenFn | undefined;
-    let unlistenDone: UnlistenFn | undefined;
-    let unlistenError: UnlistenFn | undefined;
-
-    const setupListeners = async () => {
-      unlistenChunk = await listen<FileChatStreamChunkPayload>(
-        "video_ai_chat://chunk",
-        (event) => {
-          const payload = event.payload;
-          if (payload.request_id !== activeSummaryRequestIdRef.current) {
-            return;
-          }
-          setSummaryChatMessages((prev) => {
-            const next = [...prev];
-            for (let i = next.length - 1; i >= 0; i -= 1) {
-              if (next[i].role === "assistant") {
-                next[i] = {
-                  ...next[i],
-                  content: `${next[i].content}${payload.chunk}`,
-                };
-                break;
-              }
-            }
-            return next;
-          });
+  useTauriEvent("video_ai_chat://chunk", (payload) => {
+    if (payload.request_id !== activeSummaryRequestIdRef.current) {
+      return;
+    }
+    setSummaryChatMessages((prev) => {
+      const next = [...prev];
+      for (let i = next.length - 1; i >= 0; i -= 1) {
+        if (next[i].role === "assistant") {
+          next[i] = {
+            ...next[i],
+            content: `${next[i].content}${payload.chunk}`,
+          };
+          break;
         }
-      );
+      }
+      return next;
+    });
+  });
 
-      unlistenDone = await listen<FileChatStreamDonePayload>(
-        "video_ai_chat://done",
-        (event) => {
-          const payload = event.payload;
-          if (payload.request_id !== activeSummaryRequestIdRef.current) {
-            return;
-          }
-          activeSummaryRequestIdRef.current = null;
-          setSummaryChatLoading(false);
-          setSummaryChatMessages((prev) => {
-            const next = [...prev];
-            for (let i = next.length - 1; i >= 0; i -= 1) {
-              if (next[i].role === "assistant") {
-                next[i] = {
-                  ...next[i],
-                  content: payload.content || next[i].content,
-                  pending: false,
-                };
-                break;
-              }
-            }
-            return next;
-          });
+  useTauriEvent("video_ai_chat://done", (payload) => {
+    if (payload.request_id !== activeSummaryRequestIdRef.current) {
+      return;
+    }
+    activeSummaryRequestIdRef.current = null;
+    setSummaryChatLoading(false);
+    setSummaryChatMessages((prev) => {
+      const next = [...prev];
+      for (let i = next.length - 1; i >= 0; i -= 1) {
+        if (next[i].role === "assistant") {
+          next[i] = {
+            ...next[i],
+            content: payload.content || next[i].content,
+            pending: false,
+          };
+          break;
         }
-      );
+      }
+      return next;
+    });
+  });
 
-      unlistenError = await listen<FileChatStreamErrorPayload>(
-        "video_ai_chat://error",
-        (event) => {
-          const payload = event.payload;
-          if (payload.request_id !== activeSummaryRequestIdRef.current) {
-            return;
-          }
-          activeSummaryRequestIdRef.current = null;
-          setSummaryChatLoading(false);
-          messageApi.error(`AI 总结时发生错误：${payload.error}`);
-          setSummaryChatMessages((prev) => {
-            const next = [...prev];
-            for (let i = next.length - 1; i >= 0; i -= 1) {
-              if (next[i].role === "assistant") {
-                next[i] = {
-                  ...next[i],
-                  content: next[i].content || `AI 总结时发生错误：${payload.error}`,
-                  pending: false,
-                  error: true,
-                };
-                break;
-              }
-            }
-            return next;
-          });
+  useTauriEvent("video_ai_chat://error", (payload) => {
+    if (payload.request_id !== activeSummaryRequestIdRef.current) {
+      return;
+    }
+    activeSummaryRequestIdRef.current = null;
+    setSummaryChatLoading(false);
+    messageApi.error(`AI 总结时发生错误：${payload.error}`);
+    setSummaryChatMessages((prev) => {
+      const next = [...prev];
+      for (let i = next.length - 1; i >= 0; i -= 1) {
+        if (next[i].role === "assistant") {
+          next[i] = {
+            ...next[i],
+            content: next[i].content || `AI 总结时发生错误：${payload.error}`,
+            pending: false,
+            error: true,
+          };
+          break;
         }
-      );
-    };
-
-    void setupListeners();
-
-    return () => {
-      void unlistenChunk?.();
-      void unlistenDone?.();
-      void unlistenError?.();
-    };
-  }, [messageApi]);
+      }
+      return next;
+    });
+  });
 
   const loginAndCheck = async (retry = false) => {
     const config = await getConfig(true);

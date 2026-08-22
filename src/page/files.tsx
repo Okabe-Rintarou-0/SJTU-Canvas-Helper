@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import CloudDownloadRoundedIcon from "@mui/icons-material/CloudDownloadRounded";
 import DescriptionRoundedIcon from "@mui/icons-material/DescriptionRounded";
@@ -56,9 +55,6 @@ import {
   Course,
   Entry,
   File,
-  FileChatStreamChunkPayload,
-  FileChatStreamDonePayload,
-  FileChatStreamErrorPayload,
   FileDownloadTask,
   Folder,
   LLMChatMessage,
@@ -74,6 +70,7 @@ import {
   isMergableFileType,
   scrollToTop,
 } from "../lib/utils";
+import { useTauriEvent } from "../lib/events";
 import { surfaceCardSx } from "../lib/styles";
 
 interface DownloadInfo {
@@ -178,98 +175,70 @@ export default function FilesPage() {
     setEntries(files);
   }, [files]);
 
-  useEffect(() => {
-    let unlistenChunk: UnlistenFn | undefined;
-    let unlistenDone: UnlistenFn | undefined;
-    let unlistenError: UnlistenFn | undefined;
-
-    const setupListeners = async () => {
-      unlistenChunk = await listen<FileChatStreamChunkPayload>(
-        "file_ai_chat://chunk",
-        (event) => {
-          const payload = event.payload;
-          if (payload.request_id !== activeChatRequestIdRef.current) {
-            return;
-          }
-          setChatMessages((prev) => {
-            const next = [...prev];
-            for (let i = next.length - 1; i >= 0; i -= 1) {
-              if (next[i].role === "assistant") {
-                next[i] = {
-                  ...next[i],
-                  content: `${next[i].content}${payload.chunk}`,
-                };
-                break;
-              }
-            }
-            return next;
-          });
+  useTauriEvent("file_ai_chat://chunk", (payload) => {
+    if (payload.request_id !== activeChatRequestIdRef.current) {
+      return;
+    }
+    setChatMessages((prev) => {
+      const next = [...prev];
+      for (let i = next.length - 1; i >= 0; i -= 1) {
+        if (next[i].role === "assistant") {
+          next[i] = {
+            ...next[i],
+            content: `${next[i].content}${payload.chunk}`,
+          };
+          break;
         }
-      );
+      }
+      return next;
+    });
+  });
 
-      unlistenDone = await listen<FileChatStreamDonePayload>(
-        "file_ai_chat://done",
-        (event) => {
-          const payload = event.payload;
-          if (payload.request_id !== activeChatRequestIdRef.current) {
-            return;
-          }
-          setChatLoading(false);
-          activeChatRequestIdRef.current = null;
-          setChatMessages((prev) => {
-            const next = [...prev];
-            for (let i = next.length - 1; i >= 0; i -= 1) {
-              if (next[i].role === "assistant") {
-                next[i] = {
-                  ...next[i],
-                  content: payload.content || next[i].content,
-                  pending: false,
-                };
-                break;
-              }
-            }
-            return next;
-          });
+  useTauriEvent("file_ai_chat://done", (payload) => {
+    if (payload.request_id !== activeChatRequestIdRef.current) {
+      return;
+    }
+    setChatLoading(false);
+    activeChatRequestIdRef.current = null;
+    setChatMessages((prev) => {
+      const next = [...prev];
+      for (let i = next.length - 1; i >= 0; i -= 1) {
+        if (next[i].role === "assistant") {
+          next[i] = {
+            ...next[i],
+            content: payload.content || next[i].content,
+            pending: false,
+          };
+          break;
         }
-      );
+      }
+      return next;
+    });
+  });
 
-      unlistenError = await listen<FileChatStreamErrorPayload>(
-        "file_ai_chat://error",
-        (event) => {
-          const payload = event.payload;
-          if (payload.request_id !== activeChatRequestIdRef.current) {
-            return;
-          }
-          setChatLoading(false);
-          activeChatRequestIdRef.current = null;
-          notify(`AI 对话出错：${payload.error}`, "error");
-          setChatMessages((prev) => {
-            const next = [...prev];
-            for (let i = next.length - 1; i >= 0; i -= 1) {
-              if (next[i].role === "assistant") {
-                next[i] = {
-                  ...next[i],
-                  content: next[i].content || `对话出错：${payload.error}`,
-                  pending: false,
-                  error: true,
-                };
-                break;
-              }
-            }
-            return next;
-          });
+  useTauriEvent("file_ai_chat://error", (payload) => {
+    if (payload.request_id !== activeChatRequestIdRef.current) {
+      return;
+    }
+    setChatLoading(false);
+    activeChatRequestIdRef.current = null;
+    notify(`AI 对话出错：${payload.error}`, "error");
+    setChatMessages((prev) => {
+      const next = [...prev];
+      for (let i = next.length - 1; i >= 0; i -= 1) {
+        if (next[i].role === "assistant") {
+          next[i] = {
+            ...next[i],
+            content: next[i].content || `对话出错：${payload.error}`,
+            pending: false,
+            error: true,
+          };
+          break;
         }
-      );
-    };
-
-    void setupListeners();
-
-    return () => {
-      void unlistenChunk?.();
-      void unlistenDone?.();
-      void unlistenError?.();
-    };
-  }, []);
+      }
+      return next;
+    });
+  });
 
   useEffect(() => {
     if (currentFolderId > 0) {

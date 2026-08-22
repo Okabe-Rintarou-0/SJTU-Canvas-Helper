@@ -13,12 +13,10 @@ import {
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
-import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useEffect, useState } from "react";
 
-import { DownloadTask, ProgressPayload } from "../lib/model";
-
-const appWindow = getCurrentWebviewWindow();
+import { DownloadTask } from "../lib/model";
+import { useWebviewEvent } from "../lib/events";
 
 interface PPTDownloadTableProps {
   tasks: DownloadTask[];
@@ -47,17 +45,9 @@ export default function PPTDownloadTable({
   const theme = useTheme();
   const [currentTasks, setCurrentTasks] = useState<DownloadTask[]>([]);
 
-  useEffect(() => {
-    const unlisten = appWindow.listen<ProgressPayload>(
-      "ppt_download://progress",
-      ({ payload }) => {
-        updateTaskProgress(payload.uuid, payload.processed, payload.total);
-      }
-    );
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, []);
+  useWebviewEvent("ppt_download://progress", (payload) => {
+    updateTaskProgress(payload.uuid, payload.processed, payload.total);
+  });
 
   useEffect(() => {
     setCurrentTasks(tasks);
