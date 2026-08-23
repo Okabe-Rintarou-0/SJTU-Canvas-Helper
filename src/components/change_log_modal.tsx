@@ -15,6 +15,12 @@ import {
 import { alpha, useTheme } from "@mui/material/styles";
 
 const changeLogs = [{
+  version: "v3.0.10",
+  date: "2026/8/23",
+  items: [
+    "修复课程列表因未知角色（如「临时学生」）反序列化失败的问题：新增临时学生角色识别与未知角色兜底处理，任意角色不再导致课程加载报错。",
+  ],
+}, {
   version: "v3.0.9",
   date: "2026/8/22",
   items: [
