@@ -94,8 +94,11 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
 
+      # GitHub now rejects GITHUB_TOKEN for updating (PATCH) an existing release
+      # with 403 "Resource not accessible by integration". Uploading the updater
+      # manifest as an asset (POST) is still allowed, so we replace the release's
+      # latest.json without touching the release itself.
       - name: update release
-        uses: softprops/action-gh-release@6cbd405e2c4e67a21c47fa9e383d020e4e28b836 # 2.3.3
-        with:
-          files: latest.json
-          tag_name: latest
+        run: gh release upload latest latest.json --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
