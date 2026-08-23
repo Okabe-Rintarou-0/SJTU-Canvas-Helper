@@ -447,6 +447,10 @@ pub enum EnrollmentRole {
     TeacherEnrollment,
     ObserverEnrollment,
     DesignerEnrollment,
+    #[serde(alias = "临时学生")]
+    TemporaryStudentEnrollment,
+    #[serde(other)]
+    Other,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
