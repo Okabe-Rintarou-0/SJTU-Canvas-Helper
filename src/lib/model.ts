@@ -405,8 +405,15 @@ export interface CanvasVideo {
     userName: string;
     videoName: string;
     classroomName: string;
-    courseBeginTime: string,
-    courseEndTime: string,
+    courseBeginTime: string;
+    courseEndTime: string;
+    weekNumber: number;
+    weekDay: number;
+    lessonNumber: number;
+    dailyLessonNumber: number;
+    playable: boolean;
+    availability: "ready" | "repairing" | "unavailable";
+    availabilityLabel: string;
 }
 
 export interface Video {

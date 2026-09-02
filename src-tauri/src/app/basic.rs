@@ -39,6 +39,51 @@ use super::{
 
 const MY_CANVAS_FILES_FOLDER_NAME: &str = "我的Canvas文件";
 
+async fn proxy_video_request(
+    upstream_base: &'static str,
+    referer: &'static str,
+    tail: warp::path::Tail,
+    query: String,
+    headers: warp::http::HeaderMap,
+) -> std::result::Result<Response<warp::hyper::Body>, Infallible> {
+    let range_value = headers
+        .get("Range")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+
+    let mut url = format!("{upstream_base}/{}", tail.as_str());
+    if !query.is_empty() {
+        url.push('?');
+        url.push_str(&query);
+    }
+
+    let client = reqwest::Client::new();
+    let mut request = client.get(&url).header("Referer", referer);
+    if !range_value.is_empty() {
+        request = request.header("Range", range_value);
+    }
+
+    match request.send().await {
+        Ok(response) => {
+            let status = response.status();
+            let mut builder = Response::builder().status(status);
+            for (key, value) in response.headers() {
+                builder = builder.header(key, value);
+            }
+            let stream = response
+                .bytes_stream()
+                .map(|chunk| chunk.map_err(std::io::Error::other));
+            let body = warp::hyper::Body::wrap_stream(stream);
+            Ok(builder.body(body).unwrap())
+        }
+        Err(error) => Ok(Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(format!("Error downloading video: {error}").into())
+            .unwrap()),
+    }
+}
+
 impl App {
     fn ensure_directory(dir: &str) {
         let metadata = fs::metadata(dir);
@@ -263,62 +308,37 @@ impl App {
         let proxy_port = self.config.read().await.proxy_port;
 
         // Proxy Endpoint: /vod/*
-        let proxy = warp::get()
+        let legacy_video_proxy = warp::get()
             .and(warp::path("vod").and(warp::path::tail()))
             .and(query_raw().or(warp::any().map(|| "".to_string())).unify())
             .and(warp::header::headers_cloned())
-            .and_then(
-                |tail: warp::path::Tail, query: String, headers: warp::http::HeaderMap| async move {
-                    let range_value = headers
-                        .get("Range")
-                        .and_then(|v| v.to_str().ok())
-                        .unwrap_or("")
-                        .to_string();
-
-                    let mut url = format!("https://live.sjtu.edu.cn/vod/{}", tail.as_str());
-                    if !query.is_empty() {
-                        url.push('?');
-                        url.push_str(&query);
-                    }
-
-                    let client = reqwest::Client::new();
-                    let mut req = client
-                        .get(&url)
-                        .header("Referer", "https://courses.sjtu.edu.cn"); // 你原本的Referer
-                    if !range_value.is_empty() {
-                        req = req.header("Range", range_value.clone());
-                    }
-                    tracing::info!("req: {:?}", req);
-                    let resp = req.send().await;
-
-                    match resp {
-                        Ok(resp) => {
-                            tracing::info!("resp: {:?}", resp);
-                            let status = resp.status();
-                            let mut builder = Response::builder().status(status);
-                            for (k, v) in resp.headers() {
-                                builder = builder.header(k, v);
-                            }
-                            let stream = resp
-                                .bytes_stream()
-                                .map(|chunk| chunk.map_err(std::io::Error::other));
-                            let body = warp::hyper::Body::wrap_stream(stream);
-                            Ok::<warp::http::Response<warp::hyper::Body>, Infallible>(
-                                builder.body(body).unwrap(),
-                            )
-                        }
-                        Err(e) => Ok(Response::builder()
-                            .status(StatusCode::INTERNAL_SERVER_ERROR)
-                            .body(format!("Error downloading video: {e}").into())
-                            .unwrap()),
-                    }
-                },
-            );
+            .and_then(|tail, query, headers| {
+                proxy_video_request(
+                    "https://live.sjtu.edu.cn/vod",
+                    "https://courses.sjtu.edu.cn",
+                    tail,
+                    query,
+                    headers,
+                )
+            });
+        let canvas_video_proxy = warp::get()
+            .and(warp::path("canvas-vod").and(warp::path::tail()))
+            .and(query_raw().or(warp::any().map(|| "".to_string())).unify())
+            .and(warp::header::headers_cloned())
+            .and_then(|tail, query, headers| {
+                proxy_video_request(
+                    "https://videos.sjtu.edu.cn/vod",
+                    "https://v.sjtu.edu.cn/jy-application-resourcemanage-ui/",
+                    tail,
+                    query,
+                    headers,
+                )
+            });
         // Ready Check Endpoint: /ready
         let ready_check = warp::path!("ready").map(|| Response::builder().body(""));
 
-        let handle =
-            tokio::spawn(warp::serve(proxy.or(ready_check)).run(([127, 0, 0, 1], proxy_port)));
+        let routes = legacy_video_proxy.or(canvas_video_proxy).or(ready_check);
+        let handle = tokio::spawn(warp::serve(routes).run(([127, 0, 0, 1], proxy_port)));
         *self.handle.write().await = Some(handle);
 
         self.wait_proxy_ready(proxy_port).await
@@ -1009,7 +1029,7 @@ impl App {
     ) -> Result<String> {
         self.client.chat_with_file_stream(file, messages, on_chunk).await
     }
-    
+
     pub async fn summarize_subtitle(&self, canvas_course_id: i64) -> Result<String> {
         self.client.summarize_subtitle(canvas_course_id).await
     }

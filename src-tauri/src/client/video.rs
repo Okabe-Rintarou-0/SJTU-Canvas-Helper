@@ -20,10 +20,8 @@ use crate::{
     },
     error::{AppError, Result},
     model::{
-        CanvasVideo, CanvasVideoPPT, CanvasVideoPPTResponse, CanvasVideoResponse,
-        CanvasVideoSubTitle, CanvasVideoSubTitleResponse, CanvasVideoSubTitleResponseBody,
-        GetCanvasVideoInfoResponse, ItemPage, ProgressPayload, Subject, VideoCourse, VideoInfo,
-        VideoPlayInfo,
+        CanvasVideo, CanvasVideoPPT, CanvasVideoSubTitle, CanvasVideoSubTitleResponseBody,
+        ItemPage, ProgressPayload, Subject, VideoCourse, VideoInfo, VideoPlayInfo,
     },
     utils::{self, file::get_file_name, file::write_file_at_offset, time::format_time},
 };
@@ -40,16 +38,269 @@ use reqwest::{
     redirect::Policy,
     Response, StatusCode,
 };
-use select::{
-    document::Document,
-    node::Node,
-    predicate::{Attr, Name},
-};
+use select::{document::Document, node::Node, predicate::Name};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use tauri::Url;
 use tokio::{sync::Mutex, task::JoinSet};
-use urlencoding::encode;
+
+const RESOURCE_MANAGE_BASE_URL: &str = "https://v.sjtu.edu.cn/jy-application-resourcemanage";
+const RESOURCE_MANAGE_UI_URL: &str = "https://v.sjtu.edu.cn/jy-application-resourcemanage-ui/";
+
+fn value_as_i64(value: Option<&Value>) -> Option<i64> {
+    value.and_then(|value| {
+        value
+            .as_i64()
+            .or_else(|| value.as_u64().and_then(|value| i64::try_from(value).ok()))
+            .or_else(|| value.as_str().and_then(|value| value.parse().ok()))
+    })
+}
+
+fn value_as_string(value: Option<&Value>) -> Option<String> {
+    value.and_then(|value| match value {
+        Value::String(value) => Some(value.clone()),
+        Value::Number(value) => Some(value.to_string()),
+        _ => None,
+    })
+}
+
+fn first_string(value: &Value, keys: &[&str]) -> String {
+    keys.iter()
+        .find_map(|key| value_as_string(value.get(*key)))
+        .unwrap_or_default()
+}
+
+fn weekday_name(day: i64) -> String {
+    match day {
+        1 => "周一".to_string(),
+        2 => "周二".to_string(),
+        3 => "周三".to_string(),
+        4 => "周四".to_string(),
+        5 => "周五".to_string(),
+        6 => "周六".to_string(),
+        7 => "周日".to_string(),
+        _ => format!("星期{day}"),
+    }
+}
+
+fn canvas_video_availability(record: &Value) -> (bool, String, String) {
+    match value_as_i64(record.get("vodStatus")) {
+        Some(5) => (true, "ready".to_string(), "可播放".to_string()),
+        Some(4) => (false, "repairing".to_string(), "修复中".to_string()),
+        Some(6) => (false, "unavailable".to_string(), "暂无回放".to_string()),
+        _ => (false, "unavailable".to_string(), "暂不可用".to_string()),
+    }
+}
+
+fn daily_lesson_numbers(records: &[Value]) -> HashMap<usize, i64> {
+    let mut daily_records: HashMap<String, Vec<(usize, String)>> = HashMap::new();
+    for (index, record) in records.iter().enumerate() {
+        let begin_time = first_string(record, &["courBeginTime", "beginTime"]);
+        let date = begin_time.split_whitespace().next().unwrap_or_default();
+        let subject_id = first_string(record, &["subjId", "teclId"]);
+        let key = if date.is_empty() {
+            format!("record-{index}")
+        } else {
+            format!("{subject_id}-{date}")
+        };
+        daily_records
+            .entry(key)
+            .or_default()
+            .push((index, begin_time));
+    }
+
+    let mut lesson_numbers = HashMap::new();
+    for records in daily_records.values_mut() {
+        records.sort_by(|left, right| left.1.cmp(&right.1));
+        for (lesson_index, (record_index, _)) in records.iter().enumerate() {
+            lesson_numbers.insert(*record_index, lesson_index as i64 + 1);
+        }
+    }
+    lesson_numbers
+}
+
+fn api_data(value: &Value) -> Result<&Value> {
+    let status = value_as_i64(value.get("status")).unwrap_or(200);
+    if status != 200 {
+        let message = first_string(value, &["message", "msg", "code"]);
+        return Err(AppError::VideoDownloadError(if message.is_empty() {
+            format!("Video service returned status {status}")
+        } else {
+            message
+        }));
+    }
+
+    value
+        .get("data")
+        .filter(|value| !value.is_null())
+        .or_else(|| value.get("result"))
+        .filter(|value| !value.is_null())
+        .ok_or_else(|| AppError::VideoDownloadError("Video service returned no data".to_string()))
+}
+
+fn canvas_videos_from_response(value: &Value) -> Result<Vec<CanvasVideo>> {
+    let records = api_data(value)?
+        .get("records")
+        .and_then(Value::as_array)
+        .ok_or_else(|| AppError::VideoDownloadError("Video list is missing records".to_string()))?;
+    let daily_lesson_numbers = daily_lesson_numbers(records);
+
+    Ok(records
+        .iter()
+        .enumerate()
+        .filter_map(|(record_index, record)| {
+            let video_id = first_string(record, &["id", "courseId", "courId"]);
+            if video_id.is_empty() {
+                return None;
+            }
+            let subject_name = first_string(record, &["subjName", "courName", "courseName"]);
+            let week_number =
+                value_as_i64(record.get("weekNumber").or_else(|| record.get("weekNo")))
+                    .unwrap_or_default();
+            let week_day = value_as_i64(record.get("week")).unwrap_or_default();
+            let lesson_number = value_as_i64(record.get("letiNumber")).unwrap_or_default();
+            let daily_lesson_number = daily_lesson_numbers
+                .get(&record_index)
+                .copied()
+                .unwrap_or(1);
+            let schedule_name = if week_number > 0 && week_day > 0 {
+                format!(
+                    "第{week_number}周 {} 第{daily_lesson_number}节",
+                    weekday_name(week_day)
+                )
+            } else {
+                first_string(record, &["courBeginTime", "beginTime"])
+            };
+            let video_name = match subject_name.as_str() {
+                "" => schedule_name,
+                name => format!("{name} {schedule_name}"),
+            };
+            let (playable, availability, availability_label) = canvas_video_availability(record);
+            Some(CanvasVideo {
+                video_id,
+                user_name: first_string(record, &["tecName", "userName", "teacherName"]),
+                video_name,
+                classroom_name: first_string(
+                    record,
+                    &["classRoomName", "classroomName", "clroName"],
+                ),
+                course_begin_time: first_string(record, &["courBeginTime", "beginTime"]),
+                course_end_time: first_string(record, &["courEndTime", "endTime"]),
+                week_number,
+                week_day,
+                lesson_number,
+                daily_lesson_number,
+                playable,
+                availability,
+                availability_label,
+            })
+        })
+        .collect())
+}
+
+fn video_info_from_response(value: &Value) -> Result<VideoInfo> {
+    let data = api_data(value)?;
+    let course_id = value_as_i64(
+        data.get("id")
+            .or_else(|| data.get("courseId"))
+            .or_else(|| data.get("courId")),
+    )
+    .ok_or_else(|| AppError::VideoDownloadError("Video id is missing".to_string()))?;
+    let views = data
+        .get("courseVodViewList")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let video_play_response_vo_list = views
+        .iter()
+        .enumerate()
+        .filter_map(|(index, view)| {
+            let url = first_string(view, &["url", "playUrl", "rtmpUrlHdv"]);
+            if url.is_empty() {
+                return None;
+            }
+            let view_num = value_as_i64(view.get("viewNum")).unwrap_or(index as i64 + 1);
+            Some(VideoPlayInfo {
+                id: course_id.saturating_mul(100).saturating_add(view_num),
+                rtmp_url_hdv: url,
+                cdvi_view_num: view_num,
+                ..Default::default()
+            })
+        })
+        .collect::<Vec<_>>();
+    if video_play_response_vo_list.is_empty() {
+        return Err(AppError::VideoDownloadError(
+            "No playable video source was returned".to_string(),
+        ));
+    }
+
+    Ok(VideoInfo {
+        id: course_id,
+        cour_id: course_id,
+        vide_name: first_string(data, &["courName", "subjName", "courseName"]),
+        cour_name: first_string(data, &["courName", "subjName", "courseName"]),
+        clro_name: first_string(data, &["classRoomName", "classroomName", "clroName"]),
+        user_name: first_string(data, &["tecName", "userName", "teacherName"]),
+        vide_begin_time: first_string(data, &["courBeginTime", "beginTime"]),
+        vide_end_time: first_string(data, &["courEndTime", "endTime"]),
+        rtmp_url_hdv: video_play_response_vo_list[0].rtmp_url_hdv.clone(),
+        vide_record_channel_num: video_play_response_vo_list.len() as i64,
+        video_play_response_vo_list,
+        ..Default::default()
+    })
+}
+
+fn subtitles_from_response(value: &Value) -> Result<CanvasVideoSubTitleResponseBody> {
+    let data = api_data(value).map_err(|error| match error {
+        AppError::VideoDownloadError(message) if message == "Video service returned no data" => {
+            AppError::VideoDownloadError("Subtitle unavailable".to_string())
+        }
+        error => error,
+    })?;
+    let subtitles: CanvasVideoSubTitleResponseBody = serde_json::from_value(data.clone())?;
+    if subtitles.before_assembly_list.is_empty() && subtitles.after_assembly_list.is_empty() {
+        return Err(AppError::VideoDownloadError(
+            "Subtitle unavailable".to_string(),
+        ));
+    }
+    Ok(subtitles)
+}
+
+fn ppts_from_response(value: &Value) -> Result<Vec<CanvasVideoPPT>> {
+    let docs = api_data(value)?
+        .get("docList")
+        .and_then(Value::as_array)
+        .ok_or_else(|| AppError::VideoDownloadError("No PPT found".to_string()))?;
+    Ok(docs
+        .iter()
+        .filter_map(|doc| {
+            let url = first_string(doc, &["imageUrl", "pptImgUrl", "url"]);
+            (!url.is_empty()).then(|| CanvasVideoPPT {
+                create_sec: first_string(doc, &["createSec", "createTime", "time"]),
+                ocr: Vec::new(),
+                ppt_img_url: Some(url),
+            })
+        })
+        .collect())
+}
+
+fn jwt_token_from_location(location: &str) -> Option<String> {
+    let fragment = location.split('#').nth(1).unwrap_or(location);
+    let query = fragment
+        .split_once('?')
+        .map(|(_, query)| query)
+        .unwrap_or(fragment);
+    query.split('&').find_map(|pair| {
+        let (key, value) = pair.split_once('=')?;
+        (key == "jwt_token")
+            .then(|| {
+                urlencoding::decode(value)
+                    .ok()
+                    .map(|value| value.into_owned())
+            })
+            .flatten()
+    })
+}
 
 fn parse_download_probe(status: StatusCode, headers: &HeaderMap) -> (u64, bool) {
     let supports_range = status == StatusCode::PARTIAL_CONTENT
@@ -221,21 +472,19 @@ impl Client {
         self.get_page_items(&url).await
     }
 
-    // https://v.sjtu.edu.cn/jy-application-canvas-sjtu/lti3/getAccessTokenByTokenId?tokenId=
-
-    fn get_form_data_from_doc(
+    fn get_form_submission_from_doc(
         &self,
         document: Document,
-        action_url: &str,
-    ) -> Result<Option<HashMap<String, String>>> {
-        // Find the from on this page
-        let form = document.find(Attr("action", action_url)).next();
-
-        if form.is_none() {
-            return Err(AppError::VideoDownloadError("No Form Found".to_string()));
-        }
-
-        let form = form.unwrap();
+    ) -> Result<(String, HashMap<String, String>)> {
+        let form = document
+            .find(Name("form"))
+            .next()
+            .ok_or_else(|| AppError::VideoDownloadError("No launch form found".to_string()))?;
+        let action = form
+            .attr("action")
+            .filter(|action| !action.is_empty())
+            .ok_or_else(|| AppError::VideoDownloadError("Launch form has no action".to_string()))?
+            .to_owned();
 
         let mut data = HashMap::new();
         for input in form.find(Name("input")) {
@@ -245,165 +494,111 @@ impl Client {
                 }
             }
         }
-        Ok(Some(data))
+        Ok((action, data))
     }
 
-    /**
-     * Parse the form
-     */
-    async fn get_form_data_for_canvas_course_id(
+    fn resolve_form_action(&self, base_url: &Url, action: &str) -> Result<String> {
+        base_url
+            .join(action)
+            .map(|url| url.to_string())
+            .map_err(|error| AppError::VideoDownloadError(format!("Invalid launch URL: {error}")))
+    }
+
+    async fn get_launch_form_for_canvas_course_id(
         &self,
         course_id: i64,
-    ) -> Result<Option<HashMap<String, String>>> {
-        // New Course Video
+    ) -> Result<(String, HashMap<String, String>)> {
         let url = format!("https://oc.sjtu.edu.cn/courses/{course_id}/external_tools/8329",);
-        let response = self.cli.get(&url).send().await?;
+        let response = self.cli.get(&url).send().await?.error_for_status()?;
+        let response_url = response.url().clone();
         let body = response.text().await?;
         let document = Document::from(body.as_str());
-
-        self.get_form_data_from_doc(
-            document,
-            "https://v.sjtu.edu.cn/jy-application-canvas-sjtu/oidc/login_initiations",
-        )
+        let (action, data) = self.get_form_submission_from_doc(document)?;
+        Ok((self.resolve_form_action(&response_url, &action)?, data))
     }
 
-    async fn get_token_id(&self, course_id: i64) -> Result<String> {
-        let data = match self.get_form_data_for_canvas_course_id(course_id).await? {
-            Some(data) => data,
-            None => {
-                return Err(AppError::VideoDownloadError(
-                    "No Form Data Found".to_string(),
-                ))
-            }
-        };
-
-        // Submit the form
+    async fn get_video_launch_token(&self, course_id: i64) -> Result<String> {
+        let (action, data) = self.get_launch_form_for_canvas_course_id(course_id).await?;
         let resp = self
             .cli
-            .post("https://v.sjtu.edu.cn/jy-application-canvas-sjtu/oidc/login_initiations")
+            .post(action)
             .form(&data)
             .send()
-            .await?;
+            .await?
+            .error_for_status()?;
 
+        let response_url = resp.url().clone();
         let body = resp.text().await?;
         let document = Document::from(body.as_str());
+        let (action, data) = self.get_form_submission_from_doc(document)?;
+        let action = self.resolve_form_action(&response_url, &action)?;
 
-        // Get another form
-        let data = self.get_form_data_from_doc(
-            document,
-            "https://v.sjtu.edu.cn/jy-application-canvas-sjtu/lti3/lti3Auth/ivs",
-        )?;
-
-        // Cancel Redirect
         let client = reqwest::Client::builder()
             .redirect(Policy::none())
             .cookie_provider(self.jar.clone())
             .build()?;
+        let resp = client.post(&action).form(&data).send().await?;
 
-        // Submit Another Form
-        let resp = client
-            .post("https://v.sjtu.edu.cn/jy-application-canvas-sjtu/lti3/lti3Auth/ivs")
-            .form(&data)
+        let location = resp
+            .headers()
+            .get("location")
+            .ok_or_else(|| AppError::VideoDownloadError("Launch redirect not found".to_string()))?
+            .to_str()?;
+        let location = Url::parse(&action)
+            .map_err(|error| AppError::VideoDownloadError(format!("Invalid launch URL: {error}")))?
+            .join(location)
+            .map_err(|error| {
+                AppError::VideoDownloadError(format!("Invalid redirect URL: {error}"))
+            })?
+            .to_string();
+        jwt_token_from_location(&location).ok_or_else(|| {
+            AppError::VideoDownloadError("JWT token not found in launch redirect".to_string())
+        })
+    }
+
+    async fn get_teaching_class_id_token(&self, course_id: i64) -> Result<(i64, String)> {
+        let token = self.get_video_launch_token(course_id).await?;
+        let url = format!("{RESOURCE_MANAGE_BASE_URL}/lms/launch-context");
+        let response = self
+            .cli
+            .get(url)
+            .header("jwt-token", &token)
+            .header(REFERER, RESOURCE_MANAGE_UI_URL)
             .send()
-            .await?;
-
-        // Submit Form to: https://v.sjtu.edu.cn/jy-application-canvas-sjtu/lti3/lti3Auth/ivs
-        match resp.headers().get("location") {
-            None => Err(AppError::VideoDownloadError(
-                "Redirect URL not found".to_string(),
-            )),
-            Some(location_header) => {
-                // URL Example:
-                // https://v.sjtu.edu.cn/jy-application-canvas-sjtu-ui/#/ivsModules/index
-                // ?tokenId=
-                tracing::info!("Header: {:?}", location_header);
-                let params: Vec<_> = location_header.to_str()?.split(&['&', '?'][..]).collect();
-                let token_id = params
-                    .iter()
-                    .find_map(|s| s.strip_prefix("tokenId="))
-                    .ok_or(AppError::VideoDownloadError(
-                        "Token Id not found".to_string(),
-                    ))?
-                    .to_owned();
-                tracing::info!("Token Id: {:?}", token_id);
-                Ok(token_id)
-            }
-        }
-    }
-
-    // Get token and canvas_course_id from token_id
-    // https://v.sjtu.edu.cn/jy-application-canvas-sjtu/lti3/getAccessTokenByTokenId?tokenId=
-    async fn get_canvas_course_id_token_by_token_id(
-        &self,
-        token_id: &str,
-    ) -> Result<(String, String)> {
-        let url = format!(
-            "https://v.sjtu.edu.cn/jy-application-canvas-sjtu/lti3/getAccessTokenByTokenId?tokenId={token_id}",
-        );
-        let resp = self.cli.get(&url).send().await?;
-        let body = resp.text().await?;
-        tracing::info!("body: {}", body);
-        let json: Value = serde_json::from_str(&body)?;
-        let token = json["data"]["token"]
-            .as_str()
-            .ok_or(AppError::VideoDownloadError(String::from(
-                "Token not found",
-            )))?;
-        let canvas_course_id =
-            json["data"]["params"]["courId"]
-                .as_str()
-                .ok_or(AppError::VideoDownloadError(String::from(
-                    "Canvas Course Id not found",
-                )))?;
-        Ok((canvas_course_id.to_owned(), token.to_owned()))
-    }
-
-    async fn get_canvas_course_id_token(&self, course_id: i64) -> Result<(String, String)> {
-        let token_id = self.get_token_id(course_id).await?;
-        let (canvas_course_id, token) = self
-            .get_canvas_course_id_token_by_token_id(token_id.as_str())
-            .await?;
-        Ok((canvas_course_id, token))
+            .await?
+            .error_for_status()?;
+        let value: Value = serde_json::from_slice(&response.bytes().await?)?;
+        let data = api_data(&value)?;
+        let teaching_class_id = value_as_i64(
+            data.get("canvasRecord")
+                .and_then(|record| record.get("teachingClassId")),
+        )
+        .ok_or_else(|| AppError::VideoDownloadError("Teaching class id is missing".to_string()))?;
+        Ok((teaching_class_id, token))
     }
 
     pub async fn get_canvas_videos(&self, course_id: i64) -> Result<Vec<CanvasVideo>> {
-        let (canvas_course_id, token) = self.get_canvas_course_id_token(course_id).await?;
-
-        let url =
-            "https://v.sjtu.edu.cn/jy-application-canvas-sjtu/directOnDemandPlay/findVodVideoList";
-        let mut data = HashMap::new();
-        // data.insert("pageIndex", "1");
-        // data.insert("pageSize", "1000");
-        data.insert(
-            "canvasCourseId",
-            encode(canvas_course_id.as_str()).into_owned(),
-        );
-
+        let (teaching_class_id, token) = self.get_teaching_class_id_token(course_id).await?;
         *self.token.write().await = token.to_owned();
-
+        let url = format!("{RESOURCE_MANAGE_BASE_URL}/v1/subject_vod_list_new");
         let resp = self
             .cli
-            .post(url)
-            .header(
-                REFERER,
-                "https://v.sjtu.edu.cn/jy-application-canvas-sjtu-ui/",
-            )
-            .header("token", token)
-            .json(&data)
+            .get(url)
+            .header(REFERER, RESOURCE_MANAGE_UI_URL)
+            .header("jwt-token", token)
+            .query(&[
+                ("page.pageIndex", "1".to_string()),
+                ("page.pageSize", "1000".to_string()),
+                ("teclIds", teaching_class_id.to_string()),
+                ("page.orders[0].asc", "false".to_string()),
+                ("page.orders[0].field", "courBeginTime".to_string()),
+                ("schoolOpenStatusFlag", "false".to_string()),
+            ])
             .send()
-            .await?;
-
-        let body = resp.bytes().await?;
-
-        tracing::info!("body: {}", String::from_utf8_lossy(&body));
-
-        let resp = utils::json::parse_json::<CanvasVideoResponse>(&body).unwrap();
-        tracing::info!("resp: {:?}", resp);
-        let videos = match resp.data {
-            Some(body) => body.records,
-            None => vec![],
-        };
-        Ok(videos)
+            .await?
+            .error_for_status()?;
+        let value: Value = serde_json::from_slice(&resp.bytes().await?)?;
+        canvas_videos_from_response(&value)
     }
 
     pub async fn get_oauth_consumer_key(&self) -> Result<Option<String>> {
@@ -459,7 +654,7 @@ impl Client {
             .cli
             .get(url)
             .header(RANGE, range_value)
-            .header(REFERER, "https://courses.sjtu.edu.cn")
+            .header(REFERER, RESOURCE_MANAGE_UI_URL)
             .send()
             .await?;
         Ok(response)
@@ -502,7 +697,7 @@ impl Client {
             let mut response = self
                 .cli
                 .get(url)
-                .header(REFERER, "https://courses.sjtu.edu.cn")
+                .header(REFERER, RESOURCE_MANAGE_UI_URL)
                 .send()
                 .await?;
             let status = response.status();
@@ -589,24 +784,18 @@ impl Client {
     }
 
     pub async fn get_canvas_video_info(&self, video_id: &str) -> Result<VideoInfo> {
-        let mut form_data = HashMap::new();
-        let url =
-            "https://v.sjtu.edu.cn/jy-application-canvas-sjtu/directOnDemandPlay/getVodVideoInfos";
-        form_data.insert("playTypeHls", "true");
-        form_data.insert("id", video_id);
-        form_data.insert("isAudit", "true");
-        tracing::info!("{:?}", form_data);
+        let url = format!("{RESOURCE_MANAGE_BASE_URL}/v1/course_vod_urls_new");
         let resp = self
             .cli
-            .post(url)
-            .form(&form_data)
-            .header("token", self.token.read().await.as_str())
+            .get(url)
+            .query(&[("courseId", video_id)])
+            .header("jwt-token", self.token.read().await.as_str())
+            .header(REFERER, RESOURCE_MANAGE_UI_URL)
             .send()
             .await?
             .error_for_status()?;
-        let bytes = resp.bytes().await?;
-        let resp = utils::json::parse_json::<GetCanvasVideoInfoResponse>(&bytes)?;
-        Ok(resp.data)
+        let value: Value = serde_json::from_slice(&resp.bytes().await?)?;
+        video_info_from_response(&value)
     }
 
     pub async fn get_video_info(
@@ -646,31 +835,22 @@ impl Client {
         Ok(video)
     }
 
-    // TODO: Download Subtitles
-    // https://v.sjtu.edu.cn/jy-application-canvas-sjtu/transfer/translate/detail
     pub async fn get_subtitle(
         &self,
         canvas_course_id: i64,
     ) -> Result<CanvasVideoSubTitleResponseBody> {
-        // TODO: Save Token
-        let mut data = HashMap::new();
-        data.insert("courseId", canvas_course_id.to_string());
-        // data.insert("platform", "1".to_string());
-
-        let url = "https://v.sjtu.edu.cn/jy-application-canvas-sjtu/transfer/translate/detail";
+        let url = format!("{RESOURCE_MANAGE_BASE_URL}/v1/course/ai/translate/{canvas_course_id}");
         let resp = self
             .cli
-            .post(url)
-            .header("token", self.token.read().await.as_str())
-            .json(&data)
+            .get(url)
+            .query(&[("useOriginal", true)])
+            .header("jwt-token", self.token.read().await.as_str())
+            .header(REFERER, RESOURCE_MANAGE_UI_URL)
             .send()
             .await?
             .error_for_status()?;
-        let bytes = resp.bytes().await?;
-        let resp = utils::json::parse_json::<CanvasVideoSubTitleResponse>(&bytes)?;
-        resp.data.ok_or(AppError::VideoDownloadError(
-            "No Subtitle Found".to_string(),
-        ))
+        let value: Value = serde_json::from_slice(&resp.bytes().await?)?;
+        subtitles_from_response(&value)
     }
 
     // TODO: Choose a Version & Convert to SRT
@@ -698,21 +878,19 @@ impl Client {
         Ok(srt)
     }
 
-    // https://v.sjtu.edu.cn/jy-application-canvas-sjtu/directOnDemandPlay/vod-analysis/query-ppt-slice-es?ivsVideoId=${courId}
     pub async fn get_ppt(&self, canvas_course_id: i64) -> Result<Vec<CanvasVideoPPT>> {
-        // TODO: Save Token
-        let url = format!("https://v.sjtu.edu.cn/jy-application-canvas-sjtu/directOnDemandPlay/vod-analysis/query-ppt-slice-es?ivsVideoId={canvas_course_id}");
+        let url = format!("{RESOURCE_MANAGE_BASE_URL}/v1/course/ai/ppt");
         let resp = self
             .cli
             .get(url)
-            .header("token", self.token.read().await.as_str())
+            .query(&[("courseId", canvas_course_id)])
+            .header("jwt-token", self.token.read().await.as_str())
+            .header(REFERER, RESOURCE_MANAGE_UI_URL)
             .send()
             .await?
             .error_for_status()?;
-        let bytes = resp.bytes().await?;
-        let resp = utils::json::parse_json::<CanvasVideoPPTResponse>(&bytes)?;
-        resp.data
-            .ok_or(AppError::VideoDownloadError("No PPT Found".to_string()))
+        let value: Value = serde_json::from_slice(&resp.bytes().await?)?;
+        ppts_from_response(&value)
     }
 
     /// Downloads PPT images and converts them to a PDF document
