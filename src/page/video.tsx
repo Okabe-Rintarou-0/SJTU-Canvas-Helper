@@ -75,6 +75,14 @@ function timestampToSeconds(timestamp: string): number {
   return Number(hh) * 3600 + Number(mm) * 60 + Number(ss);
 }
 
+function isSubtitleUnavailableError(error: unknown): boolean {
+  return String(error).includes("Subtitle unavailable");
+}
+
+function isVideoUnavailableError(error: unknown): boolean {
+  return String(error).includes("No playable video source");
+}
+
 export default function VideoPage() {
   const [videoDownloadTasks, setVideoDownloadTasks] = useState<VideoDownloadTask[]>([]);
   const [pptDownloadTasks, setPPTDownloadTasks] = useState<DownloadTask[]>([]);
@@ -262,6 +270,10 @@ export default function VideoPage() {
   );
 
   const handleGetVideoInfo = async (video: CanvasVideo) => {
+    if (!video.playable) {
+      messageApi.info(`该录像${video.availabilityLabel}，暂时无法播放`);
+      return;
+    }
     try {
       const videoInfo = (await invoke("get_canvas_video_info", {
         videoId: video.videoId,
@@ -276,7 +288,11 @@ export default function VideoPage() {
       });
       setPlays(nextPlays);
     } catch (error) {
-      messageApi.error(`获取视频信息时出现错误：${error}`);
+      if (isVideoUnavailableError(error)) {
+        messageApi.info("该录像暂时没有可播放的视频源");
+      } else {
+        messageApi.error(`获取视频信息时出现错误：${error}`);
+      }
     }
   };
 
@@ -343,7 +359,11 @@ export default function VideoPage() {
       });
       messageApi.success("字幕下载成功", 0.5);
     } catch (error) {
-      messageApi.error(`下载字幕时发生错误：${error}`);
+      if (isSubtitleUnavailableError(error)) {
+        messageApi.info("该录像暂无字幕，无法下载");
+      } else {
+        messageApi.error(`下载字幕时发生错误：${error}`);
+      }
     }
   };
 
@@ -380,7 +400,12 @@ export default function VideoPage() {
     } catch (error) {
       activeSummaryRequestIdRef.current = null;
       setSummaryChatLoading(false);
-      messageApi.error(`AI 总结时发生错误：${error}`);
+      if (isSubtitleUnavailableError(error)) {
+        setSummaryChatOpen(false);
+        messageApi.info("该录像暂无字幕，暂时无法进行 AI 总结");
+      } else {
+        messageApi.error(`AI 总结时发生错误：${error}`);
+      }
     }
   };
 
@@ -503,10 +528,15 @@ export default function VideoPage() {
   };
 
   const getVidePlayURL = (play: VideoPlayInfo, proxyPort: number) =>
-    play.rtmpUrlHdv.replace(
-      "https://live.sjtu.edu.cn",
-      `http://localhost:${proxyPort}`
-    );
+    play.rtmpUrlHdv
+      .replace(
+        "https://videos.sjtu.edu.cn/vod",
+        `http://localhost:${proxyPort}/canvas-vod`
+      )
+      .replace(
+        "https://live.sjtu.edu.cn",
+        `http://localhost:${proxyPort}`
+      );
 
   const checkOrStartProxy = async () => {
     if (firstPlay.current) {
@@ -859,8 +889,35 @@ export default function VideoPage() {
                     }
                   >
                     {videos.map((video) => (
-                      <MenuItem key={video.videoId} value={video.videoId}>
-                        {`${video.videoName} ${video.courseBeginTime}`}
+                      <MenuItem
+                        key={video.videoId}
+                        value={video.videoId}
+                        disabled={!video.playable}
+                      >
+                        <Stack
+                          direction="row"
+                          alignItems="center"
+                          justifyContent="space-between"
+                          spacing={1}
+                          sx={{ width: "100%" }}
+                        >
+                          <Typography variant="body2" noWrap>
+                            {`${video.videoName} ${video.courseBeginTime}`}
+                          </Typography>
+                          {!video.playable && (
+                            <Chip
+                              size="small"
+                              label={video.availabilityLabel}
+                              color={
+                                video.availability === "repairing"
+                                  ? "warning"
+                                  : "default"
+                              }
+                              variant="outlined"
+                              sx={{ flexShrink: 0 }}
+                            />
+                          )}
+                        </Stack>
                       </MenuItem>
                     ))}
                   </TextField>

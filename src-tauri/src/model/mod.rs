@@ -991,37 +991,6 @@ impl FoldersAndFiles {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CanvasVideoResponse {
-    pub code: String,
-    pub data: Option<CanvasVideoResponseBody>,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CanvasVideoResponseBody {
-    // pub page: CanvasVideoResponsePage,
-    pub records: Vec<CanvasVideo>,
-}
-
-// #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-// #[serde(rename_all = "camelCase")]
-// pub struct CanvasVideoResponsePage {
-//     pub page_index: i64,
-//     pub page_size: i64,
-//     pub page_count: i64,
-//     pub page_first: i64,
-//     pub page_last: i64,
-//     pub page_next: i64,
-//     pub page_prev: i64,
-//     pub page_show_begin: i64,
-//     pub page_show_end: i64,
-//     pub page_show_count: i64,
-//     pub row_count: i64,
-//     pub row_begin: i64,
-// }
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct CanvasVideo {
     pub video_id: String,
     pub user_name: String,
@@ -1029,14 +998,13 @@ pub struct CanvasVideo {
     pub classroom_name: String,
     pub course_begin_time: String,
     pub course_end_time: String,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GetCanvasVideoInfoResponse {
-    pub code: String,
-    // pub desc: String,
-    pub data: VideoInfo,
+    pub week_number: i64,
+    pub week_day: i64,
+    pub lesson_number: i64,
+    pub daily_lesson_number: i64,
+    pub playable: bool,
+    pub availability: String,
+    pub availability_label: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -1125,21 +1093,15 @@ pub struct AnnualReport {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CanvasVideoSubTitleResponse {
-    pub code: String,
-    pub data: Option<CanvasVideoSubTitleResponseBody>,
-    pub status: u64,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct CanvasVideoSubTitleResponseBody {
+    #[serde(default)]
     pub after_assembly_list: Vec<CanvasVideoSubTitle>,
+    #[serde(default)]
     pub before_assembly_list: Vec<CanvasVideoSubTitle>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct CanvasVideoSubTitle {
     // Begin
     pub bg: u64,
@@ -1155,14 +1117,6 @@ pub struct CanvasVideoSubTitle {
     pub video_id: i64,
     // Translated from English Version
     pub zh: Option<String>,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CanvasVideoPPTResponse {
-    pub code: String,
-    pub data: Option<Vec<CanvasVideoPPT>>,
-    pub status: u64,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
