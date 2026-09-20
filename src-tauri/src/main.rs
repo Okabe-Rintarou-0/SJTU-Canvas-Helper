@@ -8,7 +8,8 @@ use model::{
     Account, AccountInfo, AnnualReport, AppConfig, Assignment, AttendancePythonStatus,
     AttendanceSignResult, AttendanceWatchStatus, CalendarEvent, CanvasVideo, Colors, Course,
     DiscussionTopic, File, FileChatStreamChunkPayload, FileChatStreamDonePayload,
-    FileChatStreamErrorPayload, Folder, FullDiscussion, LLMChatMessage, LogLevel, ModuleItem,
+    FileChatStreamErrorPayload, Folder, FullDiscussion, LLMChatMessage, LiveInfo, LogLevel,
+    ModuleItem,
     NetworkRequestLog, QRCodeScanResult, RelationshipTopo, Subject, Submission, User,
     UserSubmissions, VideoAggregateParams, VideoCourse, VideoInfo, VideoPlayInfo,
 };
@@ -907,6 +908,11 @@ async fn get_canvas_video_info(video_id: String) -> Result<VideoInfo> {
 }
 
 #[tauri::command]
+async fn get_canvas_live_info(course_id: i64) -> Result<LiveInfo> {
+    APP.get_canvas_live_info(course_id).await
+}
+
+#[tauri::command]
 async fn prepare_proxy(trace_id: Option<String>) -> Result<bool> {
     APP.prepare_proxy(trace_id.as_deref()).await
 }
@@ -1171,6 +1177,7 @@ async fn main() -> Result<()> {
             get_video_course,
             get_video_info,
             get_canvas_video_info,
+            get_canvas_live_info,
             download_video,
             login_video_website,
             prepare_proxy,

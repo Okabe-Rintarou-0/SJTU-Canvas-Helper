@@ -624,6 +624,50 @@ pub struct VideoPlayInfo {
     pub cdvi_view_num: i64,
 }
 
+/// 直播单路通道（名称由服务端给出，前端自行判断/选择，后端不猜角色）。
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveChannel {
+    /// 通道名，如“东上院312老师 / 东上院312课件”
+    #[serde(default)]
+    pub name: String,
+    /// 学校返回的 .flv 地址（含 auth_key）
+    #[serde(default)]
+    pub play_url: String,
+    /// 伴随的 account_token
+    #[serde(default)]
+    pub account_token: String,
+    /// play_url + "&account_token=..."（可直接播放/代理）
+    #[serde(default)]
+    pub full_url: String,
+}
+
+/// 课程当前直播信息。
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveInfo {
+    #[serde(default)]
+    pub course_id: i64,
+    #[serde(default)]
+    pub tecl_id: i64,
+    /// 直播场次 id（course_vod_videoinfos 的 courseId）
+    #[serde(default)]
+    pub session_id: i64,
+    #[serde(default)]
+    pub live: bool,
+    #[serde(default)]
+    pub subj_code: String,
+    #[serde(default)]
+    pub subj_name: String,
+    #[serde(default)]
+    pub classroom: String,
+    /// 直播结束时间（毫秒时间戳，也近似 auth_key 过期点）
+    #[serde(default)]
+    pub live_end_time: i64,
+    #[serde(default)]
+    pub channels: Vec<LiveChannel>,
+}
+
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JboxLoginResult {

@@ -500,6 +500,24 @@ impl App {
                     headers,
                 )
             });
+        // 直播：上游 mss2 的 HTTP-FLV（本校直播取流）。写法与上面两条一致。
+        let mss_live_proxy = warp::get()
+            .and(warp::path("mss-live"))
+            .and(warp::path::param::<String>())
+            .and(warp::path::tail())
+            .and(query_raw().or(warp::any().map(|| "".to_string())).unify())
+            .and(warp::header::headers_cloned())
+            .and_then(|trace_id, tail, query, headers| {
+                proxy_video_request(
+                    trace_id,
+                    "mss-live",
+                    "https://mss2.sjtu.edu.cn",
+                    "https://v.sjtu.edu.cn/jy-application-resourcemanage-ui/",
+                    tail,
+                    query,
+                    headers,
+                )
+            });
         // WebView2 may preflight loopback requests before sending a Range GET.
         // Without an explicit OPTIONS response the browser reports only a
         // generic TypeError and never reaches either video route.
@@ -555,6 +573,7 @@ impl App {
         let routes = proxy_preflight
             .or(live_video_proxy)
             .or(canvas_video_proxy)
+            .or(mss_live_proxy)
             .or(ready_check)
             .or(proxy_not_found);
         let handle = tokio::spawn(warp::serve(routes).run(([127, 0, 0, 1], proxy_port)));

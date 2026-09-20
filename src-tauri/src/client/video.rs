@@ -22,7 +22,8 @@ use crate::{
     error::{AppError, Result},
     model::{
         CanvasVideo, CanvasVideoPPT, CanvasVideoSubTitle, CanvasVideoSubTitleResponseBody,
-        ItemPage, ProgressPayload, Subject, VideoCourse, VideoInfo, VideoPlayInfo,
+        ItemPage, LiveChannel, LiveInfo, ProgressPayload, Subject, VideoCourse, VideoInfo,
+        VideoPlayInfo,
     },
     utils::{self, file::get_file_name, file::write_file_at_offset, time::format_time},
 };
@@ -813,6 +814,105 @@ impl Client {
             .error_for_status()?;
         let value: Value = serde_json::from_slice(&resp.bytes().await?)?;
         video_info_from_response(&value)
+    }
+
+    /// 获取课程当前直播信息（场次 -> 两路通道 -> 可直接播放的完整 URL）。
+    pub async fn get_canvas_live_info(&self, course_id: i64) -> Result<LiveInfo> {
+        let (teaching_class_id, token) = self.get_teaching_class_id_token(course_id).await?;
+        *self.token.write().await = token.to_owned();
+
+        // 1) 场次列表，找“直播中”的那一场
+        let sessions_url = format!("{RESOURCE_MANAGE_BASE_URL}/v1/vod_live/t-1");
+        let sessions_resp = self
+            .cli
+            .get(sessions_url)
+            .header(REFERER, RESOURCE_MANAGE_UI_URL)
+            .header("jwt-token", token.as_str())
+            .query(&[
+                ("page.pageIndex", "1".to_string()),
+                ("page.pageSize", "1000".to_string()),
+                ("page.orders[0].asc", "true".to_string()),
+                ("page.orders[0].field", "courBeginTime".to_string()),
+                ("liveDay", "0".to_string()),
+                ("teclId", teaching_class_id.to_string()),
+            ])
+            .send()
+            .await?
+            .error_for_status()?;
+        let sessions_value: Value = serde_json::from_slice(&sessions_resp.bytes().await?)?;
+        let records = api_data(&sessions_value)?
+            .get("records")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                AppError::VideoDownloadError("Live sessions are missing records".to_string())
+            })?;
+        let live_session = records
+            .iter()
+            .find(|record| {
+                record.get("liveDesc").and_then(Value::as_str) == Some("直播中")
+                    || value_as_i64(record.get("courLiveOpen")) == Some(1)
+                    || value_as_i64(record.get("liveEnable")) == Some(1)
+            })
+            .ok_or_else(|| AppError::VideoDownloadError("No live session found".to_string()))?;
+        let session_id = value_as_i64(live_session.get("id")).ok_or_else(|| {
+            AppError::VideoDownloadError("Live session id is missing".to_string())
+        })?;
+
+        // 2) 取该场次的直播通道（含 mss2 的 .flv 地址与 account_token）
+        let info_url = format!("{RESOURCE_MANAGE_BASE_URL}/v1/course_vod_videoinfos");
+        let info_resp = self
+            .cli
+            .get(info_url)
+            .header(REFERER, RESOURCE_MANAGE_UI_URL)
+            .header("jwt-token", self.token.read().await.as_str())
+            .query(&[
+                ("courseId", session_id.to_string()),
+                ("playType", "2".to_string()),
+            ])
+            .send()
+            .await?
+            .error_for_status()?;
+        let info_value: Value = serde_json::from_slice(&info_resp.bytes().await?)?;
+        let data = api_data(&info_value)?;
+        let channels = data
+            .get("courseDeviceViewDtoList")
+            .and_then(Value::as_array)
+            .map(|list| {
+                list.iter()
+                    .filter_map(|channel| {
+                        let play_url = first_string(channel, &["chanNameMainPlayUrl"]);
+                        if play_url.is_empty() {
+                            return None;
+                        }
+                        let account_token = first_string(channel, &["mainTokenStr"]);
+                        let name = first_string(channel, &["chanNameMain"]);
+                        let full_url = if account_token.is_empty() {
+                            play_url.clone()
+                        } else {
+                            format!("{play_url}&account_token={account_token}")
+                        };
+                        Some(LiveChannel {
+                            name,
+                            play_url,
+                            account_token,
+                            full_url,
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        Ok(LiveInfo {
+            course_id,
+            tecl_id: teaching_class_id,
+            session_id,
+            live: true,
+            subj_code: first_string(live_session, &["subjCode"]),
+            subj_name: first_string(live_session, &["subjName", "teclName"]),
+            classroom: first_string(live_session, &["clroName"]),
+            live_end_time: value_as_i64(live_session.get("liveEndTime")).unwrap_or_default(),
+            channels,
+        })
     }
 
     pub async fn get_video_info(
