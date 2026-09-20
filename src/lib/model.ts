@@ -490,6 +490,25 @@ export interface VideoInfo {
     videoPlayResponseVoList: VideoPlayInfo[];
 }
 
+export interface LiveChannel {
+    name: string;
+    playUrl: string;
+    accountToken: string;
+    fullUrl: string;
+}
+
+export interface LiveInfo {
+    courseId: number;
+    teclId: number;
+    sessionId: number;
+    live: boolean;
+    subjCode: string;
+    subjName: string;
+    classroom: string;
+    liveEndTime: number;
+    channels: LiveChannel[];
+}
+
 export interface Teacher {
     id: number;
     anonymous_id: string;

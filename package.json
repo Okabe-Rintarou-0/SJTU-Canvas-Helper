@@ -55,6 +55,7 @@
     "jszip": "^3.10.1",
     "libarchive.js": "^2.0.2",
     "lodash": "^4.17.21",
+    "mpegts.js": "^1.8.2",
     "pdf-merger-js": "^5.1.2",
     "pinyin-pro": "^3.26.0",
     "qrcode.react": "^3.1.0",
@@ -102,5 +103,6 @@
     "vite": "^5.0.0",
     "vite-plugin-static-copy": "^1.0.1",
     "vitest": "^4.1.9"
-  }
+  },
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }

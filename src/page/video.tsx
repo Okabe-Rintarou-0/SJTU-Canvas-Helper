@@ -43,6 +43,7 @@ import FileAIChatModal, {
   FileAIChatMessage,
 } from "../components/file_ai_chat_modal";
 import BasicLayout from "../components/layout";
+import LivePanel from "../components/live_panel";
 import PPTDownloadTable from "../components/ppt_download_table";
 import VideoAggregator from "../components/video_aggregator";
 import VideoDownloadTable from "../components/video_download_table";
@@ -1275,6 +1276,8 @@ export default function VideoPage() {
 
         {!notLogin ? (
           <>
+            <LivePanel courseId={selectedCourseId} />
+
             <Card sx={surfaceCardSx}>
               <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
                 <Stack spacing={2}>

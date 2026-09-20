@@ -1,0 +1,6 @@
+/* 直播流没有可 seek 的时长，隐藏原生控件的进度条和时间显示 */
+.liveVideo::-webkit-media-controls-timeline,
+.liveVideo::-webkit-media-controls-current-time-display,
+.liveVideo::-webkit-media-controls-time-remaining-display {
+    display: none;
+}
