@@ -297,42 +297,59 @@ export function scrollToEnd() {
   window.scrollTo(0, document.body.scrollHeight);
 }
 
-export async function checkForUpdates(messageApi: AppMessageApi) {
+export async function checkForUpdates(
+  messageApi: AppMessageApi,
+  onAvailabilityChange?: (version: string | null) => void
+) {
+  const messageKey = "checking";
+  let update: Awaited<ReturnType<typeof check>> | null = null;
+
   try {
-    const messageKey = "checking";
     messageApi.open({
       key: messageKey,
       type: "loading",
       content: "检查中🚀...",
     });
-    const update = await check();
+    update = await check();
     messageApi.destroy(messageKey);
     if (!update) {
+      onAvailabilityChange?.(null);
       messageApi.warning("已经是最新版，无需更新😁");
-    } else {
-      let downloaded = 0;
-      let contentLength: undefined | number = 0;
-      // alternatively we could also call update.download() and update.install() separately
-      await update.downloadAndInstall((event) => {
-        switch (event.event) {
-          case 'Started':
-            contentLength = event.data.contentLength;
-            console.log(`started downloading ${event.data.contentLength} bytes`);
-            break;
-          case 'Progress':
-            downloaded += event.data.chunkLength;
-            console.log(`downloaded ${downloaded} from ${contentLength}`);
-            break;
-          case 'Finished':
-            console.log('download finished');
-            break;
+      return;
+    }
+
+    onAvailabilityChange?.(update.version);
+    messageApi.info(`发现新版本 v${update.version}，正在下载并安装…`);
+
+    let downloaded = 0;
+    let contentLength: undefined | number = 0;
+    // alternatively we could also call update.download() and update.install() separately
+    await update.downloadAndInstall((event) => {
+      switch (event.event) {
+        case 'Started':
+          contentLength = event.data.contentLength;
+          console.log(`started downloading ${event.data.contentLength} bytes`);
+          break;
+        case 'Progress':
+          downloaded += event.data.chunkLength;
+          console.log(`downloaded ${downloaded} from ${contentLength}`);
+          break;
+        case 'Finished':
+          console.log('download finished');
+          break;
         }
       });
-    }
+    await relaunch();
   } catch (error) {
+    messageApi.destroy(messageKey);
     messageApi.error("🥹出现错误：" + error);
+  } finally {
+    try {
+      await update?.close();
+    } catch (error) {
+      console.debug("Failed to close updater resource", error);
+    }
   }
-  await relaunch();
 }
 
 export function consoleLog(logLevel: LogLevel, ...messages: any[]) {

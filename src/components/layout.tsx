@@ -20,6 +20,7 @@ import TimelineRoundedIcon from "@mui/icons-material/TimelineRounded";
 import DeveloperBoardRoundedIcon from "@mui/icons-material/DeveloperBoardRounded";
 import {
   Box,
+  Badge,
   Button,
   Divider,
   Drawer,
@@ -41,6 +42,7 @@ import { Link, useLocation } from "react-router-dom";
 import { useKeyPress } from "../lib/hooks";
 import { useConfigSelector } from "../lib/hooks";
 import { checkForUpdates } from "../lib/utils";
+import { useUpdateNotice } from "../lib/update_notice";
 import { ChangeLogModal } from "./change_log_modal";
 
 const drawerWidth = 272;
@@ -93,6 +95,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
   const [collapsed, setCollapsed] = useState(false);
   const [scale, setScale] = useState(1);
   const [messageApi, contextHolder] = useAppMessage();
+  const { availableVersion, setAvailableVersion, previewOnly } = useUpdateNotice();
 
   useEffect(() => {
     getVersion().then((value) => setVersion(value));
@@ -283,9 +286,43 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
             useFlexGap
             justifyContent="space-between"
           >
-            <Button onClick={() => checkForUpdates(messageApi)} size="small" sx={{ minWidth: 0, px: 1 }}>
-              检查更新
-            </Button>
+            <Tooltip
+              title={
+                previewOnly && availableVersion
+                  ? `开发预览：模拟发现 v${availableVersion}`
+                  : availableVersion
+                    ? `检测到新版本 v${availableVersion}`
+                    : "检查更新"
+              }
+            >
+              <Badge
+                color="error"
+                variant="dot"
+                overlap="rectangular"
+                invisible={!availableVersion}
+              >
+                <Button
+                  onClick={() => {
+                    if (previewOnly) {
+                      messageApi.info(
+                        availableVersion
+                          ? `开发预览：模拟发现新版本 v${availableVersion}，不会下载安装。`
+                          : "开发预览模式不会下载安装更新。"
+                      );
+                      return;
+                    }
+                    void checkForUpdates(messageApi, setAvailableVersion);
+                  }}
+                  size="small"
+                  sx={{ minWidth: 0, px: 1 }}
+                  aria-label={
+                    availableVersion ? `检查更新，有新版本 ${availableVersion}` : "检查更新"
+                  }
+                >
+                  检查更新
+                </Button>
+              </Badge>
+            </Tooltip>
             <Button onClick={() => setShowChangeLog(true)} size="small" sx={{ minWidth: 0, px: 1 }}>
               更新日志
             </Button>

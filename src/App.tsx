@@ -6,6 +6,7 @@ import AppRouter from "./components/router";
 import "./css/global.css";
 import { useConfigSelector } from "./lib/hooks";
 import { AppMessageProvider } from "./lib/message";
+import { UpdateNoticeProvider } from "./lib/update_notice";
 
 const FONT_DISPLAY =
   '"Iowan Old Style", "Palatino Linotype", "Georgia", "STZhongsong", "SimSun", "Songti SC", serif';
@@ -346,7 +347,9 @@ function App() {
         }}
       />
       <AppMessageProvider>
-        <AppRouter />
+        <UpdateNoticeProvider>
+          <AppRouter />
+        </UpdateNoticeProvider>
       </AppMessageProvider>
     </ThemeProvider>
   );
