@@ -66,8 +66,11 @@ const MIN_LLM_TEMPERATURE = 0;
 const MAX_LLM_TEMPERATURE = 2;
 const LLM_TEMPERATURE_STEP = 0.1;
 const CANVAS_TOKEN_URL = "https://oc.sjtu.edu.cn/profile/settings";
+const ZHIYUAN_LLM_BASE_URL = "https://models.sjtu.edu.cn/api/v1";
+const ZHIYUAN_LLM_DEFAULT_MODEL = "deepseek-reasoner";
 
 const URL_PROVIDER_MAP: [RegExp, string][] = [
+  [/models\.sjtu\.edu\.cn/, "sjtu"],
   [/deepseek/, "deepseek"],
   [/moonshot/, "moonshot"],
   [/openai/, "openai"],
@@ -98,8 +101,19 @@ const URL_PROVIDER_MAP: [RegExp, string][] = [
   [/minimax/, "minimax"],
 ];
 
-const PROVIDER_PRESETS: { key: string; name: string; baseUrl: string }[] = [
+const PROVIDER_PRESETS: {
+  key: string;
+  name: string;
+  baseUrl: string;
+  defaultModel?: string;
+}[] = [
   { key: "", name: "其他 (手动填写)", baseUrl: "" },
+  {
+    key: "sjtu",
+    name: "交大致远一号",
+    baseUrl: ZHIYUAN_LLM_BASE_URL,
+    defaultModel: ZHIYUAN_LLM_DEFAULT_MODEL,
+  },
   { key: "deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com" },
   { key: "openai", name: "OpenAI", baseUrl: "https://api.openai.com/v1" },
   { key: "moonshot", name: "Kimi (Moonshot)", baseUrl: "https://api.moonshot.cn/v1" },
@@ -125,6 +139,34 @@ function detectProviderKey(baseUrl: string): string | null {
     if (rx.test(url)) return key;
   }
   return null;
+}
+
+function LlmProviderIcon({ provider, size }: { provider: string; size: number }) {
+  if (provider === "sjtu") {
+    return (
+      <Box
+        aria-hidden="true"
+        sx={{
+          width: size,
+          height: size,
+          flex: `0 0 ${size}px`,
+          borderRadius: `${Math.max(5, Math.round(size / 4))}px`,
+          bgcolor: "#9e1b32",
+          color: "#fff",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: `${Math.round(size * 0.55)}px`,
+          fontWeight: 800,
+          lineHeight: 1,
+        }}
+      >
+        交
+      </Box>
+    );
+  }
+
+  return <ProviderIcon provider={provider} size={size} />;
 }
 
 const cardSx = {
@@ -1205,7 +1247,7 @@ export default function SettingsPage() {
                               return (
                                 <MenuItem key={entry.name} value={entry.name}>
                                   <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                                    {pv ? <ProviderIcon provider={pv} size={22} /> : null}
+                                    {pv ? <LlmProviderIcon provider={pv} size={22} /> : null}
                                     <Typography variant="body2">{entry.name}</Typography>
                                   </Box>
                                 </MenuItem>
@@ -1240,7 +1282,7 @@ export default function SettingsPage() {
                             >
                               <Stack spacing={2.5}>
                                 <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-                                  {pv ? <ProviderIcon provider={pv} size={32} /> : null}
+                                  {pv ? <LlmProviderIcon provider={pv} size={32} /> : null}
                                   <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
                                     {entry.name}
                                   </Typography>
@@ -1426,7 +1468,7 @@ export default function SettingsPage() {
                       <DialogTitle>
                         <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
                           {detectProviderKey(newKeyBaseUrl || formData?.llm_base_url || "") ? (
-                            <ProviderIcon provider={detectProviderKey(newKeyBaseUrl || formData?.llm_base_url || "")!} size={28} />
+                            <LlmProviderIcon provider={detectProviderKey(newKeyBaseUrl || formData?.llm_base_url || "")!} size={28} />
                           ) : (
                             <Box sx={{ width: 28, height: 28, borderRadius: "7px", bgcolor: "#6B7280", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "0.7rem", fontWeight: 800 }}>
                               ?
@@ -1448,17 +1490,17 @@ export default function SettingsPage() {
                               const preset = PROVIDER_PRESETS.find((p) => p.key === val);
                               if (preset && preset.baseUrl) {
                                 setNewKeyBaseUrl(preset.baseUrl);
-                                setNewKeyModel("");
                               } else {
                                 setNewKeyBaseUrl("");
                               }
+                              setNewKeyModel(preset?.defaultModel ?? "");
                             }}
                             helperText="选择主流服务商后自动填入 Base URL 和 Model 建议。"
                           >
                             {PROVIDER_PRESETS.map((p) => (
                               <MenuItem key={p.key} value={p.key}>
                                 <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                                  {p.key ? <ProviderIcon provider={p.key} size={20} /> : null}
+                                  {p.key ? <LlmProviderIcon provider={p.key} size={20} /> : null}
                                   <Typography variant="body2">{p.name}</Typography>
                                 </Box>
                               </MenuItem>
