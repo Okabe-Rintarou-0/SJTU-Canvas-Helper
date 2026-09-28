@@ -1,7 +1,6 @@
 use rig::{
     client::CompletionClient,
     completion::{Prompt, ToolDefinition},
-    providers::openai,
     tool::{Tool, ToolDyn},
 };
 use serde::{Deserialize, Serialize};
@@ -10,9 +9,8 @@ use serde_json::json;
 use crate::{
     error::{AppError, Result},
     model::{
-        AppConfig, Assignment, CalendarEvent, Colors, Course, DiscussionTopic, File, Folder,
-        FullDiscussion, LLMChatMessage, LlmApiKeyEntry, ModuleItem, Submission, User,
-        UserSubmissions,
+        Assignment, CalendarEvent, Colors, Course, DiscussionTopic, File, Folder, FullDiscussion,
+        LLMChatMessage, ModuleItem, Submission, User, UserSubmissions,
     },
     APP,
 };
@@ -753,59 +751,6 @@ fn build_history_prompt(messages: &[LLMChatMessage]) -> String {
     )
 }
 
-fn resolve_active_key_entry(config: &AppConfig) -> Option<&LlmApiKeyEntry> {
-    if config.llm_active_api_key.is_empty() {
-        return None;
-    }
-    config
-        .llm_api_keys
-        .iter()
-        .find(|entry| entry.name == config.llm_active_api_key)
-}
-
-fn resolve_active_api_key(config: &AppConfig) -> String {
-    resolve_active_key_entry(config)
-        .filter(|entry| !entry.key.is_empty())
-        .map(|entry| entry.key.clone())
-        .unwrap_or_else(|| config.llm_api_key.clone())
-}
-
-fn resolve_active_base_url(config: &AppConfig) -> String {
-    resolve_active_key_entry(config)
-        .filter(|entry| !entry.base_url.is_empty())
-        .map(|entry| entry.base_url.clone())
-        .unwrap_or_else(|| config.llm_base_url.clone())
-}
-
-fn resolve_active_model(config: &AppConfig) -> String {
-    resolve_active_key_entry(config)
-        .filter(|entry| !entry.model.is_empty())
-        .map(|entry| entry.model.clone())
-        .unwrap_or_else(|| config.llm_model.clone())
-}
-
-fn build_agent_model(config: &AppConfig) -> String {
-    resolve_active_model(config)
-}
-
-fn build_openai_client(config: &AppConfig) -> Result<openai::CompletionsClient> {
-    let api_key = resolve_active_api_key(config);
-    if api_key.trim().is_empty() {
-        return Err(AppError::LLMError(
-            "LLM API key is not configured.".to_string(),
-        ));
-    }
-
-    let base_url = resolve_active_base_url(config);
-    let mut builder = openai::CompletionsClient::builder().api_key(&api_key);
-    if !base_url.trim().is_empty() {
-        builder = builder.base_url(&base_url);
-    }
-    builder
-        .build()
-        .map_err(|error| AppError::LLMError(error.to_string()))
-}
-
 fn resolve_agent_options(options: Option<CanvasAgentOptions>) -> (usize, u64) {
     let max_turns = options
         .as_ref()
@@ -827,11 +772,11 @@ pub async fn chat(messages: &[LLMChatMessage], options: Option<CanvasAgentOption
         return Err(AppError::LLMError("Messages cannot be empty.".to_string()));
     }
 
-    let config = APP.get_config().await;
-    let client = build_openai_client(&config)?;
+    let snapshot = APP.llm_snapshot().await?;
     let (max_turns, max_tokens) = resolve_agent_options(options);
-    let agent = client
-        .agent(build_agent_model(&config))
+    let mut builder = snapshot
+        .client
+        .agent(&snapshot.model)
         .preamble(
             "You are Canvas Agent, an SJTU Canvas assistant. \
             Use the provided tools whenever the user asks for factual Canvas data. \
@@ -839,8 +784,11 @@ pub async fn chat(messages: &[LLMChatMessage], options: Option<CanvasAgentOption
         )
         .tools(boxed_tools())
         .default_max_turns(max_turns)
-        .max_tokens(max_tokens)
-        .build();
+        .max_tokens(max_tokens);
+    if let Some(temperature) = snapshot.temperature {
+        builder = builder.temperature(f64::from(temperature));
+    }
+    let agent = builder.build();
 
     agent
         .prompt(build_history_prompt(messages))

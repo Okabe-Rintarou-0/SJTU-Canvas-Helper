@@ -232,7 +232,7 @@ impl App {
         let config = App::read_config_from_file(&config_path)?;
         let base_url = Self::get_base_url(&config.account_type);
         self.client.set_base_url(base_url).await;
-        Self::apply_llm_config(&config, &self.client).await;
+        Self::apply_llm_config(&config, &self.client).await?;
         self.client.set_debug_mode(config.debug_mode);
         *self.config.write().await = config;
 
@@ -273,16 +273,8 @@ impl App {
         let config = App::read_config_from_file(&config_path).unwrap_or_default();
 
         let canvas_base_url = Self::get_base_url(&config.account_type);
-        let api_key = Self::resolve_active_api_key(&config);
-        let llm_base_url = Self::resolve_active_base_url(&config);
-        let llm_model = Self::resolve_active_model(&config);
-        let client = Client::new(
-            canvas_base_url,
-            &api_key,
-            &llm_base_url,
-            &llm_model,
-            config.llm_temperature,
-        );
+        let llm_config = crate::client::EffectiveLlmConfig::from_app_config(&config);
+        let client = Client::new_with_llm_config(canvas_base_url, llm_config);
         client.set_debug_mode(config.debug_mode);
 
         Self {
@@ -1002,39 +994,10 @@ impl App {
             .await
     }
 
-    fn resolve_active_key_entry(config: &AppConfig) -> Option<&LlmApiKeyEntry> {
-        if config.llm_active_api_key.is_empty() {
-            return None;
-        }
-        config.llm_api_keys.iter().find(|e| e.name == config.llm_active_api_key)
-    }
-
-    fn resolve_active_api_key(config: &AppConfig) -> String {
-        Self::resolve_active_key_entry(config)
-            .filter(|e| !e.key.is_empty())
-            .map(|e| e.key.clone())
-            .unwrap_or_else(|| config.llm_api_key.clone())
-    }
-
-    fn resolve_active_base_url(config: &AppConfig) -> String {
-        Self::resolve_active_key_entry(config)
-            .filter(|e| !e.base_url.is_empty())
-            .map(|e| e.base_url.clone())
-            .unwrap_or_else(|| config.llm_base_url.clone())
-    }
-
-    fn resolve_active_model(config: &AppConfig) -> String {
-        Self::resolve_active_key_entry(config)
-            .filter(|e| !e.model.is_empty())
-            .map(|e| e.model.clone())
-            .unwrap_or_else(|| config.llm_model.clone())
-    }
-
-    async fn apply_llm_config(config: &AppConfig, client: &Client) {
-        client.set_llm_api_key(&Self::resolve_active_api_key(config)).await;
-        client.set_llm_base_url(&Self::resolve_active_base_url(config)).await;
-        client.set_llm_model(&Self::resolve_active_model(config)).await;
-        client.set_llm_temperature(config.llm_temperature).await;
+    async fn apply_llm_config(config: &AppConfig, client: &Client) -> Result<()> {
+        client
+            .reconfigure_llm(crate::client::EffectiveLlmConfig::from_app_config(config))
+            .await
     }
 
     pub async fn save_config(&self, config: AppConfig) -> Result<()> {
@@ -1045,7 +1008,7 @@ impl App {
         if self.client.set_base_url(base_url).await {
             self.invalidate_cache()?;
         }
-        Self::apply_llm_config(&config, &self.client).await;
+        Self::apply_llm_config(&config, &self.client).await?;
         self.client.set_debug_mode(config.debug_mode);
         let was_enabled = self.config.read().await.mcp_enabled;
         *self.config.write().await = config;
@@ -1072,6 +1035,10 @@ impl App {
 
     pub async fn chat<S: Into<String>>(&self, prompt: S) -> Result<String> {
         self.client.chat(prompt).await
+    }
+
+    pub(crate) async fn llm_snapshot(&self) -> Result<crate::client::LlmSnapshot> {
+        self.client.llm_snapshot().await
     }
 
     pub async fn explain_file(&self, file: &File) -> Result<String> {

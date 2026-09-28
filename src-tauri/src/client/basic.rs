@@ -41,12 +41,12 @@ impl Client {
             .unwrap();
         let base_url = RwLock::new(base_url.into());
         let token = RwLock::new("".to_owned());
-        let llm_cli = llm::chat::new_llm_client(
+        let llm_cli = llm::chat::LlmRuntime::new(llm::chat::EffectiveLlmConfig::from_parts(
             llm_api_key.into(),
             llm_base_url.into(),
             llm_model.into(),
             llm_temperature,
-        )
+        ))
         .unwrap();
         let file_parser = file_parser::new_generic_file_reader();
         Self {
@@ -67,6 +67,21 @@ impl Client {
         llm_model: S,
         llm_temperature: Option<f32>,
     ) -> Self {
+        Self::new_with_llm_config(
+            base_url,
+            llm::chat::EffectiveLlmConfig::from_parts(
+                llm_api_key.into(),
+                llm_base_url.into(),
+                llm_model.into(),
+                llm_temperature,
+            ),
+        )
+    }
+
+    pub fn new_with_llm_config<S: Into<String>>(
+        base_url: S,
+        llm_config: llm::chat::EffectiveLlmConfig,
+    ) -> Self {
         let jar = Arc::new(cookie::Jar::default());
         let cli = reqwest::Client::builder()
             .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36")
@@ -75,13 +90,7 @@ impl Client {
             .unwrap();
         let base_url = RwLock::new(base_url.into());
         let token = RwLock::new("".to_owned());
-        let llm_cli = llm::chat::new_llm_client(
-            llm_api_key.into(),
-            llm_base_url.into(),
-            llm_model.into(),
-            llm_temperature,
-        )
-        .unwrap();
+        let llm_cli = llm::chat::LlmRuntime::new(llm_config).unwrap();
         let file_parser = file_parser::new_generic_file_reader();
         Self {
             cli,
@@ -94,20 +103,12 @@ impl Client {
         }
     }
 
-    pub async fn set_llm_api_key<S: Into<String>>(&self, api_key: S) {
-        self.llm_cli.set_api_key(api_key.into()).await;
+    pub async fn reconfigure_llm(&self, config: llm::chat::EffectiveLlmConfig) -> Result<()> {
+        self.llm_cli.reconfigure(config).await
     }
 
-    pub async fn set_llm_base_url<S: Into<String>>(&self, base_url: S) {
-        self.llm_cli.set_base_url(base_url.into()).await;
-    }
-
-    pub async fn set_llm_model<S: Into<String>>(&self, model: S) {
-        self.llm_cli.set_model(model.into()).await;
-    }
-
-    pub async fn set_llm_temperature(&self, temperature: Option<f32>) {
-        self.llm_cli.set_temperature(temperature).await;
+    pub async fn llm_snapshot(&self) -> Result<llm::chat::LlmSnapshot> {
+        self.llm_cli.snapshot().await
     }
 
     pub fn set_debug_mode(&self, enabled: bool) {

@@ -49,6 +49,11 @@ import { WorkspaceHero } from "../components/workspace_hero";
 import { LoginAlert } from "../components/login_alert";
 import { getConfig, saveConfig, updateConfig } from "../lib/config";
 import { useConfigDispatch, useQRCode } from "../lib/hooks";
+import {
+  DEFAULT_LLM_BASE_URL,
+  DEFAULT_LLM_MODEL,
+  normalizeLlmConfigForSettings,
+} from "../lib/llm_config";
 import { useAppMessage } from "../lib/message";
 import { AccountInfo, AppConfig, LOG_LEVEL_INFO, User } from "../lib/model";
 import { consoleLog, savePathValidator } from "../lib/utils";
@@ -414,7 +419,7 @@ export default function SettingsPage() {
       await initAccounts();
       const config = await getConfig(true);
       const accountInfo = (await invoke("read_account_info")) as AccountInfo;
-      const normalizedConfig: AppConfig = {
+      const normalizedConfig = normalizeLlmConfigForSettings({
         ...config,
         theme: config.theme ?? "light",
         compact_mode: config.compact_mode ?? false,
@@ -423,7 +428,7 @@ export default function SettingsPage() {
         proxy_port: config.proxy_port === 0 ? DEFAULT_PROXY_PORT : config.proxy_port,
         llm_api_keys: config.llm_api_keys ?? [],
         llm_active_api_key: config.llm_active_api_key ?? "",
-      };
+      });
 
       setCurrentAccount(accountInfo.current_account);
       setFormData(normalizedConfig);
@@ -431,8 +436,6 @@ export default function SettingsPage() {
       initialSnapshotRef.current = JSON.stringify(normalizedConfig);
       setTokenError("");
       setSavePathError("");
-      consoleLog(LOG_LEVEL_INFO, "init config: ", normalizedConfig);
-
       if (normalizedConfig.token.length === 0) {
         setOpenTour(true);
         setTourStep(0);
@@ -1322,7 +1325,7 @@ export default function SettingsPage() {
                                       setFormData(next);
                                       try { await saveConfig(next); } catch (e) { messageApi.error(e as string); }
                                     }}
-                                    placeholder={formData?.llm_base_url || "https://api.deepseek.com/v1"}
+                                    placeholder={formData?.llm_base_url || DEFAULT_LLM_BASE_URL}
                                     autoComplete="off"
                                   />
                                   <Autocomplete
@@ -1356,7 +1359,7 @@ export default function SettingsPage() {
                                       <TextField
                                         {...params}
                                         label="Model"
-                                        placeholder={formData?.llm_model || "deepseek-chat"}
+                                        placeholder={formData?.llm_model || DEFAULT_LLM_MODEL}
                                       />
                                     )}
                                   />
@@ -1506,7 +1509,7 @@ export default function SettingsPage() {
                               setNewKeyBaseUrl(event.target.value);
                               setNewKeyProvider("");
                             }}
-                            placeholder={formData?.llm_base_url || "https://api.deepseek.com"}
+                            placeholder={formData?.llm_base_url || DEFAULT_LLM_BASE_URL}
                             helperText={
                               detectProviderKey(newKeyBaseUrl || formData?.llm_base_url || "")
                                 ? `检测到：${detectProviderKey(newKeyBaseUrl || formData?.llm_base_url || "")!}`
@@ -1529,7 +1532,7 @@ export default function SettingsPage() {
                               <TextField
                                 {...params}
                                 label="Model"
-                                placeholder={formData?.llm_model || "deepseek-chat"}
+                                placeholder={formData?.llm_model || DEFAULT_LLM_MODEL}
                                 helperText="可输入任意模型名，或从建议中选择。"
                               />
                             )}

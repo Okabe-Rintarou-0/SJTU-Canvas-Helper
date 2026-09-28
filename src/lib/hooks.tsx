@@ -34,7 +34,6 @@ import {
   File,
   Folder,
   LOG_LEVEL_ERROR,
-  LOG_LEVEL_INFO,
   LoginMessage,
   ModuleItem,
   RelationshipTopo,
@@ -490,7 +489,6 @@ export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {
       if (!JAAuthCookie) {
         return;
       }
-      consoleLog(LOG_LEVEL_INFO, "读取到 JAAuthCookie: ", JAAuthCookie);
       const config = await getConfig();
       config.ja_auth_cookie = JAAuthCookie;
       await saveConfig(config);

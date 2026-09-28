@@ -2,8 +2,6 @@ import { Alert, Checkbox, FormControlLabel, Stack } from "@mui/material";
 import { ReactNode, useEffect, useState } from "react";
 
 import { getConfig, saveConfig } from "../lib/config";
-import { LOG_LEVEL_INFO } from "../lib/model";
-import { consoleLog } from "../lib/utils";
 
 export interface ClosableAlertProps {
   configKey: string;
@@ -17,7 +15,6 @@ export default function ClosableAlert(props: ClosableAlertProps) {
 
   useEffect(() => {
     getConfig(true).then((config) => {
-      consoleLog(LOG_LEVEL_INFO, config);
       if (
         !Object.prototype.hasOwnProperty.call(config.show_alert_map, props.configKey) ||
         config.show_alert_map[props.configKey]
