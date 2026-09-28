@@ -33,11 +33,29 @@ describe("video course merging", () => {
   it("deduplicates repeated records within a source", () => {
     expect(mergeVideoCourses([course(10), course(10)], [course(80), course(80)])).toHaveLength(1);
   });
+  it("matches localized course names by an exact course code", () => {
+    const canvasTeachers = [{
+      id: 1,
+      anonymous_id: "",
+      display_name: "测试教师甲",
+      avatar_image_url: "",
+      html_url: "",
+    }];
+    const spaceTeachers = [{ ...canvasTeachers[0], display_name: "测试教师乙" }];
+    const result = mergeVideoCourses(
+      [course(10, { name: "Example Course II", course_code: "DEMO-201", teachers: canvasTeachers })],
+      [course(80, { name: "示例课程（二）", course_code: " demo-201 ", teachers: spaceTeachers })],
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ canvasId: 10, teachingClassId: 80 });
+  });
   it("matches names and teachers when course codes differ", () => {
     const teachers = [{ id: 1, anonymous_id: "", display_name: "测试教师甲", avatar_image_url: "", html_url: "" }];
     expect(mergeVideoCourses([course(10, { teachers })], [course(80, { teachers, course_code: "" })])).toHaveLength(1);
     expect(mergeVideoCourses([course(10, { teachers })], [course(80, {
       teachers: [{ ...teachers[0], display_name: "测试教师乙" }],
+      course_code: "",
     })])).toHaveLength(2);
     expect(mergeVideoCourses([course(10)], [course(80, { course_code: "" })])).toHaveLength(2);
   });

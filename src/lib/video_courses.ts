@@ -41,12 +41,15 @@ export function compareVideoCourses(a: Course, b: Course): number {
 function matches(left: Course, right: Course): boolean {
   const term = termKey(left.term.name);
   if (!term || term !== termKey(right.term.name)) return false;
+
+  const leftCourseCode = normalize(left.course_code);
+  const rightCourseCode = normalize(right.course_code);
+  if (leftCourseCode && rightCourseCode && leftCourseCode === rightCourseCode) return true;
+
   const teachers = new Set(left.teachers.map((teacher) => normalize(teacher.display_name)).filter(Boolean));
   const otherTeachers = right.teachers.map((teacher) => normalize(teacher.display_name)).filter(Boolean);
   const sameTeacher = otherTeachers.some((teacher) => teachers.has(teacher));
   if (teachers.size && otherTeachers.length && !sameTeacher) return false;
-  if (left.course_code && right.course_code
-    && normalize(left.course_code) === normalize(right.course_code)) return true;
   if (normalize(left.name) !== normalize(right.name)) return false;
   return sameTeacher;
 }
