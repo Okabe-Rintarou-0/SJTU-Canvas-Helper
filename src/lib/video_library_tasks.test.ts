@@ -1,13 +1,23 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { enqueueVideoExports, resolveRecording } from "./video_library_tasks";
+import { enqueueVideoExports, resolveRecording, saveRecordingMaterial } from "./video_library_tasks";
 import { taskManager } from "./task_manager";
 import type { CanvasVideo } from "./model";
-const mocks = vi.hoisted(() => ({ invoke: vi.fn(), open: vi.fn() }));
+const mocks = vi.hoisted(() => ({ invoke: vi.fn(), open: vi.fn(), save: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke, Channel: class { onmessage = () => {}; } }));
 vi.mock("@tauri-apps/plugin-shell", () => ({ open: mocks.open }));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({ getCurrentWebviewWindow: () => ({ listen: vi.fn(async () => () => {}) }) }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ save: mocks.save }));
 afterEach(() => { taskManager.getSnapshot().forEach((task) => taskManager.remove(task.id)); vi.clearAllMocks(); });
 const video = { source: "canvas", videoId: "a", videoName: "第一小节", courseBeginTime: "2026-09-28 08:00" } as CanvasVideo;
 describe("batch video tasks", () => {
+  it("saves individual subtitles using BeforeAssembly", async () => {
+    mocks.save.mockResolvedValue("D:/课程/subtitle.srt");
+    mocks.invoke.mockResolvedValue({ srt: "字幕内容" });
+    expect(await saveRecordingMaterial(video, "subtitle")).toBe(true);
+    await vi.waitFor(() => expect(taskManager.getSnapshot()[0].status).toBe("succeeded"));
+    expect(mocks.invoke).toHaveBeenCalledWith("prepare_video_material", { request: expect.objectContaining({ key: "canvas:a" }), preferBefore: true });
+    expect(mocks.invoke).toHaveBeenCalledWith("save_path_file", { path: "D:/课程/subtitle.srt", content: Array.from(new TextEncoder().encode("字幕内容")) });
+  });
   it("exports only selected recordings and retains partial failures while other tasks finish", async () => {
     mocks.invoke.mockImplementation(async (command: string, args: { kind?: string }) => {
       if (command === "create_video_export_directory") return "D:/课程/课堂";

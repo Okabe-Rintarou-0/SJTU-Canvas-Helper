@@ -73,7 +73,7 @@ export default function VideoLibraryPlayer({ session, initialKey, seconds = 0, s
         if (cancelled) return;
         setUrls(next); setTracks(info.videoPlayResponseVoList); setLoading(false);
         try {
-          const material = await invoke<VideoMaterial>("prepare_video_material", { request: recordingRequest(video) });
+          const material = await invoke<VideoMaterial>("prepare_video_material", { request: recordingRequest(video), preferBefore: true });
           if (!cancelled && material.srt) {
             objectURL = URL.createObjectURL(new Blob([srtToVtt(material.srt)], { type: "text/vtt" }));
             setSubtitle(objectURL);

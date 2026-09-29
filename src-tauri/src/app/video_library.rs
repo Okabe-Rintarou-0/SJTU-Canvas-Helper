@@ -14,12 +14,17 @@ fn citation_time(seconds: u64) -> String {
     format!("{:02}:{:02}:{:02}", seconds / 3600, seconds / 60 % 60, seconds % 60)
 }
 
-fn preferred_subtitles(sub: crate::model::CanvasVideoSubTitleResponseBody) -> Vec<crate::model::CanvasVideoSubTitle> {
-    let after: Vec<_> = sub.after_assembly_list.into_iter().filter(|line| !line.res.trim().is_empty()).collect();
-    if after.is_empty() {
-        sub.before_assembly_list.into_iter().filter(|line| !line.res.trim().is_empty()).collect()
+fn preferred_subtitles(sub: crate::model::CanvasVideoSubTitleResponseBody, prefer_before: bool) -> Vec<crate::model::CanvasVideoSubTitle> {
+    let (preferred, fallback) = if prefer_before {
+        (sub.before_assembly_list, sub.after_assembly_list)
     } else {
-        after
+        (sub.after_assembly_list, sub.before_assembly_list)
+    };
+    let lines: Vec<_> = preferred.into_iter().filter(|line| !line.res.trim().is_empty()).collect();
+    if lines.is_empty() {
+        fallback.into_iter().filter(|line| !line.res.trim().is_empty()).collect()
+    } else {
+        lines
     }
 }
 
@@ -137,12 +142,13 @@ impl App {
     async fn recording_subtitle(
         &self,
         request: &RecordingRequest,
+        prefer_before: bool,
     ) -> Result<Vec<crate::model::CanvasVideoSubTitle>> {
         let mut errors = Vec::new();
         for info in self.recording_infos(request, true).await? {
             match self.client.get_subtitle(info.cour_id).await {
                 Ok(sub) => {
-                    let lines = preferred_subtitles(sub);
+                    let lines = preferred_subtitles(sub, prefer_before);
                     if !lines.is_empty() {
                         return Ok(lines);
                     }
@@ -165,7 +171,7 @@ impl App {
         Err(failure(format!("PPT 不可用：{}", errors.join("；"))))
     }
 
-    pub async fn prepare_video_material(&self, request: RecordingRequest) -> Result<VideoMaterial> {
+    pub async fn prepare_video_material(&self, request: RecordingRequest, prefer_before: bool) -> Result<VideoMaterial> {
         let mut material = VideoMaterial {
             key: request.key.clone(),
             title: request.title.clone(),
@@ -176,7 +182,7 @@ impl App {
         };
         let key = urlencoding::encode(&request.key);
         {
-            match self.recording_subtitle(&request).await {
+            match self.recording_subtitle(&request, prefer_before).await {
                 Ok(lines) => {
                     material.subtitle_available = true;
                     material.srt = self.client.convert_to_srt(&lines)?;
@@ -250,7 +256,7 @@ impl App {
             "subtitle" | "reading" => {
                 let mut reading = String::new();
                 for request in &requests {
-                    match self.recording_subtitle(request).await {
+                    match self.recording_subtitle(request, true).await {
                         Ok(lines) => {
                             if kind == "subtitle" {
                                 let path = reserve_output(&directory, &request.title, "srt")?;
@@ -336,11 +342,22 @@ mod tests {
         use crate::model::{CanvasVideoSubTitle, CanvasVideoSubTitleResponseBody};
         let before = CanvasVideoSubTitle { bg: 1000, ed: 2000, res: "原始字幕".into(), ..Default::default() };
         let after = CanvasVideoSubTitle { bg: 1000, ed: 6000, res: "整理后的字幕".into(), ..Default::default() };
-        let response = CanvasVideoSubTitleResponseBody { before_assembly_list: vec![before.clone()], after_assembly_list: vec![after.clone()], ..Default::default() };
-        assert_eq!(preferred_subtitles(response), vec![after]);
-        let response = CanvasVideoSubTitleResponseBody { before_assembly_list: vec![before.clone()], after_assembly_list: vec![CanvasVideoSubTitle { res: " \n".into(), ..Default::default() }], ..Default::default() };
-        assert_eq!(preferred_subtitles(response), vec![before]);
-        assert!(preferred_subtitles(Default::default()).is_empty());
+        let response = CanvasVideoSubTitleResponseBody { before_assembly_list: vec![before.clone()], after_assembly_list: vec![after.clone()] };
+        assert_eq!(preferred_subtitles(response, false), vec![after]);
+        let response = CanvasVideoSubTitleResponseBody { before_assembly_list: vec![before.clone()], after_assembly_list: vec![CanvasVideoSubTitle { res: " \n".into(), ..Default::default() }] };
+        assert_eq!(preferred_subtitles(response, false), vec![before]);
+        assert!(preferred_subtitles(Default::default(), false).is_empty());
+    }
+    #[test]
+    fn playback_and_exports_prefer_before_assembly_with_after_fallback() {
+        use crate::model::{CanvasVideoSubTitle, CanvasVideoSubTitleResponseBody};
+        let before = CanvasVideoSubTitle { bg: 1000, ed: 2000, res: "原始字幕".into(), ..Default::default() };
+        let after = CanvasVideoSubTitle { bg: 1000, ed: 6000, res: "整理后的字幕".into(), ..Default::default() };
+        let response = CanvasVideoSubTitleResponseBody { before_assembly_list: vec![before.clone()], after_assembly_list: vec![after.clone()] };
+        assert_eq!(preferred_subtitles(response, true), vec![before]);
+        let response = CanvasVideoSubTitleResponseBody { before_assembly_list: vec![CanvasVideoSubTitle { res: " ".into(), ..Default::default() }], after_assembly_list: vec![after.clone()] };
+        assert_eq!(preferred_subtitles(response, true), vec![after]);
+        assert!(preferred_subtitles(Default::default(), true).is_empty());
     }
     #[test]
     fn citation_labels_use_seconds_without_srt_milliseconds() {

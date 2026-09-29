@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
 import VideoLibraryPlayer from "../video_library_player";
 import type { CanvasVideo } from "../../lib/model";
 
@@ -24,6 +25,7 @@ describe("video player compatibility", () => {
     const props = { session: { id: "a", title: "课堂", videos: [recording] }, initialKey: "canvas:a", onClose: () => {}, onSummarize: vi.fn() };
     const view = render(<VideoLibraryPlayer {...props} seconds={0} seekRequest="first" />);
     await screen.findByRole("button", { name: "下载当前机位" });
+    expect(invoke).toHaveBeenCalledWith("prepare_video_material", { request: {}, preferBefore: true });
     const video = document.querySelector("video")!;
     video.currentTime = 35;
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

@@ -27,7 +27,7 @@ export async function saveRecordingMaterial(video: CanvasVideo, kind: "ppt" | "s
     event: kind === "ppt" ? { channel: "ppt_download://progress", id: `ppt_${name}` } : undefined,
     run: async () => {
       if (kind === "subtitle") {
-        const material = await invoke<VideoMaterial>("prepare_video_material", { request: recordingRequest(video) });
+        const material = await invoke<VideoMaterial>("prepare_video_material", { request: recordingRequest(video), preferBefore: true });
         if (!material.srt) throw new Error("该小节暂无可用字幕");
         await invoke("save_path_file", { path: outputPath, content: Array.from(new TextEncoder().encode(material.srt)) });
       } else {

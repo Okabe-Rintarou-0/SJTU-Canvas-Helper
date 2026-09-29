@@ -935,8 +935,9 @@ async fn download_subtitle(canvas_course_id: i64, save_path: String) -> Result<(
 #[tauri::command]
 async fn prepare_video_material(
     request: app::video_library::RecordingRequest,
+    prefer_before: Option<bool>,
 ) -> Result<app::video_library::VideoMaterial> {
-    APP.prepare_video_material(request).await
+    APP.prepare_video_material(request, prefer_before.unwrap_or(false)).await
 }
 
 #[tauri::command]
