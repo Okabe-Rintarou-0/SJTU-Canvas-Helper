@@ -289,6 +289,28 @@ async fn list_course_files(course_id: i64) -> Result<Vec<File>> {
 }
 
 #[tauri::command]
+async fn open_file_preview_window(
+    app: tauri::AppHandle,
+    file_id: i64,
+    title: String,
+) -> Result<()> {
+    let session_url = APP.get_file_preview_session_url(file_id).await?;
+    let url = session_url
+        .parse()
+        .map_err(|error| AppError::FilePreview(format!("Invalid preview URL: {error}")))?;
+    let label = format!("file-preview-{}", uuid::Uuid::new_v4());
+
+    tauri::WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::External(url))
+        .title(title)
+        .inner_size(1280.0, 820.0)
+        .min_inner_size(720.0, 480.0)
+        .center()
+        .build()
+        .map_err(|error| AppError::FilePreview(error.to_string()))?;
+    Ok(())
+}
+
+#[tauri::command]
 async fn list_course_images(course_id: i64) -> Result<Vec<File>> {
     APP.list_course_images(course_id).await
 }
@@ -1048,6 +1070,7 @@ async fn main() -> Result<()> {
             list_discussion_topics,
             sync_course_files,
             list_course_files,
+            open_file_preview_window,
             list_course_images,
             list_course_users,
             list_course_students,

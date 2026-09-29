@@ -26,6 +26,8 @@ pub enum AppError {
     FunctionUnsupported,
     #[error("Document conversion failed: {0}")]
     DocumentConversion(String),
+    #[error("File preview failed: {0}")]
+    FilePreview(String),
     #[error("Submission upload error: {0}")]
     SubmissionUpload(String),
     #[error("Join error: {0}")]

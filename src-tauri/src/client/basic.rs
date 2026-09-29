@@ -441,6 +441,39 @@ impl Client {
         self.list_items(&url, token).await
     }
 
+    pub async fn get_file_preview_session_url(&self, file_id: i64, token: &str) -> Result<String> {
+        #[derive(serde::Deserialize)]
+        struct WebSessionResponse {
+            session_url: String,
+        }
+
+        let base_url = self.base_url.read().await.trim_end_matches('/').to_owned();
+        let file_url = format!("{base_url}/api/v1/files/{file_id}");
+        let file: File = self
+            .get_json_with_token(
+                &file_url,
+                Some(&[("include[]", "enhanced_preview_url")]),
+                token,
+            )
+            .await?;
+        let preview_url = file.preview_url.ok_or_else(|| {
+            AppError::FilePreview("Canvas did not provide an enhanced preview URL".to_owned())
+        })?;
+        let absolute_preview_url = reqwest::Url::parse(&base_url)
+            .and_then(|base| base.join(&preview_url))
+            .map_err(|error| AppError::FilePreview(error.to_string()))?;
+
+        let session_url = format!("{base_url}/login/session_token");
+        let session: WebSessionResponse = self
+            .get_json_with_token(
+                &session_url,
+                Some(&[("return_to", absolute_preview_url.as_str())]),
+                token,
+            )
+            .await?;
+        Ok(session.session_url)
+    }
+
     pub async fn list_course_images(&self, course_id: i64, token: &str) -> Result<Vec<File>> {
         let url = format!(
             "{}/api/v1/courses/{}/files?content_types[]=image",
@@ -988,6 +1021,92 @@ mod mock_tests {
 
     fn create_test_client(mock_server_url: &str) -> Client {
         Client::new_without_proxy(mock_server_url, "", "", "", None)
+    }
+
+    #[tokio::test]
+    async fn test_get_file_preview_session_url_creates_web_session() {
+        let server = MockServer::start();
+        let token = "test_token_12345";
+        let file_id = 42i64;
+        let preview_path = "/courses/7/files/42/file_preview?annotate&verifier=test-verifier";
+        let return_to = format!("{}{}", server.base_url(), preview_path);
+        let expected_session_url = format!("{}/opaque-preview-session", server.base_url());
+
+        let file_mock = server.mock(|when, then| {
+            when.method(GET)
+                .path(format!("/api/v1/files/{file_id}"))
+                .query_param("include[]", "enhanced_preview_url")
+                .header("Authorization", format!("Bearer {token}"));
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .json_body(json!({
+                    "id": file_id,
+                    "uuid": "file-uuid",
+                    "folder_id": 9,
+                    "display_name": "slides.pptx",
+                    "filename": "slides.pptx",
+                    "url": format!("{}/files/{file_id}/download", server.base_url()),
+                    "size": 1234,
+                    "locked": false,
+                    "mime_class": "ppt",
+                    "content-type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    "preview_url": preview_path
+                }));
+        });
+        let session_mock = server.mock(|when, then| {
+            when.method(GET)
+                .path("/login/session_token")
+                .query_param("return_to", return_to.as_str())
+                .header("Authorization", format!("Bearer {token}"));
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .json_body(json!({ "session_url": expected_session_url }));
+        });
+        let client = create_test_client(&server.base_url());
+        let session_url = client
+            .get_file_preview_session_url(file_id, token)
+            .await
+            .unwrap();
+
+        assert_eq!(session_url, expected_session_url);
+        file_mock.assert();
+        session_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_get_file_preview_session_url_requires_enhanced_preview() {
+        let server = MockServer::start();
+        let token = "test_token_12345";
+        let file_id = 42i64;
+
+        let file_mock = server.mock(|when, then| {
+            when.method(GET)
+                .path(format!("/api/v1/files/{file_id}"))
+                .query_param("include[]", "enhanced_preview_url");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .json_body(json!({
+                    "id": file_id,
+                    "uuid": "file-uuid",
+                    "folder_id": 9,
+                    "display_name": "slides.pptx",
+                    "filename": "slides.pptx",
+                    "url": format!("{}/files/{file_id}/download", server.base_url()),
+                    "size": 1234,
+                    "locked": false,
+                    "mime_class": "ppt",
+                    "content-type": "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                }));
+        });
+
+        let client = create_test_client(&server.base_url());
+        let error = client
+            .get_file_preview_session_url(file_id, token)
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("enhanced preview URL"));
+        file_mock.assert();
     }
 
     #[tokio::test]

@@ -65,6 +65,7 @@ export interface File {
     filename: string;
     mime_class: string;
     "content-type": string;
+    preview_url?: string | null;
     size: number;
     external_type?: "File" | "Link";
     external_title?: string;

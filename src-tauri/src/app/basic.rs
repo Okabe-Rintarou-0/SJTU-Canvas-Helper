@@ -675,6 +675,13 @@ impl App {
         self.client.list_course_files(course_id, &token).await
     }
 
+    pub async fn get_file_preview_session_url(&self, file_id: i64) -> Result<String> {
+        let token = self.config.read().await.token.clone();
+        self.client
+            .get_file_preview_session_url(file_id, &token)
+            .await
+    }
+
     pub async fn list_course_images(&self, course_id: i64) -> Result<Vec<File>> {
         let token = self.config.read().await.token.clone();
         self.client.list_course_images(course_id, &token).await

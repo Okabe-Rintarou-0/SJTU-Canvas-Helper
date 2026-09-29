@@ -1,9 +1,12 @@
+import { invoke } from "@tauri-apps/api/core";
 import DocViewer, { IDocument } from "@cyntler/react-doc-viewer";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import InsertDriveFileRoundedIcon from "@mui/icons-material/InsertDriveFileRounded";
 import {
+  Alert,
   Box,
   Chip,
+  CircularProgress,
   Dialog,
   DialogContent,
   DialogTitle,
@@ -15,19 +18,41 @@ import { alpha, useTheme } from "@mui/material/styles";
 import { CSSProperties, ReactNode, useEffect, useMemo, useState } from "react";
 
 import { File } from "../lib/model";
+import {
+  canConvertFileToPdf,
+  getPdfFileName,
+  isPdfFile,
+  isPowerPointFile,
+} from "../lib/file_conversion";
 import { getFileType } from "../lib/utils";
 import { BasicRenderers } from "./renderers";
 
-const docTypeCache = new Map<string, Promise<IDocument>>();
+type ResolvedPreview =
+  | { kind: "document"; document: IDocument }
+  | { kind: "window" };
 
-async function resolveDocument(file: File): Promise<IDocument> {
+const localDocumentCache = new Map<string, Promise<IDocument>>();
+
+async function resolveLocalDocument(file: File): Promise<IDocument> {
   const cacheKey = `${file.display_name}|${file.url}`;
-  const cached = docTypeCache.get(cacheKey);
+  const cached = localDocumentCache.get(cacheKey);
   if (cached) {
     return cached;
   }
 
   const task = (async () => {
+    if (isPowerPointFile(file)) {
+      const content = await invoke<number[]>("convert_pptx_to_pdf", { file });
+      const pdfBlob = new Blob([new Uint8Array(content).buffer as ArrayBuffer], {
+        type: "application/pdf",
+      });
+      return {
+        uri: URL.createObjectURL(pdfBlob),
+        fileName: getPdfFileName(file.display_name),
+        fileType: "pdf",
+      } satisfies IDocument;
+    }
+
     const fileType = await getFileType(file.display_name);
     return {
       uri: file.url,
@@ -36,8 +61,32 @@ async function resolveDocument(file: File): Promise<IDocument> {
     } satisfies IDocument;
   })();
 
-  docTypeCache.set(cacheKey, task);
+  localDocumentCache.set(cacheKey, task);
+  void task.catch(() => localDocumentCache.delete(cacheKey));
   return task;
+}
+
+async function resolvePreview(file: File): Promise<ResolvedPreview> {
+  if (canConvertFileToPdf(file) || isPdfFile(file)) {
+    try {
+      await invoke("open_file_preview_window", {
+        fileId: file.id,
+        title: file.display_name,
+      });
+      return { kind: "window" };
+    } catch (onlinePreviewError) {
+      if (!isPowerPointFile(file) && !isPdfFile(file)) {
+        throw onlinePreviewError;
+      }
+
+      return {
+        kind: "document",
+        document: await resolveLocalDocument(file),
+      };
+    }
+  }
+
+  return { kind: "document", document: await resolveLocalDocument(file) };
 }
 
 export default function PreviewModal({
@@ -56,7 +105,9 @@ export default function PreviewModal({
   bodyStyle?: CSSProperties;
 }) {
   const theme = useTheme();
-  const [docs, setDocs] = useState<IDocument[]>([]);
+  const [previews, setPreviews] = useState<ResolvedPreview[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || files.length === 0) {
@@ -64,18 +115,44 @@ export default function PreviewModal({
     }
 
     let cancelled = false;
+    setPreviews([]);
+    setLoadError(null);
+    setLoading(true);
     void (async () => {
-      const nextDocs = await Promise.all(files.map((file) => resolveDocument(file)));
-      if (!cancelled) {
-        setDocs(nextDocs);
+      try {
+        const nextPreviews = await Promise.all(
+          files.map((file) => resolvePreview(file))
+        );
+        if (!cancelled) {
+          if (nextPreviews.some((preview) => preview.kind === "window")) {
+            handleCancelPreview?.();
+          } else {
+            setPreviews(nextPreviews);
+          }
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setLoadError(String(error));
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [files, open]);
+  }, [files, handleCancelPreview, open]);
 
+  const docs = useMemo(
+    () =>
+      previews.flatMap((preview) =>
+        preview.kind === "document" ? [preview.document] : []
+      ),
+    [previews]
+  );
   const viewer = useMemo(() => {
     const body = bodyStyle ?? { height: "78vh", marginTop: "0px" };
     const key = files.map((file) => file.url).join("|");
@@ -159,7 +236,7 @@ export default function PreviewModal({
           <Stack direction="row" spacing={1} alignItems="center">
             <Chip
               size="small"
-              label={`${docs.length || files.length} 份文档`}
+              label={`${previews.length || files.length} 份文档`}
               variant="outlined"
               color="primary"
             />
@@ -182,7 +259,26 @@ export default function PreviewModal({
               : alpha("#eff6ff", 0.42),
         }}
       >
-        <Box>{viewer}</Box>
+        {loading ? (
+          <Stack spacing={2} alignItems="center" justifyContent="center" sx={{ minHeight: 480 }}>
+            <CircularProgress />
+            <Typography color="text.secondary">
+              {files.some(
+                (file) => canConvertFileToPdf(file) || isPdfFile(file)
+              )
+                ? "正在连接 Canvas 在线预览…"
+                : "正在准备预览…"}
+            </Typography>
+          </Stack>
+        ) : loadError ? (
+          <Box sx={{ p: 3 }}>
+            <Alert severity="error">
+              文件预览失败：{loadError}
+            </Alert>
+          </Box>
+        ) : docs.length > 0 ? (
+          <Box>{viewer}</Box>
+        ) : null}
         {footer ? (
           <Box
             sx={{

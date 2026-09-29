@@ -8,6 +8,8 @@ const PDF_CONVERTIBLE_EXTENSIONS = new Set([
   ".ppt",
   ".pptx",
 ]);
+const POWERPOINT_EXTENSIONS = new Set([".ppt", ".pptx"]);
+const PDF_EXTENSIONS = new Set([".pdf"]);
 
 function fileExtension(fileName: string) {
   const dotIndex = fileName.lastIndexOf(".");
@@ -16,6 +18,14 @@ function fileExtension(fileName: string) {
 
 export function canConvertFileToPdf(file: Pick<File, "display_name">) {
   return PDF_CONVERTIBLE_EXTENSIONS.has(fileExtension(file.display_name));
+}
+
+export function isPowerPointFile(file: Pick<File, "display_name">) {
+  return POWERPOINT_EXTENSIONS.has(fileExtension(file.display_name));
+}
+
+export function isPdfFile(file: Pick<File, "display_name">) {
+  return PDF_EXTENSIONS.has(fileExtension(file.display_name));
 }
 
 export function getPdfFileName(fileName: string) {

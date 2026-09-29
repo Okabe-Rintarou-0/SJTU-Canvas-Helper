@@ -65,6 +65,8 @@ pub struct File {
     pub mime_class: String,
     #[serde(default, rename = "content-type")]
     pub content_type: String,
+    #[serde(default)]
+    pub preview_url: Option<String>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
