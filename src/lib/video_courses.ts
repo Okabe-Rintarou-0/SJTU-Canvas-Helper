@@ -66,7 +66,8 @@ export function mergeVideoCourses(
   const uniqueCanvas = [...new Map(canvas.map((course) => [course.id, course])).values()];
   const uniqueSpace = [...new Map(space.map((course) => [course.id, course])).values()];
   const usedIds = new Set(uniqueCanvas.map((course) => course.id));
-  let nextSyntheticId = -1;
+  // -1 is the CourseSelect clear-selection sentinel.
+  let nextSyntheticId = -2;
   const allocateId = () => {
     while (usedIds.has(nextSyntheticId)) nextSyntheticId -= 1;
     usedIds.add(nextSyntheticId);
@@ -150,8 +151,8 @@ export async function loadVideoCourse(
     }
   });
   if (videos.length) {
-    const seen = new Set<string>();
-    return videos.filter((video) => {
+    const seen = new Map<string, CanvasVideo>();
+    for (const video of videos) {
       const digits = video.courseBeginTime.match(/\d+/g) ?? [];
       const [year] = digits;
       const time = digits.length >= 5 && year?.length === 4
@@ -167,10 +168,14 @@ export async function loadVideoCourse(
         : (name || end
           ? `fallback:${name}:${end}`
           : `id:${video.source}:${video.videoId}`);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+      const existing = seen.get(key);
+      if (existing) {
+        if (existing.source !== video.source || existing.videoId !== video.videoId) {
+          existing.alternatives = [...(existing.alternatives ?? []), video];
+        }
+      } else seen.set(key, { ...video });
+    }
+    return [...seen.values()];
   }
   if (errors.length) throw new Error(errors.join("；"));
   return [];

@@ -164,6 +164,15 @@ impl LlmRuntime {
         prompt: String,
         on_chunk: &mut (dyn FnMut(String) + Send),
     ) -> Result<String> {
+        self.chat_stream_with_progress(prompt, on_chunk, &mut |_| {}).await
+    }
+
+    pub async fn chat_stream_with_progress(
+        &self,
+        prompt: String,
+        on_chunk: &mut (dyn FnMut(String) + Send),
+        on_phase: &mut (dyn FnMut(&str) + Send),
+    ) -> Result<String> {
         let snapshot = self.snapshot().await?;
         let mut builder = snapshot
             .client
@@ -173,14 +182,23 @@ impl LlmRuntime {
             builder = builder.temperature(f64::from(temperature));
         }
         let agent = builder.build();
+        on_phase("waiting");
+        let mut phase = "waiting";
         let mut stream = agent.stream_prompt(prompt).await;
         let mut full_text = String::new();
 
         while let Some(item) = stream.next().await {
             match item.map_err(|error| AppError::LLMError(error.to_string()))? {
                 MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(text)) => {
-                    full_text.push_str(&text.text);
-                    on_chunk(text.text);
+                    if !text.text.is_empty() {
+                        if phase != "generating" { on_phase("generating"); phase = "generating"; }
+                        full_text.push_str(&text.text);
+                        on_chunk(text.text);
+                    }
+                }
+                MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Reasoning(_))
+                | MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::ReasoningDelta { .. }) => {
+                    if phase != "thinking" { on_phase("thinking"); phase = "thinking"; }
                 }
                 _ => continue,
             }
@@ -350,6 +368,43 @@ mod tests {
 
         assert_eq!(chunks, vec!["测试", "成功"]);
         assert_eq!(response, "测试成功");
+        request.assert();
+    }
+    #[tokio::test]
+    async fn runtime_stream_reports_thinking_without_forwarding_reasoning_text() {
+        let server = MockServer::start();
+        let request = server.mock(|when, then| {
+            when.method(POST)
+                .path("/chat/completions")
+                .body_contains("\"stream\":true");
+            then.status(200)
+                .header("content-type", "text/event-stream")
+                .body(concat!(
+                    "data: {\"id\":\"reasoning-1\",\"model\":\"deepseek-flash\",\"choices\":[{\"delta\":{\"reasoning_content\":\"思考内容\"},\"finish_reason\":null}],\"usage\":null}\n\n",
+                    "data: {\"id\":\"chunk-1\",\"model\":\"deepseek-flash\",\"choices\":[{\"delta\":{\"content\":\"测试\"},\"finish_reason\":null}],\"usage\":null}\n\n",
+                    "data: {\"id\":\"chunk-2\",\"model\":\"deepseek-flash\",\"choices\":[{\"delta\":{\"content\":\"成功\"},\"finish_reason\":\"stop\"}],\"usage\":null}\n\n",
+                    "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":2,\"total_tokens\":3}}\n\n",
+                    "data: [DONE]\n\n"
+                ));
+        });
+        let runtime = LlmRuntime::new(EffectiveLlmConfig::from_parts(
+            "test-key",
+            server.base_url(),
+            DEFAULT_LLM_MODEL,
+            None,
+        ))
+        .unwrap();
+        let mut chunks = Vec::new();
+        let mut phases = Vec::new();
+
+        let response = runtime
+            .chat_stream_with_progress("你好".to_string(), &mut |chunk| chunks.push(chunk), &mut |phase| phases.push(phase.to_owned()))
+            .await
+            .unwrap();
+
+        assert_eq!(chunks, vec!["测试", "成功"]);
+        assert_eq!(response, "测试成功");
+        assert_eq!(phases, vec!["waiting", "thinking", "generating"]);
         request.assert();
     }
 }

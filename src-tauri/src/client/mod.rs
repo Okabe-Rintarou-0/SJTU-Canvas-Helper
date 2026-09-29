@@ -14,6 +14,7 @@ mod file_parser;
 pub mod jbox;
 mod llm;
 pub mod video;
+pub mod video_library;
 
 pub struct Client {
     cli: reqwest::Client,

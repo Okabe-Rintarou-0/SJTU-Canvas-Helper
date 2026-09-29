@@ -1,7 +1,8 @@
 export type TaskStatus = "queued" | "running" | "succeeded" | "failed";
-export type TaskKind = "file" | "sync" | "conversion" | "upload" | "upload-pdf" | "attachment" | "video" | "ppt" | "pdf-merge" | "pdf-save" | "video-merge";
+export type TaskKind = "file" | "sync" | "conversion" | "upload" | "upload-pdf" | "attachment" | "video" | "ppt" | "subtitle" | "pdf-merge" | "pdf-save" | "video-merge";
 export type TaskSource = "files" | "submissions" | "video";
 export const taskKindLabels: Record<TaskKind, string> = {
+  subtitle: "字幕导出",
   file: "文件下载", sync: "文件同步检查", conversion: "转换为 PDF 并下载", upload: "上传云盘", "upload-pdf": "转换为 PDF 并上传云盘", attachment: "附件下载", video: "视频下载",
   ppt: "PPT 下载与合并", "pdf-merge": "PDF 合并", "pdf-save": "合并结果保存", "video-merge": "视频合成",
 };
@@ -13,6 +14,7 @@ export interface Task {
   source: TaskSource;
   context?: string;
   outputPath?: string;
+  outputDirectory?: string;
   status: TaskStatus;
   stage: string;
   progress?: number;
@@ -40,6 +42,7 @@ export interface TaskSpec {
   source: TaskSource;
   context?: string;
   outputPath?: string;
+  outputDirectory?: string;
   data?: unknown;
   /** Tasks sharing an event ID or destination must not execute together. */
   locks?: string[];
@@ -83,7 +86,7 @@ export class TaskManager {
     this.specs.set(spec.id, spec);
     this.tasks = [...this.tasks, {
       id: spec.id, name: spec.name, kind: spec.kind, source: spec.source,
-      context: spec.context, outputPath: spec.outputPath, data: spec.data,
+      context: spec.context, outputPath: spec.outputPath, outputDirectory: spec.outputDirectory, data: spec.data,
       status: "queued", stage: "等待执行", createdAt: Date.now(), attempt: 0,
       canOpen: !!spec.open, canSave: !!spec.save,
     }];

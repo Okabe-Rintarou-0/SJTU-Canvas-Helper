@@ -24,7 +24,7 @@ describe("video course merging", () => {
     space.term.name = "2097-2098 第一学期";
     const result = mergeVideoCourses([course(10)], [space]);
     expect(result).toHaveLength(2);
-    expect(result[1]).toMatchObject({ id: -1, teachingClassId: 10, sourceLabel: "视频空间" });
+    expect(result[1]).toMatchObject({ id: -2, teachingClassId: 10, sourceLabel: "视频空间" });
   });
   it("does not merge ambiguous classes", () => {
     expect(mergeVideoCourses([course(10), course(11)], [course(80)])).toHaveLength(3);
@@ -128,7 +128,7 @@ describe("video course fallback", () => {
       vi.fn().mockResolvedValue([canvasVideo]),
       vi.fn().mockResolvedValue([]),
       vi.fn().mockResolvedValue([legacyVideo]),
-    )).resolves.toEqual([canvasVideo]);
+    )).resolves.toEqual([{ ...canvasVideo, alternatives: [legacyVideo] }]);
   });
   it("loads space-only courses using their original teaching class ID", async () => {
     const canvas = vi.fn();

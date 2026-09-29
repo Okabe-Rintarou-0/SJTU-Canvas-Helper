@@ -12,6 +12,7 @@ pub mod cache;
 mod constants;
 pub mod jbox;
 pub mod video;
+pub mod video_library;
 
 pub struct App {
     client: Arc<Client>,

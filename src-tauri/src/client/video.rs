@@ -1440,7 +1440,8 @@ impl Client {
             tracing::info!("Downloaded image {}: {} bytes", index, image_data.len());
 
             // TODO: Add To PDF
-            let image = RawImage::decode_from_bytes(&image_data, &mut warning).unwrap();
+            let image = RawImage::decode_from_bytes(&image_data, &mut warning)
+                .map_err(|e| AppError::VideoDownloadError(format!("Invalid PPT image {index}: {e}")))?;
             images.push(image.clone());
 
             // Report progress

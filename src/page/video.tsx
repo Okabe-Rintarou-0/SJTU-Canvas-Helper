@@ -1,1351 +1,442 @@
-import PageTaskLists from "../components/page_task_lists";
-import { enqueueTask } from "../lib/task_runtime";
-import { useLegacyTasks } from "../lib/task_hooks";
-import { open as openOutput } from "@tauri-apps/plugin-shell";
-import { invoke } from "@tauri-apps/api/core";
-import { save } from "@tauri-apps/plugin-dialog";
-import ClosedCaptionRoundedIcon from "@mui/icons-material/ClosedCaptionRounded";
-import CloudDownloadRoundedIcon from "@mui/icons-material/CloudDownloadRounded";
-import PictureAsPdfRoundedIcon from "@mui/icons-material/PictureAsPdfRounded";
-import PsychologyRoundedIcon from "@mui/icons-material/PsychologyRounded";
-import SmartDisplayRoundedIcon from "@mui/icons-material/SmartDisplayRounded";
-import SwapHorizRoundedIcon from "@mui/icons-material/SwapHorizRounded";
-import VideoLibraryRoundedIcon from "@mui/icons-material/VideoLibraryRounded";
-import {
-  Alert,
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Chip,
-  CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  FormControlLabel,
-  MenuItem,
-  Slider,
-  Stack,
-  Switch,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  TextField,
-  Typography,
-} from "@mui/material";
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { DraggableData, DraggableEvent } from "react-draggable";
-import Draggable from "react-draggable";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { invoke, Channel } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { Link as RouterLink } from "react-router-dom";
-
-import ClosableAlert from "../components/closable_alert";
-import CourseSelect from "../components/course_select";
-import FileAIChatModal, {
-  FileAIChatMessage,
-} from "../components/file_ai_chat_modal";
-import BasicLayout from "../components/layout";
-import PPTDownloadTable from "../components/ppt_download_table";
-import VideoAggregator from "../components/video_aggregator";
-import VideoDownloadTable from "../components/video_download_table";
+import { Alert, Box, Button, Card, CardContent, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, LinearProgress, Menu, MenuItem, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Tooltip, Typography } from "@mui/material";
+import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
+import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
+import SmartDisplayRoundedIcon from "@mui/icons-material/SmartDisplayRounded";
 import { WorkspaceHero } from "../components/workspace_hero";
-import videoStyles from "../css/video_player.module.css";
-import { getConfig, saveConfig } from "../lib/config";
-import { VIDEO_PAGE_HINT_ALERT_KEY } from "../lib/constants";
-import { useCourses } from "../lib/hooks";
-import { compareVideoCourses, loadVideoCourse, mergeVideoCourses } from "../lib/video_courses";
+import MoreHorizRoundedIcon from "@mui/icons-material/MoreHorizRounded";
+import CloudDownloadRoundedIcon from "@mui/icons-material/CloudDownloadRounded";
+import PsychologyRoundedIcon from "@mui/icons-material/PsychologyRounded";
+import { alpha } from "@mui/material/styles";
+import BasicLayout from "../components/layout";
+import CourseSelect from "../components/course_select";
+import VideoTrackDownloads from "../components/video_track_downloads";
+import VideoLibraryTasks from "../components/video_library_tasks";
+import VideoAggregator from "../components/video_aggregator";
+import VideoLibraryPlayer from "../components/video_library_player";
+import FileAIChatModal, { type FileAIChatMessage } from "../components/file_ai_chat_modal";
+import { useCourses, useConfigSelector } from "../lib/hooks";
+import { useTasks } from "../lib/task_hooks";
 import { useAppMessage } from "../lib/message";
-import { useTauriEvent } from "../lib/events";
-import {
-  CanvasVideo,
-  Course,
-  DownloadTask,
-  LLMChatMessage,
-  LOG_LEVEL_ERROR,
-  VideoDownloadTask,
-  VideoInfo,
-  VideoPlayInfo,
-} from "../lib/model";
-import { consoleLog, srtToVtt } from "../lib/utils";
-
+import { compareVideoCourses, loadVideoCourse, mergeVideoCourses } from "../lib/video_courses";
+import { groupVideoSessions, groupSessionsByDate, parseVideoCitation, formatVideoTimestamp, recordingKey, recordingTime, selectedSessionScopes, toggleRecordings, type VideoExportOptions, type VideoMaterial, type VideoSession } from "../lib/video_library";
+import { enqueueVideoExports, recordingRequest, saveRecordingMaterial } from "../lib/video_library_tasks";
+import { readSummaryCache, writeSummaryCache, deleteSummaryCache, summaryCacheKey, type VideoSummaryCache } from "../lib/video_summary_cache";
+import type { AccountInfo, CanvasVideo, Course, LLMChatMessage } from "../lib/model";
 import { surfaceCardSx } from "../lib/styles";
 
-function timestampToSeconds(timestamp: string): number {
-  const match = timestamp.match(/^\[(\d{2}):(\d{2}):(\d{2}),(\d{1,3})\]$/);
-  if (!match) {
-    return 0;
-  }
-
-  const [, hh, mm, ss] = match;
-  return Number(hh) * 3600 + Number(mm) * 60 + Number(ss);
-}
-
-function isSubtitleUnavailableError(error: unknown): boolean {
-  return String(error).includes("Subtitle unavailable");
-}
-
-function isVideoUnavailableError(error: unknown): boolean {
-  return String(error).includes("No playable video source");
-}
-
-function videoSourceLabel(source: CanvasVideo["source"]): string {
-  return {
-    canvas: "Canvas",
-    videoSpace: "视频空间",
-    legacy: "旧版课堂视频",
-  }[source];
-}
-
-const videoOptionId = (video: CanvasVideo) => `${video.source}:${video.videoId}`;
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+const isPlayable = (video: CanvasVideo) => video.playable || !!video.alternatives?.some((v) => v.playable);
+const hasSubtitleSource = (video: CanvasVideo) => [video, ...(video.alternatives ?? [])].some((v) => v.source !== "legacy");
+const message = (role: "user" | "assistant", content: string, error = false): FileAIChatMessage => ({
+  id: crypto.randomUUID(), role, content, error, createdAt: new Date().toISOString(),
+});
+function withTimeout<T>(promise: Promise<T>): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = window.setTimeout(
-      () => reject(new Error(`${label}请求超时（${timeoutMs / 1000} 秒）`)),
-      timeoutMs
-    );
-    promise.then(
-      (value) => {
-        window.clearTimeout(timer);
-        resolve(value);
-      },
-      (error) => {
-        window.clearTimeout(timer);
-        reject(error);
-      }
-    );
+    const timer = window.setTimeout(() => reject(new Error("请求超时，请刷新重试")), 30_000);
+    promise.then((value) => { clearTimeout(timer); resolve(value); }, (error) => { clearTimeout(timer); reject(error); });
   });
 }
 
 export default function VideoPage() {
-  const videoDownloadTasks = useLegacyTasks<VideoDownloadTask>("video", ["video"]);
-  const pptDownloadTasks = useLegacyTasks<DownloadTask>("video", ["ppt"]);
-  const [operating, setOperating] = useState(false);
-  const [videosLoading, setVideosLoading] = useState(false);
-  const canvasCourses = useCourses();
-  const [spaceCourses, setSpaceCourses] = useState<Course[]>([]);
-  const [coursesLoading, setCoursesLoading] = useState(false);
-  const [coursesError, setCoursesError] = useState("");
-  const [courseRefresh, setCourseRefresh] = useState(0);
-  const mergedCourses = useMemo(
-    () => mergeVideoCourses(canvasCourses.data, spaceCourses),
-    [canvasCourses.data, spaceCourses]
-  );
-  const courses = { data: mergedCourses };
-  const [messageApi, contextHolder] = useAppMessage();
-  const [plays, setPlays] = useState<VideoPlayInfo[]>([]);
-  const [selectedVideo, setSelectedVideo] = useState<CanvasVideo | undefined>();
-  const [selectedCourseId, setSelectedCourseId] = useState(-1);
+  const canvas = useCourses();
+  const centerOnly = useConfigSelector((state) => state.config.data?.experimental_task_center_only === true);
+  const [account, setAccount] = useState<string>();
+  const model = useConfigSelector((state) => state.config.data?.llm_model ?? "");
+  const [cachedSummaries, setCachedSummaries] = useState(readSummaryCache);
+  const [cacheListOpen, setCacheListOpen] = useState(false);
+  const [cacheNotice, setCacheNotice] = useState("");
+  const cacheEntry = useRef<VideoSummaryCache>();
+  const chatNamespace = useRef("");
+  const [playerMini, setPlayerMini] = useState(false);
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { let cancelled = false; void invoke<AccountInfo>("read_account_info").then((info) => { if (!cancelled) setAccount(info.current_account); }).catch(() => {}); return () => { cancelled = true; }; }, []);
+  const [space, setSpace] = useState<Course[]>([]);
+  const courses = useMemo(() => mergeVideoCourses(canvas.data, space), [canvas.data, space]);
+  const [courseId, setCourseId] = useState<number>();
+  const selectedCourse = courses.find((course) => course.id === courseId);
+  const cacheNamespace = account && selectedCourse ? JSON.stringify([account, selectedCourse.canvasId, selectedCourse.teachingClassId, selectedCourse.name, selectedCourse.term.name, model]) : "";
+  const courseSummaries = cachedSummaries.filter((entry) => entry.namespace === cacheNamespace);
+  const [login, setLogin] = useState<"checking" | "ready" | "required">("checking");
+  const [refresh, setRefresh] = useState(0);
+  const [courseLoading, setCourseLoading] = useState(false);
+  const [courseError, setCourseError] = useState("");
   const [videos, setVideos] = useState<CanvasVideo[]>([]);
-  const [notLogin, setNotLogin] = useState(true);
-  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [selected, setSelected] = useState(new Set<string>());
+  const [expanded, setExpanded] = useState(new Map<string, boolean>());
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("all");
+  const [toolsAnchor, setToolsAnchor] = useState<HTMLElement | null>(null);
+  const [trackDownload, setTrackDownload] = useState<CanvasVideo>();
+  const [aggregator, setAggregator] = useState(false);
+  const [downloadScopes, setDownloadScopes] = useState<VideoSession[]>();
+  const [downloadCourse, setDownloadCourse] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [exportOptions, setExportOptions] = useState<VideoExportOptions>({ video: true, ppt: false, subtitle: false, pptPerSession: true, tracks: "all" });
+  const [player, setPlayer] = useState<{ session: VideoSession; key: string; seconds: number; nonce: string }>();
+  const [aiScopes, setAiScopes] = useState<VideoSession[]>();
+  const [aiOrganization, setAiOrganization] = useState("sessions");
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatTitle, setChatTitle] = useState("");
+  const [chatScope, setChatScope] = useState<VideoSession[]>([]);
+  const [chatMessages, setChatMessages] = useState<FileAIChatMessage[]>([]);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatProgress, setChatProgress] = useState("");
+  const [coverage, setCoverage] = useState("");
+  const chatText = useRef("");
+  const chatGeneration = useRef(0);
+  const materialCache = useRef(new Map<string, VideoMaterial>());
+  const tasks = useTasks();
+  const [messageApi, contextHolder] = useAppMessage();
+  const sessions = useMemo(() => groupVideoSessions(videos), [videos]);
+  const dateGroups = useMemo(() => groupSessionsByDate(sessions.map((session) => ({ session }))), [sessions]);
+  const scopes = useMemo(() => selectedSessionScopes(sessions, selected), [sessions, selected]);
+  const visible = useMemo(() => sessions.flatMap((session) => {
+    const matching = session.videos.filter((video) => {
+      const matchesQuery = `${session.title} ${video.videoName} ${video.courseBeginTime}`.toLowerCase().includes(query.trim().toLowerCase());
+      return matchesQuery && (status === "all" || (status === "ready" ? isPlayable(video) : !isPlayable(video)));
+    });
+    return matching.length ? [{ session, matching }] : [];
+  }), [sessions, query, status]);
+  const visibleDates = useMemo(() => groupSessionsByDate(visible), [visible]);
+  const visibleVideos = visible.flatMap((item) => item.matching);
+  const visibleKeys = new Set(visibleVideos.map(recordingKey));
+  const hiddenSelected = [...selected].filter((key) => !visibleKeys.has(key)).length;
+
   useEffect(() => {
-    if (!loaded || notLogin) return;
     let cancelled = false;
-    setCoursesLoading(true);
-    setCoursesError("");
-    setSpaceCourses([]);
-    void (async () => {
-      const spaceTask = withTimeout(
-        invoke<Course[]>("list_video_space_courses"),
-        30_000,
-        "视频空间"
-      ).then((result) => {
-        if (!cancelled) setSpaceCourses(result);
-        return result;
-      });
-      const [spaceResult] = await Promise.allSettled([spaceTask]);
-      if (!cancelled) {
-        const errors: string[] = [];
-        if (spaceResult.status === "rejected") {
-          errors.push(`视频空间：${String(spaceResult.reason)}`);
-        }
-        setCoursesError(errors.join("；"));
-        setCoursesLoading(false);
-      }
-    })();
+    setLogin("checking");
+    void withTimeout(invoke("login_canvas_website")).then(() => { if (!cancelled) setLogin("ready"); })
+      .catch(() => { if (!cancelled) setLogin("required"); });
     return () => { cancelled = true; };
-  }, [loaded, notLogin, courseRefresh]);
-  const [playURLs, setPlayURLs] = useState<string[]>([]);
-  const [mainPlayURL, setMainPlayURL] = useState("");
-  const [mutedPlayURL, setMutedPlayURL] = useState("");
-  const [syncPlay, setSyncPlay] = useState(true);
-  const [subVideoSize, setSubVideoSize] = useState<number>(25);
-  const [subVideoOpacity, setSubVideoOpacity] = useState(0.8);
-  const [subVideoPos, setSubVideoPos] = useState({ x: 100, y: 100 });
-  const [subtitleUrl, setSubtitleUrl] = useState<string | undefined>(undefined);
-  const [summaryChatOpen, setSummaryChatOpen] = useState(false);
-  const [summaryChatTitle, setSummaryChatTitle] = useState("");
-  const [summaryChatCourseId, setSummaryChatCourseId] = useState<number | null>(null);
-  const [summaryChatMessages, setSummaryChatMessages] = useState<FileAIChatMessage[]>([]);
-  const [summaryChatLoading, setSummaryChatLoading] = useState(false);
-  const [showLoginRequiredDialog, setShowLoginRequiredDialog] = useState(false);
-  const mainVideoRef = useRef<HTMLVideoElement>(null);
-  const subVideoRef = useRef<HTMLVideoElement>(null);
-  const playerContainerRef = useRef<HTMLDivElement>(null);
-  const firstPlay = useRef(true);
-  const activeSummaryRequestIdRef = useRef<string | null>(null);
+  }, [refresh]);
 
-  const LinkRenderer = (props: any) => (
-    <a
-      target="_blank"
-      rel="noreferrer"
-      onClick={() => handleMainVideoJump(timestampToSeconds(props.children))}
-    >
-      {props.children}
-    </a>
-  );
+  useEffect(() => {
+    if (login !== "ready") return;
+    let cancelled = false;
+    setCourseLoading(true); setCourseError("");
+    void withTimeout(invoke<Course[]>("list_video_space_courses")).then((next) => { if (!cancelled) setSpace(next); })
+      .catch((e) => { if (!cancelled) setCourseError(String(e)); })
+      .finally(() => { if (!cancelled) setCourseLoading(false); });
+    return () => { cancelled = true; };
+  }, [login, refresh]);
 
-  const createConversationMessage = (
-    role: "user" | "assistant",
-    content: string,
-    extras?: Partial<FileAIChatMessage>
-  ): FileAIChatMessage => ({
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    role,
-    content,
-    createdAt: new Date().toISOString(),
-    ...extras,
-  });
+  useEffect(() => {
+    if (!selectedCourse || login !== "ready") return;
+    let cancelled = false;
+    setLoading(true); setLoadError("");
+    void loadVideoCourse(selectedCourse,
+      (id) => withTimeout(invoke("get_canvas_videos", { courseId: id })),
+      (id) => withTimeout(invoke("get_video_space_videos", { teachingClassId: id })),
+      (id) => withTimeout(invoke("get_legacy_videos", { courseId: id, courseName: selectedCourse.name, termName: selectedCourse.term.name, teacherNames: selectedCourse.teachers.map((t) => t.display_name) })),
+    ).then((next) => {
+      if (cancelled) return;
+      setVideos(next);
+      const keys = new Set(next.map(recordingKey));
+      setSelected((previous) => new Set([...previous].filter((key) => keys.has(key))));
+    }).catch((e) => { if (!cancelled) setLoadError(String(e)); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedCourse, login, refresh]);
 
-  const toLLMChatMessages = (messages: FileAIChatMessage[]): LLMChatMessage[] =>
-    messages
-      .filter((message) => !message.pending)
-      .map((message) => ({
-        role: message.role,
-        content: message.content,
-      }));
+  const chatSessionId = chatMessages[0]?.id;
+  useEffect(() => () => { chatGeneration.current++; }, []);
+  useEffect(() => { if (!playerMini || chatOpen) workspaceRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }); }, [player?.nonce, playerMini, chatOpen, chatSessionId]);
 
-  const handleLoginWebsite = async () => {
-    try {
-      await invoke("login_canvas_website");
-      return true;
-    } catch (error) {
-      consoleLog(LOG_LEVEL_ERROR, error);
-      return false;
-    }
+  const changeCourse = (id: number) => {
+    setCourseId(id === -1 ? undefined : id); setVideos([]); setSelected(new Set()); setExpanded(new Map());
+    setQuery(""); setStatus("all"); setPlayer(undefined); setLoadError(""); materialCache.current.clear();
   };
-
-  useEffect(() => {
-    void loginAndCheck();
-    return () => {
-      if (!firstPlay.current) {
-        void invoke("stop_proxy");
-      }
+  const play = (session: VideoSession, key?: string, seconds = 0) => {
+    if (!player) setPlayerMini(false);
+    const video = key ? session.videos.find((v) => recordingKey(v) === key) : session.videos.find(isPlayable);
+    if (!video) { messageApi.info("本堂课暂无可播放录像"); return; }
+    setPlayer({ session, key: recordingKey(video), seconds, nonce: crypto.randomUUID() });
+  };
+  const download = (next: VideoSession[], kind?: "ppt" | "subtitle") => {
+    setDownloadScopes(next); setDownloadCourse(selectedCourse?.name ?? "课程");
+    if (kind) setExportOptions((previous) => ({ ...previous, video: false, ppt: kind === "ppt", subtitle: kind === "subtitle" }));
+  };
+  const submitDownload = async () => {
+    if (!downloadScopes || exporting) return;
+    setExporting(true);
+    try {
+      const directory = await open({ directory: true, multiple: false, title: "选择本批资料保存目录" });
+      if (!directory || Array.isArray(directory)) return;
+      const count = await enqueueVideoExports(downloadScopes, exportOptions, directory, downloadCourse);
+      messageApi.success(`已加入 ${count} 个导出任务，可在${centerOnly ? "任务中心" : "下方下载任务列表"}查看进度`); setDownloadScopes(undefined);
+    } catch (e) { messageApi.error(`创建任务失败：${e}`); }
+    finally { setExporting(false); }
+  };
+  const saveSingle = async (video: CanvasVideo, kind: "ppt" | "subtitle") => {
+    try { if (await saveRecordingMaterial(video, kind)) messageApi.success("已加入下载任务"); }
+    catch (e) { messageApi.error(`创建任务失败：${e}`); }
+  };
+  const restoreSummary = (entry: VideoSummaryCache, currentScopes = entry.scopes) => {
+    cacheEntry.current = { ...entry, scopes: currentScopes }; chatNamespace.current = entry.namespace;
+    setChatTitle(entry.title); setChatScope(currentScopes); setChatMessages(entry.messages); setAiOrganization(entry.organization);
+    chatText.current = entry.text; setCoverage(entry.coverage); setChatOpen(true); setAiScopes(undefined); setCacheListOpen(false);
+    setCacheNotice(`已读取本地缓存 · ${new Date(entry.savedAt).toLocaleString("zh-CN")}`);
+  };
+  const persistSummary = (entry: VideoSummaryCache) => {
+    cacheEntry.current = entry;
+    const saved = !!entry.namespace && writeSummaryCache(entry);
+    setCacheNotice(saved ? `已缓存到本地 · ${new Date(entry.savedAt).toLocaleString("zh-CN")}` : "本次结果保留在当前页面，未能写入本地缓存");
+    if (saved) setCachedSummaries(readSummaryCache());
+  };
+  const summarize = (next: VideoSession[]) => {
+    if (chatLoading) { setChatOpen(true); messageApi.info("请等待当前总结完成后再切换范围"); return; }
+    const organization = next.length > 1 ? "sessions" : "combined";
+    const cached = cacheNamespace && readSummaryCache().find((entry) => entry.key === summaryCacheKey(cacheNamespace, next, organization));
+    if (cached) { restoreSummary(cached, next); return; }
+    setAiScopes(next); setAiOrganization(organization);
+  };
+  const requestChat = async (messages: LLMChatMessage[], history: FileAIChatMessage[], generation: number, prefix = "") => {
+    const response = message("assistant", prefix);
+    let content = "";
+    const onChunk = new Channel<string>();
+    onChunk.onmessage = (chunk) => {
+      if (generation !== chatGeneration.current) return;
+      setChatProgress("正在生成正文");
+      content += chunk;
+      setChatMessages([...history, { ...response, content: prefix + content }]);
     };
-  }, []);
-
-  useEffect(() => {
-    if (loaded && notLogin) {
-      setShowLoginRequiredDialog(true);
-    }
-  }, [loaded, notLogin]);
-
-  useTauriEvent("video_ai_chat://chunk", (payload) => {
-    if (payload.request_id !== activeSummaryRequestIdRef.current) {
-      return;
-    }
-    setSummaryChatMessages((prev) => {
-      const next = [...prev];
-      for (let i = next.length - 1; i >= 0; i -= 1) {
-        if (next[i].role === "assistant") {
-          next[i] = {
-            ...next[i],
-            content: `${next[i].content}${payload.chunk}`,
-          };
-          break;
+    const onStatus = new Channel<string>();
+    onStatus.onmessage = (status) => { if (generation === chatGeneration.current) setChatProgress(status); };
+    return invoke<string>("chat_video_materials", { text: chatText.current, messages, onChunk, onStatus });
+  };
+  const startSummary = async (force = false, requested = aiScopes, organization = aiOrganization, namespace = cacheNamespace, titleOverride?: string) => {
+    if (!requested || chatLoading) return;
+    const snapshot = requested;
+    const key = summaryCacheKey(namespace, snapshot, organization);
+    const cached = !force && namespace && readSummaryCache().find((entry) => entry.key === key);
+    if (cached) { restoreSummary(cached, snapshot); return; }
+    if (force) materialCache.current.clear();
+    cacheEntry.current = undefined; chatNamespace.current = namespace; setCacheNotice("");
+    const generation = ++chatGeneration.current;
+    const prompt = organization === "sessions" ? "请逐堂总结所选课堂，每堂课内综合所有小节。列出主要知识点、作业、测验、考试及通知，每个知识点通常只引用 1 个最相关的字幕位置，必要时最多 2 个；引用显示为 HH:MM:SS，不逐句堆叠时间戳。" : "请综合总结全部所选小节，串联主要知识点，并列出作业、测验、考试及通知，每个知识点通常只引用 1 个最相关的字幕位置，必要时最多 2 个；引用显示为 HH:MM:SS，不逐句堆叠时间戳。";
+    const opening = message("user", prompt);
+    const title = titleOverride ?? `${selectedCourse?.name ?? "课程"} · ${snapshot.reduce((n, s) => n + s.videos.length, 0)} 小节`;
+    setChatTitle(title);
+    setChatScope(snapshot); setChatMessages([opening]); setCoverage(""); chatText.current = "";
+    setChatLoading(true); setChatOpen(true); setAiScopes(undefined);
+    try {
+      const entries = snapshot.flatMap((session) => session.videos.map((video, i) => ({ video, title: `${session.title} · ${video.courseBeginTime || `小节 ${i + 1}`}` })));
+      const materials: VideoMaterial[] = [];
+      for (const [index, entry] of entries.entries()) {
+        if (generation !== chatGeneration.current) return;
+        setChatProgress(`正在读取字幕 ${index + 1}/${entries.length}`);
+        const key = `${courseId}:${recordingKey(entry.video)}`;
+        let material = materialCache.current.get(key);
+        if (!material) {
+          try { material = await withTimeout(invoke<VideoMaterial>("prepare_video_material", { request: recordingRequest(entry.video, entry.title) })); }
+          catch (e) { material = { key: recordingKey(entry.video), title: entry.title, text: "", srt: "", subtitleAvailable: false, warnings: [`${entry.title}：${e}`] }; }
+          if (material.subtitleAvailable) materialCache.current.set(key, material);
         }
+        materials.push(material);
       }
-      return next;
-    });
-  });
+      if (generation !== chatGeneration.current) return;
+      const available = materials.filter((item) => item.subtitleAvailable);
+      const warnings = materials.flatMap((item) => item.warnings);
+      const report = `${available.length}/${entries.length} 小节字幕可用${warnings.length ? `；未覆盖：${warnings.join("；")}` : "；覆盖全部所选小节"}`;
+      setCoverage(report);
+      if (!available.length) throw new Error("所选小节均无可用字幕，无法生成总结");
+      chatText.current = `${report}\n\n${available.map((item) => item.text).join("\n\n")}`;
+      setChatProgress("正在准备总结");
+      const result = await requestChat([{ role: "user", content: prompt }], [opening], generation, `${report}\n\n`);
+      if (generation === chatGeneration.current) {
+        const messages = [opening, message("assistant", `${report}\n\n${result}`)]; setChatMessages(messages);
+        persistSummary({ key, namespace, title, scopes: snapshot, organization, messages, text: chatText.current, coverage: report, savedAt: new Date().toISOString() });
+      }
+    } catch (e) { if (generation === chatGeneration.current) setChatMessages([opening, message("assistant", `总结失败：${e}`, true)]); }
+    finally { if (generation === chatGeneration.current) { setChatLoading(false); setChatProgress(""); } }
+  };
+  const sendMessage = async (content: string) => {
+    if (chatLoading) return;
+    if (!chatText.current) { messageApi.info("没有可用字幕，请重新选择小节并总结"); return; }
+    const generation = chatGeneration.current;
+    const next = [...chatMessages, message("user", content)];
+    setChatMessages(next); setChatLoading(true); setChatProgress("正在准备回答");
+    try {
+      const messages: LLMChatMessage[] = next.filter((m) => !m.error).map(({ role, content: text }) => ({ role, content: text }));
+      const result = await requestChat(messages, next, generation);
+      if (generation === chatGeneration.current) {
+        const messages = [...next, message("assistant", result)]; setChatMessages(messages);
+        if (cacheEntry.current) persistSummary({ ...cacheEntry.current, messages, savedAt: new Date().toISOString() });
+      }
+    } catch (e) { if (generation === chatGeneration.current) setChatMessages([...next, message("assistant", `回答失败：${e}`, true)]); }
+    finally { if (generation === chatGeneration.current) { setChatLoading(false); setChatProgress(""); } }
+  };
+  const check = (items: CanvasVideo[], label: string) => {
+    const count = items.filter((v) => selected.has(recordingKey(v))).length;
+    return <Checkbox size="small" inputProps={{ "aria-label": label }} checked={!!items.length && count === items.length} indeterminate={count > 0 && count < items.length}
+      disabled={!items.length} onChange={() => setSelected((previous) => toggleRecordings(previous, items))} />;
+  };
+  const toggleExpanded = (id: string, currentlyExpanded: boolean) => setExpanded((previous) => new Map(previous).set(id, !currentlyExpanded));
 
-  useTauriEvent("video_ai_chat://done", (payload) => {
-    if (payload.request_id !== activeSummaryRequestIdRef.current) {
-      return;
-    }
-    activeSummaryRequestIdRef.current = null;
-    setSummaryChatLoading(false);
-    setSummaryChatMessages((prev) => {
-      const next = [...prev];
-      for (let i = next.length - 1; i >= 0; i -= 1) {
-        if (next[i].role === "assistant") {
-          next[i] = {
-            ...next[i],
-            content: payload.content || next[i].content,
-            pending: false,
-          };
-          break;
+  const sourceNames = (items: CanvasVideo[]) => [...new Set(items.flatMap((v) => [v, ...(v.alternatives ?? [])]).map((v) => ({ canvas: "Canvas", videoSpace: "视频空间", legacy: "旧版" })[v.source]))].join(" / ");
+  const rowActions = (scope: VideoSession, playbackScope = scope, key?: string) => <TableCell align="right"><Stack direction="row" gap={0.5} justifyContent="flex-end" sx={{ whiteSpace: "nowrap" }}>
+    <Button size="small" sx={{ minWidth: 40 }} disabled={!scope.videos.some(isPlayable)} onClick={() => play(playbackScope, key)}>播放</Button>
+    <Button size="small" sx={{ minWidth: 40 }} onClick={() => download([scope])}>下载</Button>
+    <Button size="small" sx={{ minWidth: 64 }} onClick={() => summarize([scope])}>AI 总结</Button>
+  </Stack></TableCell>;
+  const chatPanel = <FileAIChatModal embedded loadingLabel={chatProgress || "等待模型回复"} open={chatOpen} title={`${chatTitle} · ${chatScope.map((scope) => scope.title).join("；")}`} messages={chatMessages} loading={chatLoading} onClose={() => setChatOpen(false)} onSend={sendMessage}
+      dialogTitle="AI 字幕总结" dialogDescription={chatProgress || coverage || "围绕所选课堂字幕继续追问。会话范围固定，不受列表勾选变化影响。"}
+      contextLabel="会话范围" emptyText="正在读取所选小节字幕" inputPlaceholder="继续追问知识点、作业或通知…" footerIdleText="仅依据创建会话时所选的字幕；点击引用可跳转到对应小节。"
+      markdownComponents={{ a: ({ href, children }) => {
+        const citation = parseVideoCitation(href);
+        if (!citation || citation.seconds === undefined) return <span>{children}</span>;
+        return <a href={href} onClick={(event) => {
+          event.preventDefault(); const session = chatScope.find((s) => s.videos.some((v) => recordingKey(v) === citation.key));
+          if (session) play(session, citation.key, citation.seconds);
+        }} title="跳转到此小节的对应时间">{formatVideoTimestamp(citation.seconds)}</a>;
+      } }} />
+
+  return <BasicLayout>
+    {contextHolder}
+    <Stack spacing={2} sx={{ width: "100%" }}>
+      <WorkspaceHero
+        chipLabel="视频管理"
+        chipIcon={<SmartDisplayRoundedIcon />}
+        title="视频中心"
+        description="按课堂浏览录像，批量下载视频、PPT 和字幕，或总结课堂内容。"
+        aside={
+          <Box sx={{ width: { xs: "100%", lg: 640 } }}>
+            <CourseSelect
+              courses={courses}
+              value={courseId}
+              onChange={changeCourse}
+              compareCourses={compareVideoCourses}
+              disabled={login !== "ready"}
+            />
+          </Box>
         }
-      }
-      return next;
-    });
-  });
-
-  useTauriEvent("video_ai_chat://error", (payload) => {
-    if (payload.request_id !== activeSummaryRequestIdRef.current) {
-      return;
-    }
-    activeSummaryRequestIdRef.current = null;
-    setSummaryChatLoading(false);
-    messageApi.error(`AI 总结时发生错误：${payload.error}`);
-    setSummaryChatMessages((prev) => {
-      const next = [...prev];
-      for (let i = next.length - 1; i >= 0; i -= 1) {
-        if (next[i].role === "assistant") {
-          next[i] = {
-            ...next[i],
-            content: next[i].content || `AI 总结时发生错误：${payload.error}`,
-            pending: false,
-            error: true,
-          };
-          break;
-        }
-      }
-      return next;
-    });
-  });
-
-  const loginAndCheck = async (retry = false) => {
-    const config = await getConfig(true);
-    const success = await handleLoginWebsite();
-    if (!success) {
-      config.ja_auth_cookie = "";
-      await saveConfig(config);
-    } else if (!retry) {
-      messageApi.success("检测到登录会话，登录成功", 0.5);
-    } else {
-      messageApi.success("登录成功", 0.5);
-    }
-    setNotLogin(!success);
-    setLoaded(true);
-    return success;
-  };
-
-  const handleSelectCourse = async (selected: number) => {
-    setOperating(true);
-    setVideosLoading(selected !== -1);
-    setSelectedCourseId(selected);
-    setVideos([]);
-    setSelectedVideo(undefined);
-    setPlayURLs([]);
-    setPlays([]);
-    setMainPlayURL("");
-    setMutedPlayURL("");
-    try {
-      if (selected !== -1) await handleGetVideos(selected);
-    } finally {
-      setVideosLoading(false);
-      setOperating(false);
-    }
-  };
-
-  const getVideoInfo = (video: CanvasVideo) => invoke<VideoInfo>("get_video_play_info", {
-    source: video.source,
-    videoId: video.videoId,
-  });
-
-  const handleGetVideoInfo = async (video: CanvasVideo) => {
-    if (!video.playable) {
-      messageApi.info(`该录像${video.availabilityLabel}，暂时无法播放`);
-      return;
-    }
-    try {
-      const videoInfo = await getVideoInfo(video);
-      const nextPlays = videoInfo.videoPlayResponseVoList;
-      nextPlays.forEach((play, index) => {
-        play.key = play.id;
-        play.index = index;
-        const part = index === 0 ? "" : `_录屏`;
-        const suffix = index > 2 ? `_${index}.mp4` : ".mp4";
-        play.name = `${video.videoName}${part}${suffix}`;
-      });
-      setPlays(nextPlays);
-    } catch (error) {
-      if (isVideoUnavailableError(error)) {
-        messageApi.info("该录像暂时没有可播放的视频源");
-      } else {
-        messageApi.error(`获取视频信息时出现错误：${error}`);
-      }
-    }
-  };
-
-  const handleSelectVideo = async (selected: string) => {
-    const video = videos.find((item) => videoOptionId(item) === selected);
-    if (video) {
-      setPlays([]);
-      setPlayURLs([]);
-      setMainPlayURL("");
-      setMutedPlayURL("");
-      setSelectedVideo(video);
-      await handleGetVideoInfo(video);
-    }
-  };
-
-  const handleGetVideos = async (courseId: number) => {
-    try {
-      const course = mergedCourses.find((item) => item.id === courseId);
-      if (!course) return;
-      const nextVideos = await loadVideoCourse(
-        course,
-        (id) => invoke<CanvasVideo[]>("get_canvas_videos", { courseId: id }),
-        (id) => invoke<CanvasVideo[]>("get_video_space_videos", { teachingClassId: id }),
-        (id) => invoke<CanvasVideo[]>("get_legacy_videos", {
-          courseId: id,
-          courseName: course.name,
-          termName: course.term.name,
-          teacherNames: course.teachers.map((teacher) => teacher.display_name),
-        }),
-      );
-      setVideos(nextVideos);
-    } catch (error) {
-      messageApi.error(`获取录像时发生了错误：${error}`);
-    }
-  };
-
-  const handleDownloadVideo = (video: VideoPlayInfo) => {
-    enqueueTask({
-      id: `video:${video.id}:${video.name}`, name: video.name, source: "video", kind: "video",
-      context: courses.data.find((course) => course.id === selectedCourseId)?.name,
-      data: { video }, event: { channel: "video_download://progress", id: `${video.id}` },
-      locks: [`save:${video.name}`], stage: "正在下载",
-      run: () => invoke("download_video", { video, saveName: video.name }),
-      open: () => invoke("open_file", { name: video.name }),
-    });
-  };
-
-  const handleDownloadSubtitle = async () => {
-    if (!selectedVideo) {
-      messageApi.warning("请先选择一个视频");
-      return;
-    }
-    if (selectedVideo.source === "legacy") {
-      messageApi.info("旧版课堂视频不提供字幕");
-      return;
-    }
-    try {
-      const outputPath = await save({
-        defaultPath: `${selectedVideo.videoName}.srt`,
-        filters: [{ name: "Subtitle", extensions: ["srt"] }],
-      });
-      if (!outputPath) {
-        return;
-      }
-      const videoInfo = await getVideoInfo(selectedVideo);
-      await invoke("download_subtitle", {
-        canvasCourseId: videoInfo.courId,
-        savePath: outputPath,
-      });
-      messageApi.success("字幕下载成功", 0.5);
-    } catch (error) {
-      if (isSubtitleUnavailableError(error)) {
-        messageApi.info("该录像暂无字幕，无法下载");
-      } else {
-        messageApi.error(`下载字幕时发生错误：${error}`);
-      }
-    }
-  };
-
-  const handleSummarizeSubtitle = async () => {
-    if (!selectedVideo) {
-      messageApi.warning("请先选择一个视频");
-      return;
-    }
-    if (selectedVideo.source === "legacy") {
-      messageApi.info("旧版课堂视频不提供字幕，暂时无法进行 AI 总结");
-      return;
-    }
-    try {
-      const videoInfo = await getVideoInfo(selectedVideo);
-      const openingUserMessage = createConversationMessage(
-        "user",
-        "请先总结这节课的核心内容。重点关注课程活动与通知、作业/小测/考试/签到提醒，以及主要知识点与框架；如果合适，请引用对应的字幕时间点。"
-      );
-      const pendingAssistantMessage = createConversationMessage("assistant", "", {
-        pending: true,
-      });
-
-      setSummaryChatTitle(selectedVideo.videoName);
-      setSummaryChatCourseId(videoInfo.courId);
-      setSummaryChatOpen(true);
-      setSummaryChatLoading(true);
-      setSummaryChatMessages([openingUserMessage, pendingAssistantMessage]);
-
-      const requestId = crypto.randomUUID();
-      activeSummaryRequestIdRef.current = requestId;
-      await invoke("start_subtitle_chat_stream", {
-        requestId,
-        canvasCourseId: videoInfo.courId,
-        messages: toLLMChatMessages([openingUserMessage]),
-      });
-    } catch (error) {
-      activeSummaryRequestIdRef.current = null;
-      setSummaryChatLoading(false);
-      if (isSubtitleUnavailableError(error)) {
-        setSummaryChatOpen(false);
-        messageApi.info("该录像暂无字幕，暂时无法进行 AI 总结");
-      } else {
-        messageApi.error(`AI 总结时发生错误：${error}`);
-      }
-    }
-  };
-
-  const handleSendSummaryMessage = async (content: string) => {
-    if (!summaryChatCourseId || summaryChatLoading) {
-      return;
-    }
-
-    const userMessage = createConversationMessage("user", content);
-    const pendingAssistantMessage = createConversationMessage("assistant", "", {
-      pending: true,
-    });
-    const nextMessages = [...summaryChatMessages, userMessage];
-
-    setSummaryChatLoading(true);
-    setSummaryChatMessages([...nextMessages, pendingAssistantMessage]);
-
-    try {
-      const requestId = crypto.randomUUID();
-      activeSummaryRequestIdRef.current = requestId;
-      await invoke("start_subtitle_chat_stream", {
-        requestId,
-        canvasCourseId: summaryChatCourseId,
-        messages: toLLMChatMessages(nextMessages),
-      });
-    } catch (error) {
-      activeSummaryRequestIdRef.current = null;
-      setSummaryChatLoading(false);
-      messageApi.error(`继续对话时发生错误：${error}`);
-      setSummaryChatMessages([
-        ...nextMessages,
-        {
-          ...pendingAssistantMessage,
-          content: `继续对话时发生错误：${error}`,
-          pending: false,
-          error: true,
-        },
-      ]);
-    }
-  };
-
-  const handleDownloadPPT = async (videoId: string, saveName: string) => {
-    if (!selectedVideo) return;
-    if (selectedVideo.source === "legacy") {
-      messageApi.info("旧版课堂视频不提供 PPT 切片");
-      return;
-    }
-    const videoInfo = await getVideoInfo({ ...selectedVideo, videoId });
-    const courseId = videoInfo.courId;
-    const outputPath = await save({
-      defaultPath: saveName,
-      filters: [{ name: "PDF Document", extensions: ["pdf"] }],
-    });
-    if (!outputPath) {
-      return;
-    }
-
-    const displayName = outputPath.split(/[/\\\\]/).pop() || saveName;
-    const taskKey = `ppt_${outputPath}`;
-
-    enqueueTask({
-      id: taskKey, name: displayName, outputPath, source: "video", kind: "ppt",
-      context: courses.data.find((course) => course.id === selectedCourseId)?.name,
-      data: { name: displayName, outputPath }, stage: "正在下载 PPT 切片",
-      event: { channel: "ppt_download://progress", id: `ppt_${displayName}` },
-      locks: [`path:${outputPath.toLowerCase()}`],
-      run: () => invoke("download_ppt", { courseId, savePath: outputPath }),
-      open: () => openOutput(outputPath),
-    });
-  };
-
-  const getVidePlayURL = (
-    play: VideoPlayInfo,
-    proxyPort: number,
-    source?: CanvasVideo["source"],
-  ) => {
-    try {
-      const upstream = new URL(play.rtmpUrlHdv);
-      if (upstream.hostname === "videos.sjtu.edu.cn" && upstream.pathname.startsWith("/vod/")) {
-        const route = source === "legacy" ? "legacy-vod" : "canvas-vod";
-        return `http://localhost:${proxyPort}/${route}/${upstream.pathname.slice(5)}${upstream.search}`;
-      }
-      if (upstream.hostname === "live.sjtu.edu.cn" && upstream.pathname.startsWith("/vod/")) {
-        return `http://localhost:${proxyPort}${upstream.pathname}${upstream.search}`;
-      }
-      if (upstream.hostname === "live.sjtu.edu.cn") {
-        return `http://localhost:${proxyPort}/canvas-live${upstream.pathname}${upstream.search}`;
-      }
-    } catch {
-      // Keep the original URL so the player can surface a useful media error.
-    }
-    return play.rtmpUrlHdv;
-  };
-
-  const checkOrStartProxy = async (): Promise<boolean> => {
-    if (!firstPlay.current) return true;
-    messageApi.open({
-      key: "proxy_preparing",
-      type: "loading",
-      content: "正在启动反向代理...",
-      duration: 0,
-    });
-    try {
-      const succeed = await invoke<boolean>("prepare_proxy");
-      messageApi.destroy("proxy_preparing");
-      if (!succeed) {
-        messageApi.error("反向代理启动超时");
-        void invoke("stop_proxy");
-        return false;
-      }
-      firstPlay.current = false;
-      messageApi.success("反向代理启动成功", 0.5);
-      return true;
-    } catch (error) {
-      messageApi.destroy("proxy_preparing");
-      messageApi.error(`反向代理启动失败：${error}`);
-      return false;
-    }
-  };
-
-  const handlePlay = async (play: VideoPlayInfo) => {
-    const config = await getConfig();
-    const playURL = getVidePlayURL(play, config.proxy_port, selectedVideo?.source);
-    const needsProxy = playURL.startsWith(`http://localhost:${config.proxy_port}/`);
-    if (playURL === mainPlayURL || playURL === mutedPlayURL) {
-      messageApi.warning("已经在播放啦");
-      return;
-    }
-    if (mainPlayURL && mutedPlayURL) {
-      messageApi.error("目前只支持双屏观看");
-      return;
-    }
-    if (needsProxy && !(await checkOrStartProxy())) return;
-
-    if (!mainPlayURL) {
-      setMainPlayURL(playURL);
-      setMutedPlayURL("");
-      setPlayURLs([playURL]);
-      return;
-    }
-
-    if (!mutedPlayURL) {
-      if (play.index === 0) {
-        setMutedPlayURL(mainPlayURL);
-        setMainPlayURL(playURL);
-        setPlayURLs([playURL, mainPlayURL]);
-      } else {
-        setMutedPlayURL(playURL);
-        setPlayURLs([mainPlayURL, playURL]);
-      }
-      return;
-    }
-
-    if (play.index !== 0 || playURL !== mainPlayURL) {
-      setMutedPlayURL(playURL);
-    }
-    setPlayURLs((urls) => [...urls, playURL]);
-  };
-
-  const handleSwapVideo = () => {
-    if (playURLs.length === 2 && mainPlayURL && mutedPlayURL) {
-      const mainVideo = mainVideoRef.current;
-      const subVideo = subVideoRef.current;
-      if (!mainVideo || !subVideo) {
-        return;
-      }
-
-      const mainState = {
-        currentTime: mainVideo.currentTime,
-        paused: mainVideo.paused,
-        playbackRate: mainVideo.playbackRate,
-      };
-      const subState = {
-        currentTime: subVideo.currentTime,
-        paused: subVideo.paused,
-        playbackRate: subVideo.playbackRate,
-      };
-
-      setMainPlayURL(mutedPlayURL);
-      setMutedPlayURL(mainPlayURL);
-
-      setTimeout(() => {
-        const newMain = mainVideoRef.current;
-        const newSub = subVideoRef.current;
-        if (newMain && newSub) {
-          newMain.currentTime = subState.currentTime;
-          newMain.playbackRate = subState.playbackRate;
-          newSub.currentTime = mainState.currentTime;
-          newSub.playbackRate = mainState.playbackRate;
-          if (!subState.paused) {
-            void newMain.play();
-          } else {
-            newMain.pause();
-          }
-          if (!mainState.paused) {
-            void newSub.play();
-          } else {
-            newSub.pause();
-          }
-        }
-      }, 200);
-    }
-  };
-
-  const handleMainVideoJump = (time: number) => {
-    if (!mainVideoRef.current) {
-      messageApi.warning("当前未播放视频");
-      return;
-    }
-    mainVideoRef.current.currentTime = time;
-  };
-
-  const noSubVideo = !mutedPlayURL;
-  const subVideoSizes = [0, 10, 20, 25, 33, 40, 50];
-
-  const positionSubVideo = () => {
-    const container = playerContainerRef.current;
-    if (!container || !mutedPlayURL) {
-      return;
-    }
-
-    const padding = 24;
-    const containerWidth = container.clientWidth;
-    const overlayWidth = (containerWidth * subVideoSize) / 100;
-    const maxX = Math.max(padding, containerWidth - overlayWidth - padding);
-    setSubVideoPos({ x: maxX, y: padding });
-  };
-
-  const hookVideoHandlers = (swap: boolean) => {
-    const mainVideo = mainVideoRef.current;
-    const subVideo = subVideoRef.current;
-    if (!mainVideo || !subVideo) {
-      return;
-    }
-
-    if (!swap) {
-      subVideo.currentTime = mainVideo.currentTime;
-      if (!mainVideo.paused) {
-        void subVideo.play();
-      }
-    }
-
-    subVideo.onplay = null;
-    mainVideo.onplay = () => void subVideo?.play();
-
-    subVideo.onpause = null;
-    mainVideo.onpause = () => subVideo?.pause();
-
-    subVideo.onratechange = null;
-    mainVideo.onratechange = () => {
-      if (subVideo && mainVideo) {
-        subVideo.playbackRate = mainVideo.playbackRate;
-      }
-    };
-
-    subVideo.onseeked = null;
-    mainVideo.onseeked = () => {
-      if (subVideo && mainVideo) {
-        subVideo.currentTime = mainVideo.currentTime;
-      }
-    };
-  };
-
-  useEffect(() => {
-    if (!noSubVideo && syncPlay) {
-      hookVideoHandlers(false);
-    }
-  }, [playURLs, noSubVideo, syncPlay]);
-
-  useEffect(() => {
-    if (!noSubVideo && syncPlay) {
-      hookVideoHandlers(true);
-    }
-  }, [mainPlayURL, noSubVideo, syncPlay]);
-
-  useEffect(() => {
-    if (!mutedPlayURL) {
-      return;
-    }
-
-    const frame = window.requestAnimationFrame(() => {
-      positionSubVideo();
-    });
-
-    const handleResize = () => positionSubVideo();
-    window.addEventListener("resize", handleResize);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener("resize", handleResize);
-    };
-  }, [mutedPlayURL, subVideoSize]);
-
-  useEffect(() => {
-    const fetchSubtitle = async () => {
-      if (!selectedVideo || !mainPlayURL) {
-        setSubtitleUrl(undefined);
-        return;
-      }
-      if (selectedVideo.source === "legacy") {
-        setSubtitleUrl(undefined);
-        return;
-      }
-      try {
-        const videoInfo = await getVideoInfo(selectedVideo);
-        const srt = (await invoke("get_subtitle", {
-          canvasCourseId: videoInfo.courId,
-        })) as string;
-        const vtt = srtToVtt(srt);
-        const blob = new Blob([vtt], { type: "text/vtt" });
-        const url = URL.createObjectURL(blob);
-        setSubtitleUrl(url);
-      } catch {
-        setSubtitleUrl(undefined);
-      }
-    };
-    void fetchSubtitle();
-  }, [mainPlayURL, selectedVideo]);
-
-  const selectedCourse = courses.data.find((course) =>
-    course.id === selectedCourseId
-  );
-  const supportsEnrichment = selectedVideo?.source !== "legacy";
-
-  return (
-    <BasicLayout>
-      {contextHolder}
-      <Stack spacing={3}>
-        <ClosableAlert
-          alertType="info"
-          message="提示"
-          configKey={VIDEO_PAGE_HINT_ALERT_KEY}
-          description="依次点击主屏幕和副屏幕的播放按钮即可开启双窗口模式。"
-        />
-
-        {loaded && notLogin ? (
-          <Alert
-            severity="info"
-            sx={{ borderRadius: "8px" }}
-            action={
-              <Button component={RouterLink} to="/settings" color="inherit" size="small">
-                前往设置
-              </Button>
-            }
-          >
-            视频功能依赖额外扫码登录。你可以前往设置页，在“额外扫码登录”区域完成登录后再回来使用。
-          </Alert>
-        ) : null}
-
-        <Dialog
-          open={showLoginRequiredDialog && loaded && notLogin}
-          onClose={() => setShowLoginRequiredDialog(false)}
-          fullWidth
-          maxWidth="sm"
-        >
-          <DialogTitle>需要额外登录</DialogTitle>
-          <DialogContent>
-            <Stack spacing={1.5} sx={{ pt: 1 }}>
-              <Typography variant="body1">
-                视频相关功能需要额外扫码登录后才能使用。
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                登录入口已经放到设置页，你可以在那里主动完成扫码并保存登录态。
-              </Typography>
-            </Stack>
-          </DialogContent>
-          <DialogActions sx={{ px: 3, py: 2 }}>
-            <Button onClick={() => setShowLoginRequiredDialog(false)}>稍后再说</Button>
-            <Button
-              component={RouterLink}
-              to="/settings"
-              variant="contained"
-              onClick={() => setShowLoginRequiredDialog(false)}
-            >
-              前往设置页
-            </Button>
-          </DialogActions>
-        </Dialog>
-
-        <WorkspaceHero
-          chipLabel="视频管理"
-          chipIcon={<SmartDisplayRoundedIcon />}
-          title="视频中心"
-          description="选择课程录像，下载视频、字幕、PPT，并支持双屏同步播放。"
-          aside={
-            !notLogin ? (
-              <Box
-                sx={{
-                width: { xs: "100%", lg: 680 },
-                alignSelf: { xs: "stretch", lg: "flex-start" },
-                }}
-              >
-                <Stack spacing={1.5}>
-                  <CourseSelect
-                    courses={courses.data}
-                    compareCourses={compareVideoCourses}
-                    disabled={operating || canvasCourses.isLoading}
-                    onChange={(courseId) => void handleSelectCourse(courseId)}
-                    value={selectedCourseId !== -1 ? selectedCourseId : undefined}
-                    getSourceLabel={(course) => mergedCourses.find((item) => item.id === course.id)?.sourceLabel}
-                  />
-                    <Stack
-                      direction={{ xs: "column", sm: "row" }}
-                      spacing={1}
-                      alignItems={{ xs: "stretch", sm: "center" }}
-                    >
-                      <Box sx={{ flex: 1, minWidth: 0 }}>
-                        {coursesLoading && (
-                          <Stack direction="row" spacing={1} alignItems="center" sx={{ px: 0.5 }}>
-                            <CircularProgress size={16} thickness={5} />
-                            <Typography variant="caption" color="text.secondary">
-                              正在同步视频空间课程，Canvas 课程已可直接选择
-                            </Typography>
-                          </Stack>
-                        )}
-                        {coursesError && <Alert severity="warning">部分视频来源读取失败：{coursesError}。仍可选择其他来源，或刷新重试。</Alert>}
-                        {!coursesLoading && !coursesError && courses.data.length === 0 && (
-                          <Alert severity="info">暂无可用课程。</Alert>
-                        )}
-                      </Box>
-                      <Button disabled={operating || canvasCourses.isLoading} onClick={() => {
-                        void handleSelectCourse(-1);
-                        setCourseRefresh((value) => value + 1);
-                        void canvasCourses.mutate();
-                      }}>刷新课程</Button>
-                    </Stack>
-                </Stack>
-              </Box>
-            ) : undefined
-          }
-          stats={[
-            {
-              label: "课程视频",
-              value: videos.length,
-              icon: <VideoLibraryRoundedIcon />,
-            },
-            {
-              label: "播放片段",
-              value: plays.length,
-              icon: <ClosedCaptionRoundedIcon />,
-            },
-            {
-              label: "视频任务",
-              value: videoDownloadTasks.length,
-              icon: <CloudDownloadRoundedIcon />,
-            },
-            {
-              label: "PPT 任务",
-              value: pptDownloadTasks.length,
-              icon: <PictureAsPdfRoundedIcon />,
-            },
-          ]}
-          footer={
-            <Stack spacing={1.5}>
-              {!notLogin ? (
-                <Box
-                  sx={{
-                    display: "grid",
-                    gap: 2,
-                    gridTemplateColumns: {
-                      xs: "minmax(0, 1fr)",
-                      xl: "minmax(0, 1.1fr) auto",
-                    },
-                    alignItems: "start",
-                  }}
-                >
-                  <Stack spacing={0.75}>
-                    <TextField
-                      select
-                      label="选择视频"
-                      disabled={operating || videosLoading || videos.length === 0}
-                      value={selectedVideo ? videoOptionId(selectedVideo) : ""}
-                      onChange={(event) =>
-                        void handleSelectVideo(String(event.target.value))
-                      }
-                      helperText={
-                        videosLoading
-                          ? "正在汇总当前课程的录像…"
-                          : selectedVideo
-                            ? `当前视频：${selectedVideo.videoName}`
-                            : selectedCourse && videos.length === 0
-                              ? "该课程暂无可用录像"
-                              : "选择一个课程后，这里会展示该课程的视频列表。"
-                      }
-                    >
-                      {videos.map((video) => (
-                      <MenuItem
-                        key={videoOptionId(video)}
-                        value={videoOptionId(video)}
-                        disabled={!video.playable}
-                      >
-                        <Stack
-                          direction="row"
-                          alignItems="center"
-                          spacing={1}
-                          sx={{ width: "100%" }}
-                        >
-                          <Typography variant="body2" noWrap sx={{ flex: 1, minWidth: 0 }}>
-                            {`${video.videoName} ${video.courseBeginTime}`}
-                          </Typography>
-                          <Stack
-                            direction="row"
-                            spacing={0.75}
-                            sx={{ ml: "auto", flexShrink: 0 }}
-                          >
-                            <Chip
-                              size="small"
-                              label={videoSourceLabel(video.source)}
-                              variant="outlined"
-                            />
-                            {!video.playable && (
-                              <Chip
-                                size="small"
-                                label={video.availabilityLabel}
-                                color={
-                                  video.availability === "repairing"
-                                    ? "warning"
-                                    : "default"
-                                }
-                                variant="outlined"
-                              />
-                            )}
-                          </Stack>
-                        </Stack>
-                      </MenuItem>
-                      ))}
-                    </TextField>
-                    {videosLoading && (
-                      <Stack direction="row" spacing={1} alignItems="center" sx={{ px: 0.5 }}>
-                        <CircularProgress size={16} thickness={5} />
-                        <Typography variant="caption" color="text.secondary">
-                          正在读取新版课堂、视频空间和旧版课堂视频
-                        </Typography>
-                      </Stack>
-                    )}
-                  </Stack>
-
-                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} useFlexGap flexWrap="wrap">
-                    <Button
-                      variant="outlined"
-                      startIcon={<ClosedCaptionRoundedIcon />}
-                      onClick={() => void handleDownloadSubtitle()}
-                      disabled={!selectedVideo || !supportsEnrichment}
-                    >
-                      下载字幕
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      startIcon={<PictureAsPdfRoundedIcon />}
-                      onClick={() =>
-                        void handleDownloadPPT(
-                          selectedVideo?.videoId || "",
-                          `${selectedVideo?.videoName}.pdf`
-                        )
-                      }
-                      disabled={!selectedVideo || !supportsEnrichment}
-                    >
-                      下载 PPT
-                    </Button>
-                    <Button
-                      variant="contained"
-                      startIcon={<PsychologyRoundedIcon />}
-                      onClick={() => void handleSummarizeSubtitle()}
-                      disabled={!selectedVideo || !supportsEnrichment}
-                    >
-                      AI 总结
-                    </Button>
-                  </Stack>
-                </Box>
-              ) : null}
-
-              {selectedCourse ? (
-                <Chip label={selectedCourse.name} color="primary" variant="outlined" />
-              ) : null}
-            </Stack>
-          }
-        />
-
-        {!notLogin ? (
-          <>
-            <Card sx={surfaceCardSx}>
-              <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-                <Stack spacing={2}>
-                  <Box>
-                    <Typography variant="h6" sx={{ fontWeight: 800 }}>
-                      播放片段
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      主屏一般是黑板视角，录屏轨道可作为副屏或下载对象。
-                    </Typography>
-                  </Box>
-
-                  <Box
-                    sx={{
-                      borderRadius: "8px",
-                      border: "1px solid",
-                      borderColor: "divider",
-                      overflow: "auto",
-                    }}
-                  >
-                    <Table sx={{ minWidth: 720 }}>
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>视频名</TableCell>
-                          <TableCell align="right">操作</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {plays.map((play) => (
-                          <TableRow key={play.id} hover>
-                            <TableCell>{play.name}</TableCell>
-                            <TableCell align="right">
-                              <Stack
-                                direction="row"
-                                spacing={1}
-                                justifyContent="flex-end"
-                                flexWrap="wrap"
-                                useFlexGap
-                              >
-                                <Button
-                                  size="small"
-                                  variant="outlined"
-                                  onClick={() => handleDownloadVideo(play)}
-                                >
-                                  下载
-                                </Button>
-                                <Button
-                                  size="small"
-                                  variant="contained"
-                                  onClick={() => void handlePlay(play)}
-                                >
-                                  播放
-                                </Button>
-                              </Stack>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </Box>
-                </Stack>
-              </CardContent>
-            </Card>
-
-            <Card sx={surfaceCardSx}>
-              <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-                <Stack spacing={2.5}>
-                  <Box>
-                    <Typography variant="h6" sx={{ fontWeight: 800 }}>
-                      播放控制
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      可调节副屏尺寸、透明度，并在双轨播放时切换主副屏。
-                    </Typography>
-                  </Box>
-
-                  <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems={{ xs: "stretch", md: "center" }}>
-                    <FormControlLabel
-                      control={
-                        <Switch
-                          checked={syncPlay}
-                          onChange={(event) => setSyncPlay(event.target.checked)}
-                          disabled={noSubVideo}
-                        />
-                      }
-                      label="同步播放"
-                    />
-                    <Button
-                      variant="outlined"
-                      startIcon={<SwapHorizRoundedIcon />}
-                      disabled={noSubVideo}
-                      onClick={handleSwapVideo}
-                    >
-                      主副屏切换
-                    </Button>
-                    <TextField
-                      select
-                      label="副屏尺寸"
-                      value={subVideoSize}
-                      onChange={(event) => setSubVideoSize(Number(event.target.value))}
-                      disabled={noSubVideo}
-                      sx={{ width: { xs: "100%", md: 180 } }}
-                    >
-                      {subVideoSizes.map((size) => (
-                        <MenuItem key={size} value={size}>
-                          副屏：{size}%
-                        </MenuItem>
-                      ))}
-                    </TextField>
-                  </Stack>
-
-                  {!noSubVideo ? (
-                    <Box sx={{ width: { xs: "100%", md: 360 } }}>
-                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                        副屏透明度
-                      </Typography>
-                      <Slider
-                        min={0.1}
-                        max={1}
-                        step={0.05}
-                        value={subVideoOpacity}
-                        onChange={(_, value) => setSubVideoOpacity(value as number)}
-                      />
-                    </Box>
-                  ) : null}
-                </Stack>
-              </CardContent>
-            </Card>
-
-            <Card sx={surfaceCardSx}>
-              <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
-                <Stack spacing={2}>
-                  <Typography variant="h6" sx={{ fontWeight: 800 }}>
-                    播放器
-                  </Typography>
-                  <Box
-                    className={videoStyles.videoPlayerContainer}
-                    sx={{
-                      borderRadius: "8px",
-                      overflow: "hidden",
-                      bgcolor: "#000",
-                    }}
-                  >
-                    <Box
-                      ref={playerContainerRef}
-                      sx={{
-                        position: "relative",
-                        width: "100%",
-                        aspectRatio: "16 / 9",
-                        minHeight: 360,
-                        bgcolor: "#000",
-                      }}
-                    >
-                      {mainPlayURL ? (
-                        <video
-                          ref={mainVideoRef}
-                          controls
-                          autoPlay={false}
-                          src={mainPlayURL}
-                          muted={false}
-                          width="100%"
-                          style={{
-                            width: "100%",
-                            height: "100%",
-                            display: "block",
-                            objectFit: "contain",
-                            background: "#000",
-                          }}
-                        >
-                          {subtitleUrl ? (
-                            <track
-                              label="字幕"
-                              kind="subtitles"
-                              src={subtitleUrl}
-                              srcLang="zh"
-                              default
-                            />
-                          ) : null}
-                        </video>
-                      ) : (
-                        <Box
-                          sx={{
-                            position: "absolute",
-                            inset: 0,
-                            display: "grid",
-                            placeItems: "center",
-                            color: "#fff",
-                          }}
-                        >
-                          <Stack spacing={1.25} alignItems="center">
-                            <VideoLibraryRoundedIcon sx={{ fontSize: 44, opacity: 0.8 }} />
-                            <Typography variant="body1">选择片段后在这里开始播放</Typography>
-                          </Stack>
-                        </Box>
-                      )}
-
-                      {!noSubVideo && mutedPlayURL ? (
-                        <Draggable
-                          bounds="parent"
-                          position={subVideoPos}
-                          onStop={(_: DraggableEvent, data: DraggableData) =>
-                            setSubVideoPos({ x: data.x, y: data.y })
-                          }
-                          disabled={noSubVideo}
-                        >
-                          <div
-                            style={{
-                              position: "absolute",
-                              zIndex: 1000,
-                              opacity: subVideoOpacity,
-                              pointerEvents: noSubVideo ? "none" : "auto",
-                              width: `${subVideoSize}%`,
-                              left: 0,
-                              top: 0,
-                              display: mutedPlayURL ? "block" : "block",
-                              boxShadow: "0 10px 30px rgba(0,0,0,0.3)",
-                              borderRadius: 12,
-                              background: "#000",
-                              overflow: "hidden",
-                            }}
-                          >
-                            <video
-                              ref={subVideoRef}
-                              controls
-                              autoPlay={false}
-                              src={mutedPlayURL}
-                              muted
-                              style={{
-                                width: "100%",
-                                height: "100%",
-                                display: "block",
-                                objectFit: "contain",
-                                background: "#000",
-                              }}
-                            />
-                          </div>
-                        </Draggable>
-                      ) : null}
-                    </Box>
-                  </Box>
-                </Stack>
-              </CardContent>
-            </Card>
-
-            <PageTaskLists>
-              <VideoDownloadTable tasks={videoDownloadTasks} />
-              <PPTDownloadTable tasks={pptDownloadTasks} />
-            </PageTaskLists>
-          </>
-        ) : null}
-
-        <Card sx={surfaceCardSx}>
-          <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-            <Stack spacing={2}>
-              <Typography variant="h6" sx={{ fontWeight: 800 }}>
-                视频合并
-              </Typography>
-              <VideoAggregator />
-            </Stack>
-          </CardContent>
-        </Card>
-      </Stack>
-
-      <FileAIChatModal
-        open={summaryChatOpen}
-        title={summaryChatTitle}
-        messages={summaryChatMessages}
-        loading={summaryChatLoading}
-        onClose={() => setSummaryChatOpen(false)}
-        onSend={handleSendSummaryMessage}
-        dialogTitle="AI 视频会话"
-        dialogDescription="围绕当前视频字幕持续追问，AI 会结合字幕内容和时间点继续回答。"
-        contextLabel="当前视频"
-        emptyText="正在为当前视频创建第一条 AI 总结消息。"
-        inputPlaceholder="继续追问这节课，例如：老师提到的作业要求是什么？考试范围出现在哪些时间点？"
-        footerIdleText="提问会保留在当前会话中，后续回答会继续参考这段视频字幕。"
-        markdownComponents={{ code: LinkRenderer as any }}
       />
-    </BasicLayout>
-  );
+      {(player || chatOpen) && <Box ref={workspaceRef} sx={{ scrollMarginTop: 16, display: "grid", gridTemplateColumns: player && !playerMini && chatOpen ? { xs: "minmax(0, 1fr)", md: "minmax(0, 1.2fr) minmax(340px, 1fr)" } : "minmax(0, 1fr)", gap: 2, alignItems: "start" }}>
+        {player && <VideoLibraryPlayer onMiniChange={setPlayerMini} session={player.session} initialKey={player.key} seconds={player.seconds} seekRequest={player.nonce} onClose={() => setPlayer(undefined)} onSummarize={() => summarize([player.session])} />}
+        {chatOpen && <Card sx={{ ...surfaceCardSx, minWidth: 0 }}><Stack direction="row" gap={1} flexWrap="wrap" alignItems="center" sx={{ px: 2, pt: 1 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>{cacheNotice}</Typography>
+          <Button disabled={chatLoading || !chatScope.length} onClick={() => void startSummary(true, chatScope, cacheEntry.current?.organization ?? aiOrganization, chatNamespace.current, chatTitle)}>重新生成</Button>
+          <Button disabled={chatLoading || !cacheEntry.current} onClick={() => { if (cacheEntry.current && deleteSummaryCache(cacheEntry.current.key)) { setCachedSummaries(readSummaryCache()); cacheEntry.current = undefined; setCacheNotice("本地缓存已删除，当前会话仍可阅读"); } else messageApi.error("删除缓存失败"); }}>删除缓存</Button>
+          <Button onClick={() => setChatOpen(false)}>收起总结</Button>
+        </Stack>{chatPanel}</Card>}
+      </Box>}
+      <Card sx={{ ...surfaceCardSx, overflow: "visible" }}>
+        <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
+          <Stack spacing={2}>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} justifyContent="space-between" alignItems={{ sm: "center" }}>
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 700 }}>课堂录像</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {selectedCourse ? `${sessions.length} 堂课 · ${videos.length} 小节，支持整堂课或跨课堂勾选。` : "选择课程后，展开课堂查看小节录像。"}
+                </Typography>
+              </Box>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                {chatMessages.length > 0 && <Button onClick={() => setChatOpen(true)}>{chatLoading ? "AI 处理中" : "上次总结"}</Button>}
+                {!!courseSummaries.length && <Button disabled={chatLoading} onClick={() => setCacheListOpen(true)}>已缓存总结 · {courseSummaries.length}</Button>}
+                <Button variant="outlined" startIcon={<MoreHorizRoundedIcon />} onClick={(e) => setToolsAnchor(e.currentTarget)}>更多工具</Button>
+              </Stack>
+            </Stack>
+            {login === "checking" && <LinearProgress aria-label="检查视频登录" />}
+            {login === "required" && <Alert severity="info" action={<Button component={RouterLink} to="/settings">前往设置</Button>}>视频功能需要额外扫码登录。完成后点击刷新重试。</Alert>}
+            {courseLoading && <Typography variant="caption" color="text.secondary">正在同步视频空间课程，已有课程可直接选择。</Typography>}
+            {courseError && <Alert severity="warning">视频空间课程读取失败：{courseError}。其他来源仍可使用。</Alert>}
+            <Stack direction="row" gap={1} flexWrap="wrap">
+              <TextField size="small" placeholder="搜索日期、课堂或小节" inputProps={{ "aria-label": "搜索课堂" }} value={query} onChange={(e) => setQuery(e.target.value)} sx={{ flex: 1, minWidth: 180 }} />
+              <TextField select size="small" label="录像状态" value={status} onChange={(e) => setStatus(e.target.value)} sx={{ minWidth: 140 }}>
+                <MenuItem value="all">全部状态</MenuItem><MenuItem value="ready">可播放</MenuItem><MenuItem value="unavailable">暂不可播放</MenuItem>
+              </TextField>
+              <Button disabled={loading || courseLoading || login === "checking"} onClick={() => { materialCache.current.clear(); setRefresh((value) => value + 1); void canvas.mutate(); }}>刷新</Button>
+            </Stack>
+            {loadError && <Alert severity="error">读取录像失败：{loadError}</Alert>}
+            <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: "8px", overflow: "auto" }}>
+              {loading && <LinearProgress aria-label="正在读取录像" />}
+              <Table size="small" sx={{ "& .MuiTableCell-root": { px: { xs: 0.75, sm: 2 } }, "& .MuiTableCell-paddingCheckbox": { px: 0 } }} aria-label="课堂资料库">
+                <TableHead><TableRow sx={{ bgcolor: (theme) => alpha(theme.palette.primary.main, 0.05) }}>
+                  <TableCell padding="checkbox">{check(visibleVideos, "全选当前筛选结果")}</TableCell>
+                  <TableCell>日期 / 小节</TableCell><TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>来源</TableCell><TableCell align="right">操作</TableCell>
+                </TableRow></TableHead>
+                <TableBody>
+                  {visibleDates.map((day) => {
+                    const dayVideos = day.items.flatMap(({ matching }) => matching).sort((a, b) => (recordingTime(a.courseBeginTime) ?? Infinity) - (recordingTime(b.courseBeginTime) ?? Infinity));
+                    const allDayVideos = dateGroups.find((group) => group.id === day.id)!.items.flatMap(({ session }) => session.videos).sort((a, b) => (recordingTime(a.courseBeginTime) ?? Infinity) - (recordingTime(b.courseBeginTime) ?? Infinity));
+                    const [dateLabel, weekday] = day.title.split(" · ");
+                    const dayScope: VideoSession = { id: `date:${day.id}`, title: day.title, videos: allDayVideos };
+                    const dayExpanded = expanded.get(dayScope.id) ?? (!!query || status !== "all" || day.id === visibleDates[0]?.id);
+                    return <Fragment key={day.id}>
+                      <TableRow data-level="date" selected={allDayVideos.every((v) => selected.has(recordingKey(v)))} sx={{ bgcolor: "action.hover" }}>
+                        <TableCell colSpan={2}>
+                          <Stack direction="row" alignItems="center" gap={0.5}>
+                            {check(allDayVideos, `选择日期 ${day.title}`)}
+                            <IconButton size="small" aria-label={`${dayExpanded ? "收起" : "展开"}日期 ${day.title}`} aria-expanded={dayExpanded} onClick={() => toggleExpanded(dayScope.id, dayExpanded)}>{dayExpanded ? <ExpandMoreRoundedIcon /> : <ChevronRightRoundedIcon />}</IconButton>
+                            <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap"><Button color="inherit" size="small" sx={{ p: 0, fontSize: "1rem", fontWeight: 700, color: "text.primary", textAlign: "left" }} onClick={() => toggleExpanded(dayScope.id, dayExpanded)}>{[...new Set(allDayVideos.flatMap((v) => [v, ...(v.alternatives ?? [])]).map((v) => v.weekNumber).filter((week) => week > 0))].map((week) => `第 ${week} 周`).join(" / ") || "周次待确认"}{weekday ? ` · ${weekday}` : ""}</Button><Typography variant="caption" color="text.secondary">{dateLabel}</Typography><Chip size="small" variant="outlined" label={`${allDayVideos.length} 小节`} />{dayVideos.length < allDayVideos.length && <Typography variant="caption" color="text.secondary">筛选命中 {dayVideos.length} 小节</Typography>}</Stack>
+                          </Stack>
+                        </TableCell>
+                        <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}><Typography variant="caption" color="text.secondary">{sourceNames(allDayVideos)}</Typography></TableCell>
+                        {rowActions(dayScope)}
+                      </TableRow>
+                      {dayExpanded && dayVideos.map((video) => <TableRow data-level="recording" key={recordingKey(video)} hover selected={selected.has(recordingKey(video))}>
+                        <TableCell colSpan={2}>
+                          <Stack direction="row" alignItems="center" gap={1} sx={{ ml: { xs: 2, sm: 4 }, pl: 1, borderLeft: "2px solid", borderColor: "divider" }}>
+                            {check([video], `选择小节 ${video.videoName}`)}
+                            <Box><Typography variant="body2">第 {allDayVideos.indexOf(video) + 1} 小节 · {video.courseBeginTime.split(/[ T]/)[1]?.slice(0, 5) || "时间待确认"}{video.courseEndTime.split(/[ T]/)[1] ? `–${video.courseEndTime.split(/[ T]/)[1].slice(0, 5)}` : ""}</Typography>
+                              <Tooltip title={video.videoName}><Typography variant="caption" color="text.secondary" sx={{ display: "block", overflowWrap: "anywhere" }}>{[video.userName, video.classroomName].filter(Boolean).join(" · ") || video.videoName}</Typography></Tooltip>
+                            </Box>
+                          </Stack>
+                        </TableCell>
+                        <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}><Typography variant="caption">{sourceNames([video])}</Typography></TableCell>
+                        {rowActions({ ...dayScope, title: `${day.title}（第 ${allDayVideos.indexOf(video) + 1} 小节）`, videos: [video] }, dayScope, recordingKey(video))}
+                      </TableRow>)}
+                    </Fragment>;
+                  })}
+                  {!visible.length && <TableRow><TableCell colSpan={4} sx={{ textAlign: "center", py: 7, color: "text.secondary" }}>{loading ? "正在读取课堂录像…" : !selectedCourse ? "选择课程，查看课堂录像和资料" : videos.length ? "没有匹配的课堂，请调整搜索或筛选" : "本课程暂无课堂录像"}</TableCell></TableRow>}
+                </TableBody>
+              </Table>
+            </Box>
+            {!!selected.size && <Stack direction={{ xs: "column", sm: "row" }} alignItems={{ sm: "center" }} gap={1} sx={{ position: "sticky", bottom: 0, zIndex: 5, pt: 2, pb: 0.5, bgcolor: "background.paper", borderTop: "1px solid", borderColor: "divider" }}>
+              <Box sx={{ flex: 1 }}><Typography variant="body2">已选 {scopes.length} 堂课 · {selected.size} 小节</Typography>{hiddenSelected > 0 && <Typography variant="caption" color="text.secondary">其中 {hiddenSelected} 小节不在当前筛选结果中</Typography>}</Box>
+              <Button onClick={() => setSelected(new Set())}>清空选择</Button><Button disabled={!scopes.some((scope) => scope.videos.some(isPlayable))} onClick={() => play({ id: "selected", title: "所选录像", videos: scopes.flatMap((scope) => scope.videos) })}>播放</Button><Button variant="outlined" startIcon={<CloudDownloadRoundedIcon />} onClick={() => download(scopes)}>下载…</Button><Button variant="contained" startIcon={<PsychologyRoundedIcon />} onClick={() => summarize(scopes)}>AI 总结…</Button>
+            </Stack>}
+          </Stack>
+        </CardContent>
+      </Card>
+      {!centerOnly && <Box><VideoLibraryTasks tasks={tasks.filter((task) => task.source === "video")} /></Box>}
+    </Stack>
+    <Menu anchorEl={toolsAnchor} open={!!toolsAnchor} onClose={() => setToolsAnchor(null)}><MenuItem onClick={() => { setAggregator(true); setToolsAnchor(null); }}>视频合成工具</MenuItem></Menu>
+    <Dialog open={!!downloadScopes} onClose={() => { if (!exporting) setDownloadScopes(undefined); }} fullWidth maxWidth="sm">
+      <DialogTitle>下载 {downloadScopes?.length} 堂课 · {downloadScopes?.reduce((n, s) => n + s.videos.length, 0)} 小节</DialogTitle>
+      <DialogContent><Stack spacing={2} sx={{ pt: 1 }}>
+        <Typography variant="body2" color="text.secondary">{downloadScopes?.map((s) => s.title).join("；")}</Typography>
+        <Stack direction="row" flexWrap="wrap">{([ ["video", "视频"], ["ppt", "PPT 切片 PDF"], ["subtitle", "字幕"] ] as const).map(([key, label]) => <FormControlLabel key={key} label={label} control={<Checkbox checked={exportOptions[key]} onChange={(_, checked) => setExportOptions((previous) => ({ ...previous, [key]: checked }))} />} />)}</Stack>
+        {exportOptions.video && <TextField select label="视频机位" size="small" value={exportOptions.tracks} onChange={(e) => setExportOptions((p) => ({ ...p, tracks: e.target.value as "all" | "first" }))}><MenuItem value="all">全部可用机位</MenuItem><MenuItem value="first">仅首个机位</MenuItem></TextField>}
+        {exportOptions.ppt && <TextField select label="PPT 输出" size="small" value={exportOptions.pptPerSession ? "session" : "section"} onChange={(e) => setExportOptions((p) => ({ ...p, pptPerSession: e.target.value === "session" }))}><MenuItem value="session">每堂课合并一个 PDF（仅包含所选小节）</MenuItem><MenuItem value="section">每小节一个 PDF</MenuItem></TextField>}
+        {exportOptions.subtitle && <Typography variant="body2">每小节独立 SRT，同时生成每堂课阅读文本。阅读文本中的时间点属于各自小节。</Typography>}
+        {downloadScopes?.length === 1 && downloadScopes[0].videos.length === 1 && <Box component="details"><Typography component="summary" variant="body2" sx={{ cursor: "pointer" }}>单节下载选项</Typography><Stack direction="row" flexWrap="wrap" gap={1} sx={{ mt: 1 }}>
+          <Button onClick={() => { setTrackDownload(downloadScopes[0].videos[0]); setDownloadScopes(undefined); }}>选择机位下载…</Button>
+          <Button onClick={() => void saveSingle(downloadScopes[0].videos[0], "ppt")}>PPT 另存为…</Button>
+          <Button onClick={() => void saveSingle(downloadScopes[0].videos[0], "subtitle")}>字幕另存为…</Button>
+        </Stack></Box>}
+        <Typography variant="caption" color="text.secondary">下一步为整批选择一次目录，按课程和课堂保存。同名文件自动编号；缺失资料在任务结果中列出。</Typography>
+        {downloadScopes?.some((s) => s.videos.some((v) => !hasSubtitleSource(v))) && <Alert severity="info">部分来源仅提供视频，PPT 和字幕可能不可用；其他资料会继续导出。</Alert>}
+      </Stack></DialogContent>
+      <DialogActions><Button disabled={exporting} onClick={() => setDownloadScopes(undefined)}>取消</Button><Button variant="contained" disabled={exporting || !(exportOptions.video || exportOptions.ppt || exportOptions.subtitle)} onClick={() => void submitDownload()}>{exporting ? "正在加入队列…" : "选择目录并下载"}</Button></DialogActions>
+    </Dialog>
+    <Dialog open={!!aiScopes} onClose={() => setAiScopes(undefined)} fullWidth maxWidth="sm">
+      <DialogTitle>总结所选 {aiScopes?.reduce((n, s) => n + s.videos.length, 0)} 小节</DialogTitle>
+      <DialogContent><Stack spacing={2} sx={{ pt: 1 }}>
+        <Typography variant="body2">{aiScopes?.map((s) => s.title).join("；")}</Typography>
+        <Typography variant="body2" color="text.secondary">仅依据字幕。缺失小节会明确标注，PPT 不作为 AI 输入。成功结果缓存在本机，重新生成会重新读取字幕。</Typography>
+        <TextField select size="small" label="结果组织" value={aiOrganization} onChange={(e) => setAiOrganization(e.target.value)}><MenuItem value="sessions">逐堂总结，堂内综合各小节</MenuItem><MenuItem value="combined">综合所有所选小节</MenuItem></TextField>
+      </Stack></DialogContent>
+      <DialogActions><Button onClick={() => setAiScopes(undefined)}>取消</Button><Button variant="contained" onClick={() => void startSummary()}>开始总结</Button></DialogActions>
+    </Dialog>
+    <Dialog open={cacheListOpen} onClose={() => setCacheListOpen(false)} fullWidth maxWidth="sm"><DialogTitle>本课程的已缓存总结</DialogTitle><DialogContent><Stack spacing={1}><Typography variant="caption" color="text.secondary">本机最多保留 12 份会话，总计约 3 MB；超出时移除最早保存的缓存。缓存不会自动检查字幕更新，可在会话中重新生成。</Typography>{courseSummaries.map((entry) => <Button key={entry.key} disabled={chatLoading} sx={{ justifyContent: "flex-start", textAlign: "left" }} onClick={() => restoreSummary(entry)}>{entry.scopes.map((scope) => scope.title).join("；")} · {entry.organization === "combined" ? "综合总结" : "逐堂总结"} · {new Date(entry.savedAt).toLocaleString("zh-CN")}</Button>)}</Stack></DialogContent><DialogActions><Button onClick={() => setCacheListOpen(false)}>关闭</Button></DialogActions></Dialog>
+    <Dialog open={aggregator} onClose={() => setAggregator(false)} maxWidth="lg" fullWidth><DialogTitle><Stack direction="row" justifyContent="space-between">视频合成工具<Button onClick={() => setAggregator(false)}>关闭</Button></Stack></DialogTitle><DialogContent>{aggregator && <VideoAggregator />}</DialogContent></Dialog>
+    {trackDownload && <VideoTrackDownloads video={trackDownload} onClose={() => setTrackDownload(undefined)} />}
+    {chatLoading && !chatOpen && <Box sx={{ ...surfaceCardSx, position: "fixed", bottom: 20, right: 24, zIndex: 8, bgcolor: "background.paper", p: 1 }}><Button startIcon={<CircularProgress size={14} />} onClick={() => setChatOpen(true)}>{chatProgress}</Button></Box>}
+  </BasicLayout>;
 }

@@ -933,6 +933,38 @@ async fn download_subtitle(canvas_course_id: i64, save_path: String) -> Result<(
 }
 
 #[tauri::command]
+async fn prepare_video_material(
+    request: app::video_library::RecordingRequest,
+) -> Result<app::video_library::VideoMaterial> {
+    APP.prepare_video_material(request).await
+}
+
+#[tauri::command]
+async fn chat_video_materials(text: String, messages: Vec<LLMChatMessage>, on_chunk: tauri::ipc::Channel<String>, on_status: tauri::ipc::Channel<String>) -> Result<String> {
+    let mut callback = move |chunk| { let _ = on_chunk.send(chunk); };
+    let mut status_callback = move |status| { let _ = on_status.send(status); };
+    APP.chat_video_materials(text, messages, Some(&mut callback), &mut status_callback).await
+}
+
+#[tauri::command]
+async fn export_video_materials(
+    requests: Vec<app::video_library::RecordingRequest>,
+    kind: String,
+    directory: String,
+    name: String,
+    all_tracks: bool,
+    on_progress: tauri::ipc::Channel<app::video_library::ExportProgress>,
+) -> Result<app::video_library::ExportResult> {
+    APP.export_video_materials(requests, kind, directory, name, all_tracks, Arc::new(move |progress| { let _ = on_progress.send(progress); }))
+        .await
+}
+
+#[tauri::command]
+fn create_video_export_directory(directory: String, course: String) -> Result<String> {
+    app::video_library::create_export_directory(&directory, &course)
+}
+
+#[tauri::command]
 async fn summarize_subtitle(canvas_course_id: i64) -> Result<String> {
     APP.summarize_subtitle(canvas_course_id).await
 }
@@ -1143,6 +1175,10 @@ async fn main() -> Result<()> {
             prepare_proxy,
             stop_proxy,
             download_subtitle,
+            prepare_video_material,
+            chat_video_materials,
+            export_video_materials,
+            create_video_export_directory,
             download_ppt,
             list_external_module_items,
             // Apis for jbox

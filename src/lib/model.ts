@@ -388,6 +388,7 @@ export interface VideoCourse {
 }
 
 export interface CanvasVideo {
+    alternatives?: CanvasVideo[];
     source: VideoSource;
     videoId: string;
     userName: string;
