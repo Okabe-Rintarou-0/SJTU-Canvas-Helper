@@ -1,3 +1,4 @@
+import PageTaskLists from "../components/page_task_lists";
 import { enqueueTask } from "../lib/task_runtime";
 import { useLegacyTasks } from "../lib/task_hooks";
 import { open as openOutput } from "@tauri-apps/plugin-shell";
@@ -1311,8 +1312,10 @@ export default function VideoPage() {
               </CardContent>
             </Card>
 
-            <VideoDownloadTable tasks={videoDownloadTasks} />
-            <PPTDownloadTable tasks={pptDownloadTasks} />
+            <PageTaskLists>
+              <VideoDownloadTable tasks={videoDownloadTasks} />
+              <PPTDownloadTable tasks={pptDownloadTasks} />
+            </PageTaskLists>
           </>
         ) : null}
 

@@ -1,3 +1,4 @@
+import PageTaskLists from "../components/page_task_lists";
 import { enqueueTask } from "../lib/task_runtime";
 import { createCloudUploadTask } from "../lib/upload_tasks";
 import { useLegacyTasks } from "../lib/task_hooks";
@@ -1102,14 +1103,16 @@ export default function FilesPage() {
           </CardContent>
         </Card>
 
-        <Card sx={surfaceCardSx}>
-          <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
-            <Stack spacing={2}>
-              <Typography variant="h6">下载/上传任务</Typography>
-              <FileDownloadTable tasks={downloadTasks} />
-            </Stack>
-          </CardContent>
-        </Card>
+        <PageTaskLists>
+          <Card sx={surfaceCardSx}>
+            <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
+              <Stack spacing={2}>
+                <Typography variant="h6">下载/上传任务</Typography>
+                <FileDownloadTable tasks={downloadTasks} />
+              </Stack>
+            </CardContent>
+          </Card>
+        </PageTaskLists>
       </Stack>
     </BasicLayout>
   );

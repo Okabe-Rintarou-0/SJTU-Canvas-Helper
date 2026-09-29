@@ -1,3 +1,4 @@
+import PageTaskLists from "../components/page_task_lists";
 import { enqueueTask } from "../lib/task_runtime";
 import { useLegacyTasks } from "../lib/task_hooks";
 import { invoke } from "@tauri-apps/api/core";
@@ -970,16 +971,18 @@ export default function SubmissionsPage() {
           </CardContent>
         </Card>
 
-        <Card sx={surfaceCardSx}>
-          <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-            <Stack spacing={2}>
-              <Typography variant="h6" sx={{ fontWeight: 800 }}>
-                下载任务
-              </Typography>
-              <FileDownloadTable tasks={downloadTasks} />
-            </Stack>
-          </CardContent>
-        </Card>
+        <PageTaskLists>
+          <Card sx={surfaceCardSx}>
+            <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+              <Stack spacing={2}>
+                <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                  下载任务
+                </Typography>
+                <FileDownloadTable tasks={downloadTasks} />
+              </Stack>
+            </CardContent>
+          </Card>
+        </PageTaskLists>
       </Stack>
     </BasicLayout>
   );

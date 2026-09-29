@@ -465,6 +465,7 @@ export default function SettingsPage() {
         ...config,
         theme: config.theme ?? "light",
         compact_mode: config.compact_mode ?? false,
+        experimental_task_center_only: config.experimental_task_center_only ?? false,
         mcp_enabled: config.mcp_enabled ?? false,
         mcp_port: config.mcp_port || 3100,
         proxy_port: config.proxy_port === 0 ? DEFAULT_PROXY_PORT : config.proxy_port,
@@ -1185,6 +1186,34 @@ export default function SettingsPage() {
                     </Box>
 
                     {renderCardSaveAction("保存界面偏好")}
+                  </Stack>
+                </CardContent>
+              </Card>
+
+              <Card sx={cardSx}>
+                <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+                  <Stack spacing={3}>
+                    <Box>
+                      <Typography variant="h5">实验性功能</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        默认关闭，保存后生效。
+                      </Typography>
+                    </Box>
+                    <Box>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={formData?.experimental_task_center_only ?? false}
+                            onChange={(event) => updateField("experimental_task_center_only", event.target.checked)}
+                          />
+                        }
+                        label="使用任务中心替代页面任务列表"
+                      />
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                        开启后，使用左下角任务中心；关闭后，使用各页任务列表。切换不会中断任务。
+                      </Typography>
+                    </Box>
+                    {renderCardSaveAction("保存实验性功能")}
                   </Stack>
                 </CardContent>
               </Card>

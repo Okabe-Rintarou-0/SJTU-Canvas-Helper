@@ -310,6 +310,7 @@ export interface AppConfig {
     llm_active_api_key: string;
     theme: Theme;
     compact_mode: boolean;
+    experimental_task_center_only?: boolean;
     color_primary: Option<string>;
     mcp_enabled: boolean;
     mcp_port: number;

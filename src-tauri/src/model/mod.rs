@@ -188,6 +188,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub compact_mode: bool,
     #[serde(default)]
+    pub experimental_task_center_only: bool,
+    #[serde(default)]
     pub color_primary: Option<String>,
     #[serde(default)]
     pub mcp_enabled: bool,
@@ -221,6 +223,7 @@ impl Default for AppConfig {
             llm_temperature: Default::default(),
             theme: Default::default(),
             compact_mode: Default::default(),
+            experimental_task_center_only: false,
             color_primary: Default::default(),
             mcp_enabled: Default::default(),
             mcp_port: 3100,

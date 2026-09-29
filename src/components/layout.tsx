@@ -44,6 +44,10 @@ import { useConfigSelector } from "../lib/hooks";
 import { checkForUpdates } from "../lib/utils";
 import { useUpdateNotice } from "../lib/update_notice";
 import { ChangeLogModal } from "./change_log_modal";
+import AssignmentTurnedInRoundedIcon from "@mui/icons-material/AssignmentTurnedInRounded";
+import { useTasks } from "../lib/task_hooks";
+import { isTaskActive, taskManager } from "../lib/task_manager";
+import TaskPopover from "./task_popover";
 
 const drawerWidth = 272;
 const collapsedDrawerWidth = 92;
@@ -82,8 +86,17 @@ const pageTitleMap: Record<string, string> = {
 };
 
 export default function BasicLayout({ children }: React.PropsWithChildren) {
+  const tasks = useTasks();
+  const activeTaskCount = tasks.filter(isTaskActive).length;
+  const failedTaskCount = tasks.filter((task) => task.status === "failed").length;
+  const unreadTaskCount = tasks.filter((task) => task.unreadCompletion).length;
+  const [taskAnchor, setTaskAnchor] = useState<HTMLElement | null>(null);
   const theme = useTheme();
   const config = useConfigSelector((state) => state.config.data);
+  const taskCenterEnabled = config?.experimental_task_center_only === true;
+  useEffect(() => {
+    if (!taskCenterEnabled) setTaskAnchor(null);
+  }, [taskCenterEnabled]);
   const isDesktop = useMediaQuery(theme.breakpoints.up("lg"));
   const isCompactWindow = useMediaQuery(theme.breakpoints.down("sm"));
   const location = useLocation();
@@ -269,6 +282,22 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
 
         <Divider sx={{ mt: 0.5 }} />
 
+        {taskCenterEnabled && <Tooltip title={`任务中心 · 进行中 ${activeTaskCount} · 需处理 ${failedTaskCount}`} placement="right">
+          <ListItemButton selected={!!taskAnchor} onClick={(event) => { taskManager.markCompletionsRead(); setTaskAnchor(event.currentTarget); }}
+            aria-haspopup="dialog" aria-expanded={!!taskAnchor}
+            aria-label={`任务中心，进行中 ${activeTaskCount}，需处理 ${failedTaskCount}，新完成 ${unreadTaskCount}`}
+            sx={{ borderRadius: "8px", px: 1.5, py: 0.75, minHeight: 44, flexGrow: 0, justifyContent: collapsed && isDesktop ? "center" : "flex-start", "&.Mui-selected": { bgcolor: "action.hover" } }}>
+            <ListItemIcon sx={{ minWidth: collapsed && isDesktop ? 0 : 34, color: "text.secondary", "& svg": { fontSize: 20 } }}>
+              <Badge badgeContent={taskAnchor ? 0 : unreadTaskCount} color="error" max={99}
+                sx={{ "& .MuiBadge-badge": { minWidth: 15, height: 15, px: 0.5, fontSize: 10 } }}>
+                <AssignmentTurnedInRoundedIcon />
+              </Badge>
+            </ListItemIcon>
+            {!(collapsed && isDesktop) && <ListItemText primary="任务中心" secondary={`进行中 ${activeTaskCount} · 需处理 ${failedTaskCount}`}
+              primaryTypographyProps={{ fontSize: 14, fontWeight: 600 }} secondaryTypographyProps={{ fontSize: 12 }} />}
+          </ListItemButton>
+        </Tooltip>}
+
         <Stack
           spacing={1}
           sx={{
@@ -406,6 +435,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
         onCancel={() => setShowChangeLog(false)}
         onOk={() => setShowChangeLog(false)}
       />
+      {taskCenterEnabled && <TaskPopover anchorEl={taskAnchor} onClose={() => setTaskAnchor(null)} />}
     </Box>
   );
 }
