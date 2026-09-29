@@ -259,8 +259,9 @@ export interface Attachment {
 export interface FileDownloadTask {
     key: string;
     file: File;
+    outputFormat?: "original" | "pdf";
     progress: number;
-    state: DownloadState;
+    state: FileDownloadState;
 }
 
 export interface VideoDownloadTask {
@@ -279,6 +280,7 @@ export interface DownloadTask {
 }
 
 export type DownloadState = "downloading" | "succeed" | "fail" | "wait_retry";
+export type FileDownloadState = DownloadState | "converting";
 export type Theme = "light" | "dark";
 
 export interface LlmApiKeyEntry {

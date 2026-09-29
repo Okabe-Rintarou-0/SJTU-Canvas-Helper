@@ -618,6 +618,21 @@ async fn download_my_file<R: Runtime>(
 }
 
 #[tauri::command]
+async fn download_course_file_as_pdf(
+    file: File,
+    course: Course,
+    folder_path: String,
+) -> Result<()> {
+    APP.download_course_file_as_pdf(&file, &course, &folder_path)
+        .await
+}
+
+#[tauri::command]
+async fn download_my_file_as_pdf(file: File, folder_path: String) -> Result<()> {
+    APP.download_my_file_as_pdf(&file, &folder_path).await
+}
+
+#[tauri::command]
 async fn save_file_content(content: Vec<u8>, file_name: String) -> Result<()> {
     APP.save_file_content(&content, &file_name).await
 }
@@ -928,6 +943,18 @@ async fn upload_file<R: Runtime>(window: Window<R>, file: File, save_dir: String
 }
 
 #[tauri::command]
+async fn upload_file_as_pdf<R: Runtime>(
+    window: Window<R>,
+    file: File,
+    save_dir: String,
+) -> Result<()> {
+    APP.upload_file_as_pdf(&file, &save_dir, |progress| {
+        let _ = window.emit("file_upload://progress", progress);
+    })
+    .await
+}
+
+#[tauri::command]
 fn console_log(log_level: i32, message: String, context: String) {
     match log_level.into() {
         LogLevel::Debug => {
@@ -1060,6 +1087,8 @@ async fn main() -> Result<()> {
             download_file,
             download_course_file,
             download_my_file,
+            download_course_file_as_pdf,
+            download_my_file_as_pdf,
             check_path,
             export_users,
             update_grade,
@@ -1096,6 +1125,7 @@ async fn main() -> Result<()> {
             // Apis for jbox
             login_jbox,
             upload_file,
+            upload_file_as_pdf,
             // Annual Report
             generate_annual_report,
             // LLM

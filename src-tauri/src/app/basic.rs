@@ -862,6 +862,31 @@ impl App {
         Ok(())
     }
 
+    pub async fn download_course_file_as_pdf(
+        &self,
+        file: &File,
+        course: &Course,
+        folder_path: &str,
+    ) -> Result<()> {
+        let (pdf_name, pdf_content) = self.convert_office_file_to_pdf(file).await?;
+        let save_path = Path::new(&self.config.read().await.save_path)
+            .join(self.get_course_identifier(course))
+            .join(folder_path);
+        fs::create_dir_all(&save_path)?;
+        fs::write(save_path.join(pdf_name), pdf_content)?;
+        Ok(())
+    }
+
+    pub async fn download_my_file_as_pdf(&self, file: &File, folder_path: &str) -> Result<()> {
+        let (pdf_name, pdf_content) = self.convert_office_file_to_pdf(file).await?;
+        let save_path = Path::new(&self.config.read().await.save_path)
+            .join(MY_CANVAS_FILES_FOLDER_NAME)
+            .join(folder_path);
+        fs::create_dir_all(&save_path)?;
+        fs::write(save_path.join(pdf_name), pdf_content)?;
+        Ok(())
+    }
+
     fn get_course_identifier(&self, course: &Course) -> String {
         self.client.get_course_identifier(course)
     }
@@ -1171,153 +1196,286 @@ impl App {
         Ok(())
     }
 
+    fn try_convert_with_libreoffice(
+        &self,
+        input_path: &Path,
+        pdf_path: &Path,
+    ) -> std::result::Result<(), String> {
+        #[cfg(target_os = "windows")]
+        let candidates = [
+            "soffice.exe",
+            r"C:\Program Files\LibreOffice\program\soffice.exe",
+            r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+        ];
+        #[cfg(target_os = "macos")]
+        let candidates = [
+            "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+            "soffice",
+        ];
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        let candidates = ["libreoffice", "soffice"];
+
+        let output_dir = pdf_path
+            .parent()
+            .ok_or_else(|| "无法确定 PDF 输出目录".to_owned())?;
+        let generated_pdf_path = output_dir
+            .join(
+                input_path
+                    .file_stem()
+                    .ok_or_else(|| "无法确定源文件名".to_owned())?,
+            )
+            .with_extension("pdf");
+        let mut errors = Vec::new();
+
+        for candidate in candidates {
+            match Command::new(candidate)
+                .args(["--headless", "--convert-to", "pdf", "--outdir"])
+                .arg(output_dir)
+                .arg(input_path)
+                .output()
+            {
+                Ok(output) if output.status.success() && generated_pdf_path.exists() => {
+                    if generated_pdf_path != pdf_path {
+                        fs::rename(&generated_pdf_path, pdf_path)
+                            .map_err(|error| error.to_string())?;
+                    }
+                    return Ok(());
+                }
+                Ok(output) => errors.push(format!(
+                    "{candidate}: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                )),
+                Err(error) => errors.push(format!("{candidate}: {error}")),
+            }
+        }
+
+        Err(errors.join("; "))
+    }
+
     #[cfg(target_os = "macos")]
     fn convert_pptx_to_pdf_inner(&self, pptx_path: &Path, pdf_path: &Path) -> Result<()> {
-        // Reference https://github.com/jeongwhanchoi/convert-ppt-to-pdf
-        process::Command::new("osascript")
+        if self
+            .try_convert_with_libreoffice(pptx_path, pdf_path)
+            .is_ok()
+        {
+            return Ok(());
+        }
+
+        let output = process::Command::new("osascript")
             .arg("-e")
             .arg(
                 r#"on run {input, output}
-            tell application "Microsoft PowerPoint" -- work on version 15.15 or newer
-                launch
-                set t to input as string
-                set pptx to input as POSIX file
-                if t ends with ".ppt" or t ends with ".pptx" then
-                    set pdfPath to output as POSIX file as string
-                    open pptx
-                    save active presentation in pdfPath as save as PDF -- save in same folder
-                end if
-            end tell
-            tell application "Microsoft PowerPoint" -- work on version 15.15 or newer
-                quit
-            end tell
-        end run"#,
+                    tell application "Microsoft PowerPoint"
+                        launch
+                        set pptx to input as POSIX file
+                        set pdfPath to output as POSIX file as string
+                        open pptx
+                        save active presentation in pdfPath as save as PDF
+                        close active presentation saving no
+                    end tell
+                end run"#,
             )
             .arg(pptx_path)
             .arg(pdf_path)
             .output()?;
-
+        if !output.status.success() || !pdf_path.exists() {
+            return Err(AppError::DocumentConversion(format!(
+                "PowerPoint/LibreOffice 均无法完成转换：{}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )));
+        }
         Ok(())
     }
 
     #[cfg(target_os = "macos")]
     fn convert_docx_to_pdf_inner(&self, docx_path: &Path, pdf_path: &Path) -> Result<()> {
-        process::Command::new("osascript")
+        if self
+            .try_convert_with_libreoffice(docx_path, pdf_path)
+            .is_ok()
+        {
+            return Ok(());
+        }
+
+        let output = process::Command::new("osascript")
             .arg("-e")
             .arg(
                 r#"on run {input, output}
                     tell application "Microsoft Word"
                         launch
-                        set t to input as string
                         set docx to input as POSIX file
-                        if t ends with ".doc" or t ends with ".docx" then
-                            set pdfPath to output as POSIX file as string
-                            open docx
-                            set activeDoc to active document
-                            save as activeDoc file name pdfPath file format format PDF
-                        end if
-                    end tell
-                    tell application "Microsoft Word"
-                        quit
+                        set pdfPath to output as POSIX file as string
+                        open docx
+                        set activeDoc to active document
+                        save as activeDoc file name pdfPath file format format PDF
+                        close activeDoc saving no
                     end tell
                 end run"#,
             )
-            .arg(docx_path.as_os_str().to_str().unwrap())
-            .arg(pdf_path.as_os_str().to_str().unwrap())
+            .arg(docx_path)
+            .arg(pdf_path)
             .output()?;
+        if !output.status.success() || !pdf_path.exists() {
+            return Err(AppError::DocumentConversion(format!(
+                "Word/LibreOffice 均无法完成转换：{}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )));
+        }
         Ok(())
     }
 
     #[cfg(target_os = "windows")]
     fn convert_docx_to_pdf_inner(&self, docx_path: &Path, pdf_path: &Path) -> Result<()> {
-        match process::Command::new("powershell.exe")
-            .arg("-Command")
-            .arg(format!(r#"$word_app = New-Object -ComObject Word.Application; $document = $word_app.Documents.Open('{}'); $pdf_filename = '{}'; $opt= [Microsoft.Office.Interop.Word.WdSaveFormat]::wdFormatPDF; $document.SaveAs($pdf_filename, $opt); $document.Close(); $word_app.Quit();"#,
-        docx_path.to_str().unwrap(), pdf_path.to_str().unwrap()))
-            .output() {
-            Ok(output) => {
-                if !output.status.success() {
-                    let error_msg = String::from_utf8_lossy(&output.stderr);
-                    tracing::error!("docx to pdf conversion failed with status: {:?}, stderr: {}", output.status, error_msg);
-                    return Err(AppError::FunctionUnsupported);
-                }
-            },
-            Err(err) => {
-                tracing::error!("Failed to execute powershell command for docx to pdf conversion: {:?}", err);
-                return Err(err.into());
-            }
-        };
+        if self
+            .try_convert_with_libreoffice(docx_path, pdf_path)
+            .is_ok()
+        {
+            return Ok(());
+        }
+
+        let input = docx_path.to_string_lossy().replace('\'', "''");
+        let output_path = pdf_path.to_string_lossy().replace('\'', "''");
+        let script = format!(
+            r#"$ErrorActionPreference = 'Stop'
+$wordApp = $null
+$document = $null
+try {{
+    $wordApp = New-Object -ComObject Word.Application
+    $wordApp.Visible = $false
+    $document = $wordApp.Documents.Open('{input}', $false, $true)
+    $document.ExportAsFixedFormat('{output_path}', 17)
+}} finally {{
+    if ($null -ne $document) {{ $document.Close($false) }}
+    if ($null -ne $wordApp) {{ $wordApp.Quit() }}
+}}"#
+        );
+        let output = process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command"])
+            .arg(script)
+            .output()?;
+        if !output.status.success() || !pdf_path.exists() {
+            return Err(AppError::DocumentConversion(format!(
+                "Word/LibreOffice 均无法完成转换：{}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )));
+        }
         Ok(())
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    fn convert_docx_to_pdf_inner(&self, _: &Path, _: &Path) -> Result<()> {
-        Err(AppError::FunctionUnsupported)
+    fn convert_docx_to_pdf_inner(&self, docx_path: &Path, pdf_path: &Path) -> Result<()> {
+        self.try_convert_with_libreoffice(docx_path, pdf_path)
+            .map_err(|error| {
+                AppError::DocumentConversion(format!(
+                    "需要安装 LibreOffice 才能转换 Word 文件：{error}"
+                ))
+            })
     }
 
     #[cfg(target_os = "windows")]
     fn convert_pptx_to_pdf_inner(&self, pptx_path: &Path, pdf_path: &Path) -> Result<()> {
-        match process::Command::new("powershell.exe")
-            .arg("-Command")
-            .arg(format!(r#"$ppt_app = New-Object -ComObject PowerPoint.Application; $document = $ppt_app.Presentations.Open('{}'); $pdf_filename = '{}'; $opt= [Microsoft.Office.Interop.PowerPoint.PpSaveAsFileType]::ppSaveAsPDF; $document.SaveAs($pdf_filename, $opt); $document.Close(); $ppt_app.Quit();"#,
-        pptx_path.to_str().unwrap(), pdf_path.to_str().unwrap()))
-            .output() {
-            Ok(output) => {
-                if !output.status.success() {
-                    let error_msg = String::from_utf8_lossy(&output.stderr);
-                    tracing::error!("pptx to pdf conversion failed with status: {:?}, stderr: {}", output.status, error_msg);
-                    return Err(AppError::FunctionUnsupported);
-                }
-            },
-            Err(err) => {
-                tracing::error!("Failed to execute powershell command for pptx to pdf conversion: {:?}", err);
-                return Err(err.into());
-            }
-        };
+        if self
+            .try_convert_with_libreoffice(pptx_path, pdf_path)
+            .is_ok()
+        {
+            return Ok(());
+        }
+
+        let input = pptx_path.to_string_lossy().replace('\'', "''");
+        let output_path = pdf_path.to_string_lossy().replace('\'', "''");
+        let script = format!(
+            r#"$ErrorActionPreference = 'Stop'
+$powerPointApp = $null
+$presentation = $null
+try {{
+    $powerPointApp = New-Object -ComObject PowerPoint.Application
+    $presentation = $powerPointApp.Presentations.Open('{input}', $true, $false, $false)
+    $presentation.SaveAs('{output_path}', 32)
+}} finally {{
+    if ($null -ne $presentation) {{ $presentation.Close() }}
+    if ($null -ne $powerPointApp) {{ $powerPointApp.Quit() }}
+}}"#
+        );
+        let output = process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command"])
+            .arg(script)
+            .output()?;
+        if !output.status.success() || !pdf_path.exists() {
+            return Err(AppError::DocumentConversion(format!(
+                "PowerPoint/LibreOffice 均无法完成转换：{}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )));
+        }
         Ok(())
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    fn convert_pptx_to_pdf_inner(&self, _: &Path, _: &Path) -> Result<()> {
-        Err(AppError::FunctionUnsupported)
+    fn convert_pptx_to_pdf_inner(&self, pptx_path: &Path, pdf_path: &Path) -> Result<()> {
+        self.try_convert_with_libreoffice(pptx_path, pdf_path)
+            .map_err(|error| {
+                AppError::DocumentConversion(format!(
+                    "需要安装 LibreOffice 才能转换 PowerPoint 文件：{error}"
+                ))
+            })
+    }
+
+    fn pdf_file_name(file_name: &str) -> Result<String> {
+        let path = Path::new(file_name);
+        let stem = path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .ok_or_else(|| AppError::DocumentConversion("无法识别源文件名".to_owned()))?;
+        Ok(format!("{stem}.pdf"))
+    }
+
+    pub async fn convert_office_file_to_pdf(&self, file: &File) -> Result<(String, Vec<u8>)> {
+        let extension = Path::new(&file.display_name)
+            .extension()
+            .and_then(|value| value.to_str())
+            .map(str::to_lowercase)
+            .ok_or_else(|| AppError::UnsupportedFileExtensionError(file.display_name.clone()))?;
+        if !matches!(extension.as_str(), "doc" | "docx" | "ppt" | "pptx") {
+            return Err(AppError::UnsupportedFileExtensionError(extension));
+        }
+
+        let temp_dir = std::env::temp_dir()
+            .join("sjtu-canvas-helper")
+            .join(Uuid::new_v4().to_string());
+        fs::create_dir_all(&temp_dir)?;
+        let input_path = temp_dir.join(format!("source.{extension}"));
+        let pdf_path = temp_dir.join("source.pdf");
+        let pdf_name = Self::pdf_file_name(&file.display_name)?;
+        let token = self.config.read().await.token.clone();
+        let mut temp_file = file.clone();
+        temp_file.display_name = format!("source.{extension}");
+
+        let result = async {
+            let temp_dir_string = temp_dir.to_string_lossy().into_owned();
+            self.client
+                .download_file(&temp_file, &token, &temp_dir_string, |_| {})
+                .await?;
+            if matches!(extension.as_str(), "doc" | "docx") {
+                self.convert_docx_to_pdf_inner(&input_path, &pdf_path)?;
+            } else {
+                self.convert_pptx_to_pdf_inner(&input_path, &pdf_path)?;
+            }
+            Ok((pdf_name, fs::read(&pdf_path)?))
+        }
+        .await;
+
+        if let Err(error) = fs::remove_dir_all(&temp_dir) {
+            tracing::warn!("Failed to remove conversion temp directory: {error}");
+        }
+        result
     }
 
     pub async fn convert_pptx_to_pdf(&self, file: &mut File) -> Result<Vec<u8>> {
-        let config = self.config.read().await;
-        let token = &config.token.clone();
-        let save_dir = &config.save_path.clone();
-        let out_file_name = file.display_name.replace("pptx", "pdf");
-        let tmp_file_name = format!("tmp_{}.pptx", Uuid::new_v4());
-        let pptx_path = Path::new(save_dir).join(&tmp_file_name);
-        let pdf_path = Path::new(save_dir).join(&out_file_name);
-        file.display_name = tmp_file_name;
-        self.client
-            .download_file(file, token, save_dir, |_| {})
-            .await?;
-        self.convert_pptx_to_pdf_inner(&pptx_path, &pdf_path)?;
-        fs::remove_file(&pptx_path)?;
-        let pdf_content = fs::read(&pdf_path)?;
-        fs::remove_file(&pdf_path)?;
-        Ok(pdf_content)
+        let (_, content) = self.convert_office_file_to_pdf(file).await?;
+        Ok(content)
     }
 
     pub async fn convert_docx_to_pdf(&self, file: &mut File) -> Result<Vec<u8>> {
-        let config = self.config.read().await;
-        let token = &config.token.clone();
-        let save_dir = &config.save_path.clone();
-        let out_file_name = file.display_name.replace("docx", "pdf");
-        let tmp_file_name = format!("tmp_{}.docx", Uuid::new_v4());
-        let docx_path = Path::new(save_dir).join(&tmp_file_name);
-        let pdf_path = Path::new(save_dir).join(&out_file_name);
-        file.display_name = tmp_file_name;
-        self.client
-            .download_file(file, token, save_dir, |_| {})
-            .await?;
-        self.convert_docx_to_pdf_inner(&docx_path, &pdf_path)?;
-        fs::remove_file(&docx_path)?;
-        let pdf_content = fs::read(&pdf_path)?;
-        fs::remove_file(&pdf_path)?;
-        Ok(pdf_content)
+        let (_, content) = self.convert_office_file_to_pdf(file).await?;
+        Ok(content)
     }
 
     pub fn is_ffmpeg_installed() -> bool {

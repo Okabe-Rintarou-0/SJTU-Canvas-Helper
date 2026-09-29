@@ -24,6 +24,8 @@ pub enum AppError {
     #[error("Function unsupported")]
     #[allow(dead_code)]
     FunctionUnsupported,
+    #[error("Document conversion failed: {0}")]
+    DocumentConversion(String),
     #[error("Submission upload error: {0}")]
     SubmissionUpload(String),
     #[error("Join error: {0}")]

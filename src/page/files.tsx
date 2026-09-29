@@ -1,10 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
+import ArrowDropDownRoundedIcon from "@mui/icons-material/ArrowDropDownRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import CloudDownloadRoundedIcon from "@mui/icons-material/CloudDownloadRounded";
 import DescriptionRoundedIcon from "@mui/icons-material/DescriptionRounded";
+import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import FolderOpenRoundedIcon from "@mui/icons-material/FolderOpenRounded";
 import HomeRoundedIcon from "@mui/icons-material/HomeRounded";
 import KeyboardBackspaceRoundedIcon from "@mui/icons-material/KeyboardBackspaceRounded";
+import PictureAsPdfRoundedIcon from "@mui/icons-material/PictureAsPdfRounded";
 import PreviewRoundedIcon from "@mui/icons-material/PreviewRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import UploadFileRoundedIcon from "@mui/icons-material/UploadFileRounded";
@@ -19,6 +22,10 @@ import {
   FormControlLabel,
   InputAdornment,
   Link as MuiLink,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
   Skeleton,
   Stack,
   Tab,
@@ -32,7 +39,13 @@ import {
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  MouseEvent as ReactMouseEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import FileAIChatModal, {
   FileAIChatMessage,
@@ -51,6 +64,11 @@ import {
   useSelectedCourse,
 } from "../lib/hooks";
 import { useAppMessage } from "../lib/message";
+import {
+  canConvertFileToPdf,
+  getOutputFile,
+} from "../lib/file_conversion";
+import type { FileOutputFormat } from "../lib/file_conversion";
 import {
   Course,
   Entry,
@@ -76,6 +94,12 @@ import { surfaceCardSx } from "../lib/styles";
 interface DownloadInfo {
   course?: Course;
   folderPath: string;
+}
+
+interface FileActionMenuState {
+  action: "download" | "upload";
+  anchorEl: HTMLElement;
+  file: File;
 }
 
 type SnackSeverity = "success" | "info" | "warning" | "error";
@@ -141,6 +165,8 @@ export default function FilesPage() {
   const [chatFile, setChatFile] = useState<File | null>(null);
   const [chatMessages, setChatMessages] = useState<FileAIChatMessage[]>([]);
   const [chatLoading, setChatLoading] = useState(false);
+  const [fileActionMenu, setFileActionMenu] =
+    useState<FileActionMenuState | null>(null);
   const activeChatRequestIdRef = useRef<string | null>(null);
   const [messageApi] = useAppMessage();
   const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry, setEntries } =
@@ -466,7 +492,10 @@ export default function FilesPage() {
   };
 
   const handleOpenTaskFile = async (task: FileDownloadTask) => {
-    const name = task.file.display_name;
+    const name = getOutputFile(
+      task.file,
+      task.outputFormat ?? "original"
+    ).display_name;
     const downloadInfo = downloadInfoMap.get(task.file.folder_id)!;
     const course = downloadInfo.course;
     const folderPath = downloadInfo.folderPath;
@@ -482,7 +511,10 @@ export default function FilesPage() {
     }
   };
 
-  const handleDownloadFile = async (file: File) => {
+  const handleDownloadFile = async (
+    file: File,
+    outputFormat: FileOutputFormat = "original"
+  ) => {
     const folderPath = getFolderPath(file);
     const course = getSelectedCourse();
     if (!downloadInfoMap.get(file.folder_id) && folderPath !== undefined) {
@@ -492,9 +524,17 @@ export default function FilesPage() {
       });
     }
     if (section === COURSE_FILES) {
-      await invoke("download_course_file", { file, course, folderPath });
+      await invoke(
+        outputFormat === "pdf"
+          ? "download_course_file_as_pdf"
+          : "download_course_file",
+        { file, course, folderPath }
+      );
     } else {
-      await invoke("download_my_file", { file, folderPath });
+      await invoke(
+        outputFormat === "pdf" ? "download_my_file_as_pdf" : "download_my_file",
+        { file, folderPath }
+      );
     }
   };
 
@@ -519,9 +559,12 @@ export default function FilesPage() {
 
   const handleRemoveTask = async (taskToRemove: FileDownloadTask) => {
     setDownloadTasks((tasks) =>
-      tasks.filter((task) => task.file.uuid !== taskToRemove.file.uuid)
+      tasks.filter((task) => task.key !== taskToRemove.key)
     );
-    const file = taskToRemove.file;
+    const file = getOutputFile(
+      taskToRemove.file,
+      taskToRemove.outputFormat ?? "original"
+    );
     const downloadInfo = downloadInfoMap.get(file.folder_id)!;
     const course = downloadInfo.course;
     const folderPath = downloadInfo.folderPath;
@@ -538,32 +581,47 @@ export default function FilesPage() {
     }
   };
 
-  const handleAddDownloadFileTask = async (file: File) => {
-    const task = downloadTasks.find((item) => item.file.uuid === file.uuid);
-    if (!task) {
-      setDownloadTasks((tasks) => [
-        ...tasks,
-        {
-          key: file.uuid,
-          file,
-          progress: 0,
-          state: "downloading",
-        } as FileDownloadTask,
-      ]);
-    } else if (task.state === "fail") {
-      task.progress = 0;
-      task.state = "wait_retry";
-      setDownloadTasks([...downloadTasks]);
-    }
+  const handleAddDownloadFileTask = (
+    file: File,
+    outputFormat: FileOutputFormat = "original"
+  ) => {
+    const key = `${file.uuid}:${outputFormat}`;
+    setDownloadTasks((tasks) => {
+      const task = tasks.find((item) => item.key === key);
+      if (!task) {
+        return [
+          ...tasks,
+          {
+            key,
+            file,
+            outputFormat,
+            progress: 0,
+            state: outputFormat === "pdf" ? "converting" : "downloading",
+          },
+        ];
+      }
+      if (task.state === "fail") {
+        return tasks.map((item) =>
+          item.key === key
+            ? { ...item, progress: 0, state: "wait_retry" }
+            : item
+        );
+      }
+      return tasks;
+    });
   };
 
-  const handleUploadFile = async (file: File) => {
+  const handleUploadFile = async (
+    file: File,
+    outputFormat: FileOutputFormat = "original"
+  ) => {
     const subDir = currentFolderFullName?.replace(section, "");
     const saveDir =
       section === COURSE_FILES
         ? `${getSelectedCourse()!.name}${subDir}`
         : `我的Canvas文件${subDir}`;
-    const savePath = `${saveDir}/${file.display_name}`;
+    const outputFile = getOutputFile(file, outputFormat);
+    const savePath = `${saveDir}/${outputFile.display_name}`;
     let retries = 0;
     const maxRetries = 1;
     let error: unknown;
@@ -572,12 +630,27 @@ export default function FilesPage() {
     notify(`正在上传至交大云盘：${savePath}`, "info");
     while (retries <= maxRetries) {
       try {
-        await invoke("upload_file", { file, saveDir });
+        await invoke(outputFormat === "pdf" ? "upload_file_as_pdf" : "upload_file", {
+          file,
+          saveDir,
+        });
         notify("上传文件成功。", "success");
-        break;
+        return;
       } catch (nextError) {
         error = nextError;
         retries += 1;
+        const errorMessage = String(nextError);
+        if (
+          outputFormat === "pdf" &&
+          (errorMessage.includes("Document conversion failed") ||
+            errorMessage.includes("Unsupported file extension"))
+        ) {
+          notify(
+            `转换 PDF 失败：${errorMessage}。请确认系统已安装 Microsoft Office 或 LibreOffice。`,
+            "error"
+          );
+          return;
+        }
         try {
           await invoke("login_jbox");
           loggedIn = true;
@@ -614,6 +687,27 @@ export default function FilesPage() {
         void handleAddDownloadFileTask(entry as File);
       }
     });
+  };
+
+  const openFileActionMenu = (
+    event: ReactMouseEvent<HTMLElement>,
+    file: File,
+    action: FileActionMenuState["action"]
+  ) => {
+    setFileActionMenu({ action, anchorEl: event.currentTarget, file });
+  };
+
+  const runFileAction = (outputFormat: FileOutputFormat) => {
+    if (!fileActionMenu) {
+      return;
+    }
+    const { action, file } = fileActionMenu;
+    setFileActionMenu(null);
+    if (action === "download") {
+      handleAddDownloadFileTask(file, outputFormat);
+      return;
+    }
+    void handleUploadFile(file, outputFormat);
   };
 
   const backToParentDir = async () => {
@@ -703,6 +797,47 @@ export default function FilesPage() {
         onClose={() => setChatOpen(false)}
         onSend={handleSendChatMessage}
       />
+
+      <Menu
+        anchorEl={fileActionMenu?.anchorEl}
+        open={Boolean(fileActionMenu)}
+        onClose={() => setFileActionMenu(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
+      >
+        <MenuItem onClick={() => runFileAction("original")}>
+          <ListItemIcon>
+            <DescriptionRoundedIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText
+            primary={
+              fileActionMenu?.action === "upload" ? "上传原文件" : "下载原文件"
+            }
+          />
+        </MenuItem>
+        <MenuItem
+          disabled={
+            !fileActionMenu || !canConvertFileToPdf(fileActionMenu.file)
+          }
+          onClick={() => runFileAction("pdf")}
+        >
+          <ListItemIcon>
+            <PictureAsPdfRoundedIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText
+            primary={
+              fileActionMenu?.action === "upload"
+                ? "转换为 PDF 后上传"
+                : "转换为 PDF 后下载"
+            }
+            secondary={
+              fileActionMenu && !canConvertFileToPdf(fileActionMenu.file)
+                ? "仅支持 Word 和 PowerPoint 文件"
+                : undefined
+            }
+          />
+        </MenuItem>
+      </Menu>
 
       <Stack spacing={2} sx={{ width: "100%" }}>
         <WorkspaceHero
@@ -920,7 +1055,11 @@ export default function FilesPage() {
                                 {file.url ? (
                                   <Button
                                     size="small"
-                                    onClick={() => void handleAddDownloadFileTask(file)}
+                                    startIcon={<DownloadRoundedIcon />}
+                                    endIcon={<ArrowDropDownRoundedIcon />}
+                                    onClick={(event) =>
+                                      openFileActionMenu(event, file, "download")
+                                    }
                                   >
                                     下载
                                   </Button>
@@ -929,7 +1068,10 @@ export default function FilesPage() {
                                   <Button
                                     size="small"
                                     startIcon={<UploadFileRoundedIcon />}
-                                    onClick={() => void handleUploadFile(file)}
+                                    endIcon={<ArrowDropDownRoundedIcon />}
+                                    onClick={(event) =>
+                                      openFileActionMenu(event, file, "upload")
+                                    }
                                   >
                                     上传云盘
                                   </Button>
@@ -1047,6 +1189,7 @@ export default function FilesPage() {
                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25}>
                   <Button
                     variant="contained"
+                    startIcon={<DownloadRoundedIcon />}
                     disabled={operating || selectedEntries.length === 0}
                     onClick={handleDownloadSelectedFiles}
                   >

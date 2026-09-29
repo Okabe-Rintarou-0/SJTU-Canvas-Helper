@@ -21,16 +21,17 @@ import { alpha, useTheme } from "@mui/material/styles";
 import { useEffect, useMemo, useState } from "react";
 
 import {
-  DownloadState,
   File,
+  FileDownloadState,
   FileDownloadTask,
   LOG_LEVEL_ERROR,
 } from "../lib/model";
 import { useAppMessage } from "../lib/message";
 import { useWebviewEvent } from "../lib/events";
+import { getOutputFile } from "../lib/file_conversion";
 import { consoleLog, sleep } from "../lib/utils";
 
-function taskStateMeta(state: DownloadState) {
+function taskStateMeta(state: FileDownloadState) {
   switch (state) {
     case "fail":
       return { label: "失败", color: "error" as const };
@@ -38,6 +39,8 @@ function taskStateMeta(state: DownloadState) {
       return { label: "完成", color: "success" as const };
     case "wait_retry":
       return { label: "待重试", color: "warning" as const };
+    case "converting":
+      return { label: "转换中", color: "secondary" as const };
     default:
       return { label: "下载中", color: "info" as const };
   }
@@ -51,7 +54,10 @@ export default function FileDownloadTable({
 }: {
   tasks: FileDownloadTask[];
   handleRemoveTask: (task: FileDownloadTask) => void;
-  handleDownloadFile: (file: File) => Promise<void>;
+  handleDownloadFile: (
+    file: File,
+    outputFormat?: "original" | "pdf"
+  ) => Promise<void>;
   handleOpenTaskFile: (task: FileDownloadTask) => Promise<void>;
 }) {
   const theme = useTheme();
@@ -69,7 +75,7 @@ export default function FileDownloadTable({
   );
 
   useWebviewEvent("download://progress", (payload) => {
-    updateTaskProgress(
+    updateOriginalTaskProgress(
       payload.uuid,
       Math.ceil((payload.processed / payload.total) * 100)
     );
@@ -80,26 +86,26 @@ export default function FileDownloadTable({
     for (const task of tasks) {
       if (!taskSet.has(task.key)) {
         taskSet.add(task.key);
-        void downloadFile(task.file);
+        void downloadFile(task);
       } else if (task.state === "wait_retry") {
         void handleRetryTask(task);
       }
     }
   }, [tasks]);
 
-  const downloadFile = async (file: File) => {
-    updateTaskProgress(file.uuid, 0);
+  const downloadFile = async (task: FileDownloadTask) => {
+    updateTaskProgress(task.key, 0);
 
     let retries = 0;
-    const maxRetries = 5;
+    const maxRetries = (task.outputFormat ?? "original") === "pdf" ? 1 : 5;
     let backoffCoef = 1;
     while (retries < maxRetries) {
       try {
-        await handleDownloadFile(file);
-        updateTaskProgress(file.uuid, 100);
+        await handleDownloadFile(task.file, task.outputFormat ?? "original");
+        updateTaskProgress(task.key, 100);
         break;
       } catch (error) {
-        updateTaskProgress(file.uuid, undefined, error as string);
+        updateTaskProgress(task.key, undefined, String(error));
         consoleLog(LOG_LEVEL_ERROR, error);
         retries += 1;
       }
@@ -109,11 +115,11 @@ export default function FileDownloadTable({
   };
 
   const handleRetryTask = async (task: FileDownloadTask) => {
-    if (task.progress < 100 && task.state !== "fail") {
-      messageApi.warning("任务正在下载中，请勿重试。");
+    if (task.state === "downloading" || task.state === "converting") {
+      messageApi.warning("任务正在处理中，请勿重试。");
       return;
     }
-    await downloadFile(task.file);
+    await downloadFile(task);
   };
 
   const handleRemoveTasks = () => {
@@ -129,28 +135,41 @@ export default function FileDownloadTable({
       .forEach((task) => void handleRetryTask(task));
   };
 
-  const updateTaskProgress = (
-    uuid: string,
-    progress?: number,
-    error?: string
-  ) => {
+  const updateTaskProgress = (taskKey: string, progress?: number, error?: string) => {
     setCurrentTasks((prevTasks) => {
-      const nextTasks = [...prevTasks];
-      const task = nextTasks.find((item) => item.file.uuid === uuid);
-      const state: DownloadState = error
-        ? "fail"
-        : progress === 100
-          ? "succeed"
-          : "downloading";
-
-      if (task) {
-        if (progress !== undefined) {
-          task.progress = progress;
-        }
-        task.state = state;
-      }
-      return nextTasks;
+      return prevTasks.map((task) =>
+        task.key === taskKey
+          ? {
+              ...task,
+              progress: progress ?? task.progress,
+              state: error
+                ? "fail"
+                : progress === 100
+                  ? "succeed"
+                  : (task.outputFormat ?? "original") === "pdf"
+                    ? "converting"
+                    : "downloading",
+            }
+          : task
+      );
     });
+  };
+
+  const updateOriginalTaskProgress = (uuid: string, progress: number) => {
+    setCurrentTasks((prevTasks) =>
+      prevTasks.map((task) => {
+        const isOriginalTask =
+          task.file.uuid === uuid && (task.outputFormat ?? "original") === "original";
+        if (!isOriginalTask) {
+          return task;
+        }
+        return {
+          ...task,
+          progress,
+          state: progress === 100 ? "succeed" : "downloading",
+        };
+      })
+    );
   };
 
   const handleOpenSaveDir = async () => {
@@ -208,7 +227,12 @@ export default function FileDownloadTable({
           <TableBody>
             {currentTasks.map((task) => {
               const stateMeta = taskStateMeta(task.state);
+              const converting = task.state === "converting";
               const checked = selectedTaskKeys.includes(task.key);
+              const outputFile = getOutputFile(
+                task.file,
+                task.outputFormat ?? "original"
+              );
 
               return (
                 <TableRow key={task.key} hover selected={checked}>
@@ -226,15 +250,21 @@ export default function FileDownloadTable({
                   </TableCell>
                   <TableCell>
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      {task.file.display_name}
+                      {outputFile.display_name}
                     </Typography>
                   </TableCell>
                   <TableCell>
                     <Stack spacing={0.75}>
                       <LinearProgress
-                        variant="determinate"
-                        value={task.progress}
-                        color={stateMeta.color === "error" ? "error" : "primary"}
+                        variant={converting ? "indeterminate" : "determinate"}
+                        value={converting ? undefined : task.progress}
+                        color={
+                          stateMeta.color === "error"
+                            ? "error"
+                            : converting
+                              ? "secondary"
+                              : "primary"
+                        }
                         sx={{
                           height: 8,
                           borderRadius: 999,
@@ -242,7 +272,7 @@ export default function FileDownloadTable({
                         }}
                       />
                       <Typography variant="caption" color="text.secondary">
-                        {task.progress}%
+                        {converting ? "正在生成 PDF…" : `${task.progress}%`}
                       </Typography>
                     </Stack>
                   </TableCell>
@@ -251,7 +281,11 @@ export default function FileDownloadTable({
                       size="small"
                       label={stateMeta.label}
                       color={stateMeta.color}
-                      variant={task.state === "downloading" ? "outlined" : "filled"}
+                      variant={
+                        task.state === "downloading" || converting
+                          ? "outlined"
+                          : "filled"
+                      }
                     />
                   </TableCell>
                   <TableCell align="right">
