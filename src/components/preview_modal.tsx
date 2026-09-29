@@ -67,6 +67,9 @@ async function resolveLocalDocument(file: File): Promise<IDocument> {
 }
 
 async function resolvePreview(file: File): Promise<ResolvedPreview> {
+  if (file.url?.startsWith("blob:")) {
+    return { kind: "document", document: await resolveLocalDocument(file) };
+  }
   if (canConvertFileToPdf(file) || isPdfFile(file)) {
     try {
       await invoke("open_file_preview_window", {

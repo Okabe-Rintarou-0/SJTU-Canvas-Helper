@@ -1,3 +1,7 @@
+import { enqueueTask } from "../lib/task_runtime";
+import { useTasks } from "../lib/task_hooks";
+import { isTaskActive, taskManager } from "../lib/task_manager";
+import { open as openOutput } from "@tauri-apps/plugin-shell";
 import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import ErrorOutlineRoundedIcon from "@mui/icons-material/ErrorOutlineRounded";
 import HelpOutlineRoundedIcon from "@mui/icons-material/HelpOutlineRounded";
@@ -25,7 +29,6 @@ import { useState } from "react";
 import ReactAnsi from "react-ansi";
 
 import { useAppMessage } from "../lib/message";
-import { useWebviewEvent } from "../lib/events";
 import { LOG_LEVEL_INFO, VideoAggregateParams } from "../lib/model";
 import { consoleLog } from "../lib/utils";
 import { PathSelector } from "./path_selector";
@@ -61,8 +64,10 @@ function ffmpegStateMeta(state: FfmpegState) {
 export default function VideoAggregator() {
   const theme = useTheme();
   const [ffmpegState, setFfmpegState] = useState<FfmpegState>("unknown");
-  const [output, setOutput] = useState<string>("");
-  const [running, setRunning] = useState<boolean>(false);
+  const tasks = useTasks();
+  const latest = [...tasks].reverse().find((task) => task.kind === "video-merge");
+  const output = latest?.log ?? "";
+  const running = tasks.some((task) => task.kind === "video-merge" && isTaskActive(task));
   const [messageApi] = useAppMessage();
   const [formData, setFormData] = useState<VideoAggregateParams>({
     mainVideoPath: "",
@@ -87,10 +92,6 @@ export default function VideoAggregator() {
     return ok;
   };
 
-  useWebviewEvent("ffmpeg://output", (payload) => {
-    setOutput((current) => current + payload);
-  });
-
   const handleSubmit = async () => {
     const params = {
       ...formData,
@@ -101,20 +102,17 @@ export default function VideoAggregator() {
       return;
     }
 
-    setRunning(true);
-    setOutput("");
-    try {
-      const exitCode = await invoke("run_video_aggregate", { params });
-      if (exitCode === 0) {
-        messageApi.success("合并成功！🎉");
-      } else {
-        messageApi.error(`合并失败，exit code: ${exitCode}`);
-      }
-    } catch (e) {
-      messageApi.error(`合并失败：${e}`);
-    } finally {
-      setRunning(false);
-    }
+    const outputPath = `${params.outputDir.replace(/[\\/]$/, "")}/${params.outputName}`;
+    enqueueTask({
+      id: `video-merge:${outputPath}`, name: params.outputName,
+      source: "video", kind: "video-merge", outputPath,
+      locks: ["ffmpeg", `path:${outputPath.toLowerCase()}`], stage: "正在合成视频",
+      run: async () => {
+        const exitCode = await invoke<number>("run_video_aggregate", { params });
+        if (exitCode !== 0) throw new Error(`视频合成失败，退出码：${exitCode}`);
+      },
+      open: () => openOutput(outputPath),
+    });
   };
 
   const ffmpegMeta = ffmpegStateMeta(ffmpegState);
@@ -396,10 +394,12 @@ export default function VideoAggregator() {
                 </Typography>
               </Stack>
               <Typography variant="caption" color="text.secondary">
-                {output ? "实时滚动日志" : "等待任务启动"}
+                {latest?.stage ?? "等待任务启动"}
               </Typography>
             </Stack>
             <Divider />
+            {latest?.error && <Typography color="error" sx={{ p: 2 }}>{latest.error}</Typography>}
+            {latest?.status === "failed" && <Button onClick={() => taskManager.retry(latest.id)}>重试合成</Button>}
             {output ? (
               <ReactAnsi
                 log={output}

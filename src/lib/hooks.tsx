@@ -1,3 +1,6 @@
+import { enqueuePDFMerge } from "./pdf_tasks";
+import { useTasks } from "./task_hooks";
+import { isTaskActive, taskManager } from "./task_manager";
 import {
   Button,
   LinearProgress,
@@ -7,7 +10,6 @@ import {
 } from "@mui/material";
 import { invoke } from "@tauri-apps/api/core";
 import dayjs from "dayjs";
-import PDFMerger from "pdf-merger-js/browser";
 import {
   CSSProperties,
   Dispatch,
@@ -271,119 +273,40 @@ export function useMerger({
   onHoverEntry: (entry: Entry) => void;
   onLeaveEntry: () => void;
 }) {
-  const [merging, setMerging] = useState<boolean>(false);
-  const [downloading, setDownloading] = useState<boolean>(false);
-  const [currentStep, setCurrentStep] = useState<number>(0);
-  const [totalSteps, setTotalSteps] = useState<number>(0);
-  const [error, setError] = useState<boolean>(false);
-  const [msg, setMsg] = useState<string>("当前无任务");
-  const [result, setResult] = useState<File | undefined>(undefined);
-  const [resultBlob, setResultBlob] = useState<Blob | undefined>(undefined);
-  const [outFileName, setOutFileName] = useState<string>("");
-
+  const tasks = useTasks();
+  const latest = [...tasks].reverse().find((task) => task.kind === "pdf-merge");
+  const [outFileName, setOutFileName] = useState("");
+  const result = useMemo(() => latest?.result ? ({
+    url: latest.result.url, display_name: latest.result.name,
+  } as File) : undefined, [latest?.result]);
   const mergePDFs = async (files: File[]) => {
-    files = files.filter((file) => isMergableFileType(file.display_name));
-    const pdfMerger = new PDFMerger();
-    if (files.length === 0) {
-      appMessage().warning("未选中多个可用的 PDF 文件🙅！");
+    const selected = files.filter((file) => isMergableFileType(file.display_name));
+    if (selected.length < 2) {
+      appMessage().warning("请选择至少两个可合并的文件。");
       return;
     }
-    if (files.length === 1) {
-      appMessage().warning("单个 PDF 无需合并🤔️！");
+    if (tasks.some((task) => task.kind === "pdf-merge" && isTaskActive(task))) {
+      appMessage().warning("请等待当前合并任务执行完毕。");
       return;
     }
-    if (merging) {
-      appMessage().warning("请等待当前合并任务执行完毕！");
-      return;
-    }
-    if (downloading) {
-      appMessage().warning("请等待当前下载任务执行完毕！");
-      return;
-    }
-    setTotalSteps(files.length);
-    setCurrentStep(0);
-    setMerging(true);
-    for (const file of files) {
-      try {
-        setMsg(`正在添加 "${file.display_name}" ...`);
-        if (file.display_name.endsWith(".pptx")) {
-          const data = new Uint8Array(
-            await invoke("convert_pptx_to_pdf", { file })
-          );
-          await pdfMerger.add(data);
-        } else if (file.display_name.endsWith(".docx")) {
-          const data = new Uint8Array(
-            await invoke("convert_docx_to_pdf", { file })
-          );
-          await pdfMerger.add(data);
-        } else {
-          await pdfMerger.add(file.url);
-        }
-        setCurrentStep((currentStep) => currentStep + 1);
-      } catch (e) {
-        setMsg(`合并 "${file.display_name}" 时出现错误🥹：${e}`);
-        setError(true);
-        setMerging(false);
-        return;
-      }
-    }
-
-    setMsg("正在生成合并结果...");
-    const mergedPdf = await pdfMerger.saveAsBlob();
-    const url = URL.createObjectURL(mergedPdf);
-    const display_name =
-      outFileName.length > 0
-        ? `${outFileName}.pdf`
-        : `merged_${dayjs().unix()}.pdf`;
-    const result = { url, display_name } as File;
-    setResult(result);
-    setResultBlob(mergedPdf);
-    setMsg("合并成功🎉！");
-    setError(false);
-    setMerging(false);
+    const name = outFileName.trim().replace(/[\\/:*?"<>|]/g, "_") || `merged_${Date.now()}`;
+    enqueuePDFMerge(selected, `${name}.pdf`);
   };
-
   const progress = (
-    <MergeProgress
-      totalSteps={totalSteps}
-      currentStep={currentStep}
-      error={error}
-      msg={msg}
-    />
+    <Stack spacing={1}>
+      <Typography variant="body2" color={latest?.status === "failed" ? "error" : "text.secondary"}>
+        {latest?.error ?? latest?.stage ?? "当前无任务"}
+      </Typography>
+      <LinearProgress
+        variant={latest && isTaskActive(latest) && latest.progress === undefined ? "indeterminate" : "determinate"}
+        value={latest?.progress ?? 0}
+        color={latest?.status === "failed" ? "error" : "primary"}
+      />
+      {latest?.status === "failed" && <Button onClick={() => taskManager.retry(latest.id)}>重试合并</Button>}
+      {latest?.actionError && <Typography color="error">{latest.actionError}</Typography>}
+    </Stack>
   );
-
-  const handleDownloadResult = async () => {
-    if (!result || !resultBlob) {
-      return;
-    }
-    const buffer = await resultBlob.arrayBuffer();
-    const content = Array.from<number>(new Uint8Array(buffer));
-    const fileName = result.display_name;
-    try {
-      const chunkSize = 4 * 1024 * 1024; // 4MB
-      const length = content.length;
-      let chunkNumber = Math.round(length / chunkSize);
-      if (length % chunkSize !== 0) {
-        chunkNumber += 1;
-      }
-      setMsg("正在下载中...");
-      setDownloading(true);
-      setTotalSteps(chunkNumber);
-      setCurrentStep(0);
-      for (let i = 0; i < chunkNumber; i++) {
-        const start = chunkSize * i;
-        const end = start + chunkSize;
-        const chunk = content.slice(start, end);
-        await invoke("save_file_content", { content: chunk, fileName });
-        setCurrentStep(i + 1);
-      }
-      setMsg("下载成功🎉！");
-      setDownloading(false);
-      appMessage().success(`下载成功🎉！`);
-    } catch (e) {
-      appMessage().error(`下载失败😩：${e}`);
-    }
-  };
+  const handleDownloadResult = () => latest ? taskManager.action(latest.id, "save") : undefined;
 
   const merger = (
     <Stack spacing={2} sx={{ width: "100%" }}>
@@ -418,36 +341,6 @@ export function useMerger({
   );
 
   return { merger, mergePDFs };
-}
-
-function MergeProgress({
-  totalSteps,
-  currentStep,
-  error,
-  msg,
-}: {
-  totalSteps: number;
-  currentStep: number;
-  error: boolean;
-  msg: string;
-}) {
-  const percent = Math.ceil((currentStep / totalSteps) * 100);
-  const status = error ? "exception" : percent !== 100 ? "active" : "success";
-  return (
-    <Stack spacing={1.25} sx={{ width: "100%" }}>
-      {msg && (
-        <Typography variant="body2" color="text.secondary">
-          {msg}
-        </Typography>
-      )}
-      <LinearProgress
-        variant="determinate"
-        value={Number.isFinite(percent) ? percent : 0}
-        color={status === "exception" ? "error" : "primary"}
-        sx={{ height: 10, borderRadius: 999 }}
-      />
-    </Stack>
-  );
 }
 
 export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {

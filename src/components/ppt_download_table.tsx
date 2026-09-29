@@ -1,3 +1,4 @@
+import { taskManager, taskSourceLabels } from "../lib/task_manager";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import {
   Box,
@@ -13,18 +14,17 @@ import {
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
-import { useEffect, useState } from "react";
 
 import { DownloadTask } from "../lib/model";
-import { useWebviewEvent } from "../lib/events";
 
 interface PPTDownloadTableProps {
   tasks: DownloadTask[];
-  handleRemoveTask: (task: DownloadTask) => void;
 }
 
 function stateLabel(state: string) {
   switch (state) {
+    case "queued":
+      return { text: "等待执行", color: "default" as const };
     case "downloading":
       return { text: "下载中", color: "info" as const };
     case "completed":
@@ -38,33 +38,10 @@ function stateLabel(state: string) {
   }
 }
 
-export default function PPTDownloadTable({
-  tasks,
-  handleRemoveTask,
-}: PPTDownloadTableProps) {
+export default function PPTDownloadTable({ tasks }: PPTDownloadTableProps) {
   const theme = useTheme();
-  const [currentTasks, setCurrentTasks] = useState<DownloadTask[]>([]);
-
-  useWebviewEvent("ppt_download://progress", (payload) => {
-    updateTaskProgress(payload.uuid, payload.processed, payload.total);
-  });
-
-  useEffect(() => {
-    setCurrentTasks(tasks);
-  }, [tasks]);
-
-  const updateTaskProgress = (id: string, processed: number, total: number) => {
-    setCurrentTasks((prevTasks) => {
-      const nextTasks = [...prevTasks];
-      const task = nextTasks.find((item) => item.key === id);
-      if (!task) {
-        return prevTasks;
-      }
-      task.progress = Math.ceil((processed / total) * 100);
-      task.state = task.progress === 100 ? "merging" : "downloading";
-      return nextTasks;
-    });
-  };
+  const currentTasks = tasks;
+  const handleRemoveTask = (task: DownloadTask) => taskManager.remove(task.key);
 
   return (
     <Box
@@ -86,6 +63,8 @@ export default function PPTDownloadTable({
         </TableHead>
         <TableBody>
           {currentTasks.map((task) => {
+            const record = taskManager.getSnapshot().find((item) => item.id === task.key);
+            const unknownProgress = record?.status === "running" && record.progress === undefined;
             const meta = stateLabel(task.state);
             return (
               <TableRow key={task.key} hover>
@@ -93,11 +72,13 @@ export default function PPTDownloadTable({
                   <Typography variant="body2" sx={{ fontWeight: 600 }}>
                     {task.name}
                   </Typography>
+                  {record && <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>{taskSourceLabels[record.source]}</Typography>}
+                  {(record?.error || record?.actionError) && <Typography variant="caption" color="error">{record.error ?? record.actionError}</Typography>}
                 </TableCell>
                 <TableCell>
                   <Stack spacing={0.75}>
                     <LinearProgress
-                      variant="determinate"
+                      variant={task.state === "merging" || unknownProgress ? "indeterminate" : "determinate"}
                       value={task.progress}
                       color={meta.color === "error" ? "error" : "primary"}
                       sx={{
@@ -107,7 +88,7 @@ export default function PPTDownloadTable({
                       }}
                     />
                     <Typography variant="caption" color="text.secondary">
-                      {task.progress}%
+                      {unknownProgress || task.state === "queued" ? record?.stage : `${task.progress}%`}
                     </Typography>
                   </Stack>
                 </TableCell>
@@ -115,13 +96,16 @@ export default function PPTDownloadTable({
                   <Chip size="small" label={meta.text} color={meta.color} />
                 </TableCell>
                 <TableCell align="right">
+                  {task.state === "fail" && <Button size="small" onClick={() => taskManager.retry(task.key)}>重试</Button>}
+                  {task.state === "completed" && <Button size="small" onClick={() => void taskManager.action(task.key, "open")}>打开</Button>}
                   <Button
                     size="small"
                     color="error"
                     startIcon={<DeleteOutlineRoundedIcon />}
+                    disabled={task.state !== "completed" && task.state !== "fail"}
                     onClick={() => handleRemoveTask(task)}
                   >
-                    删除
+                    清除记录
                   </Button>
                 </TableCell>
               </TableRow>

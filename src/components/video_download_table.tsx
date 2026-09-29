@@ -1,3 +1,4 @@
+import { taskManager, taskSourceLabels } from "../lib/task_manager";
 import { invoke } from "@tauri-apps/api/core";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import FolderOpenRoundedIcon from "@mui/icons-material/FolderOpenRounded";
@@ -17,18 +18,17 @@ import {
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 
 import {
   DownloadState,
   VideoDownloadTask,
 } from "../lib/model";
-import { appMessage } from "../lib/message";
-import { useWebviewEvent } from "../lib/events";
-import { sleep } from "../lib/utils";
 
 function stateMeta(state: DownloadState) {
   switch (state) {
+    case "queued":
+      return { label: "等待执行", color: "default" as const };
     case "fail":
       return { label: "失败", color: "error" as const };
     case "succeed":
@@ -38,106 +38,17 @@ function stateMeta(state: DownloadState) {
   }
 }
 
-export default function VideoDownloadTable({
-  tasks,
-  handleRemoveTask,
-}: {
-  tasks: VideoDownloadTask[];
-  handleRemoveTask?: (task: VideoDownloadTask) => void;
-}) {
+export default function VideoDownloadTable({ tasks }: { tasks: VideoDownloadTask[] }) {
   const theme = useTheme();
-  const [currentTasks, setCurrentTasks] = useState<VideoDownloadTask[]>([]);
+  const currentTasks = tasks;
   const [selectedTaskKeys, setSelectedTaskKeys] = useState<string[]>([]);
-  const taskSet = useMemo(
-    () => new Set<string>(currentTasks.map((task) => task.key)),
-    [currentTasks]
-  );
-
-  const selectedTasks = currentTasks.filter((task) =>
-    selectedTaskKeys.includes(task.key)
-  );
-
-  useWebviewEvent("video_download://progress", (payload) => {
-    updateTaskProgress(
-      payload.uuid,
-      (payload.processed / payload.total) * 100
-    );
-  });
-
-  useEffect(() => {
-    setCurrentTasks(tasks);
-    for (const task of tasks) {
-      if (!taskSet.has(task.key)) {
-        taskSet.add(task.key);
-        void handleDownloadVideo(task);
-      }
-    }
-  }, [tasks]);
-
-  const handleDownloadVideo = async (task: VideoDownloadTask) => {
-    const video = task.video;
-    const uuid = `${video.id}`;
-    updateTaskProgress(uuid, 0);
-
-    let retries = 0;
-    const maxRetries = 3;
-    while (retries < maxRetries) {
-      try {
-        await invoke("download_video", { video, saveName: task.video.name });
-        updateTaskProgress(uuid, 100);
-        break;
-      } catch (error) {
-        appMessage().error(error as string);
-        updateTaskProgress(uuid, undefined, error as string);
-        retries += 1;
-      }
-      await sleep(1000);
-    }
-  };
-
-  const handleRetryTask = async (task: VideoDownloadTask) => {
-    if (task.progress < 100 && task.state !== "fail") {
-      appMessage().warning("任务正在下载中，请勿重试。");
-      return;
-    }
-    await handleDownloadVideo(task);
-  };
-
+  const selectedTasks = tasks.filter((task) => selectedTaskKeys.includes(task.key));
+  const handleRemoveTask = (task: VideoDownloadTask) => taskManager.remove(task.key);
+  const handleRetryTask = (task: VideoDownloadTask) => taskManager.retry(task.key);
+  const handleOpenSaveDir = () => invoke("open_save_dir");
   const handleRemoveTasks = () => {
-    selectedTasks.forEach((task) => handleRemoveTask?.(task));
+    selectedTasks.forEach(handleRemoveTask);
     setSelectedTaskKeys([]);
-  };
-
-  const updateTaskProgress = (
-    id: string,
-    progress?: number,
-    error?: string
-  ) => {
-    setCurrentTasks((prevTasks) => {
-      const nextTasks = [...prevTasks];
-      const task = nextTasks.find((item) => item.key === id);
-      const state: DownloadState = error
-        ? "fail"
-        : progress === 100
-          ? "succeed"
-          : "downloading";
-
-      if (task) {
-        if (progress !== undefined) {
-          task.progress = Math.ceil(progress);
-        }
-        task.state = state;
-      }
-      return nextTasks;
-    });
-  };
-
-  const handleOpenSaveDir = async () => {
-    try {
-      await invoke("open_save_dir");
-    } catch (error) {
-      appMessage().error(`打开目录失败：${error}`);
-    }
   };
 
   const allSelected =
@@ -180,6 +91,8 @@ export default function VideoDownloadTable({
           </TableHead>
           <TableBody>
             {currentTasks.map((task) => {
+              const record = taskManager.getSnapshot().find((item) => item.id === task.key);
+              const unknownProgress = record?.status === "running" && record.progress === undefined;
               const checked = selectedTaskKeys.includes(task.key);
               const meta = stateMeta(task.state);
 
@@ -201,11 +114,13 @@ export default function VideoDownloadTable({
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>
                       {task.video.name}
                     </Typography>
+                    {record && <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>{taskSourceLabels[record.source]}</Typography>}
+                    {record?.error && <Typography variant="caption" color="error" sx={{ overflowWrap: "anywhere" }}>{record.error}</Typography>}
                   </TableCell>
                   <TableCell>
                     <Stack spacing={0.75}>
                       <LinearProgress
-                        variant="determinate"
+                        variant={unknownProgress ? "indeterminate" : "determinate"}
                         value={task.progress}
                         color={meta.color === "error" ? "error" : "primary"}
                         sx={{
@@ -215,7 +130,7 @@ export default function VideoDownloadTable({
                         }}
                       />
                       <Typography variant="caption" color="text.secondary">
-                        {task.progress}%
+                        {unknownProgress || task.state === "queued" ? record?.stage : `${task.progress}%`}
                       </Typography>
                     </Stack>
                   </TableCell>
@@ -239,9 +154,10 @@ export default function VideoDownloadTable({
                         size="small"
                         color="error"
                         startIcon={<DeleteOutlineRoundedIcon />}
-                        onClick={() => handleRemoveTask?.(task)}
+                        disabled={task.state !== "succeed" && task.state !== "fail"}
+                        onClick={() => handleRemoveTask(task)}
                       >
-                        删除
+                        清除记录
                       </Button>
                       <Button
                         size="small"
@@ -285,9 +201,9 @@ export default function VideoDownloadTable({
           color="error"
           startIcon={<DeleteOutlineRoundedIcon />}
           onClick={handleRemoveTasks}
-          disabled={selectedTasks.length === 0}
+          disabled={!selectedTasks.some((task) => task.state === "succeed" || task.state === "fail")}
         >
-          删除所选
+          清除所选记录
         </Button>
       </Stack>
     </Stack>

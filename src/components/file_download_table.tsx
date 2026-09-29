@@ -1,3 +1,4 @@
+import { taskManager, taskKindLabels, taskSourceLabels } from "../lib/task_manager";
 import { invoke } from "@tauri-apps/api/core";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import FolderOpenRoundedIcon from "@mui/icons-material/FolderOpenRounded";
@@ -18,21 +19,20 @@ import {
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 
 import {
-  File,
   FileDownloadState,
   FileDownloadTask,
-  LOG_LEVEL_ERROR,
 } from "../lib/model";
-import { useAppMessage } from "../lib/message";
-import { useWebviewEvent } from "../lib/events";
 import { getOutputFile } from "../lib/file_conversion";
-import { consoleLog, sleep } from "../lib/utils";
 
 function taskStateMeta(state: FileDownloadState) {
   switch (state) {
+    case "uploading":
+      return { label: "上传中", color: "info" as const };
+    case "queued":
+      return { label: "等待执行", color: "default" as const };
     case "fail":
       return { label: "失败", color: "error" as const };
     case "succeed":
@@ -46,146 +46,26 @@ function taskStateMeta(state: FileDownloadState) {
   }
 }
 
-export default function FileDownloadTable({
-  tasks,
-  handleRemoveTask,
-  handleDownloadFile,
-  handleOpenTaskFile,
-}: {
-  tasks: FileDownloadTask[];
-  handleRemoveTask: (task: FileDownloadTask) => void;
-  handleDownloadFile: (
-    file: File,
-    outputFormat?: "original" | "pdf"
-  ) => Promise<void>;
-  handleOpenTaskFile: (task: FileDownloadTask) => Promise<void>;
-}) {
+export default function FileDownloadTable({ tasks }: { tasks: FileDownloadTask[] }) {
   const theme = useTheme();
-  const [messageApi, contextHolder] = useAppMessage();
-  const [currentTasks, setCurrentTasks] = useState<FileDownloadTask[]>([]);
+  const currentTasks = tasks;
   const [selectedTaskKeys, setSelectedTaskKeys] = useState<string[]>([]);
-
-  const taskSet = useMemo(
-    () => new Set<string>(currentTasks.map((task) => task.key)),
-    [currentTasks]
-  );
-
-  const selectedTasks = currentTasks.filter((task) =>
-    selectedTaskKeys.includes(task.key)
-  );
-
-  useWebviewEvent("download://progress", (payload) => {
-    updateOriginalTaskProgress(
-      payload.uuid,
-      Math.ceil((payload.processed / payload.total) * 100)
-    );
-  });
-
-  useEffect(() => {
-    setCurrentTasks(tasks);
-    for (const task of tasks) {
-      if (!taskSet.has(task.key)) {
-        taskSet.add(task.key);
-        void downloadFile(task);
-      } else if (task.state === "wait_retry") {
-        void handleRetryTask(task);
-      }
-    }
-  }, [tasks]);
-
-  const downloadFile = async (task: FileDownloadTask) => {
-    updateTaskProgress(task.key, 0);
-
-    let retries = 0;
-    const maxRetries = (task.outputFormat ?? "original") === "pdf" ? 1 : 5;
-    let backoffCoef = 1;
-    while (retries < maxRetries) {
-      try {
-        await handleDownloadFile(task.file, task.outputFormat ?? "original");
-        updateTaskProgress(task.key, 100);
-        break;
-      } catch (error) {
-        updateTaskProgress(task.key, undefined, String(error));
-        consoleLog(LOG_LEVEL_ERROR, error);
-        retries += 1;
-      }
-      await sleep(1000 * backoffCoef);
-      backoffCoef *= 2;
-    }
-  };
-
-  const handleRetryTask = async (task: FileDownloadTask) => {
-    if (task.state === "downloading" || task.state === "converting") {
-      messageApi.warning("任务正在处理中，请勿重试。");
-      return;
-    }
-    await downloadFile(task);
-  };
-
+  const selectedTasks = tasks.filter((task) => selectedTaskKeys.includes(task.key));
+  const handleRemoveTask = (task: FileDownloadTask) => taskManager.remove(task.key);
+  const handleOpenTaskFile = (task: FileDownloadTask) => taskManager.action(task.key, "open");
+  const handleRetryTask = (task: FileDownloadTask) => taskManager.retry(task.key);
+  const handleOpenSaveDir = () => invoke("open_save_dir");
   const handleRemoveTasks = () => {
-    for (const task of selectedTasks) {
-      handleRemoveTask(task);
-    }
+    selectedTasks.forEach(handleRemoveTask);
     setSelectedTaskKeys([]);
   };
-
-  const handleRetryTasks = () => {
-    selectedTasks
-      .filter((task) => task.state === "fail")
-      .forEach((task) => void handleRetryTask(task));
-  };
-
-  const updateTaskProgress = (taskKey: string, progress?: number, error?: string) => {
-    setCurrentTasks((prevTasks) => {
-      return prevTasks.map((task) =>
-        task.key === taskKey
-          ? {
-              ...task,
-              progress: progress ?? task.progress,
-              state: error
-                ? "fail"
-                : progress === 100
-                  ? "succeed"
-                  : (task.outputFormat ?? "original") === "pdf"
-                    ? "converting"
-                    : "downloading",
-            }
-          : task
-      );
-    });
-  };
-
-  const updateOriginalTaskProgress = (uuid: string, progress: number) => {
-    setCurrentTasks((prevTasks) =>
-      prevTasks.map((task) => {
-        const isOriginalTask =
-          task.file.uuid === uuid && (task.outputFormat ?? "original") === "original";
-        if (!isOriginalTask) {
-          return task;
-        }
-        return {
-          ...task,
-          progress,
-          state: progress === 100 ? "succeed" : "downloading",
-        };
-      })
-    );
-  };
-
-  const handleOpenSaveDir = async () => {
-    try {
-      await invoke("open_save_dir");
-    } catch (error) {
-      messageApi.error(`打开目录失败：${error}`);
-    }
-  };
+  const handleRetryTasks = () => selectedTasks.filter((task) => task.state === "fail").forEach(handleRetryTask);
 
   const allSelected =
     currentTasks.length > 0 && selectedTaskKeys.length === currentTasks.length;
 
   return (
     <Stack spacing={2} sx={{ width: "100%" }}>
-      {contextHolder}
 
       <Box
         sx={{
@@ -226,6 +106,8 @@ export default function FileDownloadTable({
           </TableHead>
           <TableBody>
             {currentTasks.map((task) => {
+              const record = taskManager.getSnapshot().find((item) => item.id === task.key);
+              const unknownProgress = record?.status === "running" && record.progress === undefined;
               const stateMeta = taskStateMeta(task.state);
               const converting = task.state === "converting";
               const checked = selectedTaskKeys.includes(task.key);
@@ -252,11 +134,13 @@ export default function FileDownloadTable({
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>
                       {outputFile.display_name}
                     </Typography>
+                    {record && <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>{taskSourceLabels[record.source]} · {taskKindLabels[record.kind]}</Typography>}
+                    {(record?.error || record?.actionError) && <Typography variant="caption" color="error" sx={{ overflowWrap: "anywhere" }}>{record.error ?? record.actionError}</Typography>}
                   </TableCell>
                   <TableCell>
                     <Stack spacing={0.75}>
                       <LinearProgress
-                        variant={converting ? "indeterminate" : "determinate"}
+                        variant={converting || unknownProgress ? "indeterminate" : "determinate"}
                         value={converting ? undefined : task.progress}
                         color={
                           stateMeta.color === "error"
@@ -272,7 +156,7 @@ export default function FileDownloadTable({
                         }}
                       />
                       <Typography variant="caption" color="text.secondary">
-                        {converting ? "正在生成 PDF…" : `${task.progress}%`}
+                        {converting ? "正在生成 PDF…" : unknownProgress || task.state === "queued" ? record?.stage : `${task.progress}%`}
                       </Typography>
                     </Stack>
                   </TableCell>
@@ -282,7 +166,7 @@ export default function FileDownloadTable({
                       label={stateMeta.label}
                       color={stateMeta.color}
                       variant={
-                        task.state === "downloading" || converting
+                        task.state === "downloading" || task.state === "uploading" || converting
                           ? "outlined"
                           : "filled"
                       }
@@ -296,20 +180,22 @@ export default function FileDownloadTable({
                       flexWrap="wrap"
                       useFlexGap
                     >
-                      <Button
+                      {record?.canOpen && <Button
                         size="small"
                         startIcon={<VisibilityRoundedIcon />}
+                        disabled={task.state !== "succeed"}
                         onClick={() => void handleOpenTaskFile(task)}
                       >
                         打开
-                      </Button>
+                      </Button>}
                       <Button
                         size="small"
                         startIcon={<DeleteOutlineRoundedIcon />}
                         color="error"
+                        disabled={task.state !== "succeed" && task.state !== "fail"}
                         onClick={() => handleRemoveTask(task)}
                       >
-                        删除
+                        清除记录
                       </Button>
                       <Button
                         size="small"
@@ -330,7 +216,7 @@ export default function FileDownloadTable({
                 <TableCell colSpan={5}>
                   <Box sx={{ py: 5, textAlign: "center" }}>
                     <Typography variant="body2" color="text.secondary">
-                      暂无下载任务。
+                      暂无传输任务。
                     </Typography>
                   </Box>
                 </TableCell>
@@ -353,9 +239,9 @@ export default function FileDownloadTable({
           color="error"
           startIcon={<DeleteOutlineRoundedIcon />}
           onClick={handleRemoveTasks}
-          disabled={selectedTasks.length === 0}
+          disabled={!selectedTasks.some((task) => task.state === "succeed" || task.state === "fail")}
         >
-          删除所选
+          清除所选记录
         </Button>
         <Button
           variant="outlined"

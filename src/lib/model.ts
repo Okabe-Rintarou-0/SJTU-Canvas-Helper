@@ -277,11 +277,11 @@ export interface DownloadTask {
     name: string;
     outputPath?: string;
     progress: number;
-    state: "downloading" | "completed" | "fail" | "merging";
+    state: "queued" | "downloading" | "completed" | "fail" | "merging";
 }
 
-export type DownloadState = "downloading" | "succeed" | "fail" | "wait_retry";
-export type FileDownloadState = DownloadState | "converting";
+export type DownloadState = "queued" | "downloading" | "succeed" | "fail" | "wait_retry";
+export type FileDownloadState = DownloadState | "converting" | "uploading";
 export type Theme = "light" | "dark";
 
 export interface LlmApiKeyEntry {

@@ -1,3 +1,5 @@
+import { enqueueTask } from "../lib/task_runtime";
+import { useLegacyTasks } from "../lib/task_hooks";
 import { invoke } from "@tauri-apps/api/core";
 import ArticleRoundedIcon from "@mui/icons-material/ArticleRounded";
 import CheckCircleOutlineRoundedIcon from "@mui/icons-material/CheckCircleOutlineRounded";
@@ -142,7 +144,7 @@ export default function SubmissionsPage() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const { selectedCourseId, setSelectedCourseId } = useSelectedCourse();
   const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [downloadTasks, setDownloadTasks] = useState<FileDownloadTask[]>([]);
+  const downloadTasks = useLegacyTasks<FileDownloadTask>("submissions", ["attachment"]);
   const [selectedAssignment, setSelectedAssignment] = useState<
     Assignment | undefined
   >(undefined);
@@ -369,18 +371,15 @@ export default function SubmissionsPage() {
 
   const handleDownloadAttachment = async (attachment: Attachment) => {
     const file = attachmentToFile(attachment);
-    if (!downloadTasks.find((task) => task.file.uuid === file.uuid)) {
-      setDownloadTasks((tasks) => [
-        ...tasks,
-        {
-          key: file.uuid,
-          file,
-          progress: 0,
-        } as FileDownloadTask,
-      ]);
-    } else {
-      messageApi.warning("当前任务已存在，请勿重复添加");
-    }
+    enqueueTask({
+      id: `attachment:${selectedCourseId}:${file.uuid}`, name: file.display_name,
+      source: "submissions", kind: "attachment", data: { file },
+      context: courses.data.find((course) => course.id === selectedCourseId)?.name,
+      event: { channel: "download://progress", id: file.uuid },
+      locks: [`save:${file.display_name}`], stage: "正在下载",
+      run: () => invoke("download_file", { file }),
+      open: () => invoke("open_file", { name: file.display_name }),
+    });
   };
 
   const handleCourseSelect = async (courseId: number) => {
@@ -430,19 +429,6 @@ export default function SubmissionsPage() {
     });
   };
 
-  const handleRemoveTask = async (taskToRemove: FileDownloadTask) => {
-    setDownloadTasks((tasks) =>
-      tasks.filter((task) => task.file.uuid !== taskToRemove.file.uuid)
-    );
-    try {
-      await invoke("delete_file", { file: taskToRemove.file });
-    } catch (error) {
-      if (taskToRemove.state !== "fail") {
-        messageApi.error(error as string);
-      }
-    }
-  };
-
   const getNotSubmitStudents = () => {
     const notSubmitStudentsMap = new Map<number, User>();
     usersMap.forEach((user) => {
@@ -471,19 +457,6 @@ export default function SubmissionsPage() {
   const shouldShow = (attachment: Attachment) => {
     const showAll = keywords.length === 0;
     return attachment.user && (showAll || keywords.includes(attachment.user));
-  };
-
-  const handleDownloadFile = async (file: File) => {
-    await invoke("download_file", { file });
-  };
-
-  const handleOpenTaskFile = async (task: FileDownloadTask) => {
-    const name = task.file.display_name;
-    try {
-      await invoke("open_file", { name });
-    } catch (error) {
-      messageApi.error(error as string);
-    }
   };
 
   const bindCourseAssignmentFiles = async (files: File[]) => {
@@ -1003,12 +976,7 @@ export default function SubmissionsPage() {
               <Typography variant="h6" sx={{ fontWeight: 800 }}>
                 下载任务
               </Typography>
-              <FileDownloadTable
-                tasks={downloadTasks}
-                handleDownloadFile={handleDownloadFile}
-                handleOpenTaskFile={handleOpenTaskFile}
-                handleRemoveTask={handleRemoveTask}
-              />
+              <FileDownloadTable tasks={downloadTasks} />
             </Stack>
           </CardContent>
         </Card>

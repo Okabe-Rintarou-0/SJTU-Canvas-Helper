@@ -1,3 +1,6 @@
+import { enqueueTask } from "../lib/task_runtime";
+import { useLegacyTasks } from "../lib/task_hooks";
+import { open as openOutput } from "@tauri-apps/plugin-shell";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import ClosedCaptionRoundedIcon from "@mui/icons-material/ClosedCaptionRounded";
@@ -116,8 +119,8 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): 
 }
 
 export default function VideoPage() {
-  const [videoDownloadTasks, setVideoDownloadTasks] = useState<VideoDownloadTask[]>([]);
-  const [pptDownloadTasks, setPPTDownloadTasks] = useState<DownloadTask[]>([]);
+  const videoDownloadTasks = useLegacyTasks<VideoDownloadTask>("video", ["video"]);
+  const pptDownloadTasks = useLegacyTasks<DownloadTask>("video", ["ppt"]);
   const [operating, setOperating] = useState(false);
   const [videosLoading, setVideosLoading] = useState(false);
   const canvasCourses = useCourses();
@@ -402,21 +405,14 @@ export default function VideoPage() {
   };
 
   const handleDownloadVideo = (video: VideoPlayInfo) => {
-    const videoId = `${video.id}`;
-    if (!videoDownloadTasks.find((task) => task.key === videoId)) {
-      setVideoDownloadTasks((tasks) => [
-        ...tasks,
-        {
-          key: videoId,
-          video,
-          video_name: video.name,
-          progress: 0,
-          state: "downloading",
-        } as VideoDownloadTask,
-      ]);
-    } else {
-      messageApi.warning("请勿重复添加任务");
-    }
+    enqueueTask({
+      id: `video:${video.id}:${video.name}`, name: video.name, source: "video", kind: "video",
+      context: courses.data.find((course) => course.id === selectedCourseId)?.name,
+      data: { video }, event: { channel: "video_download://progress", id: `${video.id}` },
+      locks: [`save:${video.name}`], stage: "正在下载",
+      run: () => invoke("download_video", { video, saveName: video.name }),
+      open: () => invoke("open_file", { name: video.name }),
+    });
   };
 
   const handleDownloadSubtitle = async () => {
@@ -552,70 +548,15 @@ export default function VideoPage() {
     const displayName = outputPath.split(/[/\\\\]/).pop() || saveName;
     const taskKey = `ppt_${outputPath}`;
 
-    if (!pptDownloadTasks.find((task) => task.key === taskKey)) {
-      setPPTDownloadTasks((tasks) => [
-        ...tasks,
-        {
-          key: taskKey,
-          name: displayName,
-          outputPath,
-          progress: 0,
-          state: "downloading",
-        } as DownloadTask,
-      ]);
-
-      void invoke("download_ppt", { courseId, savePath: outputPath })
-        .then(() => {
-          setPPTDownloadTasks((tasks) =>
-            tasks.map((task) =>
-              task.key === taskKey
-                ? { ...task, state: "completed", progress: 100 }
-                : task
-            )
-          );
-          messageApi.success("PPT 下载成功", 0.5);
-        })
-        .catch((error) => {
-          setPPTDownloadTasks((tasks) =>
-            tasks.map((task) =>
-              task.key === taskKey ? { ...task, state: "fail" } : task
-            )
-          );
-          messageApi.error(`下载 PPT 时发生错误：${error}`);
-        });
-    } else {
-      messageApi.warning("请勿重复添加任务");
-    }
-  };
-
-  const handleRemoveTask = async (taskToRemove: VideoDownloadTask) => {
-    setVideoDownloadTasks((tasks) =>
-      tasks.filter((task) => task.key !== taskToRemove.key)
-    );
-    try {
-      await invoke("delete_file_with_name", { name: taskToRemove.video.name });
-    } catch (error) {
-      if (taskToRemove.state !== "fail") {
-        messageApi.error(error as string);
-      }
-    }
-  };
-
-  const handleRemovePPTTask = async (taskToRemove: DownloadTask) => {
-    setPPTDownloadTasks((tasks) =>
-      tasks.filter((task) => task.key !== taskToRemove.key)
-    );
-    try {
-      if (taskToRemove.outputPath) {
-        await invoke("delete_path_file", { path: taskToRemove.outputPath });
-      } else {
-        await invoke("delete_file_with_name", { name: taskToRemove.name });
-      }
-    } catch (error) {
-      if (taskToRemove.state !== "fail") {
-        messageApi.error(error as string);
-      }
-    }
+    enqueueTask({
+      id: taskKey, name: displayName, outputPath, source: "video", kind: "ppt",
+      context: courses.data.find((course) => course.id === selectedCourseId)?.name,
+      data: { name: displayName, outputPath }, stage: "正在下载 PPT 切片",
+      event: { channel: "ppt_download://progress", id: `ppt_${displayName}` },
+      locks: [`path:${outputPath.toLowerCase()}`],
+      run: () => invoke("download_ppt", { courseId, savePath: outputPath }),
+      open: () => openOutput(outputPath),
+    });
   };
 
   const getVidePlayURL = (
@@ -1370,14 +1311,8 @@ export default function VideoPage() {
               </CardContent>
             </Card>
 
-            <VideoDownloadTable
-              tasks={videoDownloadTasks}
-              handleRemoveTask={handleRemoveTask}
-            />
-            <PPTDownloadTable
-              tasks={pptDownloadTasks}
-              handleRemoveTask={handleRemovePPTTask}
-            />
+            <VideoDownloadTable tasks={videoDownloadTasks} />
+            <PPTDownloadTable tasks={pptDownloadTasks} />
           </>
         ) : null}
 

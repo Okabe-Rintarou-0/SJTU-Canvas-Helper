@@ -1,3 +1,6 @@
+import { enqueueTask } from "../lib/task_runtime";
+import { createCloudUploadTask } from "../lib/upload_tasks";
+import { useLegacyTasks } from "../lib/task_hooks";
 import { invoke } from "@tauri-apps/api/core";
 import ArrowDropDownRoundedIcon from "@mui/icons-material/ArrowDropDownRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
@@ -70,7 +73,6 @@ import {
 } from "../lib/file_conversion";
 import type { FileOutputFormat } from "../lib/file_conversion";
 import {
-  Course,
   Entry,
   File,
   FileDownloadTask,
@@ -90,11 +92,6 @@ import {
 } from "../lib/utils";
 import { useTauriEvent } from "../lib/events";
 import { surfaceCardSx } from "../lib/styles";
-
-interface DownloadInfo {
-  course?: Course;
-  folderPath: string;
-}
 
 interface FileActionMenuState {
   action: "download" | "upload";
@@ -152,7 +149,7 @@ export default function FilesPage() {
   const [allFolders, setAllFolders] = useState<Folder[]>([]);
   const [downloadableOnly, setDownloadableOnly] = useState<boolean>(true);
   const [showExternal, setShowExternal] = useState<boolean>(false);
-  const [downloadTasks, setDownloadTasks] = useState<FileDownloadTask[]>([]);
+  const downloadTasks = useLegacyTasks<FileDownloadTask>("files", ["file", "conversion", "upload", "upload-pdf"]);
   const [operating, setOperating] = useState<boolean>(false);
   const [currentFolderId, setCurrentFolderId] = useState(0);
   const [currentFolderFullName, setCurrentFolderFullName] =
@@ -178,7 +175,6 @@ export default function FilesPage() {
   });
   const courses = useCourses();
   const baseURL = useBaseURL();
-  const downloadInfoMap = useMemo(() => new Map<number, DownloadInfo>(), []);
   const externalFiles = useExternalFiles(showExternal ? selectedCourseId : -1);
 
   const notify = (message: string, severity: SnackSeverity = "info") => {
@@ -491,123 +487,46 @@ export default function FilesPage() {
       ?.full_name.slice(section.length + 1);
   };
 
-  const handleOpenTaskFile = async (task: FileDownloadTask) => {
-    const name = getOutputFile(
-      task.file,
-      task.outputFormat ?? "original"
-    ).display_name;
-    const downloadInfo = downloadInfoMap.get(task.file.folder_id)!;
-    const course = downloadInfo.course;
-    const folderPath = downloadInfo.folderPath;
-    try {
-      if (course) {
-        await invoke("open_course_file", { name, course, folderPath });
-      } else {
-        await invoke("open_my_file", { name, folderPath });
-      }
-    } catch (error) {
-      notify(String(error), "error");
-      consoleLog(LOG_LEVEL_ERROR, error);
-    }
-  };
-
-  const handleDownloadFile = async (
-    file: File,
-    outputFormat: FileOutputFormat = "original"
-  ) => {
-    const folderPath = getFolderPath(file);
-    const course = getSelectedCourse();
-    if (!downloadInfoMap.get(file.folder_id) && folderPath !== undefined) {
-      downloadInfoMap.set(file.folder_id, {
-        course,
-        folderPath,
-      });
-    }
-    if (section === COURSE_FILES) {
-      await invoke(
-        outputFormat === "pdf"
-          ? "download_course_file_as_pdf"
-          : "download_course_file",
-        { file, course, folderPath }
-      );
-    } else {
-      await invoke(
-        outputFormat === "pdf" ? "download_my_file_as_pdf" : "download_my_file",
-        { file, folderPath }
-      );
-    }
-  };
-
   const handleSyncFiles = async () => {
-    try {
-      const course = getSelectedCourse()!;
-      notify("正在计算同步任务…", "info");
-      const filesToSync = (await invoke("sync_course_files", {
-        course,
-      })) as File[];
-      if (filesToSync.length > 0) {
-        notify(`共 ${filesToSync.length} 个文件需要下载，任务已开始。`, "success");
-      } else {
-        notify("已同步，无需下载。", "success");
-      }
-      filesToSync.forEach((file) => void handleAddDownloadFileTask(file));
-    } catch (error) {
-      consoleLog(LOG_LEVEL_ERROR, error);
-      notify(`同步失败：${error}`, "error");
-    }
-  };
-
-  const handleRemoveTask = async (taskToRemove: FileDownloadTask) => {
-    setDownloadTasks((tasks) =>
-      tasks.filter((task) => task.key !== taskToRemove.key)
-    );
-    const file = getOutputFile(
-      taskToRemove.file,
-      taskToRemove.outputFormat ?? "original"
-    );
-    const downloadInfo = downloadInfoMap.get(file.folder_id)!;
-    const course = downloadInfo.course;
-    const folderPath = downloadInfo.folderPath;
-    try {
-      if (course) {
-        await invoke("delete_course_file", { file, course, folderPath });
-      } else {
-        await invoke("delete_my_file", { file, folderPath });
-      }
-    } catch (error) {
-      if (taskToRemove.state !== "fail") {
-        notify(String(error), "error");
-      }
-    }
+    const course = getSelectedCourse();
+    if (!course) return;
+    enqueueTask({
+      id: `sync:${course.id}:${crypto.randomUUID()}`, name: `${course.name} · 同步检查`,
+      source: "files", kind: "sync", context: course.name,
+      locks: [`sync:${course.id}`], stage: "正在检查文件差异",
+      run: async ({ update }) => {
+        const filesToSync = await invoke<File[]>("sync_course_files", { course });
+        filesToSync.forEach((file) => handleAddDownloadFileTask(file));
+        update({ log: filesToSync.length ? `已创建 ${filesToSync.length} 个文件下载任务。请查看对应下载任务的进度。` : "文件已同步，无需下载。" });
+        notify(filesToSync.length ? `共 ${filesToSync.length} 个文件需要下载，已加入队列。` : "已同步，无需下载。", "success");
+      },
+    });
   };
 
   const handleAddDownloadFileTask = (
     file: File,
     outputFormat: FileOutputFormat = "original"
   ) => {
-    const key = `${file.uuid}:${outputFormat}`;
-    setDownloadTasks((tasks) => {
-      const task = tasks.find((item) => item.key === key);
-      if (!task) {
-        return [
-          ...tasks,
-          {
-            key,
-            file,
-            outputFormat,
-            progress: 0,
-            state: outputFormat === "pdf" ? "converting" : "downloading",
-          },
-        ];
-      }
-      if (task.state === "fail") {
-        return tasks.map((item) =>
-          item.key === key
-            ? { ...item, progress: 0, state: "wait_retry" }
-            : item
-        );
-      }
-      return tasks;
+    const course = section === COURSE_FILES ? getSelectedCourse() : undefined;
+    const folderPath = getFolderPath(file) ?? "";
+    const output = getOutputFile(file, outputFormat);
+    const scope = course ? `course:${course.id}` : "my";
+    const id = `files:${scope}:${file.uuid}:${outputFormat}`;
+    const name = output.display_name;
+    enqueueTask({
+      id, name, source: "files", kind: outputFormat === "pdf" ? "conversion" : "file",
+      context: course?.name ?? "我的 Canvas 文件",
+      outputPath: `${course?.name ?? "我的Canvas文件"}/${folderPath}/${name}`,
+      locks: [`output:${scope}:${folderPath}:${name}`],
+      event: outputFormat === "original" ? { channel: "download://progress", id: file.uuid } : undefined,
+      stage: outputFormat === "pdf" ? "正在转换 PDF" : "正在下载",
+      data: { file, outputFormat },
+      run: () => invoke(course
+        ? outputFormat === "pdf" ? "download_course_file_as_pdf" : "download_course_file"
+        : outputFormat === "pdf" ? "download_my_file_as_pdf" : "download_my_file",
+        course ? { file, course, folderPath } : { file, folderPath }),
+      open: () => invoke(course ? "open_course_file" : "open_my_file",
+        course ? { name, course, folderPath } : { name, folderPath }),
     });
   };
 
@@ -615,59 +534,15 @@ export default function FilesPage() {
     file: File,
     outputFormat: FileOutputFormat = "original"
   ) => {
-    const subDir = currentFolderFullName?.replace(section, "");
+    const subDir = currentFolderFullName?.replace(section, "") ?? "";
+    const course = getSelectedCourse();
+    if (section === COURSE_FILES && !course) return;
     const saveDir =
       section === COURSE_FILES
-        ? `${getSelectedCourse()!.name}${subDir}`
+        ? `${course!.name}${subDir}`
         : `我的Canvas文件${subDir}`;
-    const outputFile = getOutputFile(file, outputFormat);
-    const savePath = `${saveDir}/${outputFile.display_name}`;
-    let retries = 0;
-    const maxRetries = 1;
-    let error: unknown;
-    let loggedIn = false;
-
-    notify(`正在上传至交大云盘：${savePath}`, "info");
-    while (retries <= maxRetries) {
-      try {
-        await invoke(outputFormat === "pdf" ? "upload_file_as_pdf" : "upload_file", {
-          file,
-          saveDir,
-        });
-        notify("上传文件成功。", "success");
-        return;
-      } catch (nextError) {
-        error = nextError;
-        retries += 1;
-        const errorMessage = String(nextError);
-        if (
-          outputFormat === "pdf" &&
-          (errorMessage.includes("Document conversion failed") ||
-            errorMessage.includes("Unsupported file extension"))
-        ) {
-          notify(
-            `转换 PDF 失败：${errorMessage}。请确认系统已安装 Microsoft Office 或 LibreOffice。`,
-            "error"
-          );
-          return;
-        }
-        try {
-          await invoke("login_jbox");
-          loggedIn = true;
-        } catch {
-          loggedIn = false;
-        }
-      }
-    }
-
-    if (loggedIn && error) {
-      notify(`上传失败：${error}。已尝试自动登录交大云盘，但上传仍未成功。`, "error");
-      return;
-    }
-
-    if (!loggedIn && error) {
-      notify(`上传文件出错：${error}。请先登录交大云盘。`, "error");
-    }
+    enqueueTask(createCloudUploadTask(file, outputFormat, saveDir,
+      section === COURSE_FILES ? course!.name : "我的 Canvas 文件"));
   };
 
   const handleEntrySelect = (entry: Entry, checked: boolean) => {
@@ -768,7 +643,7 @@ export default function FilesPage() {
       icon: <CloudDownloadRoundedIcon />,
     },
     {
-      label: "下载任务",
+      label: "下载/上传任务",
       value: `${downloadTasks.length}`,
       icon: <AutoAwesomeRoundedIcon />,
     },
@@ -1230,13 +1105,8 @@ export default function FilesPage() {
         <Card sx={surfaceCardSx}>
           <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
             <Stack spacing={2}>
-              <Typography variant="h6">下载任务</Typography>
-              <FileDownloadTable
-                tasks={downloadTasks}
-                handleRemoveTask={handleRemoveTask}
-                handleDownloadFile={handleDownloadFile}
-                handleOpenTaskFile={handleOpenTaskFile}
-              />
+              <Typography variant="h6">下载/上传任务</Typography>
+              <FileDownloadTable tasks={downloadTasks} />
             </Stack>
           </CardContent>
         </Card>
