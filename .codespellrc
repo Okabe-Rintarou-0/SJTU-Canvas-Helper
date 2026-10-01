@@ -1,3 +1,4 @@
 [codespell]
-skip = .git,*.pdf,*.svg,openapi.json,key.pem,Cargo.lock,yarn.lock,package.json,tsconfig.json,tsconfig.node.json,vite.config.ts
+# Preserve raw OCR fixture text, including mathematical variable names.
+skip = .git,*.pdf,*.svg,openapi.json,key.pem,Cargo.lock,yarn.lock,package.json,tsconfig.json,tsconfig.node.json,vite.config.ts,*ppt_animation_sequence.json
 ignore-words-list = crate,ser,te,vaule

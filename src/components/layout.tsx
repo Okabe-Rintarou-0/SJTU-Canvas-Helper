@@ -39,7 +39,6 @@ import { useAppMessage } from "../lib/message";
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 
-import { useKeyPress } from "../lib/hooks";
 import { useConfigSelector } from "../lib/hooks";
 import { checkForUpdates } from "../lib/utils";
 import { useUpdateNotice } from "../lib/update_notice";
@@ -106,7 +105,6 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
   const [showChangeLog, setShowChangeLog] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const [scale, setScale] = useState(1);
   const [messageApi, contextHolder] = useAppMessage();
   const { availableVersion, setAvailableVersion, previewOnly } = useUpdateNotice();
 
@@ -128,12 +126,6 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
       messageApi.error("未能打开反馈邮箱，请确认系统已配置邮件客户端。");
     }
   };
-
-  const zoomIn = () => setScale((prevScale) => prevScale + 0.1);
-  const zoomOut = () => setScale((prevScale) => Math.max(0.1, prevScale - 0.1));
-
-  useKeyPress("=", zoomIn);
-  useKeyPress("-", zoomOut);
 
   const effectiveDrawerWidth = useMemo(() => {
     if (!isDesktop) {
@@ -422,8 +414,6 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
             bgcolor: "background.paper",
             border: "1px solid",
             borderColor: "divider",
-            zoom: scale,
-            transformOrigin: "top left",
           }}
         >
           {children}

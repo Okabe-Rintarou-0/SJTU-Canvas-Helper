@@ -9,13 +9,13 @@
     "main"
   ],
   "permissions": [
+    "core:webview:allow-set-webview-zoom",
     "fs:default",
     "dialog:default",
     "dialog:allow-open",
     "dialog:allow-save",
     "updater:default",
     "process:default",
-    "process:allow-restart",
-    "updater:default"
+    "process:allow-restart"
   ]
 }
