@@ -13,7 +13,8 @@ export interface VideoSummaryCache {
   coverage: string;
   savedAt: string;
 }
-const STORAGE_KEY = "video-subtitle-summaries-v1";
+// Rebuild contexts with concise chronological OCR evidence, without processing metadata.
+const STORAGE_KEY = "video-material-summaries-v6";
 const MAX_BYTES = 3_000_000;
 
 function isRecording(value: unknown, depth = 0): value is CanvasVideo {

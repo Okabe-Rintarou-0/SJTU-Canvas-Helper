@@ -466,6 +466,7 @@ export default function SettingsPage() {
         theme: config.theme ?? "light",
         compact_mode: config.compact_mode ?? false,
         experimental_task_center_only: config.experimental_task_center_only ?? false,
+        experimental_ppt_cleanup: config.experimental_ppt_cleanup ?? false,
         mcp_enabled: config.mcp_enabled ?? false,
         mcp_port: config.mcp_port || 3100,
         proxy_port: config.proxy_port === 0 ? DEFAULT_PROXY_PORT : config.proxy_port,
@@ -1211,6 +1212,15 @@ export default function SettingsPage() {
                       />
                       <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                         开启后，使用左下角任务中心；关闭后，使用各页任务列表。切换不会中断任务。
+                      </Typography>
+                    </Box>
+                    <Box>
+                      <FormControlLabel
+                        control={<Switch checked={formData?.experimental_ppt_cleanup ?? false} onChange={(event) => updateField("experimental_ppt_cleanup", event.target.checked)} />}
+                        label="导出 PPT 时去除无用页面"
+                      />
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                        根据 OCR 排除特征明确的桌面和签到页面，并将连续重复或动画增量切片合并为完整画面。禁止跨页面回访合并。应用于 AI 总结与追问及 PDF 导出；字幕保持完整。文字不足或判断不明确时保留，图形变化可能无法由 OCR 识别。默认关闭，关闭后可重新导出全部切片。
                       </Typography>
                     </Box>
                     {renderCardSaveAction("保存实验性功能")}

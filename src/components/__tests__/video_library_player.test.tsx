@@ -11,6 +11,7 @@ vi.mock("../../lib/video_library_tasks", () => ({ resolveRecording: mocks.resolv
 const recording = { source: "canvas", videoId: "a", videoName: "第一节", courseBeginTime: "2026-09-28 08:00", playable: true } as CanvasVideo;
 const tracks = [{ id: 1, rtmpUrlHdv: "https://example.test/one.mp4" }, { id: 2, rtmpUrlHdv: "https://example.test/two.mp4" }];
 beforeEach(() => {
+  vi.mocked(invoke).mockImplementation(async () => ({ srt: "" }) as never);
   mocks.resolve.mockResolvedValue({ source: "canvas", info: { videoPlayResponseVoList: tracks } });
   vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(function (this: HTMLMediaElement) { Object.defineProperty(this, "paused", { configurable: true, value: false }); return Promise.resolve(); });
   vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(function (this: HTMLMediaElement) { Object.defineProperty(this, "paused", { configurable: true, value: true }); });
@@ -21,11 +22,18 @@ async function load() {
   await screen.findByRole("button", { name: "下载当前机位" });
 }
 describe("video player compatibility", () => {
+  it("plays without fetching or displaying PPT OCR", async () => {
+    await load();
+    expect(invoke).not.toHaveBeenCalledWith("get_recording_slides", expect.anything());
+    expect(invoke).toHaveBeenCalledWith("prepare_video_material", { request: {}, preferBefore: true, includeOcr: false });
+    expect(screen.queryByRole("region", { name: "PPT 面板" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /显示 PPT|收起 PPT/ })).not.toBeInTheDocument();
+  });
   it("keeps the same video mounted when minimized and seeks citations without reloading", async () => {
     const props = { session: { id: "a", title: "课堂", videos: [recording] }, initialKey: "canvas:a", onClose: () => {}, onSummarize: vi.fn() };
     const view = render(<VideoLibraryPlayer {...props} seconds={0} seekRequest="first" />);
     await screen.findByRole("button", { name: "下载当前机位" });
-    expect(invoke).toHaveBeenCalledWith("prepare_video_material", { request: {}, preferBefore: true });
+    expect(invoke).toHaveBeenCalledWith("prepare_video_material", { request: {}, preferBefore: true, includeOcr: false });
     const video = document.querySelector("video")!;
     video.currentTime = 35;
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

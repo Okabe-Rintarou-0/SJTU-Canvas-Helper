@@ -24,9 +24,9 @@ export async function saveRecordingMaterial(video: CanvasVideo, kind: "ppt" | "s
   enqueueTask({
     id: `${kind}:${outputPath}`, name, outputPath, kind, source: "video", locks: [`path:${outputPath.toLowerCase()}`],
     event: kind === "ppt" ? { channel: "ppt_download://progress", id: `ppt_${name}` } : undefined,
-    run: async () => {
+    run: async ({ update }) => {
       if (kind === "subtitle") {
-        const material = await invoke<VideoMaterial>("prepare_video_material", { request: recordingRequest(video), preferBefore: true });
+        const material = await invoke<VideoMaterial>("prepare_video_material", { request: recordingRequest(video), preferBefore: true, includeOcr: false });
         if (!material.srt) throw new Error("该小节暂无可用字幕");
         await invoke("save_path_file", { path: outputPath, content: Array.from(new TextEncoder().encode(material.srt)) });
       } else {
@@ -36,7 +36,8 @@ export async function saveRecordingMaterial(video: CanvasVideo, kind: "ppt" | "s
         for (const candidate of candidates) {
           try {
             const info = await invoke<VideoInfo>("get_video_play_info", { source: candidate.source, videoId: candidate.videoId });
-            await invoke("download_ppt", { courseId: info.courId, savePath: outputPath });
+            const notes = await invoke<string[]>("download_ppt", { courseId: info.courId, savePath: outputPath });
+            if (notes?.length) update({ log: notes.join("\n") });
             return;
           } catch (e) { lastError = e; }
         }
@@ -87,15 +88,15 @@ export async function enqueueVideoExports(scopes: VideoSession[], options: Video
           update({ stage: `正在导出${labels[kind]}` });
           const onProgress = new Channel<{ processed: number; total: number; stage: string }>();
           onProgress.onmessage = (progress) => update({ stage: progress.stage, progress: progress.total > 0 && progress.stage !== "正在合并 PDF" ? Math.min(100, Math.floor(progress.processed / progress.total * 100)) : undefined });
-          const result = await invoke<{ paths: string[]; warnings: string[] }>("export_video_materials", {
+          const result = await invoke<{ paths: string[]; warnings: string[]; notes?: string[] }>("export_video_materials", {
             requests: items, kind, directory: folder, name, onProgress, allTracks: options.tracks === "all",
           });
           setOpen(() => invoke("open_local_path", { path: result.paths.length === 1 ? result.paths[0] : folder }));
           if (result.warnings.length) {
-            update({ log: `已保存：\n${result.paths.join("\n")}\n未完成：\n${result.warnings.join("\n")}` });
+            update({ log: `已保存：\n${result.paths.join("\n")}\n${(result.notes ?? []).join("\n")}\n未完成：\n${result.warnings.join("\n")}` });
             throw new Error(`部分资料未完成，已保存文件保留在 ${folder}。${result.warnings.join("；")}`);
           }
-          update({ stage: "已完成", progress: 100, log: result.paths.join("\n") });
+          update({ stage: "已完成", progress: 100, log: [...result.paths, ...(result.notes ?? [])].join("\n") });
         },
       });
     };

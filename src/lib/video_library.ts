@@ -81,7 +81,10 @@ export interface VideoMaterial {
   warnings: string[];
   srt: string;
   subtitleAvailable: boolean;
+  ocrAvailable?: boolean;
 }
+
+export const hasVideoMaterial = (material: VideoMaterial) => material.subtitleAvailable || material.ocrAvailable === true;
 
 export interface VideoExportOptions {
   video: boolean;

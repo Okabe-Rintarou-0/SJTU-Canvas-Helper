@@ -190,6 +190,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub experimental_task_center_only: bool,
     #[serde(default)]
+    pub experimental_ppt_cleanup: bool,
+    #[serde(default)]
     pub color_primary: Option<String>,
     #[serde(default)]
     pub mcp_enabled: bool,
@@ -224,6 +226,7 @@ impl Default for AppConfig {
             theme: Default::default(),
             compact_mode: Default::default(),
             experimental_task_center_only: false,
+            experimental_ppt_cleanup: false,
             color_primary: Default::default(),
             mcp_enabled: Default::default(),
             mcp_port: 3100,
@@ -1120,6 +1123,12 @@ pub struct CanvasVideoSubTitle {
 pub struct CanvasVideoPPT {
     pub create_sec: String,
     pub ocr: Vec<CanvasVideoPPTOcr>,
+    #[serde(default)]
+    pub ocr_text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub animation_start_sec: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub related_slide_secs: Vec<String>,
     pub ppt_img_url: Option<String>,
 }
 

@@ -13,6 +13,9 @@ mod constants;
 pub mod jbox;
 pub mod video;
 pub mod video_library;
+pub(crate) mod ppt;
+#[cfg(test)]
+mod ppt_audit;
 
 pub struct App {
     client: Arc<Client>,

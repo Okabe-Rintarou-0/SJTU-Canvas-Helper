@@ -22,7 +22,7 @@ import { useCourses, useConfigSelector } from "../lib/hooks";
 import { useTasks } from "../lib/task_hooks";
 import { useAppMessage } from "../lib/message";
 import { compareVideoCourses, loadVideoCourse, mergeVideoCourses } from "../lib/video_courses";
-import { groupVideoSessions, groupSessionsByDate, parseVideoCitation, formatVideoTimestamp, recordingKey, recordingTime, selectedSessionScopes, toggleRecordings, type VideoExportOptions, type VideoMaterial, type VideoSession } from "../lib/video_library";
+import { groupVideoSessions, groupSessionsByDate, parseVideoCitation, formatVideoTimestamp, recordingKey, recordingTime, selectedSessionScopes, toggleRecordings, hasVideoMaterial, type VideoExportOptions, type VideoMaterial, type VideoSession } from "../lib/video_library";
 import { enqueueVideoExports, recordingRequest, saveRecordingMaterial } from "../lib/video_library_tasks";
 import { readSummaryCache, writeSummaryCache, deleteSummaryCache, summaryCacheKey, type VideoSummaryCache } from "../lib/video_summary_cache";
 import type { AccountInfo, CanvasVideo, Course, LLMChatMessage } from "../lib/model";
@@ -43,6 +43,7 @@ function withTimeout<T>(promise: Promise<T>): Promise<T> {
 export default function VideoPage() {
   const canvas = useCourses();
   const centerOnly = useConfigSelector((state) => state.config.data?.experimental_task_center_only === true);
+  const pptCleanupEnabled = useConfigSelector((state) => state.config.data?.experimental_ppt_cleanup === true);
   const [account, setAccount] = useState<string>();
   const model = useConfigSelector((state) => state.config.data?.llm_model ?? "");
   const [cachedSummaries, setCachedSummaries] = useState(readSummaryCache);
@@ -57,7 +58,7 @@ export default function VideoPage() {
   const courses = useMemo(() => mergeVideoCourses(canvas.data, space), [canvas.data, space]);
   const [courseId, setCourseId] = useState<number>();
   const selectedCourse = courses.find((course) => course.id === courseId);
-  const cacheNamespace = account && selectedCourse ? JSON.stringify([account, selectedCourse.canvasId, selectedCourse.teachingClassId, selectedCourse.name, selectedCourse.term.name, model]) : "";
+  const cacheNamespace = account && selectedCourse ? `${JSON.stringify([account, selectedCourse.canvasId, selectedCourse.teachingClassId, selectedCourse.name, selectedCourse.term.name, model])}:ppt-cleanup-v3=${Number(pptCleanupEnabled)}` : "";
   const courseSummaries = cachedSummaries.filter((entry) => entry.namespace === cacheNamespace);
   const [login, setLogin] = useState<"checking" | "ready" | "required">("checking");
   const [refresh, setRefresh] = useState(0);
@@ -220,6 +221,7 @@ export default function VideoPage() {
   };
   const startSummary = async (force = false, requested = aiScopes, organization = aiOrganization, namespace = cacheNamespace, titleOverride?: string) => {
     if (!requested || chatLoading) return;
+    namespace = namespace.replace(/:ppt-(?:animation|cleanup)(?:-v\d+)?=[01]$/, `:ppt-cleanup-v3=${Number(pptCleanupEnabled)}`);
     const snapshot = requested;
     const key = summaryCacheKey(namespace, snapshot, organization);
     const cached = !force && namespace && readSummaryCache().find((entry) => entry.key === key);
@@ -227,7 +229,7 @@ export default function VideoPage() {
     if (force) materialCache.current.clear();
     cacheEntry.current = undefined; chatNamespace.current = namespace; setCacheNotice("");
     const generation = ++chatGeneration.current;
-    const prompt = organization === "sessions" ? "请逐堂总结所选课堂，每堂课内综合所有小节。列出主要知识点、作业、测验、考试及通知，每个知识点通常只引用 1 个最相关的字幕位置，必要时最多 2 个；引用显示为 HH:MM:SS，不逐句堆叠时间戳。" : "请综合总结全部所选小节，串联主要知识点，并列出作业、测验、考试及通知，每个知识点通常只引用 1 个最相关的字幕位置，必要时最多 2 个；引用显示为 HH:MM:SS，不逐句堆叠时间戳。";
+    const prompt = organization === "sessions" ? "请逐堂总结所选课堂，每堂课内综合所有小节的字幕与 PPT OCR。列出主要知识点、作业、测验、考试及通知，每个知识点通常只引用 1 个最相关的资料位置，必要时最多 2 个；引用显示为 HH:MM:SS，不逐句堆叠时间戳。" : "请综合总结全部所选小节的字幕与 PPT OCR，串联主要知识点，并列出作业、测验、考试及通知，每个知识点通常只引用 1 个最相关的资料位置，必要时最多 2 个；引用显示为 HH:MM:SS，不逐句堆叠时间戳。";
     const opening = message("user", prompt);
     const title = titleOverride ?? `${selectedCourse?.name ?? "课程"} · ${snapshot.reduce((n, s) => n + s.videos.length, 0)} 小节`;
     setChatTitle(title);
@@ -238,22 +240,22 @@ export default function VideoPage() {
       const materials: VideoMaterial[] = [];
       for (const [index, entry] of entries.entries()) {
         if (generation !== chatGeneration.current) return;
-        setChatProgress(`正在读取字幕 ${index + 1}/${entries.length}`);
-        const key = `${courseId}:${recordingKey(entry.video)}`;
+        setChatProgress(`正在读取字幕与 PPT OCR ${index + 1}/${entries.length}`);
+        const key = `${courseId}:${recordingKey(entry.video)}:cleanup-v3=${pptCleanupEnabled}`;
         let material = materialCache.current.get(key);
         if (!material) {
-          try { material = await withTimeout(invoke<VideoMaterial>("prepare_video_material", { request: recordingRequest(entry.video, entry.title) })); }
+          try { material = await withTimeout(invoke<VideoMaterial>("prepare_video_material", { request: recordingRequest(entry.video, entry.title), cleanUpPpt: pptCleanupEnabled })); }
           catch (e) { material = { key: recordingKey(entry.video), title: entry.title, text: "", srt: "", subtitleAvailable: false, warnings: [`${entry.title}：${e}`] }; }
-          if (material.subtitleAvailable) materialCache.current.set(key, material);
+          if (hasVideoMaterial(material) && !material.warnings.length) materialCache.current.set(key, material);
         }
         materials.push(material);
       }
       if (generation !== chatGeneration.current) return;
-      const available = materials.filter((item) => item.subtitleAvailable);
+      const available = materials.filter(hasVideoMaterial);
       const warnings = materials.flatMap((item) => item.warnings);
-      const report = `${available.length}/${entries.length} 小节字幕可用${warnings.length ? `；未覆盖：${warnings.join("；")}` : "；覆盖全部所选小节"}`;
+      const report = `${materials.filter((item) => item.subtitleAvailable).length}/${entries.length} 小节字幕可用；${materials.filter((item) => item.ocrAvailable).length}/${entries.length} 小节 PPT OCR 可用${warnings.length ? `；资料提示：${warnings.join("；")}` : ""}${available.length < entries.length ? `；未覆盖小节：${materials.filter((item) => !hasVideoMaterial(item)).map((item) => item.title).join("；")}` : "；覆盖全部所选小节"}`;
       setCoverage(report);
-      if (!available.length) throw new Error("所选小节均无可用字幕，无法生成总结");
+      if (!available.length) throw new Error("所选小节均无可用字幕或 PPT OCR，无法生成总结");
       chatText.current = `${report}\n\n${available.map((item) => item.text).join("\n\n")}`;
       setChatProgress("正在准备总结");
       const result = await requestChat([{ role: "user", content: prompt }], [opening], generation, `${report}\n\n`);
@@ -266,7 +268,7 @@ export default function VideoPage() {
   };
   const sendMessage = async (content: string) => {
     if (chatLoading) return;
-    if (!chatText.current) { messageApi.info("没有可用字幕，请重新选择小节并总结"); return; }
+    if (!chatText.current) { messageApi.info("没有可用课堂资料，请重新选择小节并总结"); return; }
     const generation = chatGeneration.current;
     const next = [...chatMessages, message("user", content)];
     setChatMessages(next); setChatLoading(true); setChatProgress("正在准备回答");
@@ -294,8 +296,8 @@ export default function VideoPage() {
     <Button size="small" sx={{ minWidth: 64 }} onClick={() => summarize([scope])}>AI 总结</Button>
   </Stack></TableCell>;
   const chatPanel = <FileAIChatModal embedded loadingLabel={chatProgress || "等待模型回复"} open={chatOpen} title={`${chatTitle} · ${chatScope.map((scope) => scope.title).join("；")}`} messages={chatMessages} loading={chatLoading} onClose={() => setChatOpen(false)} onSend={sendMessage}
-      dialogTitle="AI 字幕总结" dialogDescription={chatProgress || coverage || "围绕所选课堂字幕继续追问。会话范围固定，不受列表勾选变化影响。"}
-      contextLabel="会话范围" emptyText="正在读取所选小节字幕" inputPlaceholder="继续追问知识点、作业或通知…" footerIdleText="仅依据创建会话时所选的字幕；点击引用可跳转到对应小节。"
+      dialogTitle="AI 课堂总结" dialogDescription={chatProgress || coverage || "围绕所选课堂字幕与 PPT OCR 继续追问。会话范围固定，不受列表勾选变化影响。"}
+      contextLabel="会话范围" emptyText="正在读取所选小节资料" inputPlaceholder="继续追问知识点、作业或通知…" footerIdleText="依据本次会话的字幕与 PPT OCR；点击引用可跳转到对应小节和 PPT 时间。"
       markdownComponents={{ a: ({ href, children }) => {
         const citation = parseVideoCitation(href);
         if (!citation || citation.seconds === undefined) return <span>{children}</span>;
@@ -429,6 +431,7 @@ export default function VideoPage() {
         {exportOptions.ppt && <Stack spacing={1}>
           <Typography variant="subtitle2">PPT 切片 PDF</Typography>
           {canMergePpt ? <TextField select label="PPT 输出" size="small" value={exportOptions.pptPerSession ? "session" : "section"} onChange={(e) => setExportOptions((p) => ({ ...p, pptPerSession: e.target.value === "session" }))}><MenuItem value="session">每堂课合并一个 PDF（仅包含所选小节）</MenuItem><MenuItem value="section">每小节一个 PDF</MenuItem></TextField> : <Typography variant="body2">{singleDownload ? "本小节的 PPT 切片保存为一个 PDF。" : "每堂课仅选中一个小节，各自保存为一个 PDF。"}</Typography>}
+          {pptCleanupEnabled && <Alert severity="info">已开启“导出 PPT 时去除无用页面”：排除明确的桌面和签到页面，连续重复或增量切片保留完整画面；不合并中途切页后再次出现的页面。此实验性设置也用于 AI 总结与追问，处理记录保存在任务日志中，关闭后可导出全部切片。</Alert>}
         </Stack>}
         {exportOptions.subtitle && <Stack spacing={1}>
           <Typography variant="subtitle2">字幕</Typography>
@@ -452,7 +455,7 @@ export default function VideoPage() {
       <DialogTitle>总结所选 {aiScopes?.reduce((n, s) => n + s.videos.length, 0)} 小节</DialogTitle>
       <DialogContent><Stack spacing={2} sx={{ pt: 1 }}>
         <Typography variant="body2">{aiScopes?.map((s) => s.title).join("；")}</Typography>
-        <Typography variant="body2" color="text.secondary">仅依据字幕。缺失小节会明确标注，PPT 不作为 AI 输入。成功结果缓存在本机，重新生成会重新读取字幕。</Typography>
+        <Typography variant="body2" color="text.secondary">结合字幕与 PPT OCR，按各自时间点组织资料；OCR 可能仅含关键词。缺失资料会明确标注，引用可跳转到对应视频时间。成功结果缓存在本机，重新生成会重新读取资料。</Typography>
         <TextField select size="small" label="结果组织" value={aiOrganization} onChange={(e) => setAiOrganization(e.target.value)}><MenuItem value="sessions">逐堂总结，堂内综合各小节</MenuItem><MenuItem value="combined">综合所有所选小节</MenuItem></TextField>
       </Stack></DialogContent>
       <DialogActions><Button onClick={() => setAiScopes(undefined)}>取消</Button><Button variant="contained" onClick={() => void startSummary()}>开始总结</Button></DialogActions>

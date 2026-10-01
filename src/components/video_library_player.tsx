@@ -54,6 +54,7 @@ export default function VideoLibraryPlayer({ session, initialKey, seconds = 0, s
     playbackStates.current.clear();
     setActive(initialKey);
     if (mainRef.current && active === initialKey) mainRef.current.currentTime = seconds;
+    if (sync && subRef.current && active === initialKey) subRef.current.currentTime = seconds;
     // A new citation may target the current recording at a different timestamp.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialKey, seconds, seekRequest]);
@@ -73,7 +74,7 @@ export default function VideoLibraryPlayer({ session, initialKey, seconds = 0, s
         if (cancelled) return;
         setUrls(next); setTracks(info.videoPlayResponseVoList); setLoading(false);
         try {
-          const material = await invoke<VideoMaterial>("prepare_video_material", { request: recordingRequest(video), preferBefore: true });
+          const material = await invoke<VideoMaterial>("prepare_video_material", { request: recordingRequest(video), preferBefore: true, includeOcr: false });
           if (!cancelled && material.srt) {
             objectURL = URL.createObjectURL(new Blob([srtToVtt(material.srt)], { type: "text/vtt" }));
             setSubtitle(objectURL);
@@ -136,7 +137,7 @@ export default function VideoLibraryPlayer({ session, initialKey, seconds = 0, s
     </Stack></Box>
     <CardContent sx={{ pt: 0, p: mini ? 1 : 2 }}>
       <Box sx={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 2 }}>
-        <Stack spacing={1.5}>
+        <Stack spacing={1.5} sx={{ minWidth: 0 }}>
           {error && <Alert severity="error" action={<Button onClick={() => setRetry((v) => v + 1)}>重试</Button>}>{error}</Alert>}
           <Box sx={{ bgcolor: "#000", aspectRatio: "16/9", position: "relative", overflow: "hidden", borderRadius: "8px" }}>
             {loading && <CircularProgress sx={{ position: "absolute", top: "45%", left: "48%" }} />}
@@ -173,7 +174,7 @@ export default function VideoLibraryPlayer({ session, initialKey, seconds = 0, s
             </>}
           </Stack></Collapse>
         </Stack>
-        <Stack spacing={0.5} sx={{ display: mini ? "none" : "flex" }}>
+        <Stack spacing={0.5} sx={{ display: mini ? "none" : "flex", gridColumn: "1 / -1" }}>
           <Typography variant="subtitle2" sx={{ mb: 1 }}>本堂课 · {session.videos.length} 小节</Typography>
           {session.videos.map((item, i) => <Button key={recordingKey(item)} variant={recordingKey(item) === active ? "contained" : "text"}
             disabled={!playable(item)} onClick={() => switchVideo(recordingKey(item))} sx={{ justifyContent: "flex-start", textAlign: "left" }}>

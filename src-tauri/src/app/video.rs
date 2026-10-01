@@ -144,11 +144,18 @@ impl App {
         canvas_course_id: i64,
         save_path: &str,
         progress_handler: F,
-    ) -> Result<()> {
+    ) -> Result<Vec<String>> {
         let res = self.client.get_ppt(canvas_course_id).await?;
+        let enabled = self.config.read().await.experimental_ppt_cleanup;
+        let (res, notes) = super::ppt::clean_up_slides(res, enabled);
+        if res.is_empty() {
+            return Err(AppError::VideoDownloadError("没有可导出的 PPT 页面，可关闭“导出 PPT 时去除无用页面”后重试".into()));
+        }
+        for note in &notes { tracing::info!("{note}"); }
         self.client
             .clone()
             .download_ppt_pdf(&res, save_path, progress_handler)
-            .await
+            .await?;
+        Ok(notes)
     }
 }

@@ -10,10 +10,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-fn citation_time(seconds: u64) -> String {
-    format!("{:02}:{:02}:{:02}", seconds / 3600, seconds / 60 % 60, seconds % 60)
-}
-
 fn preferred_subtitles(sub: crate::model::CanvasVideoSubTitleResponseBody, prefer_before: bool) -> Vec<crate::model::CanvasVideoSubTitle> {
     let (preferred, fallback) = if prefer_before {
         (sub.before_assembly_list, sub.after_assembly_list)
@@ -47,12 +43,14 @@ pub struct VideoMaterial {
     warnings: Vec<String>,
     srt: String,
     subtitle_available: bool,
+    ocr_available: bool,
 }
 
 #[derive(Serialize)]
 pub struct ExportResult {
     pub paths: Vec<String>,
     pub warnings: Vec<String>,
+    pub notes: Vec<String>,
 }
 
 fn failure(message: impl Into<String>) -> AppError {
@@ -159,7 +157,7 @@ impl App {
         Err(failure(format!("字幕不可用：{}", errors.join("；"))))
     }
 
-    async fn recording_slides(&self, request: &RecordingRequest) -> Result<Vec<CanvasVideoPPT>> {
+    async fn recording_slides_raw(&self, request: &RecordingRequest) -> Result<Vec<CanvasVideoPPT>> {
         let mut errors = Vec::new();
         for info in self.recording_infos(request, true).await? {
             match self.client.get_ppt(info.cour_id).await {
@@ -171,7 +169,8 @@ impl App {
         Err(failure(format!("PPT 不可用：{}", errors.join("；"))))
     }
 
-    pub async fn prepare_video_material(&self, request: RecordingRequest, prefer_before: bool) -> Result<VideoMaterial> {
+    pub async fn prepare_video_material(&self, request: RecordingRequest, prefer_before: bool, include_ocr: bool, clean_up_ppt: Option<bool>) -> Result<VideoMaterial> {
+        let enabled = clean_up_ppt.unwrap_or(self.config.read().await.experimental_ppt_cleanup);
         let mut material = VideoMaterial {
             key: request.key.clone(),
             title: request.title.clone(),
@@ -179,25 +178,32 @@ impl App {
             warnings: vec![],
             srt: String::new(),
             subtitle_available: false,
+            ocr_available: false,
         };
-        let key = urlencoding::encode(&request.key);
-        {
-            match self.recording_subtitle(&request, prefer_before).await {
+        let (subtitles, slides) = tokio::join!(
+            self.recording_subtitle(&request, prefer_before),
+            async { if include_ocr { self.recording_slides_raw(&request).await } else { Ok(Vec::new()) } }
+        );
+        let lines = match subtitles {
                 Ok(lines) => {
                     material.subtitle_available = true;
                     material.srt = self.client.convert_to_srt(&lines)?;
-                    for line in lines {
-                        material.text.push_str(&format!(
-                            "[{}](#video={key}&t={}) {}\n",
-                            citation_time(line.bg / 1000),
-                            line.bg / 1000,
-                            line.res
-                        ));
-                    }
+                    lines
                 }
-                Err(e) => material.warnings.push(format!("{}：{e}", request.title)),
-            }
+                Err(e) => { material.warnings.push(format!("{}：{e}", request.title)); Vec::new() }
+        };
+        let slides = match slides {
+            Ok(slides) => slides,
+            Err(e) => { material.warnings.push(format!("{}：{e}", request.title)); Vec::new() }
+        };
+        let (slides, _) = super::ppt::clean_up_slides(slides, enabled);
+        let (timeline, ocr_available, untimed) = super::ppt::material_timeline(&request.key, &lines, &slides);
+        material.ocr_available = ocr_available;
+        if include_ocr && !ocr_available && !slides.is_empty() {
+            material.warnings.push(format!("{}：PPT 未提供可用 OCR", request.title));
         }
+        if untimed > 0 { material.warnings.push(format!("{}：{untimed} 张 PPT OCR 缺少有效时间，无法定位", request.title)); }
+        material.text.push_str(&timeline);
         Ok(material)
     }
 
@@ -223,13 +229,19 @@ impl App {
         let mut result = ExportResult {
             paths: vec![],
             warnings: vec![],
+            notes: vec![],
         };
         match kind.as_str() {
             "ppt" => {
                 let mut slides = Vec::new();
+                let enabled = self.config.read().await.experimental_ppt_cleanup;
                 for request in &requests {
-                    match self.recording_slides(request).await {
-                        Ok(mut next) => slides.append(&mut next),
+                    match self.recording_slides_raw(request).await {
+                        Ok(next) => {
+                            let (mut next, notes) = super::ppt::clean_up_slides(next, enabled);
+                            result.notes.extend(notes.into_iter().map(|note| format!("{}：{note}", request.title)));
+                            slides.append(&mut next);
+                        }
                         Err(e) => result.warnings.push(format!("{}：{e}", request.title)),
                     }
                 }
@@ -327,6 +339,9 @@ impl App {
             }
             _ => return Err(failure("未知资料类型")),
         }
+        if result.paths.is_empty() && !result.notes.is_empty() && result.warnings.is_empty() {
+            return Err(failure(format!("没有可导出的 PPT 页面。{}；可关闭“导出 PPT 时去除无用页面”后重试", result.notes.join("；"))));
+        }
         if result.paths.is_empty() {
             return Err(failure(result.warnings.join("；")));
         }
@@ -361,8 +376,8 @@ mod tests {
     }
     #[test]
     fn citation_labels_use_seconds_without_srt_milliseconds() {
-        assert_eq!(citation_time(356), "00:05:56");
-        assert_eq!(citation_time(3723), "01:02:03");
+        assert_eq!(super::super::ppt::citation_time(356), "00:05:56");
+        assert_eq!(super::super::ppt::citation_time(3723), "01:02:03");
     }
     #[test]
     fn output_names_cannot_escape_directory() {

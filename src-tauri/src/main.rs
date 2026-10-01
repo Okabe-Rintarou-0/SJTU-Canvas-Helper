@@ -941,8 +941,10 @@ async fn download_subtitle(canvas_course_id: i64, save_path: String) -> Result<(
 async fn prepare_video_material(
     request: app::video_library::RecordingRequest,
     prefer_before: Option<bool>,
+    include_ocr: Option<bool>,
+    clean_up_ppt: Option<bool>,
 ) -> Result<app::video_library::VideoMaterial> {
-    APP.prepare_video_material(request, prefer_before.unwrap_or(false)).await
+    APP.prepare_video_material(request, prefer_before.unwrap_or(false), include_ocr.unwrap_or(true), clean_up_ppt).await
 }
 
 #[tauri::command]
@@ -980,7 +982,7 @@ async fn download_ppt<R: Runtime>(
     window: Window<R>,
     course_id: i64,
     save_path: String,
-) -> Result<()> {
+) -> Result<Vec<String>> {
     let window = Arc::new(window);
     APP.download_ppt(course_id, &save_path, move |progress| {
         let _ = window.clone().emit("ppt_download://progress", progress);

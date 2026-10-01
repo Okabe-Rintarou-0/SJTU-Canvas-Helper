@@ -20,7 +20,7 @@ use crate::{
     },
     error::{AppError, Result},
     model::{
-        CanvasVideo, CanvasVideoPPT, CanvasVideoSubTitle, CanvasVideoSubTitleResponseBody, Course,
+        CanvasVideo, CanvasVideoPPT, CanvasVideoPPTOcr, CanvasVideoSubTitle, CanvasVideoSubTitleResponseBody, Course,
         ItemPage, ProgressPayload, Teacher, Term, VideoCourse, VideoInfo, VideoPlayInfo,
         VideoSource,
     },
@@ -495,13 +495,40 @@ fn ppts_from_response(value: &Value) -> Result<Vec<CanvasVideoPPT>> {
         .iter()
         .filter_map(|doc| {
             let url = first_string(doc, &["imageUrl", "pptImgUrl", "url"]);
-            (!url.is_empty()).then(|| CanvasVideoPPT {
-                create_sec: first_string(doc, &["createSec", "createTime", "time"]),
-                ocr: Vec::new(),
-                ppt_img_url: Some(url),
+            let mut ocr = doc.get("textKeywordList").map(parse_ppt_ocr).unwrap_or_default();
+            if ocr.is_empty() {
+                ocr = doc.get("ocr").map(parse_ppt_ocr).unwrap_or_default();
+            }
+            let ocr_text = first_string(doc, &["ocrText"]);
+            (!url.is_empty() || !ocr.is_empty() || !ocr_text.trim().is_empty()).then(|| CanvasVideoPPT {
+                // imageSnapshotTime is a wall-clock placeholder, not the playback offset.
+                create_sec: first_string(doc, &["imageSeekTime", "createSec", "createTime", "time"]),
+                ocr,
+                ocr_text,
+                animation_start_sec: None,
+                related_slide_secs: Vec::new(),
+                ppt_img_url: (!url.is_empty()).then_some(url),
             })
         })
         .collect())
+}
+
+fn parse_ppt_ocr(value: &Value) -> Vec<CanvasVideoPPTOcr> {
+    match value {
+        Value::Array(items) => items.iter().flat_map(parse_ppt_ocr).collect(),
+        Value::Object(_) => {
+            let word = first_string(value, &["word", "text"]);
+            if word.trim().is_empty() { Vec::new() } else { vec![CanvasVideoPPTOcr { word }] }
+        }
+        Value::String(word) if !word.trim().is_empty() => {
+            // Some service versions JSON-encode the OCR list.
+            if let Ok(parsed) = serde_json::from_str::<Value>(word) {
+                if parsed.is_array() || parsed.is_object() { return parse_ppt_ocr(&parsed); }
+            }
+            vec![CanvasVideoPPTOcr { word: word.clone() }]
+        }
+        _ => Vec::new(),
+    }
 }
 
 fn jwt_token_from_location(location: &str) -> Option<String> {
@@ -1416,6 +1443,9 @@ impl Client {
         progress_handler: F,
     ) -> Result<()> {
         let total = ppts.len() as u64;
+        if !ppts.iter().any(|ppt| ppt.ppt_img_url.is_some()) {
+            return Err(AppError::VideoDownloadError("PPT 切片缺少可用图片".into()));
+        }
         let mut warning: Vec<PdfWarnMsg> = Vec::new();
         // extract savename from save_path
         let save_name = get_file_name(save_path);
@@ -1492,6 +1522,105 @@ mod tests {
     use super::*;
     use crate::client::constants::BASE_URL;
     use reqwest::header::{HeaderMap, HeaderValue, ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE};
+
+    #[test]
+    fn test_ppt_response_preserves_full_text_keywords_and_seek_times() {
+        // Synthetic content with the field names used by the service.
+        let response: Value = serde_json::from_str(include_str!("fixtures/ppt_ocr_response.json")).unwrap();
+        let slides = ppts_from_response(&response).unwrap();
+        assert_eq!(slides.len(), 2);
+        assert_eq!(slides[0].create_sec, "359");
+        assert_eq!(slides[1].create_sec, "1768");
+        assert_eq!(slides[0].ocr.len(), 5);
+        assert_eq!(slides[1].ocr[1].word, "ISBN");
+        assert_eq!(slides[1].ocr_text, response["data"]["docList"][1]["ocrText"].as_str().unwrap());
+        let (text, available, untimed) = crate::app::ppt::material_timeline("videoSpace:example", &[], &slides);
+        assert!(available);
+        assert_eq!(untimed, 0);
+        assert!(text.contains("#video=videoSpace%3Aexample&t=1768"));
+        assert!(text.contains("核对标题、版本和馆藏位置"));
+        assert!(!text.contains("[仅关键词]"));
+        assert_eq!(text.matches("核对标题、版本和馆藏位置").count(), 1);
+        assert_eq!(crate::app::ppt::filter_export_slides(slides, true).0.len(), 2);
+    }
+
+    #[test]
+    fn test_ppt_animation_simplification_and_summary_keep_complete_pages_and_original_times() {
+        // De-identified sequence preserves OCR order/noise, formulas and page counters.
+        let response: Value = serde_json::from_str(include_str!("fixtures/ppt_animation_sequence.json")).unwrap();
+        let original = ppts_from_response(&response).unwrap();
+        assert_eq!(original.len(), 41);
+        assert!(!crate::model::AppConfig::default().experimental_ppt_cleanup);
+        assert_eq!(crate::app::ppt::simplify_animation_slides(original.clone(), false), (original.clone(), vec![]));
+        let (kept, notes) = crate::app::ppt::simplify_animation_slides(original, true);
+        assert_eq!(kept.len(), 38);
+        assert!(notes[0].contains("41 张 → 38 张"));
+        for time in ["995", "1555", "2555"] {
+            assert!(!kept.iter().any(|slide| slide.create_sec == time), "redundant slice {time}");
+        }
+        let complete = kept.iter().find(|slide| slide.create_sec == "1061").unwrap();
+        assert_eq!(complete.animation_start_sec.as_deref(), Some("995"));
+        assert!(complete.ocr_text.contains("负采样（negative sampling）"));
+        // Complete annotated formula pages are retained, while different pages and
+        // different section highlights are preserved even when their titles match.
+        for time in ["80", "415", "418", "824", "1148", "1418", "2743", "2865", "402", "429", "434", "444", "514", "683", "736", "790", "911", "1800", "2867", "952", "2382", "2541", "2913"] {
+            assert!(kept.iter().any(|slide| slide.create_sec == time));
+        }
+        let all_times: std::collections::HashSet<_> = kept.iter().flat_map(|slide| std::iter::once(slide.create_sec.clone()).chain(slide.related_slide_secs.iter().cloned())).collect();
+        assert_eq!(all_times.len(), 41);
+        let subtitles = vec![CanvasVideoSubTitle { bg: 995000, res: "这一页开始讲优化".into(), ..Default::default() }];
+        let (text, available, _) = crate::app::ppt::material_timeline("videoSpace:example", &subtitles, &kept);
+        assert!(available);
+        assert!(text.contains("&t=995) [字幕] 这一页开始讲优化"));
+        assert!(!text.contains("&t=995) [PPT OCR"));
+        assert!(text.contains("&t=1061) [PPT OCR"));
+        assert!(!text.contains("逐步展开"));
+        assert!(text.contains("&t=2743)"));
+        assert!(text.contains("&t=2867)"));
+        assert!(!text.contains("&t=1555)"));
+        assert!(text.contains("&t=1800) [PPT OCR"));
+        assert!(text.contains("&t=418)"));
+        assert!(text.contains("&t=434) [PPT OCR"));
+        assert_eq!(text.matches("[PPT OCR]").count(), 37); // one image has no OCR
+        // The same resulting slice list is the input to PDF export.
+        assert_eq!(crate::app::ppt::filter_export_slides(kept, false).0.len(), 38);
+    }
+
+    #[test]
+    fn test_ppt_full_text_only_and_zero_seek_time_take_precedence() {
+        let slides = ppts_from_response(&serde_json::json!({"data": {"docList": [
+            {"imageSeekTime": 0, "createSec": 999, "imageSnapshotTime": "1970-01-01 08:00:00", "ocrText": "全文独立可用", "textKeywordList": []},
+            {"imageSnapshotTime": "1970-01-01 08:00:02", "ocrText": "时间未知全文"}
+        ]}})).unwrap();
+        assert_eq!(slides.len(), 2);
+        assert_eq!(slides[0].create_sec, "0");
+        assert_eq!(slides[1].create_sec, "");
+        let (text, available, untimed) = crate::app::ppt::material_timeline("canvas:0", &[], &slides);
+        assert!(available);
+        assert_eq!(untimed, 1);
+        assert!(text.contains("&t=0)"));
+        assert!(text.contains("全文独立可用"));
+        assert!(text.contains("时间未知全文"));
+        assert!(!text.contains("&t=999"));
+    }
+
+    #[test]
+    fn test_ppt_preserves_ocr_across_service_shapes_and_missing_images() {
+        let slides = ppts_from_response(&serde_json::json!({"data": {"docList": [
+            {"createSec": 356, "imageUrl": "https://example.test/one.png", "ocr": [{"word": "语法分析"}, {"word": "解析树"}]},
+            {"createSec": "00:07:01", "pptImgUrl": "https://example.test/two.png", "ocr": ["Parser", {"text": "规约"}, null, {"word": ""}]},
+            {"time": "bad", "ocr": "[{\"word\":\"无图片文字\"}]"},
+            {"createSec": 0, "url": "https://example.test/empty.png"}
+        ]}})).unwrap();
+        assert_eq!(slides.len(), 4);
+        assert_eq!(slides[0].create_sec, "356");
+        assert_eq!(slides[0].ocr[0].word, "语法分析");
+        assert_eq!(slides[1].ocr.len(), 2);
+        assert_eq!(slides[1].ocr[1].word, "规约");
+        assert_eq!(slides[2].ocr[0].word, "无图片文字");
+        assert_eq!(slides[2].ppt_img_url, None);
+        assert!(slides[3].ocr.is_empty());
+    }
 
     #[test]
     fn test_video_space_courses_use_teaching_class_ids() {

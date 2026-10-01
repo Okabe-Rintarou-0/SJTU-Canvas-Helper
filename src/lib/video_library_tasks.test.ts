@@ -10,20 +10,28 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({ save: mocks.save }));
 afterEach(() => { taskManager.getSnapshot().forEach((task) => taskManager.remove(task.id)); vi.clearAllMocks(); });
 const video = { source: "canvas", videoId: "a", videoName: "第一小节", courseBeginTime: "2026-09-28 08:00" } as CanvasVideo;
 describe("batch video tasks", () => {
-  it("opens exported files through the local path command", async () => {
-    mocks.invoke.mockImplementation(async (command: string) => command === "create_video_export_directory" ? "D:/课程/课堂" : { paths: ["D:/课程/课堂/ppt.pdf"], warnings: [] });
+  it("logs intentional PPT exclusions without treating them as failed exports", async () => {
+    mocks.invoke.mockImplementation(async (command: string) => command === "create_video_export_directory" ? "D:/课程/课堂" : { paths: ["D:/课程/课堂/ppt.pdf"], warnings: [], notes: ["实验性过滤：第 2 张切片识别为签到页面，未导出"] });
     await enqueueVideoExports([{ id: "session", title: "课堂", videos: [video] }], { video: false, ppt: true, subtitle: false, pptPerSession: true, tracks: "all" }, "D:/课程", "课程");
     await vi.waitFor(() => expect(taskManager.getSnapshot()[0].status).toBe("succeeded"));
+    expect(taskManager.getSnapshot()[0].log).toContain("签到页面");
     await taskManager.action(taskManager.getSnapshot()[0].id, "open");
     expect(mocks.invoke).toHaveBeenCalledWith("open_local_path", { path: "D:/课程/课堂/ppt.pdf" });
     expect(mocks.open).not.toHaveBeenCalled();
+  });
+  it("retains filtering notes for single PPT save-as", async () => {
+    mocks.save.mockResolvedValue("D:/课程/ppt.pdf");
+    mocks.invoke.mockImplementation(async (command: string) => command === "get_video_play_info" ? { courId: 42 } : ["实验性过滤：Windows 桌面"]);
+    await saveRecordingMaterial(video, "ppt");
+    await vi.waitFor(() => expect(taskManager.getSnapshot()[0].status).toBe("succeeded"));
+    expect(taskManager.getSnapshot()[0].log).toContain("Windows 桌面");
   });
   it("saves individual subtitles using BeforeAssembly", async () => {
     mocks.save.mockResolvedValue("D:/课程/subtitle.srt");
     mocks.invoke.mockResolvedValue({ srt: "字幕内容" });
     expect(await saveRecordingMaterial(video, "subtitle")).toBe(true);
     await vi.waitFor(() => expect(taskManager.getSnapshot()[0].status).toBe("succeeded"));
-    expect(mocks.invoke).toHaveBeenCalledWith("prepare_video_material", { request: expect.objectContaining({ key: "canvas:a" }), preferBefore: true });
+    expect(mocks.invoke).toHaveBeenCalledWith("prepare_video_material", { request: expect.objectContaining({ key: "canvas:a" }), preferBefore: true, includeOcr: false });
     expect(mocks.invoke).toHaveBeenCalledWith("save_path_file", { path: "D:/课程/subtitle.srt", content: Array.from(new TextEncoder().encode("字幕内容")) });
     await taskManager.action(taskManager.getSnapshot()[0].id, "open");
     expect(mocks.invoke).toHaveBeenCalledWith("open_local_path", { path: "D:/课程/subtitle.srt" });

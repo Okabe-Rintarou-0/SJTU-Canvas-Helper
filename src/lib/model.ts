@@ -311,6 +311,7 @@ export interface AppConfig {
     theme: Theme;
     compact_mode: boolean;
     experimental_task_center_only?: boolean;
+    experimental_ppt_cleanup?: boolean;
     color_primary: Option<string>;
     mcp_enabled: boolean;
     mcp_port: number;

@@ -6,6 +6,14 @@ const entry: VideoSummaryCache = { key: "key", namespace: "account-course-model"
 beforeEach(() => localStorage.clear());
 afterEach(() => vi.restoreAllMocks());
 describe("video summary persistence", () => {
+  it("rebuilds old contexts after OCR adaptation and material format changes", () => {
+    localStorage.setItem("video-material-summaries-v2", JSON.stringify([entry]));
+    localStorage.setItem("video-material-summaries-v3", JSON.stringify([entry]));
+    localStorage.setItem("video-material-summaries-v5", JSON.stringify([entry]));
+    expect(readSummaryCache()).toEqual([]);
+    expect(writeSummaryCache({ ...entry, text: "完整 OCR 上下文" })).toBe(true);
+    expect(readSummaryCache()[0].text).toBe("完整 OCR 上下文");
+  });
   it("isolates account/course/model, recording set and organization", () => {
     const key = summaryCacheKey("a", scopes, "combined");
     expect(summaryCacheKey("b", scopes, "combined")).not.toBe(key);
@@ -27,7 +35,7 @@ describe("video summary persistence", () => {
     expect(readSummaryCache()).toHaveLength(12);
     expect(readSummaryCache()[0].key).toBe("14");
     expect(writeSummaryCache({ ...entry, text: "中".repeat(1_100_000) })).toBe(false);
-    localStorage.setItem("video-subtitle-summaries-v1", "{bad json");
+    localStorage.setItem("video-material-summaries-v6", "{bad json");
     expect(readSummaryCache()).toEqual([]);
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
     expect(writeSummaryCache(entry)).toBe(false);

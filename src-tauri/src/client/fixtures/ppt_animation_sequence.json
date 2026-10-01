@@ -1,0 +1,522 @@
+{
+  "status": 200,
+  "data": {
+    "docList": [
+      {
+        "imageSeekTime": 1,
+        "imageSnapshotTime": "1970-01-01 08:00:00",
+        "imageUrl": "https://example.test/ppt/slide-01.png",
+        "ocrText": "K腾讯会议本地模式END大學etcSHANGHAI JIAO TONG UNIVERSITY此电脑微信回收站DigitalClock NextAdobe10-其他核反Reader X应堆基本类...新学期新气象FGoogle飞书ChromeNMicrosoftEdge欢迎回到教学楼POTQQQ影音7R 4.4.1VLC mediaplayerM14:502026/9/20",
+        "textKeywordList": [
+          "腾讯会议",
+          "本地模式",
+          "DigitalClock",
+          "Adobe",
+          "Reader"
+        ]
+      },
+      {
+        "imageSeekTime": 66,
+        "imageSnapshotTime": "1970-01-01 08:00:00",
+        "imageUrl": "https://example.test/ppt/slide-02.png",
+        "ocrText": "",
+        "textKeywordList": []
+      },
+      {
+        "imageSeekTime": 69,
+        "imageSnapshotTime": "1970-01-01 08:00:00",
+        "imageUrl": "https://example.test/ppt/slide-03.png",
+        "ocrText": "PowerPoint 文件 编辑 视图 插入 格式 排列 工具 幻灯片放映 窗口 帮助9月20日周日14:51",
+        "textKeywordList": [
+          "PowerPoint",
+          "编辑",
+          "视图",
+          "插入",
+          "格式"
+        ]
+      },
+      {
+        "imageSeekTime": 80,
+        "imageSnapshotTime": "1970-01-01 08:00:00",
+        "imageUrl": "https://example.test/ppt/slide-04.png",
+        "ocrText": "反向传播算法(Back-propagation)y = Softmax(o)输入层隐层输出层= Softmax(Vh)x1y₁= Softmax(VUx)x2y₂E = − log yjxkUVyjexp(oj)= − log∑t=1 exp(ot)∑NxN= −0j + logexp(ot)hynt=1xyN= −vjT Ux + log∑exp(vtTUx)t=1∂E∂uccSJTU2. 词向量课程示例27 / 49",
+        "textKeywordList": [
+          "反向传播算法",
+          "Softmax",
+          "词向量",
+          "课程示例"
+        ]
+      },
+      {
+        "imageSeekTime": 402,
+        "imageSnapshotTime": "1970-01-01 08:00:00",
+        "imageUrl": "https://example.test/ppt/slide-05.png",
+        "ocrText": "反向传播算法(Back-propagation)y = Softmax(o)输入层隐层输出层= Softmax(Vh)x1y₁= Softmax(VUx)x2y₂E = − log yjxkUVyjexp(oj)= − logΣt=1 exp(ot)∑NxN= −0j + logexp(ot)hynt=1xyN∑= −vjT Ux + logexp(vtTUx)t=1yih∂E1= −h + yih (i = j)Ux+exp(viTUx)Ux∑t=1∂E∂viexp(vtUTx)三∂v∂E1yih(i ≠ j)exp(viT Ux)Ux=∂viNexp(vtUTx)∑t=1SJTU2. 词向量课程示例24 / 49",
+        "textKeywordList": [
+          "反向传播算法",
+          "Softmax",
+          "输入层",
+          "隐层",
+          "输出层"
+        ]
+      },
+      {
+        "imageSeekTime": 415,
+        "imageSnapshotTime": "1970-01-01 08:00:00",
+        "imageUrl": "https://example.test/ppt/slide-06.png",
+        "ocrText": "反向传播算法(Back-propagation)y = Softmax(o)输入层隐层输出层= Softmax(Vh)x1y₁= Softmax(VUx)x2y₂E = − log yjxkUVyjexp(oj)= − logΣt=1 exp(ot)∑NXN= −0j + logexp(ot)hynt=1xyN= −vjT Ux + log∑exp(vtTUx)t=1yi − 1 (i = j)∂E= ehTe ∈ RN×1∂Vyi (i ≠ j)SJTU2. 词向量课程示例26 / 49",
+        "textKeywordList": [
+          "反向传播算法",
+          "Softmax",
+          "词向量",
+          "课程示例"
+        ]
+      },
+      {
+        "imageSeekTime": 418,
+        "imageSnapshotTime": "1970-01-01 08:00:00",
+        "imageUrl": "https://example.test/ppt/slide-07.png",
+        "ocrText": "反向传播算法(Back-propagation)y = Softmax(o)输入层隐层输出层= Softmax(Vh)x1y₁= Softmax(VUx)x2y₂E = − log yjxkUVyjexp(oj)= − logΣt=1 exp(ot)∑NxN= −0j + logexp(ot)hynt=1xyN= −vjT Ux + logexp(vtTUx)t=1∂E1N∑= −vjTxT十exp(vtUx) vtTxTΣt=1∂Uexp(vtUx)t=11∑Nexp(vtUx) vtT − vjTT= VTexT三∑t=1Xexp(vtUx)t=1SJTU2. 词向量课程示例27 / 49",
+        "textKeywordList": [
+          "反向传播算法",
+          "Softmax",
+          "词向量",
+          "课程示例"
+        ]
+      },
+      {
+        "imageSeekTime": 429,
+        "imageSnapshotTime": "1970-01-01 08:00:00",
+        "imageUrl": "https://example.test/ppt/slide-08.png",
+        "ocrText": "反向传播算法(Back-propagation)y = Softmax(o)输入层隐层输出层= Softmax(Vh)x1y₁= Softmax(VUx)x2y₂E = − log yjxkUVyjexp(oj)= − logΣt=1 exp(ot)∑NXN= −0j + logexp(ot)hynt=1xyN= −vjT Ux + log∑exp(vtTUx)t=1yi − 1 (i = j)∂E= ehTe ∈ RN×1∂Vyi (i ≠ j)SJTU2. 词向量课程示例26 / 49",
+        "textKeywordList": [
+          "反向传播算法",
+          "Softmax",
+          "词向量",
+          "课程示例"
+        ]
+      },
+      {
+        "imageSeekTime": 434,
+        "imageSnapshotTime": "1970-01-01 08:00:00",
+        "imageUrl": "https://example.test/ppt/slide-09.png",
+        "ocrText": "反向传播算法(Back-propagation)y = Softmax(o)输入层隐层输出层= Softmax(Vh)x1y₁= Softmax(VUx)x2y₂E = − log yjxkUVyjexp(oj)= − logΣt=1 exp(ot)∑NXN= −0j + logexp(ot)hynt=1xyN= −vjT Ux + logexp(vtTUx)t=1∂E1N∑= −vjTxT+exp(vtUx) vtTxT∑t=1∂Uexp(vtUx)t=11∑Nexp(vtUx) vtT − vjT= VTexT三∑t=1XTexp(vtUx)t=1SJTU2. 词向量课程示例27 / 49",
+        "textKeywordList": [
+          "反向传播算法",
+          "Softmax",
+          "输入层",
+          "隐层",
+          "输出层"
+        ]
+      },
+      {
+        "imageSeekTime": 444,
+        "imageSnapshotTime": "1970-01-01 08:00:00",
+        "imageUrl": "https://example.test/ppt/slide-10.png",
+        "ocrText": "反向传播算法(Back-propagation)y = Softmax(o)输入层隐层输出层= Softmax(Vh)x1y₁= Softmax(VUx)x2y₂E = − log yjxkUVyjexp(oj)= − logΣt=1 exp(ot)∑NXN= −0j + logexp(ot)hynt=1xyN= −vjT Ux + log∑exp(vtTUx)t=1∂E= ehT∂V∂E= VTexT∂USJTU2. 词向量课程示例28/49",
+        "textKeywordList": [
+          "反向传播算法",
+          "Softmax",
+          "词向量",
+          "课程示例"
+        ]
+      },
+      {
+        "imageSeekTime": 514,
+        "imageSnapshotTime": "1970-01-01 08:00:01",
+        "imageUrl": "https://example.test/ppt/slide-11.png",
+        "ocrText": "反向传播算法(Back-propagation)现在问题来了：输入层隐层输出层明明是求导，为什么叫他x1y₁“反向传播”呢？x2y₂xkUVyjxNhynxy∂E∂E= ehTV = V − η= V − ηehT∂v∂V设置学习率∂E∂E= VTexTU=U−η= U −ηVTexT∂U∂USJTU2. 词向量课程示例29 / 49",
+        "textKeywordList": [
+          "反向传播算法",
+          "输入层",
+          "隐层",
+          "输出层",
+          "学习率"
+        ]
+      },
+      {
+        "imageSeekTime": 683,
+        "imageSnapshotTime": "1970-01-01 08:00:01",
+        "imageUrl": "https://example.test/ppt/slide-12.png",
+        "ocrText": "反向传播算法(Back-propagation)现在问题来了：输入层隐层输出层明明是求导，为什么叫他x1y₁“反向传播”呢？x2y₂反向传播，xkUVyj指的是预测误差（e）的反向传播。xNhynxy在这个例子里，我们可以把每一个权值矩阵的梯度分解成两部分，即：∂E1. 该层的输入，和= ehT∂v2. 该层接收到的误差信号∂E如果层数继续加深，你会发现每一层的梯度都满足VTex=1∂U这个形式。且e每一次都是乘上前一层权值的转置。SJTU2. 词向量课程示例30/49",
+        "textKeywordList": [
+          "反向传播算法",
+          "输入层",
+          "隐层",
+          "输出层",
+          "预测误差"
+        ]
+      },
+      {
+        "imageSeekTime": 736,
+        "imageSnapshotTime": "1970-01-01 08:00:01",
+        "imageUrl": "https://example.test/ppt/slide-13.png",
+        "ocrText": "反向传播算法(Back-propagation)现在问题来了：输入层隐层输出层明明是求导，为什么叫他x1y₁“反向传播”呢？x2y₂反向传播，xkUVyj指的是预测误差（e）的反向传播。xNhynxy在这个例子里，我们可以把每一个权值矩阵的梯度分解成两部分，即：∂E1. 该层的输入，和= ehT∂v2. 该层接收到的误差信号∂E注意，如果中间层存在激活函数，则e向前传播时VTex'=∂U还要再乘上激活函数的导数SJTU2. 词向量课程示例31/49",
+        "textKeywordList": [
+          "反向传播算法",
+          "输入层",
+          "隐层",
+          "输出层",
+          "预测误差"
+        ]
+      },
+      {
+        "imageSeekTime": 790,
+        "imageSnapshotTime": "1970-01-01 08:00:01",
+        "imageUrl": "https://example.test/ppt/slide-14.png",
+        "ocrText": "CBOW模型：考虑更多的上下文输入层xk1U隐层输出层y₁y₂UVxk2yjhynyUXkC1-Ch =(Ux1 + Ux₂ + ·· + Uxc)h = UxSJTU2. 词向量课程示例32/49",
+        "textKeywordList": [
+          "CBOW模型",
+          "上下文输入层",
+          "隐层输出层",
+          "词向量",
+          "课程示例"
+        ]
+      },
+      {
+        "imageSeekTime": 824,
+        "imageSnapshotTime": "1970-01-01 08:00:01",
+        "imageUrl": "https://example.test/ppt/slide-15.png",
+        "ocrText": "Skip-gram模型输出层yj1} 看见输入层隐层Vx1x2yj2一只小猫xkUVxNhVyjc跑进https://arxiv.org/pdf/1411.2738.pdfSJTU2. 词向量课程示例33/49",
+        "textKeywordList": [
+          "Skip-gram模型",
+          "输入层",
+          "隐层",
+          "词向量",
+          "课程示例"
+        ]
+      },
+      {
+        "imageSeekTime": 911,
+        "imageSnapshotTime": "1970-01-01 08:00:01",
+        "imageUrl": "https://example.test/ppt/slide-16.png",
+        "ocrText": "CBOW模型：考虑更多的上下文输入层xk1U隐层输出层y1y₂UVyjxk2hynyUXkCh =1(Ux1 + Ux₂ + ·· + Uxc)Ch = UxSJTU2. 词向量课程示例32 /49",
+        "textKeywordList": [
+          "CBOW模型",
+          "上下文输入层",
+          "隐层输出层",
+          "词向量",
+          "课程示例"
+        ]
+      },
+      {
+        "imageSeekTime": 921,
+        "imageSnapshotTime": "1970-01-01 08:00:01",
+        "imageUrl": "https://example.test/ppt/slide-17.png",
+        "ocrText": "Skip-gram模型输出层yj1} 看见输入层隐层Vx1x2yj2一只小猫xkUVxNhVyjc跑进https://arxiv.org/pdf/1411.2738.pdfSJTU2. 词向量课程示例33/49",
+        "textKeywordList": [
+          "Skip-gram模型",
+          "输入层",
+          "隐层",
+          "词向量",
+          "课程示例"
+        ]
+      },
+      {
+        "imageSeekTime": 952,
+        "imageSnapshotTime": "1970-01-01 08:00:01",
+        "imageUrl": "https://example.test/ppt/slide-18.png",
+        "ocrText": "目录词的表示基础版：词的单热点表示进阶版：词的分布式表示(词向量)两个经典的词向量模型CBOW模型Skip-gram模型词向量模型的训练：反向传播算法（Back-propagation)词向量模型的优化Hierarchical SoftmaxNegative Sampling词向量的性质词向量模型的缺点高级版：与上下文相关的词向量(context-dependent word vectors)常用工具SJTU2. 词向量课程示例34/49",
+        "textKeywordList": [
+          "词向量",
+          "CBOW模型",
+          "Skip-gram模型",
+          "反向传播算法",
+          "Hierarchical Softmax"
+        ]
+      },
+      {
+        "imageSeekTime": 995,
+        "imageSnapshotTime": "1970-01-01 08:00:01",
+        "imageUrl": "https://example.test/ppt/slide-19.png",
+        "ocrText": "词向量模型的优化实际应用中词表巨大→softmax中又涉及大量无法约简的指数运算，因此计算开销非常大SJTU2. 词向量课程示例35/49",
+        "textKeywordList": [
+          "词向量模型",
+          "softmax",
+          "指数运算",
+          "计算开销"
+        ]
+      },
+      {
+        "imageSeekTime": 1061,
+        "imageSnapshotTime": "1970-01-01 08:00:01",
+        "imageUrl": "https://example.test/ppt/slide-20.png",
+        "ocrText": "词向量模型的优化实际应用中词表巨大→softmax中又涉及大量无法约简的指数运算，因此计算开销非常大分层柔性最大化（hierarchical softmax）把一次大规模多分类，拆成沿树路径的一系列二分类。负采样（negative sampling）不再计算完整概率分布，只区分真实词和少量采样出的噪声词。SJTU2. 词向量课程示例35 / 49",
+        "textKeywordList": [
+          "词向量模型",
+          "softmax",
+          "分层柔性最大化",
+          "负采样",
+          "课程示例"
+        ]
+      },
+      {
+        "imageSeekTime": 1148,
+        "imageSnapshotTime": "1970-01-01 08:00:01",
+        "imageUrl": "https://example.test/ppt/slide-21.png",
+        "ocrText": "词向量模型的优化：Hierarchical Softmax将多分类问题转换为多个二分类问题，组成一棵二叉分类树不是从N个词中分类，而是连续完成logN个二分类hhy1y2y3y8y1y2y3y4Y5y6y7y8Full SoftmaxHierarchical SoftmaxSJTU2. 词向量课程示例36 / 49",
+        "textKeywordList": [
+          "Hierarchical Softmax",
+          "Full Softmax",
+          "二分类",
+          "词向量",
+          "课程示例"
+        ]
+      },
+      {
+        "imageSeekTime": 1283,
+        "imageSnapshotTime": "1970-01-01 08:00:01",
+        "imageUrl": "https://example.test/ppt/slide-22.png",
+        "ocrText": "词向量模型的优化：Hierarchical Softmax每个节点都有一个分类参数vn目标词的概率=从根节点走到该词的各次二分类概率之积hP(R|h) = σ(vTh)RP(y₆|h) = P(R|h)·P(L|h)·P(R|h)LRσ：Sigmoid函数y6Full SoftmaxHierarchical Softmax计算全部N个词只计算目标路径O(N)O(logN)SJTU2. 词向量课程示例37 / 49",
+        "textKeywordList": [
+          "Hierarchical Softmax",
+          "分类参数",
+          "Sigmoid函数",
+          "目标路径"
+        ]
+      },
+      {
+        "imageSeekTime": 1418,
+        "imageSnapshotTime": "1970-01-01 08:00:01",
+        "imageUrl": "https://example.test/ppt/slide-23.png",
+        "ocrText": "词向量模型的优化：Hierarchical Softmax将多分类问题转换为多个二分类问题，组成一棵二叉分类树不是从N个词中分类，而是连续完成logN个二分类hhy1y2y3y8y1y2y3y4Y5y6y7y8Full SoftmaxHierarchical SoftmaxSJTU2. 词向量课程示例36 / 49",
+        "textKeywordList": [
+          "Hierarchical Softmax",
+          "Full Softmax",
+          "二分类",
+          "词向量",
+          "课程示例"
+        ]
+      },
+      {
+        "imageSeekTime": 1464,
+        "imageSnapshotTime": "1970-01-01 08:00:01",
+        "imageUrl": "https://example.test/ppt/slide-24.png",
+        "ocrText": "词向量模型的优化：Negative Sampling输入层隐层输出层x₁y1x2y₂xkUVyjxNhynxyexp(oj)大量的计算来自于输出层里的归一化：yj =Σt=1 exp(ot)实际上我们并不需要真正去计算上面这个概率只需要模型能够在正确单词上的输出尽可能大，错误单词上的输出尽可能小，就行了。SJTU2. 词向量课程示例38/49",
+        "textKeywordList": [
+          "Negative Sampling",
+          "输出层",
+          "归一化",
+          "正确单词",
+          "错误单词"
+        ]
+      },
+      {
+        "imageSeekTime": 1555,
+        "imageSnapshotTime": "1970-01-01 08:00:02",
+        "imageUrl": "https://example.test/ppt/slide-25.png",
+        "ocrText": "词向量模型的优化：Negative Sampling我们把优化函数重新设计成这样：1. 最大化正确单词上的输出2. 定义一个噪声分布，按照这个噪声分布去词汇表里随机取几个词，然后最小化这些单词上的输出。不需要归一化，甚至不需要算每个单词的输出概率！KE = log σ(oj) + Ei~Pnoise(i) [log(σ(−oi))]i=1ey1σ(y) =ey + 11 + e−ySJTU2. 词向量课程示例39/49",
+        "textKeywordList": [
+          "Negative Sampling",
+          "优化函数",
+          "噪声分布",
+          "输出概率",
+          "词向量"
+        ]
+      },
+      {
+        "imageSeekTime": 1800,
+        "imageSnapshotTime": "1970-01-01 08:00:02",
+        "imageUrl": "https://example.test/ppt/slide-26.png",
+        "ocrText": "词向量模型的优化：Negative Sampling我们把优化函数重新设计成这样：1. 最大化正确单词上的输出2. 定义一个噪声分布，按照这个噪声分布去词汇表里随机取几个词，然后最小化这些单词上的输出。不需要归一化，甚至不需要算每个单词的输出概率！K∑Ei~Pnoise(i) [log(σ(−oi))]E =log σ(oj)i=1最大化正确单词上的输出从噪声分布Pnoise中采样K个样本，ey1并最小化这些噪声单词上的输出σ(y) =ey + 11 + e−ySJTU2. 词向量课程示例39/49",
+        "textKeywordList": [
+          "Negative Sampling",
+          "噪声分布",
+          "输出概率",
+          "词向量",
+          "课程示例"
+        ]
+      },
+      {
+        "imageSeekTime": 2060,
+        "imageSnapshotTime": "1970-01-01 08:00:02",
+        "imageUrl": "https://example.test/ppt/slide-27.png",
+        "ocrText": "词向量模型的优化：Negative Sampling噪声分布Pnoise采用如下分布：3-4iαP(wi|C) =3-4J∑j αf(x) = x 4 函数图像其中αi表示词i在语料库中出现频率采用小于1的幂形式可以适当增加罕见词被采样到的概率，有助于改善训练的词向量的性能SJTU2. 词向量课程示例40/49",
+        "textKeywordList": [
+          "Negative Sampling",
+          "噪声分布",
+          "Pnoise",
+          "函数图像",
+          "词向量"
+        ]
+      },
+      {
+        "imageSeekTime": 2235,
+        "imageSnapshotTime": "1970-01-01 08:00:02",
+        "imageUrl": "https://example.test/ppt/slide-28.png",
+        "ocrText": "Hierarchical Softmax v.s. Negative Sampling两种优化思想：Hierarchical Softmax改的是输出结构Negative Sampling 改的是训练目标SJTU2. 词向量课程示例41 / 49",
+        "textKeywordList": [
+          "Hierarchical Softmax",
+          "Negative Sampling",
+          "输出结构",
+          "训练目标",
+          "词向量"
+        ]
+      },
+      {
+        "imageSeekTime": 2292,
+        "imageSnapshotTime": "1970-01-01 08:00:02",
+        "imageUrl": "https://example.test/ppt/slide-29.png",
+        "ocrText": "文献检索示例：选择合适的研究主题，并根据研究问题检索文献、比较研究方法、核对来源和整理引用。随后记录检索条件以及筛选理由，便于再次检查结果。SJTU 42/49",
+        "textKeywordList": [
+          "研究主题",
+          "文献检索",
+          "研究方法",
+          "引用",
+          "课程示例"
+        ]
+      },
+      {
+        "imageSeekTime": 2382,
+        "imageSnapshotTime": "1970-01-01 08:00:02",
+        "imageUrl": "https://example.test/ppt/slide-30.png",
+        "ocrText": "目录词的表示基础版：词的单热点表示进阶版：词的分布式表示(词向量)两个经典的词向量模型CBOW模型Skip-gram模型词向量模型的训练：反向传播算法（Back-propagation)词向量模型的优化Hierarchical SoftmaxNegative Sampling词向量的性质词向量模型的缺点高级版：与上下文相关的词向量(context-dependent word vectors)常用工具SJTU2. 词向量课程示例43 / 49",
+        "textKeywordList": [
+          "词向量",
+          "CBOW模型",
+          "Skip-gram模型",
+          "反向传播算法",
+          "Hierarchical Softmax"
+        ]
+      },
+      {
+        "imageSeekTime": 2400,
+        "imageSnapshotTime": "1970-01-01 08:00:02",
+        "imageUrl": "https://example.test/ppt/slide-31.png",
+        "ocrText": "词向量的性质slowerqueen[0.3,-0.1,0.4,...,0.7]manslowkingslowestwomangirlfasterqueenfatherkingboy[0.2,-0.2,0.1,...,0.8]catfastfastestlongercatssondogmotherdaughterlonglongestman[0.1,0.7,-0.8,...,0.1]dogsFrance EnglandItalyhesheParisLondonRomehimselfherselfwoman[0.7,0.5,-0.3,...,-0.2]▶SJTU2. 词向量课程示例44 / 49",
+        "textKeywordList": [
+          "slowerqueen",
+          "manslowkingslowestwomangirlfasterqueen",
+          "fatherkingboy",
+          "catfastfastestlongercatssondogmotherdaughterlonglongestman",
+          "woman"
+        ]
+      },
+      {
+        "imageSeekTime": 2541,
+        "imageSnapshotTime": "1970-01-01 08:00:03",
+        "imageUrl": "https://example.test/ppt/slide-32.png",
+        "ocrText": "目录词的表示基础版：词的单热点表示进阶版：词的分布式表示(词向量)两个经典的词向量模型CBOW模型Skip-gram模型词向量模型的训练：反向传播算法（Back-propagation)词向量模型的优化Hierarchical SoftmaxNegative Sampling词向量的性质词向量模型的缺点高级版：与上下文相关的词向量（context-dependent word vectors）常用工具SJTU2. 词向量课程示例45 / 49",
+        "textKeywordList": [
+          "词向量",
+          "CBOW模型",
+          "Skip-gram模型",
+          "反向传播算法",
+          "Hierarchical Softmax"
+        ]
+      },
+      {
+        "imageSeekTime": 2555,
+        "imageSnapshotTime": "1970-01-01 08:00:03",
+        "imageUrl": "https://example.test/ppt/slide-33.png",
+        "ocrText": "词向量模型的缺点他手里拿了一个苹果正在吃他手里拿了一个苹果然后插上了充电器SJTU2. 词向量课程示例46 / 49",
+        "textKeywordList": [
+          "苹果",
+          "充电器",
+          "词向量",
+          "课程示例"
+        ]
+      },
+      {
+        "imageSeekTime": 2743,
+        "imageSnapshotTime": "1970-01-01 08:00:03",
+        "imageUrl": "https://example.test/ppt/slide-34.png",
+        "ocrText": "词向量模型的缺点他手里拿了一个苹果正在吃他手里拿了一个苹果然后插上了充电器u(苹果₁)u(苹果2)1. 没法提前知道每个词具体不同意思的数量2. 没法提前知道当前句子里的词对应的意思是哪一个O要解决上述问题，我们需要词向量的高级版：与上下文相关的词向量4.1动态词向量/预训练模型(context-dependent word vectors)CCSJTU2. 词向量课程示例46 / 49",
+        "textKeywordList": [
+          "苹果",
+          "充电器",
+          "词向量",
+          "课程示例"
+        ]
+      },
+      {
+        "imageSeekTime": 2865,
+        "imageSnapshotTime": "1970-01-01 08:00:03",
+        "imageUrl": "https://example.test/ppt/slide-35.png",
+        "ocrText": "目录词的表示基础版：词的单热点表示进阶版：词的分布式表示(词向量)两个经典的词向量模型CBOW模型Skip-gram模型词向量模型的训练：反向传播算法（Back-propagation)词向量模型的优化Hierarchical SoftmaxNegative Sampling词向量的性质词向量模型的缺点高级版：与上下文相关的词向量（context-dependent word vectors）常用工具SJTU2. 词向量课程示例47 / 49",
+        "textKeywordList": [
+          "词向量",
+          "CBOW模型",
+          "Skip-gram模型",
+          "反向传播算法",
+          "Hierarchical Softmax"
+        ]
+      },
+      {
+        "imageSeekTime": 2867,
+        "imageSnapshotTime": "1970-01-01 08:00:03",
+        "imageUrl": "https://example.test/ppt/slide-36.png",
+        "ocrText": "词向量模型的缺点他手里拿了一个苹果正在吃他手里拿了一个苹果然后插上了充电器u(苹果₁)u(苹果2)1. 没法提前知道每个词具体不同意思的数量2. 没法提前知道当前句子里的词对应的意思是哪一个O要解决上述问题，我们需要词向量的高级版：与上下文相关的词向量4.1动态词向量/预训练模型(context-dependent word vectors)SJTU2. 词向量课程示例46 / 49",
+        "textKeywordList": [
+          "苹果",
+          "充电器",
+          "词向量",
+          "课程示例"
+        ]
+      },
+      {
+        "imageSeekTime": 2913,
+        "imageSnapshotTime": "1970-01-01 08:00:03",
+        "imageUrl": "https://example.test/ppt/slide-37.png",
+        "ocrText": "目录词的表示基础版：词的单热点表示进阶版：词的分布式表示(词向量)两个经典的词向量模型CBOW模型Skip-gram模型词向量模型的训练：反向传播算法（Back-propagation)词向量模型的优化Hierarchical SoftmaxNegative Sampling词向量的性质词向量模型的缺点高级版：与上下文相关的词向量（context-dependent word vectors）常用工具CSJTU2. 词向量课程示例47 / 49",
+        "textKeywordList": [
+          "词向量",
+          "CBOW模型",
+          "Skip-gram模型",
+          "反向传播算法",
+          "Hierarchical Softmax"
+        ]
+      },
+      {
+        "imageSeekTime": 2919,
+        "imageSnapshotTime": "1970-01-01 08:00:03",
+        "imageUrl": "https://example.test/ppt/slide-38.png",
+        "ocrText": "常用工具最早的word2vec原版代码（2013年）：https://code.google.com/archive/p/word2vec/CBOW和Skip-gram的TensorFlow实现：https://www.tensorflow.org/tutorials/text/word2vecCBOW的Pytorch实现：https://pytorch.org/tutorials/beginner/nlp/word_embeddings tutorial.html#exercise-computing-word-embeddings-continuous-bag-of-wordsSJTU2. 词向量课程示例48/49",
+        "textKeywordList": [
+          "word2vec",
+          "CBOW",
+          "Skip-gram",
+          "TensorFlow",
+          "Pytorch"
+        ]
+      },
+      {
+        "imageSeekTime": 2940,
+        "imageSnapshotTime": "1970-01-01 08:00:03",
+        "imageUrl": "https://example.test/ppt/slide-39.png",
+        "ocrText": "总结词的表示基础版：词的单热点表示进阶版：词的分布式表示（词向量）两个经典的词向量模型CBOW模型Skip-gram模型词向量模型的训练：反向传播算法（Back-propagation）词向量模型的优化Hierarchical SoftmaxNegative SamplingSJTU2. 词向量课程示例49 / 49",
+        "textKeywordList": [
+          "词的单热点表示",
+          "词的分布式表示",
+          "CBOW模型",
+          "Skip-gram模型",
+          "反向传播算法"
+        ]
+      },
+      {
+        "imageSeekTime": 2986,
+        "imageSnapshotTime": "1970-01-01 08:00:03",
+        "imageUrl": "https://example.test/ppt/slide-40.png",
+        "ocrText": "放映结束，单击鼠标退出。",
+        "textKeywordList": [
+          "放映结束",
+          "单击鼠标",
+          "退出"
+        ]
+      },
+      {
+        "imageSeekTime": 3009,
+        "imageSnapshotTime": "1970-01-01 08:00:03",
+        "imageUrl": "https://example.test/ppt/slide-41.png",
+        "ocrText": "K腾讯会议本地模式END通大学etcSHANGHAI JIAO TONG UNIVERSITY此电脑微信回收站DigitalClock NextAdobe10-其他核反Reader X应堆基本类...新学期新气象2Google飞书ChromeNMicrosoftEdge欢迎回到教学楼POTQQ影音FR 4.4.1VLC mediaplayerM15:402026/9/20",
+        "textKeywordList": [
+          "腾讯会议",
+          "本地模式",
+          "通大学",
+          "DigitalClock",
+          "Next"
+        ]
+      }
+    ]
+  }
+}
