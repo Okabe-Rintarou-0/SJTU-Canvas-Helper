@@ -1,7 +1,7 @@
 {
   "name": "canvas",
   "private": true,
-  "version": "3.0.12",
+  "version": "3.0.13",
   "type": "module",
   "scripts": {
     "dev": "vite",
