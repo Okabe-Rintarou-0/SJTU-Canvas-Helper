@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+// Run with node --test; keep this file outside Vitest's .test/.spec discovery.
 import { test } from "node:test";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
