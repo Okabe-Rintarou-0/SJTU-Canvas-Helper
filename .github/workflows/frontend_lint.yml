@@ -25,3 +25,5 @@ jobs:
         run: yarn typecheck
       - name: Frontend tests
         run: yarn test
+      - name: Portable packaging tests
+        run: node --test .github/workflows/windows-portable/portable-archive.test.mjs

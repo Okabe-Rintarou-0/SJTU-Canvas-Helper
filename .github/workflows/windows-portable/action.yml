@@ -20,27 +20,17 @@ runs:
       run: echo "$PWD"
       shell: bash
 
-    - name: Disable updater
-      run: node ./.github/workflows/windows-portable/disable-updater.mjs
-      shell: bash
-      working-directory: ${{ inputs.working-directory }}
-
-    - name: Cleanup target
-      run: rm -f ./src-tauri/target/release/*.exe
+    - name: Test portable packaging
+      run: node --test ./.github/workflows/windows-portable/portable-archive.test.mjs
       shell: bash
       working-directory: ${{ inputs.working-directory }}
 
     - name: Build
-      run: yarn tauri build --target ${{ inputs.target }}
+      run: yarn tauri build --no-bundle --target ${{ inputs.target }}
       shell: bash
       working-directory: ${{ inputs.working-directory }}
 
     - name: Bundle and upload
       run: node ./.github/workflows/windows-portable/portable.mjs ${{ inputs.target }} ${{ inputs.version-template }}
-      shell: bash
-      working-directory: ${{ inputs.working-directory }}
-
-    - name: Restore config
-      run: node ./.github/workflows/windows-portable/restore-config.mjs
       shell: bash
       working-directory: ${{ inputs.working-directory }}

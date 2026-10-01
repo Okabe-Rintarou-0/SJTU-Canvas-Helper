@@ -31,7 +31,7 @@ SJTU Canvas 小帮手基于 [Tauri](https://tauri.app/) 开发，助您更便捷
 
 2. **Windows 系统**：
    - 推荐下载 `.msi` 安装包，支持自动更新功能
-   - 也可选择免安装便携版：`SJTU.Canvas.Helper_v_3.0.13_x64_portable.zip`
+   - 也可选择免安装便携版：`SJTU.Canvas.Helper_3.0.13_x64_portable.zip`
 
 3. **MacOS 系统**：
    - 下载对应版本安装包 
