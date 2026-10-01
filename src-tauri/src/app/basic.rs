@@ -936,6 +936,16 @@ impl App {
         self.open_path(path.to_str().unwrap_or_default())
     }
 
+    pub fn open_local_path(&self, path: &str) -> Result<()> {
+        let local = Path::new(path);
+        if !local.is_absolute() {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "请选择本地文件或目录的绝对路径").into());
+        }
+        // Check existence before handing the path to the system file opener.
+        std::fs::metadata(local)?;
+        self.open_path(path)
+    }
+
     fn open_path(&self, path: &str) -> Result<()> {
         #[cfg(target_os = "macos")]
         let _ = std::process::Command::new("open").arg(path).output()?;

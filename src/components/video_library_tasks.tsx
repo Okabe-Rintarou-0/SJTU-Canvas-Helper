@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-shell";
 import { Alert, Box, Button, Card, CardContent, Checkbox, LinearProgress, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from "@mui/material";
 import { taskManager, taskKindLabels, isTaskActive, type Task } from "../lib/task_manager";
 import { surfaceCardSx } from "../lib/styles";
@@ -36,7 +35,7 @@ export default function VideoLibraryTasks({ tasks }: { tasks: Task[] }) {
             <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
               {task.status === "failed" && <Button size="small" onClick={() => taskManager.retry(task.id)}>重试</Button>}
               {task.status === "succeeded" && task.canOpen && <Button size="small" onClick={() => void taskManager.action(task.id, "open")}>打开</Button>}
-              {(task.outputDirectory || task.outputPath) && <Button size="small" onClick={() => void attempt(() => open(task.outputDirectory || task.outputPath!.replace(/[/\\][^/\\]+$/, "")))}>目录</Button>}
+              {(task.outputDirectory || task.outputPath) && <Button size="small" onClick={() => void attempt(() => invoke("open_local_path", { path: task.outputDirectory || task.outputPath!.replace(/[/\\][^/\\]+$/, "/") }))}>目录</Button>}
               <Button size="small" disabled={isTaskActive(task)} onClick={() => taskManager.remove(task.id)}>清除</Button>
             </TableCell>
           </TableRow>)}{!tasks.length && <TableRow><TableCell colSpan={4} align="center">暂无下载任务</TableCell></TableRow>}</TableBody>

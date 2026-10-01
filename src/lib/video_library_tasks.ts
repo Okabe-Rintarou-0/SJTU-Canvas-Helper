@@ -1,5 +1,4 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-shell";
 import { save } from "@tauri-apps/plugin-dialog";
 import type { CanvasVideo, VideoInfo, VideoPlayInfo } from "./model";
 import { enqueueTask } from "./task_runtime";
@@ -44,7 +43,7 @@ export async function saveRecordingMaterial(video: CanvasVideo, kind: "ppt" | "s
         throw lastError;
       }
     },
-    open: () => open(outputPath),
+    open: () => invoke("open_local_path", { path: outputPath }),
   });
   return true;
 }
@@ -91,7 +90,7 @@ export async function enqueueVideoExports(scopes: VideoSession[], options: Video
           const result = await invoke<{ paths: string[]; warnings: string[] }>("export_video_materials", {
             requests: items, kind, directory: folder, name, onProgress, allTracks: options.tracks === "all",
           });
-          setOpen(() => open(result.paths.length === 1 ? result.paths[0] : folder));
+          setOpen(() => invoke("open_local_path", { path: result.paths.length === 1 ? result.paths[0] : folder }));
           if (result.warnings.length) {
             update({ log: `已保存：\n${result.paths.join("\n")}\n未完成：\n${result.warnings.join("\n")}` });
             throw new Error(`部分资料未完成，已保存文件保留在 ${folder}。${result.warnings.join("；")}`);

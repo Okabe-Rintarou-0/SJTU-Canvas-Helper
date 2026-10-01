@@ -70,6 +70,7 @@ export default function VideoPage() {
   const [expanded, setExpanded] = useState(new Map<string, boolean>());
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
+  const [downloadActionAnchor, setDownloadActionAnchor] = useState<HTMLElement | null>(null);
   const [toolsAnchor, setToolsAnchor] = useState<HTMLElement | null>(null);
   const [trackDownload, setTrackDownload] = useState<CanvasVideo>();
   const [aggregator, setAggregator] = useState(false);
@@ -161,6 +162,9 @@ export default function VideoPage() {
     setDownloadScopes(next); setDownloadCourse(selectedCourse?.name ?? "课程");
     if (kind) setExportOptions((previous) => ({ ...previous, video: false, ppt: kind === "ppt", subtitle: kind === "subtitle" }));
   };
+  const downloadCount = downloadScopes?.reduce((count, scope) => count + scope.videos.length, 0) ?? 0;
+  const singleDownload = downloadCount === 1 ? downloadScopes?.[0].videos[0] : undefined;
+  const canMergePpt = downloadScopes?.some((scope) => scope.videos.length > 1) ?? false;
   const submitDownload = async () => {
     if (!downloadScopes || exporting) return;
     setExporting(true);
@@ -176,6 +180,11 @@ export default function VideoPage() {
     try { if (await saveRecordingMaterial(video, kind)) messageApi.success("已加入下载任务"); }
     catch (e) { messageApi.error(`创建任务失败：${e}`); }
   };
+  const singleDownloadActions = singleDownload ? [
+    ...(exportOptions.video ? [{ label: "选择机位下载…", run: () => { setTrackDownload(singleDownload); setDownloadScopes(undefined); } }] : []),
+    ...(exportOptions.ppt ? [{ label: "PPT 另存为…", run: () => void saveSingle(singleDownload, "ppt") }] : []),
+    ...(exportOptions.subtitle ? [{ label: "字幕另存为…", run: () => void saveSingle(singleDownload, "subtitle") }] : []),
+  ] : [];
   const restoreSummary = (entry: VideoSummaryCache, currentScopes = entry.scopes) => {
     cacheEntry.current = { ...entry, scopes: currentScopes }; chatNamespace.current = entry.namespace;
     setChatTitle(entry.title); setChatScope(currentScopes); setChatMessages(entry.messages); setAiOrganization(entry.organization);
@@ -408,22 +417,36 @@ export default function VideoPage() {
     </Stack>
     <Menu anchorEl={toolsAnchor} open={!!toolsAnchor} onClose={() => setToolsAnchor(null)}><MenuItem onClick={() => { setAggregator(true); setToolsAnchor(null); }}>视频合成工具</MenuItem></Menu>
     <Dialog open={!!downloadScopes} onClose={() => { if (!exporting) setDownloadScopes(undefined); }} fullWidth maxWidth="sm">
-      <DialogTitle>下载 {downloadScopes?.length} 堂课 · {downloadScopes?.reduce((n, s) => n + s.videos.length, 0)} 小节</DialogTitle>
+      <DialogTitle>{singleDownload ? "下载小节资料" : `下载 ${downloadScopes?.length} 堂课 · ${downloadCount} 小节`}</DialogTitle>
       <DialogContent><Stack spacing={2} sx={{ pt: 1 }}>
         <Typography variant="body2" color="text.secondary">{downloadScopes?.map((s) => s.title).join("；")}</Typography>
         <Stack direction="row" flexWrap="wrap">{([ ["video", "视频"], ["ppt", "PPT 切片 PDF"], ["subtitle", "字幕"] ] as const).map(([key, label]) => <FormControlLabel key={key} label={label} control={<Checkbox checked={exportOptions[key]} onChange={(_, checked) => setExportOptions((previous) => ({ ...previous, [key]: checked }))} />} />)}</Stack>
-        {exportOptions.video && <TextField select label="视频机位" size="small" value={exportOptions.tracks} onChange={(e) => setExportOptions((p) => ({ ...p, tracks: e.target.value as "all" | "first" }))}><MenuItem value="all">全部可用机位</MenuItem><MenuItem value="first">仅首个机位</MenuItem></TextField>}
-        {exportOptions.ppt && <TextField select label="PPT 输出" size="small" value={exportOptions.pptPerSession ? "session" : "section"} onChange={(e) => setExportOptions((p) => ({ ...p, pptPerSession: e.target.value === "session" }))}><MenuItem value="session">每堂课合并一个 PDF（仅包含所选小节）</MenuItem><MenuItem value="section">每小节一个 PDF</MenuItem></TextField>}
-        {exportOptions.subtitle && <Typography variant="body2">每小节独立 SRT，同时生成每堂课阅读文本。阅读文本中的时间点属于各自小节。</Typography>}
-        {downloadScopes?.length === 1 && downloadScopes[0].videos.length === 1 && <Box component="details"><Typography component="summary" variant="body2" sx={{ cursor: "pointer" }}>单节下载选项</Typography><Stack direction="row" flexWrap="wrap" gap={1} sx={{ mt: 1 }}>
-          <Button onClick={() => { setTrackDownload(downloadScopes[0].videos[0]); setDownloadScopes(undefined); }}>选择机位下载…</Button>
-          <Button onClick={() => void saveSingle(downloadScopes[0].videos[0], "ppt")}>PPT 另存为…</Button>
-          <Button onClick={() => void saveSingle(downloadScopes[0].videos[0], "subtitle")}>字幕另存为…</Button>
-        </Stack></Box>}
-        <Typography variant="caption" color="text.secondary">下一步为整批选择一次目录，按课程和课堂保存。同名文件自动编号；缺失资料在任务结果中列出。</Typography>
-        {downloadScopes?.some((s) => s.videos.some((v) => !hasSubtitleSource(v))) && <Alert severity="info">部分来源仅提供视频，PPT 和字幕可能不可用；其他资料会继续导出。</Alert>}
+        {exportOptions.video && <Stack spacing={1}>
+          <Typography variant="subtitle2">视频</Typography>
+          <TextField select label="视频机位" size="small" value={exportOptions.tracks} onChange={(e) => setExportOptions((p) => ({ ...p, tracks: e.target.value as "all" | "first" }))}><MenuItem value="all">全部可用机位</MenuItem><MenuItem value="first">仅首个机位</MenuItem></TextField>
+          <Typography variant="caption" color="text.secondary">每个机位保存为独立视频文件。</Typography>
+        </Stack>}
+        {exportOptions.ppt && <Stack spacing={1}>
+          <Typography variant="subtitle2">PPT 切片 PDF</Typography>
+          {canMergePpt ? <TextField select label="PPT 输出" size="small" value={exportOptions.pptPerSession ? "session" : "section"} onChange={(e) => setExportOptions((p) => ({ ...p, pptPerSession: e.target.value === "session" }))}><MenuItem value="session">每堂课合并一个 PDF（仅包含所选小节）</MenuItem><MenuItem value="section">每小节一个 PDF</MenuItem></TextField> : <Typography variant="body2">{singleDownload ? "本小节的 PPT 切片保存为一个 PDF。" : "每堂课仅选中一个小节，各自保存为一个 PDF。"}</Typography>}
+        </Stack>}
+        {exportOptions.subtitle && <Stack spacing={1}>
+          <Typography variant="subtitle2">字幕</Typography>
+          <Typography variant="body2">{singleDownload ? "保存本小节的 SRT 字幕和阅读文本。" : "每小节独立 SRT，同时生成每堂课所选小节的阅读文本。"}阅读文本中的时间点属于各自小节。</Typography>
+          {singleDownload && <Typography variant="caption" color="text.secondary">另存为仅保存 SRT，可自定义文件名和位置。</Typography>}
+        </Stack>}
+        <Typography variant="caption" color="text.secondary">{singleDownload ? "“选择目录并下载”保存全部勾选资料，按课程和课堂归档；也可使用底部操作单独下载。" : "下一步为整批选择一次目录，按课程和课堂保存。"}同名文件自动编号；缺失资料在任务结果中列出。</Typography>
+        {(exportOptions.ppt || exportOptions.subtitle) && downloadScopes?.some((s) => s.videos.some((v) => !hasSubtitleSource(v))) && <Alert severity="info">部分来源仅提供视频，PPT 和字幕可能不可用；其他资料会继续导出。</Alert>}
       </Stack></DialogContent>
-      <DialogActions><Button disabled={exporting} onClick={() => setDownloadScopes(undefined)}>取消</Button><Button variant="contained" disabled={exporting || !(exportOptions.video || exportOptions.ppt || exportOptions.subtitle)} onClick={() => void submitDownload()}>{exporting ? "正在加入队列…" : "选择目录并下载"}</Button></DialogActions>
+      <DialogActions sx={{ flexWrap: "wrap", gap: 1 }}>
+        <Button disabled={exporting} onClick={() => { setDownloadActionAnchor(null); setDownloadScopes(undefined); }}>取消</Button>
+        {singleDownloadActions.length === 1 && <Button disabled={exporting} onClick={singleDownloadActions[0].run}>{exportOptions.video ? "选择机位下载…" : "另存为…"}</Button>}
+        {singleDownloadActions.length > 1 && <Button disabled={exporting} aria-haspopup="menu" aria-controls={downloadActionAnchor ? "single-download-menu" : undefined} aria-expanded={!!downloadActionAnchor} onClick={(event) => setDownloadActionAnchor(event.currentTarget)}>单独下载 ▾</Button>}
+        <Button variant="contained" disabled={exporting || !(exportOptions.video || exportOptions.ppt || exportOptions.subtitle)} onClick={() => void submitDownload()}>{exporting ? "正在加入队列…" : "选择目录并下载"}</Button>
+      </DialogActions>
+      <Menu id="single-download-menu" anchorEl={downloadActionAnchor} open={!!downloadActionAnchor && !!downloadScopes && singleDownloadActions.length > 1} onClose={() => setDownloadActionAnchor(null)}>
+        {singleDownloadActions.map((action) => <MenuItem key={action.label} onClick={() => { setDownloadActionAnchor(null); action.run(); }}>{action.label}</MenuItem>)}
+      </Menu>
     </Dialog>
     <Dialog open={!!aiScopes} onClose={() => setAiScopes(undefined)} fullWidth maxWidth="sm">
       <DialogTitle>总结所选 {aiScopes?.reduce((n, s) => n + s.videos.length, 0)} 小节</DialogTitle>

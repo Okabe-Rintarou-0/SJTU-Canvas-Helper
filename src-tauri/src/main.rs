@@ -556,6 +556,11 @@ async fn open_my_file(name: String, folder_path: String) -> Result<()> {
 }
 
 #[tauri::command]
+async fn open_local_path(path: String) -> Result<()> {
+    APP.open_local_path(&path)
+}
+
+#[tauri::command]
 async fn open_save_dir() -> Result<()> {
     APP.open_save_dir().await
 }
@@ -1133,6 +1138,7 @@ async fn main() -> Result<()> {
             open_my_file,
             open_file,
             open_save_dir,
+            open_local_path,
             open_config_dir,
             delete_file,
             delete_file_with_name,
