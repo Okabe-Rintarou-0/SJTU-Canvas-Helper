@@ -1,34 +1,32 @@
-import { FileOutlined } from "@ant-design/icons";
 import { invoke } from "@tauri-apps/api/core";
+import AudioFileRoundedIcon from "@mui/icons-material/AudioFileRounded";
+import DescriptionRoundedIcon from "@mui/icons-material/DescriptionRounded";
+import FolderZipRoundedIcon from "@mui/icons-material/FolderZipRounded";
+import ImageRoundedIcon from "@mui/icons-material/ImageRounded";
+import InsertDriveFileRoundedIcon from "@mui/icons-material/InsertDriveFileRounded";
+import MovieRoundedIcon from "@mui/icons-material/MovieRounded";
+import PictureAsPdfRoundedIcon from "@mui/icons-material/PictureAsPdfRounded";
+import SlideshowRoundedIcon from "@mui/icons-material/SlideshowRounded";
+import TableChartRoundedIcon from "@mui/icons-material/TableChartRounded";
+import { relaunch } from '@tauri-apps/plugin-process';
 import { check } from "@tauri-apps/plugin-updater";
-import { MessageInstance } from "antd/es/message/interface";
 import dayjs, { Dayjs } from "dayjs";
 import { decode } from "js-base64";
-import {
-  FaFileCsv,
-  FaImage,
-  FaRegFileArchive,
-  FaRegFileAudio,
-  FaRegFilePdf,
-  FaRegFileVideo,
-} from "react-icons/fa";
-import {
-  PiMicrosoftExcelLogoFill,
-  PiMicrosoftPowerpointLogoFill,
-  PiMicrosoftWordLogoFill,
-} from "react-icons/pi";
 import { getConfig } from "./config";
 import {
   Assignment,
   AssignmentDate,
   Attachment,
   File as FileModel,
+  LOG_LEVEL_ERROR,
   LogLevel,
-  Option,
+  ModuleItem,
+  Option
 } from "./model";
+import { AppMessageApi } from "./message";
 
 export function isMergableFileType(fileType: string): boolean {
-  for (let ext of ["pptx", "pdf", "docx"]) {
+  for (const ext of ["pptx", "pdf", "docx"]) {
     if (fileType.toLowerCase().endsWith(ext)) {
       return true;
     }
@@ -54,9 +52,9 @@ export function sleep(time: number) {
 }
 
 export function base64ToBuffer(base64: string) {
-  let binaryString = atob(base64);
-  let length = binaryString.length;
-  let bytes = new Uint8Array(length);
+  const binaryString = atob(base64);
+  const length = binaryString.length;
+  const bytes = new Uint8Array(length);
 
   for (let i = 0; i < length; i++) {
     bytes[i] = binaryString.charCodeAt(i);
@@ -70,11 +68,14 @@ const aliasMap: Record<string, string> = {
   cjs: "js",
   gitignore: "txt",
   mp4: "video/mp4",
+  mov: "video/quicktime",
+  qt: "video/quicktime",
+  m4v: "video/mp4",
 };
 
 export async function getFileType(filename: string) {
   const extension = filename.split(".").pop()?.toLowerCase() ?? "";
-  let serveAsPlaintext = (await getConfig()).serve_as_plaintext.split(",");
+  const serveAsPlaintext = (await getConfig()).serve_as_plaintext.split(",");
   if (extension && aliasMap[extension]) {
     return aliasMap[extension];
   } else if (
@@ -86,7 +87,10 @@ export async function getFileType(filename: string) {
   return extension;
 }
 
-export function getBase64Data(raw: string) {
+export function getBase64Data(raw?: string) {
+  if (!raw) {
+    return "";
+  }
   if (raw.startsWith("data:") && raw.indexOf(",") !== -1) {
     return raw.split(",")[1];
   }
@@ -94,7 +98,7 @@ export function getBase64Data(raw: string) {
 }
 
 export function decodeBase64DataAsBinary(raw: string) {
-  let base64 = getBase64Data(raw);
+  const base64 = getBase64Data(raw);
   let data;
   try {
     data = atob(base64);
@@ -105,7 +109,7 @@ export function decodeBase64DataAsBinary(raw: string) {
 }
 
 export function decodeBase64Data(raw: string) {
-  let base64 = getBase64Data(raw);
+  const base64 = getBase64Data(raw);
   let data;
   try {
     data = decode(base64);
@@ -116,11 +120,11 @@ export function decodeBase64Data(raw: string) {
 }
 
 export function dataURLtoFile(dataurl: string, filename: string) {
-  var arr = dataurl.split(","),
-    mime = arr[0].match(/:(.*?);/)?.[1],
-    bstr = atob(arr[arr.length - 1]),
-    n = bstr.length,
-    u8arr = new Uint8Array(n);
+  const arr = dataurl.split(",");
+  const mime = arr[0].match(/:(.*?);/)?.[1];
+  const bstr = atob(arr[arr.length - 1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
   while (n--) {
     u8arr[n] = bstr.charCodeAt(n);
   }
@@ -162,7 +166,7 @@ export function assignmentIsEnded(assignment: Assignment) {
 }
 
 export async function savePathValidator(_: any, savePath: string) {
-  let valid = await invoke("check_path", { path: savePath });
+  const valid = await invoke("check_path", { path: savePath });
   return valid
     ? Promise.resolve()
     : Promise.reject(new Error("保存路径无效！请检查目录是否存在！"));
@@ -186,25 +190,25 @@ export function assignmentNotNeedSubmit(assignment: Assignment) {
 }
 
 export function getFileIcon(file: FileModel) {
-  const name = file.display_name;
+  const name = file.filename;
   const mime_class = file.mime_class;
   if (name.endsWith(".pdf")) {
-    return <FaRegFilePdf style={{ fontSize: "22px" }} />;
+    return <PictureAsPdfRoundedIcon sx={{ fontSize: 22, color: "#dc2626" }} />;
   }
   if (name.endsWith(".doc") || name.endsWith(".docx")) {
-    return <PiMicrosoftWordLogoFill style={{ fontSize: "24px" }} />;
+    return <DescriptionRoundedIcon sx={{ fontSize: 22, color: "#2563eb" }} />;
   }
   if (name.endsWith(".ppt") || name.endsWith(".pptx")) {
-    return <PiMicrosoftPowerpointLogoFill style={{ fontSize: "24px" }} />;
+    return <SlideshowRoundedIcon sx={{ fontSize: 22, color: "#ea580c" }} />;
   }
   if (name.endsWith(".csv")) {
-    return <FaFileCsv style={{ fontSize: "22px" }} />;
+    return <TableChartRoundedIcon sx={{ fontSize: 22, color: "#16a34a" }} />;
   }
   if (name.endsWith(".xls") || name.endsWith(".xlsx")) {
-    return <PiMicrosoftExcelLogoFill style={{ fontSize: "24px" }} />;
+    return <TableChartRoundedIcon sx={{ fontSize: 22, color: "#15803d" }} />;
   }
   if (name.endsWith(".ppt") || name.endsWith(".pptx")) {
-    return <PiMicrosoftPowerpointLogoFill style={{ fontSize: "24px" }} />;
+    return <SlideshowRoundedIcon sx={{ fontSize: 22, color: "#ea580c" }} />;
   }
   if (
     name.endsWith(".flv") ||
@@ -213,10 +217,10 @@ export function getFileIcon(file: FileModel) {
     name.endsWith(".m4v") ||
     name.endsWith(".avi")
   ) {
-    return <FaRegFileVideo style={{ fontSize: "22px" }} />;
+    return <MovieRoundedIcon sx={{ fontSize: 22, color: "#7c3aed" }} />;
   }
   if (name.endsWith(".mp3") || name.endsWith(".wav")) {
-    return <FaRegFileAudio style={{ fontSize: "22px" }} />;
+    return <AudioFileRoundedIcon sx={{ fontSize: 22, color: "#0f766e" }} />;
   }
   if (
     name.endsWith(".7z") ||
@@ -224,34 +228,34 @@ export function getFileIcon(file: FileModel) {
     name.endsWith(".tar") ||
     name.endsWith(".zip")
   ) {
-    return <FaRegFileArchive style={{ fontSize: "22px" }} />;
+    return <FolderZipRoundedIcon sx={{ fontSize: 22, color: "#a16207" }} />;
   }
   if (mime_class.startsWith("image")) {
-    return <FaImage style={{ fontSize: "22px" }} />;
+    return <ImageRoundedIcon sx={{ fontSize: 22, color: "#0891b2" }} />;
   }
-  return <FileOutlined style={{ fontSize: "21px" }} />;
+  return <InsertDriveFileRoundedIcon sx={{ fontSize: 21 }} />;
 }
 
 export function getBigFileIcon(file: FileModel) {
   const name = file.display_name;
   const mime_class = file.mime_class;
   if (name.endsWith(".pdf")) {
-    return <FaRegFilePdf style={{ fontSize: "40px" }} />;
+    return <PictureAsPdfRoundedIcon sx={{ fontSize: 40, color: "#dc2626" }} />;
   }
   if (name.endsWith(".doc") || name.endsWith(".docx")) {
-    return <PiMicrosoftWordLogoFill style={{ fontSize: "42px" }} />;
+    return <DescriptionRoundedIcon sx={{ fontSize: 42, color: "#2563eb" }} />;
   }
   if (name.endsWith(".ppt") || name.endsWith(".pptx")) {
-    return <PiMicrosoftPowerpointLogoFill style={{ fontSize: "42px" }} />;
+    return <SlideshowRoundedIcon sx={{ fontSize: 42, color: "#ea580c" }} />;
   }
   if (name.endsWith(".csv")) {
-    return <FaFileCsv style={{ fontSize: "40px" }} />;
+    return <TableChartRoundedIcon sx={{ fontSize: 40, color: "#16a34a" }} />;
   }
   if (name.endsWith(".xls") || name.endsWith(".xlsx")) {
-    return <PiMicrosoftExcelLogoFill style={{ fontSize: "42px" }} />;
+    return <TableChartRoundedIcon sx={{ fontSize: 42, color: "#15803d" }} />;
   }
   if (name.endsWith(".ppt") || name.endsWith(".pptx")) {
-    return <PiMicrosoftPowerpointLogoFill style={{ fontSize: "42px" }} />;
+    return <SlideshowRoundedIcon sx={{ fontSize: 42, color: "#ea580c" }} />;
   }
   if (
     name.endsWith(".flv") ||
@@ -260,10 +264,10 @@ export function getBigFileIcon(file: FileModel) {
     name.endsWith(".m4v") ||
     name.endsWith(".avi")
   ) {
-    return <FaRegFileVideo style={{ fontSize: "40px" }} />;
+    return <MovieRoundedIcon sx={{ fontSize: 40, color: "#7c3aed" }} />;
   }
   if (name.endsWith(".mp3") || name.endsWith(".wav")) {
-    return <FaRegFileAudio style={{ fontSize: "40px" }} />;
+    return <AudioFileRoundedIcon sx={{ fontSize: 40, color: "#0f766e" }} />;
   }
   if (
     name.endsWith(".7z") ||
@@ -271,12 +275,18 @@ export function getBigFileIcon(file: FileModel) {
     name.endsWith(".tar") ||
     name.endsWith(".zip")
   ) {
-    return <FaRegFileArchive style={{ fontSize: "40px" }} />;
+    return <FolderZipRoundedIcon sx={{ fontSize: 40, color: "#a16207" }} />;
   }
   if (mime_class.startsWith("image")) {
-    return <FaImage style={{ fontSize: "40px" }} />;
+    return <ImageRoundedIcon sx={{ fontSize: 40, color: "#0891b2" }} />;
   }
-  return <FileOutlined style={{ fontSize: "39px" }} />;
+  return <InsertDriveFileRoundedIcon sx={{ fontSize: 39 }} />;
+}
+
+export function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function scrollToTop() {
@@ -287,26 +297,63 @@ export function scrollToEnd() {
   window.scrollTo(0, document.body.scrollHeight);
 }
 
-export async function checkForUpdates(messageApi: MessageInstance) {
+export async function checkForUpdates(
+  messageApi: AppMessageApi,
+  onAvailabilityChange?: (version: string | null) => void
+) {
+  const messageKey = "checking";
+  let update: Awaited<ReturnType<typeof check>> | null = null;
+
   try {
-    const messageKey = "checking";
     messageApi.open({
       key: messageKey,
       type: "loading",
       content: "检查中🚀...",
     });
-    const update = await check();
+    update = await check();
     messageApi.destroy(messageKey);
     if (!update) {
+      onAvailabilityChange?.(null);
       messageApi.warning("已经是最新版，无需更新😁");
+      return;
     }
+
+    onAvailabilityChange?.(update.version);
+    messageApi.info(`发现新版本 v${update.version}，正在下载并安装…`);
+
+    let downloaded = 0;
+    let contentLength: undefined | number = 0;
+    // alternatively we could also call update.download() and update.install() separately
+    await update.downloadAndInstall((event) => {
+      switch (event.event) {
+        case 'Started':
+          contentLength = event.data.contentLength;
+          console.log(`started downloading ${event.data.contentLength} bytes`);
+          break;
+        case 'Progress':
+          downloaded += event.data.chunkLength;
+          console.log(`downloaded ${downloaded} from ${contentLength}`);
+          break;
+        case 'Finished':
+          console.log('download finished');
+          break;
+        }
+      });
+    await relaunch();
   } catch (error) {
+    messageApi.destroy(messageKey);
     messageApi.error("🥹出现错误：" + error);
+  } finally {
+    try {
+      await update?.close();
+    } catch (error) {
+      console.debug("Failed to close updater resource", error);
+    }
   }
 }
 
 export function consoleLog(logLevel: LogLevel, ...messages: any[]) {
-  let message = messages
+  const message = messages
     .map((msg) => {
       if (typeof msg === "object") {
         return JSON.stringify(msg);
@@ -331,4 +378,40 @@ export function srtToVtt(srt: string) {
       )
       .replace(/\r/g, "")
   );
+}
+
+function detectExternalType(item: ModuleItem) {
+  const supportedExt = [".pdf", ".doc", ".docx", ".pptx", ".txt", ".zip", ".7z", ".tar"];
+  if (!item.external_url) return ["", undefined];
+  let idx = item.external_url.lastIndexOf('/');
+  const fileName = item.external_url.slice(idx + 1);
+  idx = fileName.lastIndexOf('.');
+  if (idx == -1) {
+    return [fileName, "Link"];
+  }
+  const ext = fileName.slice(idx);
+  consoleLog(LOG_LEVEL_ERROR, "ext", ext);
+  if (supportedExt.indexOf(ext) !== -1) {
+    return [fileName, "File"];
+  }
+  return [fileName, "Link"];
+}
+
+export function moduleItem2File(item: ModuleItem): FileModel {
+  const [fileName, externalType] = detectExternalType(item);
+  return {
+    key: item.id.toString(),
+    id: item.id,
+    uuid: item.id.toString(),
+    folder_id: 0,
+    url: item.external_url,
+    display_name: fileName,
+    locked: false,
+    filename: fileName,
+    mime_class: "",
+    "content-type": "",
+    size: 0,
+    external_type: externalType,
+    external_title: item.title,
+  } as FileModel;
 }

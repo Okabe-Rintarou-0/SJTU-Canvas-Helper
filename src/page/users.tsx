@@ -1,120 +1,320 @@
-import { Button, Form, Input, Space, Table } from "antd";
-import BasicLayout from "../components/layout";
-import useMessage from "antd/es/message/useMessage";
-import { useEffect, useState } from "react";
-import { ExportUsersConfig, User } from "../lib/model";
 import { invoke } from "@tauri-apps/api/core";
+import CheckCircleOutlineRoundedIcon from "@mui/icons-material/CheckCircleOutlineRounded";
+import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
+import GroupRoundedIcon from "@mui/icons-material/GroupRounded";
+import {
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Checkbox,
+  Chip,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TablePagination,
+  TableRow,
+  TextField,
+  InputAdornment,
+} from "@mui/material";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
 import CourseSelect from "../components/course_select";
+import BasicLayout from "../components/layout";
+import { WorkspaceHero } from "../components/workspace_hero";
+import { TableSkeleton } from "../components/skeleton";
+import { useCurrentTermCourses, useSelectedCourse, useAutoLoadCourse } from "../lib/hooks";
+import { useAppMessage } from "../lib/message";
+import { ExportUsersConfig, User } from "../lib/model";
 import { formatDate } from "../lib/utils";
-import { useCurrentTermCourses } from "../lib/hooks";
+
+import { surfaceCardSx } from "../lib/styles";
 
 export default function UsersPage() {
-  const [messageApi, contextHolder] = useMessage();
-  const [operating, setOperating] = useState<boolean>(false);
+  const [messageApi, contextHolder] = useAppMessage();
+  const [operating, setOperating] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
-  const [form] = Form.useForm<ExportUsersConfig>();
+  const { selectedCourseId, setSelectedCourseId } = useSelectedCourse();
+  const [exportConfig, setExportConfig] = useState<ExportUsersConfig>({
+    save_name: "用户名单",
+  } as ExportUsersConfig);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(20);
   const courses = useCurrentTermCourses();
 
-  useEffect(() => {
-    form.setFieldsValue({ save_name: "用户名单" } as ExportUsersConfig);
-  }, []);
-
-  const handleGetUsers = async (courseId: number) => {
+  const handleGetUsers = useCallback(async (courseId: number) => {
     if (courseId === -1) {
       return;
     }
     setOperating(true);
     try {
-      let users = (await invoke("list_course_users", { courseId })) as User[];
-      users.map((user) => (user.key = user.id));
-      setUsers(users);
-    } catch (e) {
-      messageApi.error(e as string);
+      const nextUsers = (await invoke("list_course_users", { courseId })) as User[];
+      nextUsers.forEach((user) => {
+        user.key = user.id;
+      });
+      setUsers(nextUsers);
+    } catch (error) {
+      messageApi.error(error as string);
+    } finally {
+      setOperating(false);
     }
-    setOperating(false);
-  };
+  }, [messageApi]);
 
-  const columns = [
-    "id",
-    "name",
-    "email",
-    "created_at",
-    "sortable_name",
-    "short_name",
-    "login_id",
-  ].map((column) => ({
-    title: column,
-    dataIndex: column,
-    key: column,
-    render: column === "created_at" ? formatDate : undefined,
-  }));
-
-  const handleCourseSelect = async (courseId: number) => {
-    if (courses.data.find((course) => course.id === courseId)) {
-      // setSelectedCourseId(selectedCourse.id);
+  const handleCourseSelect = useCallback(
+    async (courseId: number) => {
+      if (!courses.data.find((course) => course.id === courseId)) {
+        return;
+      }
+      setSelectedCourseId(courseId);
       setSelectedUsers([]);
       setUsers([]);
-      handleGetUsers(courseId);
-    }
-  };
+      await handleGetUsers(courseId);
+    },
+    [courses.data, handleGetUsers]
+  );
 
-  const handleSelected = (_: React.Key[], selectedUsers: User[]) => {
-    setSelectedUsers(selectedUsers);
-  };
+  useAutoLoadCourse(
+    (courseId) => void handleCourseSelect(courseId),
+    courses.data.length > 0
+  );
 
-  const handleExport = async (config: ExportUsersConfig) => {
-    try {
-      await invoke("export_users", {
-        users: selectedUsers,
-        saveName: config.save_name + ".xlsx",
-      });
-      messageApi.success("导出成功！🎉", 0.5);
-    } catch (e) {
-      messageApi.error(e as string);
-    }
-  };
+  const handleExport = useCallback(
+    async (exportAll: boolean) => {
+      if (!exportConfig.save_name?.trim()) {
+        messageApi.error("请输入导出文件名");
+        return;
+      }
+      const exportUsers = exportAll ? users : selectedUsers;
+      if (exportUsers.length === 0) {
+        messageApi.warning(exportAll ? "当前没有可导出的用户" : "请先选择要导出的用户");
+        return;
+      }
+
+      try {
+        await invoke("export_users", {
+          users: exportUsers,
+          saveName: `${exportConfig.save_name}.xlsx`,
+        });
+        messageApi.success(exportAll ? "导出全部成功" : "导出成功", 0.5);
+      } catch (error) {
+        messageApi.error(error as string);
+      }
+    },
+    [exportConfig.save_name, messageApi, selectedUsers, users]
+  );
+
+  const selectedUserIds = useMemo(
+    () => new Set(selectedUsers.map((user) => user.id)),
+    [selectedUsers]
+  );
+
+  const paginatedUsers = useMemo(() => {
+    const start = page * rowsPerPage;
+    return users.slice(start, start + rowsPerPage);
+  }, [page, rowsPerPage, users]);
+
+  const selectedCourse = courses.data.find(
+    (course) => course.id === selectedCourseId
+  );
+
+  useEffect(() => {
+    setPage(0);
+  }, [selectedCourseId, users.length]);
 
   return (
     <BasicLayout>
       {contextHolder}
-      <Space
-        direction="vertical"
-        style={{ width: "100%", overflow: "scroll" }}
-        size={"large"}
-      >
-        <CourseSelect
-          onChange={handleCourseSelect}
-          disabled={operating}
-          courses={courses.data}
+      <Stack spacing={3}>
+        <WorkspaceHero
+          chipLabel="成员导出"
+          chipIcon={<GroupRoundedIcon />}
+          title="人员导出"
+          description="选择课程后即可查看成员信息，并导出全部或选中的人员名单。"
+          aside={
+            <Box
+              sx={{
+                width: { xs: "100%", lg: 680 },
+                alignSelf: { xs: "stretch", lg: "flex-start" },
+              }}
+            >
+              <CourseSelect
+                onChange={(courseId) => setSelectedCourseId(courseId)}
+                disabled={operating}
+                courses={courses.data}
+                value={selectedCourseId === -1 ? undefined : selectedCourseId}
+              />
+            </Box>
+          }
+          stats={[
+            {
+              label: "总人数",
+              value: users.length,
+              icon: <GroupRoundedIcon />,
+            },
+            {
+              label: "已选择",
+              value: selectedUsers.length,
+              icon: <CheckCircleOutlineRoundedIcon />,
+            },
+          ]}
+          footer={
+            <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
+              {selectedCourse ? (
+                <Chip
+                  icon={<GroupRoundedIcon />}
+                  label={selectedCourse.name}
+                  color="primary"
+                  variant="outlined"
+                />
+              ) : (
+                <Chip label="请选择课程" variant="outlined" />
+              )}
+              <Chip
+                label={`已选择 ${selectedUsers.length} / ${users.length}`}
+                variant="outlined"
+              />
+            </Stack>
+          }
         />
-        <Table
-          style={{ width: "100%" }}
-          loading={operating}
-          columns={columns}
-          dataSource={users}
-          pagination={false}
-          rowSelection={{
-            onChange: handleSelected,
-            selectedRowKeys: selectedUsers.map((user) => user.key),
-          }}
-        />
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={handleExport}
-          preserve={false}
-        >
-          <Form.Item name="save_name" label="导出文件名（无需扩展名）">
-            <Input placeholder="请输入导出文件名（无需扩展名）" />
-          </Form.Item>
-          <Form.Item>
-            <Button disabled={operating} type="primary" htmlType="submit">
-              导出
-            </Button>
-          </Form.Item>
-        </Form>
-      </Space>
+
+        <Card sx={surfaceCardSx}>
+          <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+            <Stack spacing={3}>
+              {operating && users.length === 0 ? (
+                <TableSkeleton rows={8} cols={6} />
+              ) : users.length > 0 ? (
+                <>
+                  <Box
+                    sx={{
+                      borderRadius: "8px",
+                      border: "1px solid",
+                      borderColor: "divider",
+                      overflow: "auto",
+                    }}
+                  >
+                    <Table stickyHeader sx={{ minWidth: 980 }}>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell padding="checkbox">
+                            <Checkbox
+                              checked={users.length > 0 && selectedUsers.length === users.length}
+                              indeterminate={
+                                selectedUsers.length > 0 &&
+                                selectedUsers.length < users.length
+                              }
+                              onChange={(event) =>
+                                setSelectedUsers(event.target.checked ? users : [])
+                              }
+                            />
+                          </TableCell>
+                          <TableCell>ID</TableCell>
+                          <TableCell>姓名</TableCell>
+                          <TableCell>邮箱</TableCell>
+                          <TableCell>加入时间</TableCell>
+                          <TableCell>排序名</TableCell>
+                          <TableCell>简称</TableCell>
+                          <TableCell>学号 / 登录名</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {paginatedUsers.map((user) => {
+                          const checked = selectedUserIds.has(user.id);
+                          return (
+                            <TableRow key={user.id} hover selected={checked}>
+                              <TableCell padding="checkbox">
+                                <Checkbox
+                                  checked={checked}
+                                  onChange={(event) => {
+                                    setSelectedUsers((prev) => {
+                                      if (event.target.checked) {
+                                        return [...prev, user];
+                                      }
+                                      return prev.filter((item) => item.id !== user.id);
+                                    });
+                                  }}
+                                />
+                              </TableCell>
+                              <TableCell>{user.id}</TableCell>
+                              <TableCell sx={{ fontWeight: 700 }}>{user.name}</TableCell>
+                              <TableCell>{user.email || "-"}</TableCell>
+                              <TableCell>{formatDate(user.created_at)}</TableCell>
+                              <TableCell>{user.sortable_name || "-"}</TableCell>
+                              <TableCell>{user.short_name || "-"}</TableCell>
+                              <TableCell>{user.login_id || "-"}</TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </Box>
+
+                  <TablePagination
+                    component="div"
+                    count={users.length}
+                    page={page}
+                    onPageChange={(_, nextPage) => setPage(nextPage)}
+                    rowsPerPage={rowsPerPage}
+                    onRowsPerPageChange={(event) => {
+                      setRowsPerPage(Number(event.target.value));
+                      setPage(0);
+                    }}
+                    rowsPerPageOptions={[10, 20, 50]}
+                    labelRowsPerPage="每页人数"
+                    labelDisplayedRows={({ from, to, count }) =>
+                      `${from}-${to} / ${count}`
+                    }
+                  />
+
+                  <Stack spacing={2}>
+                    <TextField
+                      label="导出文件名"
+                      value={exportConfig.save_name}
+                      onChange={(event) =>
+                        setExportConfig((prev) => ({
+                          ...prev,
+                          save_name: event.target.value,
+                        }))
+                      }
+                      helperText="导出时会保存为 .xlsx 文件。"
+                      InputProps={{
+                        endAdornment: (
+                          <InputAdornment position="end">.xlsx</InputAdornment>
+                        ),
+                      }}
+                    />
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                      <Button
+                        variant="contained"
+                        startIcon={<DownloadRoundedIcon />}
+                        disabled={operating}
+                        onClick={() => void handleExport(true)}
+                      >
+                        导出全部
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        startIcon={<DownloadRoundedIcon />}
+                        disabled={operating || selectedUsers.length === 0}
+                        onClick={() => void handleExport(false)}
+                      >
+                        导出所选
+                      </Button>
+                    </Stack>
+                  </Stack>
+                </>
+              ) : (
+                <Alert severity="info" sx={{ borderRadius: "18px" }}>
+                  选择课程后，这里会显示课程成员列表。
+                </Alert>
+              )}
+            </Stack>
+          </CardContent>
+        </Card>
+      </Stack>
     </BasicLayout>
   );
 }

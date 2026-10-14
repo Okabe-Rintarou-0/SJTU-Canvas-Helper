@@ -8,6 +8,13 @@ use super::Client;
 use crate::{error::Result, utils};
 
 impl Client {
+    pub async fn execute_request(
+        &self,
+        request: reqwest::Request,
+    ) -> std::result::Result<Response, reqwest::Error> {
+        self.debug_store.send(&self.cli, request).await
+    }
+
     pub async fn get_request_with_token<T: Serialize + ?Sized>(
         &self,
         url: &str,
@@ -17,13 +24,14 @@ impl Client {
         let mut req = self
             .cli
             .get(url)
-            .header("Authorization", format!("Bearer {}", token));
+            .header("Authorization", format!("Bearer {token}"));
 
         if let Some(query) = query {
             req = req.query(query)
         }
 
-        let res = req.send().await?;
+        let req = req.build()?;
+        let res = self.execute_request(req).await?;
         Ok(res)
     }
 
@@ -37,7 +45,9 @@ impl Client {
             .get_request_with_token(url, query, token)
             .await?
             .error_for_status()?;
-        let json = utils::parse_json(&response.bytes().await?)?;
+        let bytes = response.bytes().await?;
+        self.debug_store.capture_response_body(&bytes).await;
+        let json = utils::json::parse_json(&bytes)?;
         Ok(json)
     }
 
@@ -51,12 +61,13 @@ impl Client {
         let mut request = self
             .cli
             .post(url)
-            .header("Authorization".to_owned(), format!("Bearer {}", token))
+            .header("Authorization".to_owned(), format!("Bearer {token}"))
             .form(form);
         if let Some(query) = query {
             request = request.query(query);
         }
-        let response = request.send().await?;
+        let request = request.build()?;
+        let response = self.execute_request(request).await?;
         Ok(response)
     }
 
@@ -70,12 +81,13 @@ impl Client {
         let mut request = self
             .cli
             .put(url)
-            .header("Authorization".to_owned(), format!("Bearer {}", token))
+            .header("Authorization".to_owned(), format!("Bearer {token}"))
             .form(form);
         if let Some(query) = query {
             request = request.query(query);
         }
-        let response = request.send().await?;
+        let request = request.build()?;
+        let response = self.execute_request(request).await?;
         Ok(response)
     }
 
@@ -89,11 +101,13 @@ impl Client {
             .post(url)
             .body(body)
             .header(CONTENT_TYPE, "application/json");
-        let resp = req.send().await?.error_for_status()?;
+        let req = req.build()?;
+        let resp = self.execute_request(req).await?.error_for_status()?;
         let bytes = resp.bytes().await?;
+        self.debug_store.capture_response_body(&bytes).await;
 
         // tracing::info!("resp: {:?}", String::from_utf8_lossy(&bytes.to_vec()));
-        let result = utils::parse_json(&bytes)?;
+        let result = utils::json::parse_json(&bytes)?;
         Ok(result)
     }
 
@@ -108,7 +122,8 @@ impl Client {
             req = req.query(query);
         }
 
-        let res = req.send().await?;
+        let req = req.build()?;
+        let res = self.execute_request(req).await?;
         Ok(res)
     }
 
@@ -125,8 +140,11 @@ impl Client {
             req = req.query(query);
         }
 
-        let response = req.send().await?.error_for_status()?;
-        let json = utils::parse_json(&response.bytes().await?)?;
+        let req = req.build()?;
+        let response = self.execute_request(req).await?.error_for_status()?;
+        let bytes = response.bytes().await?;
+        self.debug_store.capture_response_body(&bytes).await;
+        let json = utils::json::parse_json(&bytes)?;
         Ok(json)
     }
 }

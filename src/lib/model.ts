@@ -13,20 +13,22 @@ export interface Course {
     name: string;
     course_code: string;
     enrollments: Enrollment[];
+    access_restricted_by_date: Option<boolean>;
     teachers: Teacher[];
     term: Term;
+    syllabus_body?: string;
 }
 
 interface Term {
     id: number;
     name: string;
-    start_at?: string | null;
-    end_at?: string | null;
-    created_at?: string | null;
+    start_at: Option<string>;
+    end_at: Option<string>;
+    created_at: Option<string>;
     workflow_state: string;
 }
 
-export type EnrollmentRole = "TaEnrollment" | "StudentEnrollment" | "TeacherEnrollment" | "DesignerEnrollment" | "ObserverEnrollment";
+export type EnrollmentRole = "TaEnrollment" | "StudentEnrollment" | "TeacherEnrollment" | "DesignerEnrollment" | "ObserverEnrollment" | "TemporaryStudentEnrollment" | "Other";
 
 export interface Enrollment {
     type: string;
@@ -63,7 +65,10 @@ export interface File {
     filename: string;
     mime_class: string;
     "content-type": string;
+    preview_url?: string | null;
     size: number;
+    external_type?: "File" | "Link";
+    external_title?: string;
 }
 
 export interface Folder {
@@ -71,7 +76,7 @@ export interface Folder {
     id: number;
     name: string;
     full_name: string;
-    parent_folder_id?: number | null;
+    parent_folder_id: Option<number>;
     locked: boolean;
     folders_url: string;
     files_url: string;
@@ -100,12 +105,40 @@ export interface User {
     sortable_name: string;
     short_name: string;
     login_id: string;
-    email: string | null;
+    email: Option<string>;
+}
+
+export interface LLMChatMessage {
+    role: string;
+    content: string;
+}
+
+export interface CanvasAgentChatMessage {
+    id: string;
+    role: "user" | "assistant";
+    content: string;
+    createdAt: string;
+    pending?: boolean;
+    error?: boolean;
+}
+
+export interface FileChatStreamChunkPayload {
+    request_id: string;
+    chunk: string;
+}
+
+export interface FileChatStreamDonePayload {
+    request_id: string;
+    content: string;
+}
+
+export interface FileChatStreamErrorPayload {
+    request_id: string;
+    error: string;
 }
 
 export interface UserSubmissions {
     user_id: number;
-    username?: string;
     submissions: Submission[]
 }
 
@@ -120,8 +153,8 @@ export interface CalendarEvent {
     type_field: string;
     assignment: Assignment;
     html_url: string;
-    end_at?: string | null;
-    start_at?: string | null;
+    end_at: Option<string>;
+    start_at: Option<string>;
     context_code: string;
     context_name: string;
     url: string;
@@ -131,12 +164,12 @@ export interface CalendarEvent {
 export interface Assignment {
     id: number;
     key: number;
-    needs_grading_count: number | null;
-    description: string | null;
-    due_at?: string | null;
-    unlock_at?: string;
-    lock_at?: string;
-    points_possible?: number;
+    needs_grading_count: Option<number>;
+    description: Option<string>;
+    due_at: Option<string>;
+    unlock_at: Option<string>;
+    lock_at: Option<string>;
+    points_possible: Option<number>;
     course_id: number;
     name: string;
     html_url: string;
@@ -144,24 +177,25 @@ export interface Assignment {
     allowed_extensions: string[];
     published: boolean;
     has_submitted_submissions: boolean;
-    submission?: Submission;
+    submissions_download_url: string;
+    submission: Option<Submission>;
     overrides: AssignmentOverride[];
     all_dates: AssignmentDate[];
-    score_statistics: ScoreStatistic | null
+    score_statistics: Option<ScoreStatistic>;
+    grading_type: string;
 }
 
 export interface AssignmentDate {
     id: number;
     base: boolean;
     title: string;
-    due_at: string | null;
-    unlock_at: string | null;
-    lock_at: string | null;
+    due_at: Option<string>;
+    unlock_at: Option<string>;
+    lock_at: Option<string>;
 }
 
 export interface AssignmentOverride {
     id: number;
-    pub_id: number;
     assignment_id: number;
     quiz_id: number;
     context_module_id: number;
@@ -169,11 +203,11 @@ export interface AssignmentOverride {
     group_id: number;
     course_section_id: number;
     title: string;
-    due_at: string | null;
+    due_at: Option<string>;
     all_day: boolean;
-    all_day_date: string;
-    unlock_at: string | null;
-    lock_at: string | null;
+    all_day_date: Option<string>;
+    unlock_at: Option<string>;
+    lock_at: Option<string>;
 }
 
 export type WorkflowState = "submitted" | "unsubmitted" | "graded" | "pending_review";
@@ -181,8 +215,8 @@ export type WorkflowState = "submitted" | "unsubmitted" | "graded" | "pending_re
 export interface Submission {
     id: number;
     key: number;
-    grade: string | null;
-    submitted_at?: string;
+    grade: Option<string>;
+    submitted_at: Option<string>;
     assignment_id: number;
     user_id: number;
     late: boolean;
@@ -203,16 +237,9 @@ export interface ScoreStatistic {
 }
 
 export interface Attachment {
-    user?: string;
-    user_id: number;
-    submitted_at?: string;
-    grade: string | null;
     id: number;
-    key: React.Key;
-    late: boolean;
-    comments: SubmissionComment[];
     uuid: string;
-    folder_id: number | null;
+    folder_id: Option<number>;
     display_name: string;
     filename: string;
     "content-type": string;
@@ -220,14 +247,22 @@ export interface Attachment {
     size: number;
     locked: boolean;
     mime_class: string;
-    preview_url: string;
+    user: Option<string>;
+    user_id: Option<number>;
+    submitted_at: Option<string>;
+    grade: Option<string>;
+    key: Option<React.Key>;
+    late: Option<boolean>;
+    comments: Option<SubmissionComment[]>;
+    preview_url: Option<string>;
 }
 
 export interface FileDownloadTask {
     key: string;
     file: File;
+    outputFormat?: "original" | "pdf";
     progress: number;
-    state: DownloadState;
+    state: FileDownloadState;
 }
 
 export interface VideoDownloadTask {
@@ -240,27 +275,70 @@ export interface VideoDownloadTask {
 export interface DownloadTask {
     key: string;
     name: string;
+    outputPath?: string;
     progress: number;
-    state: "downloading" | "completed" | "fail" | "merging";
+    state: "queued" | "downloading" | "completed" | "fail" | "merging";
 }
 
-export type DownloadState = "downloading" | "succeed" | "fail" | "wait_retry";
+export type DownloadState = "queued" | "downloading" | "succeed" | "fail" | "wait_retry";
+export type FileDownloadState = DownloadState | "converting" | "uploading";
 export type Theme = "light" | "dark";
+
+export interface LlmApiKeyEntry {
+    name: string;
+    key: string;
+    base_url: string;
+    model: string;
+}
 
 export interface AppConfig {
     token: string;
     account_type: "Default" | "JI";
     save_path: string;
     serve_as_plaintext: string;
+    oauth_consumer_key: string;
     ja_auth_cookie: string;
     video_cookies: string;
     proxy_port: number;
     course_assignment_file_bindings: Record<number, File[]>;
     show_alert_map: Record<string, boolean>;
     llm_api_key: string;
-    theme: Option<Theme>;
+    llm_base_url: string;
+    llm_model: string;
+    llm_temperature: Option<number>;
+    llm_api_keys: LlmApiKeyEntry[];
+    llm_active_api_key: string;
+    theme: Theme;
     compact_mode: boolean;
+    experimental_task_center_only?: boolean;
+    experimental_ppt_cleanup?: boolean;
     color_primary: Option<string>;
+    mcp_enabled: boolean;
+    mcp_port: number;
+    debug_mode: boolean;
+}
+
+export interface DebugHttpHeader {
+    name: string;
+    value: string;
+}
+
+export interface NetworkRequestLog {
+    id: string;
+    timestamp: string;
+    source: string;
+    method: string;
+    url: string;
+    status?: number | null;
+    ok?: boolean | null;
+    duration_ms?: number | null;
+    request_headers: DebugHttpHeader[];
+    response_headers: DebugHttpHeader[];
+    request_body?: string | null;
+    request_body_truncated: boolean;
+    response_body?: string | null;
+    response_body_truncated: boolean;
+    error?: string | null;
 }
 
 export interface AccountInfo {
@@ -289,23 +367,6 @@ export interface LoginMessage {
     type: string;
 }
 
-export interface Subject {
-    subjectId: number;
-    csplId: number;
-    subjectName: string;
-    classroomId: number;
-    classroomName: string;
-    userId: number;
-    userName: string;
-    courTimes: number;
-    subjImgUrl: string;
-    teclId: number;
-    teclName: string;
-    termTime: number;
-    beginYear: number;
-    endYear: number;
-}
-
 export interface VideoCourse {
     videPlayCount: number;
     videCommentAverage: number;
@@ -328,13 +389,24 @@ export interface VideoCourse {
 }
 
 export interface CanvasVideo {
+    alternatives?: CanvasVideo[];
+    source: VideoSource;
     videoId: string;
     userName: string;
     videoName: string;
     classroomName: string;
-    courseBeginTime: string,
-    courseEndTime: string,
+    courseBeginTime: string;
+    courseEndTime: string;
+    weekNumber: number;
+    weekDay: number;
+    lessonNumber: number;
+    dailyLessonNumber: number;
+    playable: boolean;
+    availability: "ready" | "repairing" | "unavailable";
+    availabilityLabel: string;
 }
+
+export type VideoSource = "canvas" | "videoSpace" | "legacy";
 
 export interface Video {
     id: number;
@@ -426,7 +498,7 @@ export interface SubmissionComment {
     author_name: string;
     created_at: string;
     avatar_path: string;
-    media_comment?: MediaComment | null;
+    media_comment: Option<MediaComment>;
     attachments: Attachment[]
 }
 
@@ -444,41 +516,41 @@ export interface QRCodeScanResult {
 export interface DiscussionTopic {
     id: number;
     title: string;
-    last_reply_at: string | null;
-    created_at: string | null;
-    delayed_post_at: string | null;
-    posted_at: string | null;
-    user_name: string | null;
-    lock_at: string | null;
-    assignment_id: number | null;
-    podcast_has_student_posts: boolean | null;
+    last_reply_at: Option<string>;
+    created_at: Option<string>;
+    delayed_post_at: Option<string>;
+    posted_at: Option<string>;
+    user_name: Option<string>;
+    lock_at: Option<string>;
+    assignment_id: Option<number>;
+    podcast_has_student_posts: Option<boolean>;
     discussion_type: string;
-    allow_rating: boolean | null;
-    only_graders_can_rate: boolean | null;
-    sort_by_rating: boolean | null;
-    is_section_specific: boolean | null;
+    allow_rating: Option<boolean>;
+    only_graders_can_rate: Option<boolean>;
+    sort_by_rating: Option<boolean>;
+    is_section_specific: Option<boolean>;
     discussion_subentry_count: number;
     permissions: Permissions;
-    require_initial_post: boolean | null;
-    user_can_see_posts: boolean | null;
-    podcast_url: string | null;
+    require_initial_post: Option<boolean>;
+    user_can_see_posts: Option<boolean>;
+    podcast_url: Option<string>;
     read_state: string;
     unread_count: number;
-    subscribed: boolean | null;
+    subscribed: Option<boolean>;
     attachments: Attachment[];
-    published: boolean | null;
-    can_unpublish: boolean | null;
-    locked: boolean | null;
-    can_lock: boolean | null;
-    comments_disabled: boolean | null;
+    published: Option<boolean>;
+    can_unpublish: Option<boolean>;
+    locked: Option<boolean>;
+    can_lock: Option<boolean>;
+    comments_disabled: Option<boolean>;
     html_url: string;
     url: string;
-    pinned: boolean | null;
-    can_group: boolean | null;
-    locked_for_user: boolean | null;
+    pinned: Option<boolean>;
+    can_group: Option<boolean>;
+    locked_for_user: Option<boolean>;
     lock_explanation: string;
     message: string;
-    assignment: Assignment | null;
+    assignment: Option<Assignment>;
 }
 
 export interface Permissions {
@@ -505,15 +577,15 @@ export interface Participant {
 
 export interface DiscussionView {
     id: number;
-    parent_id: number | null;
-    created_at: string | null;
-    updated_at: string | null;
-    editor_id: number | null;
-    rating_count: number | null;
-    rating_sum: number | null;
-    deleted: boolean | null;
-    user_id: number | null;
-    message: string | null;
+    parent_id: Option<number>;
+    created_at: Option<string>;
+    updated_at: Option<string>;
+    editor_id: Option<number>;
+    rating_count: Option<number>;
+    rating_sum: Option<number>;
+    deleted: Option<boolean>;
+    user_id: Option<number>;
+    message: Option<string>;
     replies: Reply[];
 }
 
@@ -521,11 +593,11 @@ export interface Reply {
     id: number;
     user_id: number;
     parent_id: number;
-    created_at: string | null;
-    updated_at: string | null;
-    rating_count: number | null;
-    rating_sum: number | null;
-    message: string | null;
+    created_at: Option<string>;
+    updated_at: Option<string>;
+    rating_count: Option<number>;
+    rating_sum: Option<number>;
+    message: Option<string>;
 }
 
 export interface DraggableItem {
@@ -548,10 +620,60 @@ export interface VideoAggregateParams {
 export interface AnnualCourseStatistic {
     courseId: number;
     courseName: string;
+    assignmentCount: number;
+    submittedCount: number;
+    lateCount: number;
+    gradedCount: number;
+    totalPointsPossible: number;
+    totalScore: number;
     submitTimeList: string[];
 }
 
 export interface AnnualReport {
     year: number;
+    activeDayCount: number;
+    firstSubmitAt?: Option<string>;
+    lastSubmitAt?: Option<string>;
     courseToStatistic: Record<number, AnnualCourseStatistic>;
+}
+
+export interface CompletionRequirement {
+    type: string;
+    min_score: Option<number>;
+    completed: boolean;
+}
+
+export interface ContentDetails {
+    points_possible: Option<number>;
+    due_at: Option<string>;
+    unlock_at: Option<string>;
+    lock_at: Option<string>;
+}
+
+export type ModuleItemType =
+    | 'File'
+    | 'Page'
+    | 'Discussion'
+    | 'Assignment'
+    | 'Quiz'
+    | 'SubHeader'
+    | 'ExternalUrl'
+    | 'ExternalTool';
+
+export interface ModuleItem {
+    id: number;
+    module_id: number;
+    position: number;
+    title: string;
+    indent: number;
+    type: ModuleItemType;
+    content_id: Option<number>;
+    html_url: string;
+    url: Option<string>;
+    page_url: Option<string>;
+    external_url: Option<string>;
+    new_tab: Option<boolean>;
+    completion_requirement: Option<CompletionRequirement>;
+    content_details: Option<ContentDetails>;
+    published: Option<boolean>;
 }

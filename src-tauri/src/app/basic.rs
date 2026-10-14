@@ -4,7 +4,7 @@ use std::process;
 use dirs::config_dir;
 use error::{AppError, Result};
 use futures::StreamExt;
-use reqwest::StatusCode;
+use reqwest::{header::TE, StatusCode};
 use rust_xlsxwriter::Workbook;
 use std::convert::Infallible;
 use std::{
@@ -29,7 +29,7 @@ use crate::{
     },
     error,
     model::*,
-    utils::{self, TempFile},
+    utils::{self, file::TempFile},
 };
 
 use super::{
@@ -38,6 +38,78 @@ use super::{
 };
 
 const MY_CANVAS_FILES_FOLDER_NAME: &str = "我的Canvas文件";
+
+async fn proxy_video_request(
+    upstream_base: &'static str,
+    referer: &'static str,
+    origin: &'static str,
+    tail: warp::path::Tail,
+    query: String,
+    headers: warp::http::HeaderMap,
+) -> std::result::Result<Response<warp::hyper::Body>, Infallible> {
+    let range_value = headers
+        .get("Range")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+
+    let mut url = format!("{upstream_base}/{}", tail.as_str());
+    if !query.is_empty() {
+        url.push('?');
+        url.push_str(&query);
+    }
+
+    let client = reqwest::Client::new();
+    let mut request = client
+        .get(&url)
+        .header("Referer", referer)
+        .header("Origin", origin)
+        .header("Accept-Encoding", "identity");
+    if !range_value.is_empty() {
+        request = request.header("Range", range_value);
+    }
+    for name in ["If-Range", "Accept", "User-Agent"] {
+        if let Some(value) = headers.get(name) {
+            request = request.header(name, value.as_bytes());
+        }
+    }
+
+    match request.send().await {
+        Ok(response) => {
+            let status = response.status();
+            let mut builder = Response::builder().status(status);
+            for (key, value) in response.headers() {
+                if key.as_str() != TE.as_str()
+                    && !matches!(
+                        key.as_str(),
+                        "connection"
+                            | "keep-alive"
+                            | "proxy-authenticate"
+                            | "proxy-authorization"
+                            | "trailer"
+                            | "transfer-encoding"
+                            | "upgrade"
+                    )
+                {
+                    builder = builder.header(key, value);
+                }
+            }
+            builder = builder.header("Access-Control-Allow-Origin", "*").header(
+                "Access-Control-Expose-Headers",
+                "Accept-Ranges, Content-Length, Content-Range, Content-Type, ETag, Last-Modified",
+            );
+            let stream = response
+                .bytes_stream()
+                .map(|chunk| chunk.map_err(std::io::Error::other));
+            let body = warp::hyper::Body::wrap_stream(stream);
+            Ok(builder.body(body).unwrap())
+        }
+        Err(error) => Ok(Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(format!("Error downloading video: {error}").into())
+            .unwrap()),
+    }
+}
 
 impl App {
     fn ensure_directory(dir: &str) {
@@ -88,7 +160,7 @@ impl App {
         let account_path = format!("{}/{}", config_dir, "account.json");
         fs::metadata(&account_path)?;
         let content = fs::read(&account_path)?;
-        utils::parse_json(&content)
+        utils::json::parse_json(&content)
     }
 
     pub fn account_exists(account: &Account) -> Result<bool> {
@@ -160,6 +232,8 @@ impl App {
         let config = App::read_config_from_file(&config_path)?;
         let base_url = Self::get_base_url(&config.account_type);
         self.client.set_base_url(base_url).await;
+        Self::apply_llm_config(&config, &self.client).await?;
+        self.client.set_debug_mode(config.debug_mode);
         *self.config.write().await = config;
 
         let mut account_info = App::read_account_info()?;
@@ -167,6 +241,10 @@ impl App {
         App::save_account_info(&account_info)?;
         *self.current_account.write().await = account.clone();
         self.invalidate_cache()?;
+        // Restart MCP server if enabled (token may have changed)
+        if self.config.read().await.mcp_enabled {
+            self.restart_mcp().await?;
+        }
         Ok(())
     }
 
@@ -194,14 +272,17 @@ impl App {
         tracing::info!("Read config path: {}", config_path);
         let config = App::read_config_from_file(&config_path).unwrap_or_default();
 
-        let base_url = Self::get_base_url(&config.account_type);
-        let client = Client::new(base_url, &config.llm_api_key);
+        let canvas_base_url = Self::get_base_url(&config.account_type);
+        let llm_config = crate::client::EffectiveLlmConfig::from_app_config(&config);
+        let client = Client::new_with_llm_config(canvas_base_url, llm_config);
+        client.set_debug_mode(config.debug_mode);
 
         Self {
             client: Arc::new(client),
             current_account: RwLock::new(account_info.current_account),
             config: RwLock::new(config),
             handle: Default::default(),
+            mcp_handle: Default::default(),
             cache: Default::default(),
         }
     }
@@ -221,7 +302,7 @@ impl App {
     }
 
     async fn wait_proxy_ready(&self, proxy_port: u16) -> Result<bool> {
-        let url = format!("http://localhost:{}/ready", proxy_port);
+        let url = format!("http://localhost:{proxy_port}/ready");
         let timeout_cnt = 10;
         let mut cnt = 0;
         loop {
@@ -246,62 +327,71 @@ impl App {
         let proxy_port = self.config.read().await.proxy_port;
 
         // Proxy Endpoint: /vod/*
-        let proxy = warp::get()
+        let legacy_video_proxy = warp::get()
             .and(warp::path("vod").and(warp::path::tail()))
             .and(query_raw().or(warp::any().map(|| "".to_string())).unify())
             .and(warp::header::headers_cloned())
-            .and_then(
-                |tail: warp::path::Tail, query: String, headers: warp::http::HeaderMap| async move {
-                    let range_value = headers
-                        .get("Range")
-                        .and_then(|v| v.to_str().ok())
-                        .unwrap_or("")
-                        .to_string();
-
-                    let mut url = format!("https://live.sjtu.edu.cn/vod/{}", tail.as_str());
-                    if !query.is_empty() {
-                        url.push('?');
-                        url.push_str(&query);
-                    }
-
-                    let client = reqwest::Client::new();
-                    let mut req = client
-                        .get(&url)
-                        .header("Referer", "https://courses.sjtu.edu.cn"); // 你原本的Referer
-                    if !range_value.is_empty() {
-                        req = req.header("Range", range_value.clone());
-                    }
-                    tracing::info!("req: {:?}", req);
-                    let resp = req.send().await;
-
-                    match resp {
-                        Ok(resp) => {
-                            tracing::info!("resp: {:?}", resp);
-                            let status = resp.status();
-                            let mut builder = Response::builder().status(status);
-                            for (k, v) in resp.headers() {
-                                builder = builder.header(k, v);
-                            }
-                            let stream = resp
-                                .bytes_stream()
-                                .map(|chunk| chunk.map_err(std::io::Error::other));
-                            let body = warp::hyper::Body::wrap_stream(stream);
-                            Ok::<warp::http::Response<warp::hyper::Body>, Infallible>(
-                                builder.body(body).unwrap(),
-                            )
-                        }
-                        Err(e) => Ok(Response::builder()
-                            .status(StatusCode::INTERNAL_SERVER_ERROR)
-                            .body(format!("Error downloading video: {}", e).into())
-                            .unwrap()),
-                    }
-                },
-            );
+            .and_then(|tail, query, headers| {
+                proxy_video_request(
+                    "https://live.sjtu.edu.cn/vod",
+                    "https://courses.sjtu.edu.cn",
+                    "https://courses.sjtu.edu.cn",
+                    tail,
+                    query,
+                    headers,
+                )
+            });
+        let canvas_video_proxy = warp::get()
+            .and(warp::path("canvas-vod").and(warp::path::tail()))
+            .and(query_raw().or(warp::any().map(|| "".to_string())).unify())
+            .and(warp::header::headers_cloned())
+            .and_then(|tail, query, headers| {
+                proxy_video_request(
+                    "https://videos.sjtu.edu.cn/vod",
+                    "https://v.sjtu.edu.cn/",
+                    "https://v.sjtu.edu.cn",
+                    tail,
+                    query,
+                    headers,
+                )
+            });
+        let legacy_canvas_video_proxy = warp::get()
+            .and(warp::path("legacy-vod").and(warp::path::tail()))
+            .and(query_raw().or(warp::any().map(|| "".to_string())).unify())
+            .and(warp::header::headers_cloned())
+            .and_then(|tail, query, headers| {
+                proxy_video_request(
+                    "https://videos.sjtu.edu.cn/vod",
+                    "https://courses.sjtu.edu.cn/",
+                    "https://courses.sjtu.edu.cn",
+                    tail,
+                    query,
+                    headers,
+                )
+            });
+        let canvas_live_proxy = warp::get()
+            .and(warp::path("canvas-live").and(warp::path::tail()))
+            .and(query_raw().or(warp::any().map(|| "".to_string())).unify())
+            .and(warp::header::headers_cloned())
+            .and_then(|tail, query, headers| {
+                proxy_video_request(
+                    "https://live.sjtu.edu.cn",
+                    "https://v.sjtu.edu.cn/",
+                    "https://v.sjtu.edu.cn",
+                    tail,
+                    query,
+                    headers,
+                )
+            });
         // Ready Check Endpoint: /ready
         let ready_check = warp::path!("ready").map(|| Response::builder().body(""));
 
-        let handle =
-            tokio::spawn(warp::serve(proxy.or(ready_check)).run(([127, 0, 0, 1], proxy_port)));
+        let routes = legacy_video_proxy
+            .or(legacy_canvas_video_proxy)
+            .or(canvas_video_proxy)
+            .or(canvas_live_proxy)
+            .or(ready_check);
+        let handle = tokio::spawn(warp::serve(routes).run(([127, 0, 0, 1], proxy_port)));
         *self.handle.write().await = Some(handle);
 
         self.wait_proxy_ready(proxy_port).await
@@ -316,9 +406,34 @@ impl App {
         *handle = None;
     }
 
+    pub async fn start_mcp(&self) -> Result<bool> {
+        if self.mcp_handle.read().await.is_some() {
+            return Ok(true);
+        }
+        let port = self.config.read().await.mcp_port;
+        let handle = crate::mcp::start_mcp_server(port);
+        *self.mcp_handle.write().await = Some(handle);
+        tracing::info!("MCP server started on port {port}");
+        Ok(true)
+    }
+
+    pub async fn stop_mcp(&self) {
+        let mut handle = self.mcp_handle.write().await;
+        if let Some(handle) = handle.as_ref() {
+            tracing::info!("Stopping MCP server");
+            handle.abort();
+        }
+        *handle = None;
+    }
+
+    pub async fn restart_mcp(&self) -> Result<bool> {
+        self.stop_mcp().await;
+        self.start_mcp().await
+    }
+
     fn read_config_from_file(config_path: &str) -> Result<AppConfig> {
         let content = fs::read(config_path)?;
-        let config = utils::parse_json(&content)?;
+        let config = utils::json::parse_json(&content)?;
         Ok(config)
     }
 
@@ -326,9 +441,9 @@ impl App {
         let config_dir = App::config_dir().unwrap();
         let mut config_file_name = "sjtu_canvas_helper_config".to_owned();
         if let Account::Custom(name) = account {
-            config_file_name += &format!("_{}", name);
+            config_file_name += &format!("_{name}");
         }
-        let config_path = format!("{}/{}.json", config_dir, config_file_name);
+        let config_path = format!("{config_dir}/{config_file_name}.json");
         config_path
     }
 
@@ -399,12 +514,30 @@ impl App {
             .await
     }
 
+    pub async fn list_external_module_items(&self, course_id: i64) -> Result<Vec<ModuleItem>> {
+        let token = self.config.read().await.token.clone();
+        let modules = self.client.list_modules(course_id, &token).await?;
+        let mut ret = vec![];
+        for module in modules {
+            let items = self
+                .client
+                .list_module_items(course_id, module.id, &token)
+                .await?;
+            for item in items {
+                if item.type_ == ModuleItemType::ExternalUrl {
+                    ret.push(item);
+                }
+            }
+        }
+        Ok(ret)
+    }
+
     pub async fn update_grade(
         &self,
         course_id: i64,
         assignment_id: i64,
         student_id: i64,
-        grade: &str,
+        grade: Option<&str>,
         comment: Option<&str>,
     ) -> Result<()> {
         self.client
@@ -542,6 +675,13 @@ impl App {
         self.client.list_course_files(course_id, &token).await
     }
 
+    pub async fn get_file_preview_session_url(&self, file_id: i64) -> Result<String> {
+        let token = self.config.read().await.token.clone();
+        self.client
+            .get_file_preview_session_url(file_id, &token)
+            .await
+    }
+
     pub async fn list_course_images(&self, course_id: i64) -> Result<Vec<File>> {
         let token = self.config.read().await.token.clone();
         self.client.list_course_images(course_id, &token).await
@@ -612,6 +752,12 @@ impl App {
     pub async fn list_course_students(&self, course_id: i64) -> Result<Vec<User>> {
         self.client
             .list_course_students(course_id, &self.config.read().await.token)
+            .await
+    }
+
+    pub async fn get_course_syllabus(&self, course_id: i64) -> Result<Course> {
+        self.client
+            .get_course_syllabus(course_id, &self.config.read().await.token)
             .await
     }
 
@@ -723,6 +869,31 @@ impl App {
         Ok(())
     }
 
+    pub async fn download_course_file_as_pdf(
+        &self,
+        file: &File,
+        course: &Course,
+        folder_path: &str,
+    ) -> Result<()> {
+        let (pdf_name, pdf_content) = self.convert_office_file_to_pdf(file).await?;
+        let save_path = Path::new(&self.config.read().await.save_path)
+            .join(self.get_course_identifier(course))
+            .join(folder_path);
+        fs::create_dir_all(&save_path)?;
+        fs::write(save_path.join(pdf_name), pdf_content)?;
+        Ok(())
+    }
+
+    pub async fn download_my_file_as_pdf(&self, file: &File, folder_path: &str) -> Result<()> {
+        let (pdf_name, pdf_content) = self.convert_office_file_to_pdf(file).await?;
+        let save_path = Path::new(&self.config.read().await.save_path)
+            .join(MY_CANVAS_FILES_FOLDER_NAME)
+            .join(folder_path);
+        fs::create_dir_all(&save_path)?;
+        fs::write(save_path.join(pdf_name), pdf_content)?;
+        Ok(())
+    }
+
     fn get_course_identifier(&self, course: &Course) -> String {
         self.client.get_course_identifier(course)
     }
@@ -763,6 +934,16 @@ impl App {
             .join(folder_path)
             .join(name);
         self.open_path(path.to_str().unwrap_or_default())
+    }
+
+    pub fn open_local_path(&self, path: &str) -> Result<()> {
+        let local = Path::new(path);
+        if !local.is_absolute() {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "请选择本地文件或目录的绝对路径").into());
+        }
+        // Check existence before handing the path to the system file opener.
+        std::fs::metadata(local)?;
+        self.open_path(path)
     }
 
     fn open_path(&self, path: &str) -> Result<()> {
@@ -855,6 +1036,12 @@ impl App {
             .await
     }
 
+    async fn apply_llm_config(config: &AppConfig, client: &Client) -> Result<()> {
+        client
+            .reconfigure_llm(crate::client::EffectiveLlmConfig::from_app_config(config))
+            .await
+    }
+
     pub async fn save_config(&self, config: AppConfig) -> Result<()> {
         let account = self.current_account.read().await.clone();
         let config_path = App::get_config_path(&account);
@@ -863,17 +1050,69 @@ impl App {
         if self.client.set_base_url(base_url).await {
             self.invalidate_cache()?;
         }
-        self.client.set_llm_api_key(&config.llm_api_key).await;
+        Self::apply_llm_config(&config, &self.client).await?;
+        self.client.set_debug_mode(config.debug_mode);
+        let was_enabled = self.config.read().await.mcp_enabled;
         *self.config.write().await = config;
+        let is_enabled = self.config.read().await.mcp_enabled;
+        if was_enabled != is_enabled {
+            if is_enabled {
+                self.start_mcp().await?;
+            } else {
+                self.stop_mcp().await;
+            }
+        } else if is_enabled {
+            self.restart_mcp().await?;
+        }
         Ok(())
+    }
+
+    pub async fn list_network_logs(&self) -> Vec<NetworkRequestLog> {
+        self.client.list_network_logs().await
+    }
+
+    pub async fn clear_network_logs(&self) {
+        self.client.clear_network_logs().await;
     }
 
     pub async fn chat<S: Into<String>>(&self, prompt: S) -> Result<String> {
         self.client.chat(prompt).await
     }
 
+    pub(crate) async fn llm_snapshot(&self) -> Result<crate::client::LlmSnapshot> {
+        self.client.llm_snapshot().await
+    }
+
     pub async fn explain_file(&self, file: &File) -> Result<String> {
         self.client.explain_file(file).await
+    }
+
+    pub async fn chat_with_file(&self, file: &File, messages: &[LLMChatMessage]) -> Result<String> {
+        self.client.chat_with_file(file, messages).await
+    }
+
+    pub async fn chat_with_file_stream(
+        &self,
+        file: &File,
+        messages: &[LLMChatMessage],
+        on_chunk: &mut (dyn FnMut(String) + Send),
+    ) -> Result<String> {
+        self.client.chat_with_file_stream(file, messages, on_chunk).await
+    }
+
+    pub async fn summarize_subtitle(&self, canvas_course_id: i64) -> Result<String> {
+        self.client.summarize_subtitle(canvas_course_id).await
+    }
+
+    pub async fn chat_with_subtitle_stream(
+        &self,
+        canvas_course_id: i64,
+        messages: &[LLMChatMessage],
+        on_chunk: &mut (dyn FnMut(String) + Send),
+    ) -> Result<String> {
+        self.client
+            .chat_with_subtitle_stream(canvas_course_id, messages, on_chunk)
+            .await
     }
 
     pub fn check_path(path: &str) -> bool {
@@ -974,124 +1213,286 @@ impl App {
         Ok(())
     }
 
+    fn try_convert_with_libreoffice(
+        &self,
+        input_path: &Path,
+        pdf_path: &Path,
+    ) -> std::result::Result<(), String> {
+        #[cfg(target_os = "windows")]
+        let candidates = [
+            "soffice.exe",
+            r"C:\Program Files\LibreOffice\program\soffice.exe",
+            r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+        ];
+        #[cfg(target_os = "macos")]
+        let candidates = [
+            "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+            "soffice",
+        ];
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        let candidates = ["libreoffice", "soffice"];
+
+        let output_dir = pdf_path
+            .parent()
+            .ok_or_else(|| "无法确定 PDF 输出目录".to_owned())?;
+        let generated_pdf_path = output_dir
+            .join(
+                input_path
+                    .file_stem()
+                    .ok_or_else(|| "无法确定源文件名".to_owned())?,
+            )
+            .with_extension("pdf");
+        let mut errors = Vec::new();
+
+        for candidate in candidates {
+            match Command::new(candidate)
+                .args(["--headless", "--convert-to", "pdf", "--outdir"])
+                .arg(output_dir)
+                .arg(input_path)
+                .output()
+            {
+                Ok(output) if output.status.success() && generated_pdf_path.exists() => {
+                    if generated_pdf_path != pdf_path {
+                        fs::rename(&generated_pdf_path, pdf_path)
+                            .map_err(|error| error.to_string())?;
+                    }
+                    return Ok(());
+                }
+                Ok(output) => errors.push(format!(
+                    "{candidate}: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                )),
+                Err(error) => errors.push(format!("{candidate}: {error}")),
+            }
+        }
+
+        Err(errors.join("; "))
+    }
+
     #[cfg(target_os = "macos")]
     fn convert_pptx_to_pdf_inner(&self, pptx_path: &Path, pdf_path: &Path) -> Result<()> {
-        // Reference https://github.com/jeongwhanchoi/convert-ppt-to-pdf
-        process::Command::new("osascript")
+        if self
+            .try_convert_with_libreoffice(pptx_path, pdf_path)
+            .is_ok()
+        {
+            return Ok(());
+        }
+
+        let output = process::Command::new("osascript")
             .arg("-e")
             .arg(
                 r#"on run {input, output}
-            tell application "Microsoft PowerPoint" -- work on version 15.15 or newer
-                launch
-                set t to input as string
-                set pptx to input as POSIX file
-                if t ends with ".ppt" or t ends with ".pptx" then
-                    set pdfPath to output as POSIX file as string
-                    open pptx
-                    save active presentation in pdfPath as save as PDF -- save in same folder
-                end if
-            end tell
-            tell application "Microsoft PowerPoint" -- work on version 15.15 or newer
-                quit
-            end tell
-        end run"#,
+                    tell application "Microsoft PowerPoint"
+                        launch
+                        set pptx to input as POSIX file
+                        set pdfPath to output as POSIX file as string
+                        open pptx
+                        save active presentation in pdfPath as save as PDF
+                        close active presentation saving no
+                    end tell
+                end run"#,
             )
             .arg(pptx_path)
             .arg(pdf_path)
             .output()?;
-
+        if !output.status.success() || !pdf_path.exists() {
+            return Err(AppError::DocumentConversion(format!(
+                "PowerPoint/LibreOffice 均无法完成转换：{}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )));
+        }
         Ok(())
     }
 
     #[cfg(target_os = "macos")]
     fn convert_docx_to_pdf_inner(&self, docx_path: &Path, pdf_path: &Path) -> Result<()> {
-        process::Command::new("osascript")
+        if self
+            .try_convert_with_libreoffice(docx_path, pdf_path)
+            .is_ok()
+        {
+            return Ok(());
+        }
+
+        let output = process::Command::new("osascript")
             .arg("-e")
             .arg(
                 r#"on run {input, output}
                     tell application "Microsoft Word"
                         launch
-                        set t to input as string
                         set docx to input as POSIX file
-                        if t ends with ".doc" or t ends with ".docx" then
-                            set pdfPath to output as POSIX file as string
-                            open docx
-                            set activeDoc to active document
-                            save as activeDoc file name pdfPath file format format PDF
-                        end if
-                    end tell
-                    tell application "Microsoft Word"
-                        quit
+                        set pdfPath to output as POSIX file as string
+                        open docx
+                        set activeDoc to active document
+                        save as activeDoc file name pdfPath file format format PDF
+                        close activeDoc saving no
                     end tell
                 end run"#,
             )
-            .arg(docx_path.as_os_str().to_str().unwrap())
-            .arg(pdf_path.as_os_str().to_str().unwrap())
+            .arg(docx_path)
+            .arg(pdf_path)
             .output()?;
+        if !output.status.success() || !pdf_path.exists() {
+            return Err(AppError::DocumentConversion(format!(
+                "Word/LibreOffice 均无法完成转换：{}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )));
+        }
         Ok(())
     }
 
     #[cfg(target_os = "windows")]
-    fn convert_docx_to_pdf_inner(&self, pptx_path: &Path, pdf_path: &Path) -> Result<()> {
-        Err(AppError::FunctionUnsupported)
+    fn convert_docx_to_pdf_inner(&self, docx_path: &Path, pdf_path: &Path) -> Result<()> {
+        if self
+            .try_convert_with_libreoffice(docx_path, pdf_path)
+            .is_ok()
+        {
+            return Ok(());
+        }
+
+        let input = docx_path.to_string_lossy().replace('\'', "''");
+        let output_path = pdf_path.to_string_lossy().replace('\'', "''");
+        let script = format!(
+            r#"$ErrorActionPreference = 'Stop'
+$wordApp = $null
+$document = $null
+try {{
+    $wordApp = New-Object -ComObject Word.Application
+    $wordApp.Visible = $false
+    $document = $wordApp.Documents.Open('{input}', $false, $true)
+    $document.ExportAsFixedFormat('{output_path}', 17)
+}} finally {{
+    if ($null -ne $document) {{ $document.Close($false) }}
+    if ($null -ne $wordApp) {{ $wordApp.Quit() }}
+}}"#
+        );
+        let output = process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command"])
+            .arg(script)
+            .output()?;
+        if !output.status.success() || !pdf_path.exists() {
+            return Err(AppError::DocumentConversion(format!(
+                "Word/LibreOffice 均无法完成转换：{}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )));
+        }
+        Ok(())
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    fn convert_docx_to_pdf_inner(&self, _: &Path, _: &Path) -> Result<()> {
-        Err(AppError::FunctionUnsupported)
+    fn convert_docx_to_pdf_inner(&self, docx_path: &Path, pdf_path: &Path) -> Result<()> {
+        self.try_convert_with_libreoffice(docx_path, pdf_path)
+            .map_err(|error| {
+                AppError::DocumentConversion(format!(
+                    "需要安装 LibreOffice 才能转换 Word 文件：{error}"
+                ))
+            })
     }
 
     #[cfg(target_os = "windows")]
     fn convert_pptx_to_pdf_inner(&self, pptx_path: &Path, pdf_path: &Path) -> Result<()> {
-        process::Command::new("powershell.exe")
-            .arg("-Command")
-            .arg(format!(r#"$ppt_app = New-Object -ComObject PowerPoint.Application; $document = $ppt_app.Presentations.Open("{}"); $pdf_filename = "{}"; $opt= [Microsoft.Office.Interop.PowerPoint.PpSaveAsFileType]::ppSaveAsPDF; $document.SaveAs($pdf_filename, $opt); $document.Close(); $ppt_app.Quit();"#,
-        pptx_path.to_str().unwrap(), pdf_path.to_str().unwrap()))
+        if self
+            .try_convert_with_libreoffice(pptx_path, pdf_path)
+            .is_ok()
+        {
+            return Ok(());
+        }
+
+        let input = pptx_path.to_string_lossy().replace('\'', "''");
+        let output_path = pdf_path.to_string_lossy().replace('\'', "''");
+        let script = format!(
+            r#"$ErrorActionPreference = 'Stop'
+$powerPointApp = $null
+$presentation = $null
+try {{
+    $powerPointApp = New-Object -ComObject PowerPoint.Application
+    $presentation = $powerPointApp.Presentations.Open('{input}', $true, $false, $false)
+    $presentation.SaveAs('{output_path}', 32)
+}} finally {{
+    if ($null -ne $presentation) {{ $presentation.Close() }}
+    if ($null -ne $powerPointApp) {{ $powerPointApp.Quit() }}
+}}"#
+        );
+        let output = process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command"])
+            .arg(script)
             .output()?;
+        if !output.status.success() || !pdf_path.exists() {
+            return Err(AppError::DocumentConversion(format!(
+                "PowerPoint/LibreOffice 均无法完成转换：{}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )));
+        }
         Ok(())
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    fn convert_pptx_to_pdf_inner(&self, _: &Path, _: &Path) -> Result<()> {
-        Err(AppError::FunctionUnsupported)
+    fn convert_pptx_to_pdf_inner(&self, pptx_path: &Path, pdf_path: &Path) -> Result<()> {
+        self.try_convert_with_libreoffice(pptx_path, pdf_path)
+            .map_err(|error| {
+                AppError::DocumentConversion(format!(
+                    "需要安装 LibreOffice 才能转换 PowerPoint 文件：{error}"
+                ))
+            })
+    }
+
+    fn pdf_file_name(file_name: &str) -> Result<String> {
+        let path = Path::new(file_name);
+        let stem = path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .ok_or_else(|| AppError::DocumentConversion("无法识别源文件名".to_owned()))?;
+        Ok(format!("{stem}.pdf"))
+    }
+
+    pub async fn convert_office_file_to_pdf(&self, file: &File) -> Result<(String, Vec<u8>)> {
+        let extension = Path::new(&file.display_name)
+            .extension()
+            .and_then(|value| value.to_str())
+            .map(str::to_lowercase)
+            .ok_or_else(|| AppError::UnsupportedFileExtensionError(file.display_name.clone()))?;
+        if !matches!(extension.as_str(), "doc" | "docx" | "ppt" | "pptx") {
+            return Err(AppError::UnsupportedFileExtensionError(extension));
+        }
+
+        let temp_dir = std::env::temp_dir()
+            .join("sjtu-canvas-helper")
+            .join(Uuid::new_v4().to_string());
+        fs::create_dir_all(&temp_dir)?;
+        let input_path = temp_dir.join(format!("source.{extension}"));
+        let pdf_path = temp_dir.join("source.pdf");
+        let pdf_name = Self::pdf_file_name(&file.display_name)?;
+        let token = self.config.read().await.token.clone();
+        let mut temp_file = file.clone();
+        temp_file.display_name = format!("source.{extension}");
+
+        let result = async {
+            let temp_dir_string = temp_dir.to_string_lossy().into_owned();
+            self.client
+                .download_file(&temp_file, &token, &temp_dir_string, |_| {})
+                .await?;
+            if matches!(extension.as_str(), "doc" | "docx") {
+                self.convert_docx_to_pdf_inner(&input_path, &pdf_path)?;
+            } else {
+                self.convert_pptx_to_pdf_inner(&input_path, &pdf_path)?;
+            }
+            Ok((pdf_name, fs::read(&pdf_path)?))
+        }
+        .await;
+
+        if let Err(error) = fs::remove_dir_all(&temp_dir) {
+            tracing::warn!("Failed to remove conversion temp directory: {error}");
+        }
+        result
     }
 
     pub async fn convert_pptx_to_pdf(&self, file: &mut File) -> Result<Vec<u8>> {
-        let config = self.config.read().await;
-        let token = &config.token.clone();
-        let save_dir = &config.save_path.clone();
-        let out_file_name = file.display_name.replace("pptx", "pdf");
-        let tmp_file_name = format!("tmp_{}.pptx", Uuid::new_v4());
-        let pptx_path = Path::new(save_dir).join(&tmp_file_name);
-        let pdf_path = Path::new(save_dir).join(&out_file_name);
-        file.display_name = tmp_file_name;
-        self.client
-            .download_file(file, token, save_dir, |_| {})
-            .await?;
-        self.convert_pptx_to_pdf_inner(&pptx_path, &pdf_path)?;
-        fs::remove_file(&pptx_path)?;
-        let pdf_content = fs::read(&pdf_path)?;
-        fs::remove_file(&pdf_path)?;
-        Ok(pdf_content)
+        let (_, content) = self.convert_office_file_to_pdf(file).await?;
+        Ok(content)
     }
 
     pub async fn convert_docx_to_pdf(&self, file: &mut File) -> Result<Vec<u8>> {
-        let config = self.config.read().await;
-        let token = &config.token.clone();
-        let save_dir = &config.save_path.clone();
-        let out_file_name = file.display_name.replace("docx", "pdf");
-        let tmp_file_name = format!("tmp_{}.docx", Uuid::new_v4());
-        let docx_path = Path::new(save_dir).join(&tmp_file_name);
-        let pdf_path = Path::new(save_dir).join(&out_file_name);
-        file.display_name = tmp_file_name;
-        self.client
-            .download_file(file, token, save_dir, |_| {})
-            .await?;
-        self.convert_docx_to_pdf_inner(&docx_path, &pdf_path)?;
-        fs::remove_file(&docx_path)?;
-        let pdf_content = fs::read(&pdf_path)?;
-        fs::remove_file(&pdf_path)?;
-        Ok(pdf_content)
+        let (_, content) = self.convert_office_file_to_pdf(file).await?;
+        Ok(content)
     }
 
     pub fn is_ffmpeg_installed() -> bool {
@@ -1108,8 +1509,8 @@ impl App {
         params: &VideoAggregateParams,
     ) -> Result<i32> {
         let scale_percentage = params.sub_video_size_percentage as f64 / 100.0;
-        let scale_width = format!("iw*{}", scale_percentage);
-        let scale_height = format!("ih*{}", scale_percentage);
+        let scale_width = format!("iw*{scale_percentage}");
+        let scale_height = format!("ih*{scale_percentage}");
 
         let alpha_value = params.sub_video_alpha as f64 / 100.0;
         let output_path = format!("{}/{}", params.output_dir, params.output_name);
@@ -1122,8 +1523,7 @@ impl App {
                 &params.sub_video_path,
                 "-filter_complex",
                 &format!(
-                    "[1:v]scale={}:{}[overlay];[0:v][overlay]overlay=W-w:H-h:format=auto:alpha={}",
-                    scale_width, scale_height, alpha_value
+                    "[1:v]scale={scale_width}:{scale_height}[overlay];[0:v][overlay]overlay=W-w:H-h:format=auto:alpha={alpha_value}"
                 ),
                 "-c:a",
                 "copy",

@@ -58,5 +58,5 @@ jobs:
       - name: Upload test report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: junit-${{ matrix.os }}.xml
-          path: target/nextest/ci/junit.xml
+          name: junit-${{ matrix.os }}-${{ matrix.target || 'default' }}.xml
+          path: src-tauri/target/nextest/ci/junit.xml

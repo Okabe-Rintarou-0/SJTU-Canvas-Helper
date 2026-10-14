@@ -27,4 +27,24 @@ impl App {
             .upload_file(file, save_dir, &info, progress_handler)
             .await
     }
+
+    pub async fn upload_file_as_pdf<F: Fn(ProgressPayload) + Send>(
+        &self,
+        file: &File,
+        save_dir: &str,
+        progress_handler: F,
+    ) -> Result<()> {
+        let (pdf_name, pdf_content) = self.convert_office_file_to_pdf(file).await?;
+        let info = self.get_config().await.jbox_login_info;
+        self.client
+            .upload_content(
+                &pdf_content,
+                &pdf_name,
+                &file.uuid,
+                save_dir,
+                &info,
+                progress_handler,
+            )
+            .await
+    }
 }

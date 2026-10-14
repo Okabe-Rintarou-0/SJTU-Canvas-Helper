@@ -1,13 +1,24 @@
+import { enqueuePDFMerge } from "./pdf_tasks";
+import { useTasks } from "./task_hooks";
+import { isTaskActive, taskManager } from "./task_manager";
+import {
+  Button,
+  LinearProgress,
+  Stack,
+  TextField,
+  Typography,
+} from "@mui/material";
 import { invoke } from "@tauri-apps/api/core";
-import { Button, Input, Progress, Space, message } from "antd";
 import dayjs from "dayjs";
-import PDFMerger from "pdf-merger-js/browser";
 import {
   CSSProperties,
   Dispatch,
   ReactNode,
   SetStateAction,
+  useCallback,
   useEffect,
+  useMemo,
+  useRef,
   useState,
 } from "react";
 import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
@@ -16,6 +27,7 @@ import { LoginAlertModal } from "../components/login_alert_modal";
 import PreviewModal from "../components/preview_modal";
 import { getConfig, saveConfig } from "./config";
 import { BASE_URL, JI_BASE_URL } from "./constants";
+import { appMessage } from "./message";
 import {
   AnnualReport,
   Assignment,
@@ -24,20 +36,21 @@ import {
   File,
   Folder,
   LOG_LEVEL_ERROR,
-  LOG_LEVEL_INFO,
   LoginMessage,
+  ModuleItem,
   RelationshipTopo,
   User,
   UserSubmissions,
   isFile,
 } from "./model";
-import { ConfigDispatch, ConfigState } from "./store";
-import { consoleLog, isMergableFileType } from "./utils";
+import { ConfigDispatch, ConfigState, courseSlice } from "./store";
+import { consoleLog, isMergableFileType, moduleItem2File } from "./utils";
 
 const UPDATE_QRCODE_MESSAGE = '{ "type": "UPDATE_QR_CODE" }';
-const SEND_INTERVAL = 1000 * 50;
+const SEND_INTERVAL = 1000 * 25;
 const QRCODE_BASE_URL = "https://jaccount.sjtu.edu.cn/jaccount/confirmscancode";
 const WEBSOCKET_BASE_URL = "wss://jaccount.sjtu.edu.cn/jaccount/sub";
+const QRCODE_TIMEOUT = 1000 * 8;
 
 const EMPTY_ARRAY: any[] = [];
 
@@ -54,29 +67,34 @@ export function usePreview(
     undefined
   );
 
-  const previewer = (
-    <Previewer
-      previewEntry={previewEntry}
-      setPreviewEntry={setPreviewEntry}
-      hoveredEntry={hoveredEntry}
-      setHoveredEntry={setHoveredEntry}
-      entries={entries}
-      footer={footer}
-      bodyStyle={bodyStyle}
-      monitorBlankKey={monitorBlankKey}
-    />
-  );
-
-  const onHoverEntry = (entry: Entry) => {
+  const onHoverEntry = useCallback((entry: Entry) => {
     if (!previewEntry) {
       setHoveredEntry(entry);
     }
-  };
-  const onLeaveEntry = () => {
+  }, [previewEntry]);
+
+  const onLeaveEntry = useCallback(() => {
     if (!previewEntry) {
       setHoveredEntry(undefined);
     }
-  };
+  }, [previewEntry]);
+
+  const previewer = useMemo(
+    () => (
+      <Previewer
+        previewEntry={previewEntry}
+        setPreviewEntry={setPreviewEntry}
+        hoveredEntry={hoveredEntry}
+        setHoveredEntry={setHoveredEntry}
+        entries={entries}
+        footer={footer}
+        bodyStyle={bodyStyle}
+        monitorBlankKey={monitorBlankKey}
+      />
+    ),
+    [bodyStyle, entries, footer, hoveredEntry, monitorBlankKey, previewEntry]
+  );
+
   return {
     previewer,
     previewEntry,
@@ -109,54 +127,89 @@ function Previewer({
   bodyStyle?: CSSProperties;
   monitorBlankKey: boolean;
 }) {
-  const [files, setFiles] = useState<File[]>([]);
+  const previewEntryRef = useRef<EntryType>(previewEntry);
+  const hoveredEntryRef = useRef<EntryType>(hoveredEntry);
+  const monitorBlankKeyRef = useRef(monitorBlankKey);
 
-  const getNextEntry = (entry: Entry) => {
-    const index = entries.findIndex((file) => file.id === entry.id);
+  useEffect(() => {
+    previewEntryRef.current = previewEntry;
+  }, [previewEntry]);
+
+  useEffect(() => {
+    hoveredEntryRef.current = hoveredEntry;
+  }, [hoveredEntry]);
+
+  useEffect(() => {
+    monitorBlankKeyRef.current = monitorBlankKey;
+  }, [monitorBlankKey]);
+
+  const entryIndexMap = useMemo(() => {
+    const map = new Map<Entry["id"], number>();
+    entries.forEach((entry, index) => {
+      map.set(entry.id, index);
+    });
+    return map;
+  }, [entries]);
+
+  const getNextEntry = useCallback((entry: Entry) => {
+    const index = entryIndexMap.get(entry.id);
     if (index === -1) {
+      return null;
+    }
+    if (index === undefined) {
       return null;
     }
     if (index === entries.length - 1) {
       return entries[0];
     }
     return entries[index + 1];
-  };
+  }, [entries, entryIndexMap]);
 
-  const getPrevEntry = (entry: Entry) => {
-    const index = entries.findIndex((file) => file.id === entry.id);
+  const getPrevEntry = useCallback((entry: Entry) => {
+    const index = entryIndexMap.get(entry.id);
     if (index === -1) {
+      return null;
+    }
+    if (index === undefined) {
       return null;
     }
     if (index === 0) {
       return entries[entries.length - 1];
     }
     return entries[index - 1];
-  };
+  }, [entries, entryIndexMap]);
 
   useEffect(() => {
     const handleKeyDownEvent = (ev: KeyboardEvent) => {
-      if (!monitorBlankKey) {
+      const currentPreviewEntry = previewEntryRef.current;
+      const currentHoveredEntry = hoveredEntryRef.current;
+
+      if (!monitorBlankKeyRef.current) {
+        return;
+      }
+      const target = ev.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) {
         return;
       }
       if (ev.key === " " && !ev.repeat) {
         ev.stopPropagation();
         ev.preventDefault();
-        if (hoveredEntry && !previewEntry) {
+        if (currentHoveredEntry && !currentPreviewEntry) {
           setHoveredEntry(undefined);
-          setPreviewEntry(hoveredEntry);
-        } else if (previewEntry) {
+          setPreviewEntry(currentHoveredEntry);
+        } else if (currentPreviewEntry) {
           setPreviewEntry(undefined);
         }
         return;
       }
-      if (!previewEntry) {
+      if (!currentPreviewEntry) {
         return;
       }
 
       if (ev.key === "ArrowRight" && !ev.repeat) {
         ev.stopPropagation();
         ev.preventDefault();
-        const entry = getNextEntry(previewEntry);
+        const entry = getNextEntry(currentPreviewEntry);
         if (entry) {
           setHoveredEntry(undefined);
           setPreviewEntry(entry);
@@ -165,7 +218,7 @@ function Previewer({
       if (ev.key === "ArrowLeft" && !ev.repeat) {
         ev.stopPropagation();
         ev.preventDefault();
-        const entry = getPrevEntry(previewEntry);
+        const entry = getPrevEntry(currentPreviewEntry);
         if (entry) {
           setHoveredEntry(undefined);
           setPreviewEntry(entry);
@@ -177,30 +230,33 @@ function Previewer({
     return () => {
       document.body.removeEventListener("keydown", handleKeyDownEvent, true);
     };
-  }, [previewEntry, hoveredEntry, monitorBlankKey, entries]);
+  }, [getNextEntry, getPrevEntry, setHoveredEntry, setPreviewEntry]);
 
-  useEffect(() => {
+  const currentFile = useMemo(() => {
     if (previewEntry && isFile(previewEntry)) {
-      setFiles([previewEntry as File]);
-    } else {
-      setFiles([]);
+      return previewEntry as File;
     }
+    return undefined;
   }, [previewEntry]);
 
-  const handleCancelPreview = () => {
-    setPreviewEntry(undefined);
-  };
+  const previewFiles = useMemo(() => {
+    return currentFile ? [currentFile] : [];
+  }, [currentFile]);
 
-  const shouldOpen = previewEntry !== undefined && files.length > 0;
+  const handleCancelPreview = useCallback(() => {
+    setPreviewEntry(undefined);
+  }, [setPreviewEntry]);
+
+  const shouldOpen = previewEntry !== undefined && currentFile !== undefined;
   return (
     <>
       {shouldOpen && (
         <PreviewModal
           open={shouldOpen}
-          files={files}
+          files={previewFiles}
           footer={footer}
           bodyStyle={bodyStyle}
-          title={(previewEntry as File).display_name}
+          title={currentFile.display_name}
           handleCancelPreview={handleCancelPreview}
         />
       )}
@@ -217,210 +273,128 @@ export function useMerger({
   onHoverEntry: (entry: Entry) => void;
   onLeaveEntry: () => void;
 }) {
-  const [merging, setMerging] = useState<boolean>(false);
-  const [downloading, setDownloading] = useState<boolean>(false);
-  const [currentStep, setCurrentStep] = useState<number>(0);
-  const [totalSteps, setTotalSteps] = useState<number>(0);
-  const [error, setError] = useState<boolean>(false);
-  const [msg, setMsg] = useState<string>("当前无任务");
-  const [result, setResult] = useState<File | undefined>(undefined);
-  const [resultBlob, setResultBlob] = useState<Blob | undefined>(undefined);
-  const [outFileName, setOutFileName] = useState<string>("");
-
+  const tasks = useTasks();
+  const latest = [...tasks].reverse().find((task) => task.kind === "pdf-merge");
+  const [outFileName, setOutFileName] = useState("");
+  const result = useMemo(() => latest?.result ? ({
+    url: latest.result.url, display_name: latest.result.name,
+  } as File) : undefined, [latest?.result]);
   const mergePDFs = async (files: File[]) => {
-    files = files.filter((file) => isMergableFileType(file.display_name));
-    const pdfMerger = new PDFMerger();
-    if (files.length === 0) {
-      message.warning("未选中多个可用的 PDF 文件🙅！");
+    const selected = files.filter((file) => isMergableFileType(file.display_name));
+    if (selected.length < 2) {
+      appMessage().warning("请选择至少两个可合并的文件。");
       return;
     }
-    if (files.length === 1) {
-      message.warning("单个 PDF 无需合并🤔️！");
+    if (tasks.some((task) => task.kind === "pdf-merge" && isTaskActive(task))) {
+      appMessage().warning("请等待当前合并任务执行完毕。");
       return;
     }
-    if (merging) {
-      message.warning("请等待当前合并任务执行完毕！");
-      return;
-    }
-    if (downloading) {
-      message.warning("请等待当前下载任务执行完毕！");
-      return;
-    }
-    setTotalSteps(files.length);
-    setCurrentStep(0);
-    setMerging(true);
-    for (let file of files) {
-      try {
-        setMsg(`正在添加 "${file.display_name}" ...`);
-        if (file.display_name.endsWith(".pptx")) {
-          const data = new Uint8Array(
-            await invoke("convert_pptx_to_pdf", { file })
-          );
-          await pdfMerger.add(data);
-        } else if (file.display_name.endsWith(".docx")) {
-          const data = new Uint8Array(
-            await invoke("convert_docx_to_pdf", { file })
-          );
-          await pdfMerger.add(data);
-        } else {
-          await pdfMerger.add(file.url);
-        }
-        setCurrentStep((currentStep) => currentStep + 1);
-      } catch (e) {
-        setMsg(`合并 "${file.display_name}" 时出现错误🥹：${e}`);
-        setError(true);
-        setMerging(false);
-        return;
-      }
-    }
-
-    setMsg("正在生成合并结果...");
-    const mergedPdf = await pdfMerger.saveAsBlob();
-    const url = URL.createObjectURL(mergedPdf);
-    const display_name =
-      outFileName.length > 0
-        ? `${outFileName}.pdf`
-        : `merged_${dayjs().unix()}.pdf`;
-    const result = { url, display_name } as File;
-    setResult(result);
-    setResultBlob(mergedPdf);
-    setMsg("合并成功🎉！");
-    setError(false);
-    setMerging(false);
+    const name = outFileName.trim().replace(/[\\/:*?"<>|]/g, "_") || `merged_${Date.now()}`;
+    enqueuePDFMerge(selected, `${name}.pdf`);
   };
-
   const progress = (
-    <MergeProgress
-      totalSteps={totalSteps}
-      currentStep={currentStep}
-      error={error}
-      msg={msg}
-    />
+    <Stack spacing={1}>
+      <Typography variant="body2" color={latest?.status === "failed" ? "error" : "text.secondary"}>
+        {latest?.error ?? latest?.stage ?? "当前无任务"}
+      </Typography>
+      <LinearProgress
+        variant={latest && isTaskActive(latest) && latest.progress === undefined ? "indeterminate" : "determinate"}
+        value={latest?.progress ?? 0}
+        color={latest?.status === "failed" ? "error" : "primary"}
+      />
+      {latest?.status === "failed" && <Button onClick={() => taskManager.retry(latest.id)}>重试合并</Button>}
+      {latest?.actionError && <Typography color="error">{latest.actionError}</Typography>}
+    </Stack>
   );
-
-  const handleDownloadResult = async () => {
-    if (!result || !resultBlob) {
-      return;
-    }
-    let buffer = await resultBlob.arrayBuffer();
-    let content = Array.from<number>(new Uint8Array(buffer));
-    let fileName = result.display_name;
-    try {
-      const chunkSize = 4 * 1024 * 1024; // 4MB
-      const length = content.length;
-      let chunkNumber = Math.round(length / chunkSize);
-      if (length % chunkSize !== 0) {
-        chunkNumber += 1;
-      }
-      setMsg("正在下载中...");
-      setDownloading(true);
-      setTotalSteps(chunkNumber);
-      setCurrentStep(0);
-      for (let i = 0; i < chunkNumber; i++) {
-        let start = chunkSize * i;
-        let end = start + chunkSize;
-        const chunk = content.slice(start, end);
-        await invoke("save_file_content", { content: chunk, fileName });
-        setCurrentStep(i + 1);
-      }
-      setMsg("下载成功🎉！");
-      setDownloading(false);
-      message.success(`下载成功🎉！`);
-    } catch (e) {
-      message.error(`下载失败😩：${e}`);
-    }
-  };
+  const handleDownloadResult = () => latest ? taskManager.action(latest.id, "save") : undefined;
 
   const merger = (
-    <Space direction="vertical" style={{ width: "100%" }}>
-      <Space>
-        自定义文件名：
-        <Input
+    <Stack spacing={2} sx={{ width: "100%" }}>
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }}>
+        <Typography variant="body2" color="text.secondary">
+          自定义文件名：
+        </Typography>
+        <TextField
+          size="small"
+          fullWidth
           onChange={(e) => setOutFileName(e.target.value)}
           placeholder="请输入自定义文件名"
-          addonAfter={".pdf"}
+          InputProps={{
+            endAdornment: <Typography variant="caption" color="text.secondary">.pdf</Typography>,
+          }}
         />
-      </Space>
+      </Stack>
       {progress}
       {result && (
-        <Space>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }}>
           <a
             onMouseEnter={() => onHoverEntry(result)}
             onMouseLeave={onLeaveEntry}
           >
             {result.display_name}
           </a>
-          <Button onClick={() => setPreviewEntry(result)}>预览</Button>
-          <Button onClick={handleDownloadResult}>下载</Button>
-        </Space>
+          <Button variant="outlined" onClick={() => setPreviewEntry(result)}>预览</Button>
+          <Button variant="contained" onClick={handleDownloadResult}>下载</Button>
+        </Stack>
       )}
-    </Space>
+    </Stack>
   );
 
   return { merger, mergePDFs };
-}
-
-function MergeProgress({
-  totalSteps,
-  currentStep,
-  error,
-  msg,
-}: {
-  totalSteps: number;
-  currentStep: number;
-  error: boolean;
-  msg: string;
-}) {
-  const percent = Math.ceil((currentStep / totalSteps) * 100);
-  const status = error ? "exception" : percent !== 100 ? "active" : "success";
-  return (
-    <Space direction="vertical" style={{ width: "100%" }}>
-      {msg && <span>{msg}</span>}
-      <Progress percent={percent} status={status} style={{ width: "100%" }} />
-    </Space>
-  );
 }
 
 export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {
   const [uuid, setUuid] = useState<string>("");
   const [qrcode, setQrcode] = useState<string>("");
   const [wsURL, setWsURL] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const hasRetriedRef = useRef(false);
+  const uuidRef = useRef("");
   const { sendMessage, lastMessage, readyState } = useWebSocket(
     wsURL,
     undefined,
     wsURL.length > 0
   );
 
-  const showQRCode = async () => {
-    let uuid = (await invoke("get_uuid")) as string | null;
-    if (uuid) {
-      setUuid(uuid);
-      setWsURL(`${WEBSOCKET_BASE_URL}/${uuid}`);
+  const showQRCode = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    setQrcode("");
+    hasRetriedRef.current = false;
+    const nextUuid = (await invoke("get_uuid")) as string | null;
+    consoleLog(LOG_LEVEL_ERROR, nextUuid)
+    if (nextUuid) {
+      uuidRef.current = nextUuid;
+      setUuid(nextUuid);
+      setWsURL(`${WEBSOCKET_BASE_URL}/${nextUuid}`);
+      return;
     }
-  };
+    setLoading(false);
+    setError("未能获取登录二维码标识，请稍后重试。");
+  }, []);
 
   const handleScanSuccess = async () => {
     try {
-      let JAAuthCookie = (await invoke("express_login", { uuid })) as
+      const JAAuthCookie = (await invoke("express_login", { uuid: uuidRef.current || uuid })) as
         | string
         | null;
       if (!JAAuthCookie) {
         return;
       }
-      consoleLog(LOG_LEVEL_INFO, "读取到 JAAuthCookie: ", JAAuthCookie);
-      let config = await getConfig();
+      const config = await getConfig();
       config.ja_auth_cookie = JAAuthCookie;
       await saveConfig(config);
       onScanSuccess?.();
     } catch (e) {
-      message.error(`登录失败🥹：${e}`);
+      appMessage().error(`登录失败🥹：${e}`);
     }
   };
 
   useEffect(() => {
     if (readyState == ReadyState.OPEN) {
       sendMessage(UPDATE_QRCODE_MESSAGE);
-      let handle = setInterval(() => {
+      const handle = setInterval(() => {
         refreshQRCode();
       }, SEND_INTERVAL);
       return () => {
@@ -430,9 +404,17 @@ export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {
   }, [readyState]);
 
   useEffect(() => {
+    if (!wsURL || readyState !== ReadyState.CLOSED || qrcode) {
+      return;
+    }
+    setLoading(false);
+    setError("二维码连接未建立成功，请重新获取。");
+  }, [readyState, wsURL, qrcode]);
+
+  useEffect(() => {
     if (lastMessage) {
       try {
-        let loginMessage = JSON.parse(lastMessage.data) as LoginMessage;
+        const loginMessage = JSON.parse(lastMessage.data) as LoginMessage;
         switch (loginMessage.type.toUpperCase()) {
           case "UPDATE_QR_CODE":
             handleUpdateQrcode(loginMessage);
@@ -447,24 +429,46 @@ export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {
     }
   }, [lastMessage]);
 
+  useEffect(() => {
+    if (!loading || qrcode || !wsURL) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      if (!hasRetriedRef.current) {
+        hasRetriedRef.current = true;
+        refreshQRCode();
+        return;
+      }
+      setLoading(false);
+      setError("二维码获取超时，请重新获取。");
+    }, QRCODE_TIMEOUT);
+
+    return () => window.clearTimeout(timeout);
+  }, [loading, qrcode, wsURL]);
+
   const handleUpdateQrcode = (loginMessage: LoginMessage) => {
-    let payload = loginMessage.payload;
-    let qrcode = `${QRCODE_BASE_URL}?uuid=${uuid}&ts=${payload.ts}&sig=${payload.sig}`;
+    const payload = loginMessage.payload;
+    const qrcode = `${QRCODE_BASE_URL}?uuid=${uuidRef.current || uuid}&ts=${payload.ts}&sig=${payload.sig}`;
     setQrcode(qrcode);
+    setLoading(false);
+    setError("");
   };
 
   const refreshQRCode = () => {
+    setLoading(true);
+    setError("");
     sendMessage(UPDATE_QRCODE_MESSAGE);
   };
 
-  return { qrcode, showQRCode, refreshQRCode };
+  return { qrcode, showQRCode, refreshQRCode, loading, error };
 }
 
 export function useLoginModal({ onLogin }: { onLogin?: () => void }) {
   const [open, setOpen] = useState<boolean>(false);
   const showModal = () => setOpen(true);
   const closeModal = () => setOpen(false);
-  let modal = (
+  const modal = (
     <LoginAlertModal open={open} onCancelLogin={closeModal} onLogin={onLogin} />
   );
 
@@ -483,6 +487,7 @@ export function useData<T>(command: string, shouldFetch: boolean, args?: any) {
       setData(data);
     } catch (e) {
       consoleLog(LOG_LEVEL_ERROR, e);
+      appMessage().error(e as string);
       setError(e);
     }
     setIsLoading(false);
@@ -499,6 +504,13 @@ export function useData<T>(command: string, shouldFetch: boolean, args?: any) {
     error,
     mutate,
   };
+}
+
+export function useCourseSyllabus(courseId?: number) {
+  const [args, setArgs] = useState<any>({ courseId });
+  useEffect(() => { setArgs({ courseId }); }, [courseId]);
+  const shouldFetch = courseId != undefined && courseId > 0;
+  return useData<Course>("get_course_syllabus", shouldFetch, args);
 }
 
 export function useCourses() {
@@ -534,7 +546,7 @@ export function useCurrentTermCourses() {
     return (
       now.isBefore(courseEnd) ||
       course.enrollments.find((enroll) => enroll.role === "TaEnrollment") !=
-        undefined
+      undefined
     );
   });
   return courses;
@@ -663,3 +675,58 @@ export const useAnnualReport = (year: number) => {
 
 export const useConfigDispatch: () => ConfigDispatch = useDispatch;
 export const useConfigSelector: TypedUseSelectorHook<ConfigState> = useSelector;
+
+export function useSelectedCourse() {
+  const selectedCourseId = useConfigSelector(
+    (state) => state.course.selectedCourseId
+  );
+  const dispatch = useConfigDispatch();
+  const setSelectedCourseId = useCallback(
+    (courseId: number) =>
+      dispatch(courseSlice.actions.setSelectedCourseId(courseId)),
+    [dispatch]
+  );
+  return { selectedCourseId, setSelectedCourseId };
+}
+
+export function useAutoLoadCourse(
+  load: (courseId: number) => void,
+  ready?: boolean
+) {
+  const { selectedCourseId } = useSelectedCourse();
+  const loadedRef = useRef(-1);
+  useEffect(() => {
+    if (
+      ready !== false &&
+      selectedCourseId > 0 &&
+      loadedRef.current !== selectedCourseId
+    ) {
+      loadedRef.current = selectedCourseId;
+      load(selectedCourseId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCourseId, ready]);
+}
+
+export function useExternalFiles(courseId?: number) {
+  const [args, setArgs] = useState<any>({ courseId });
+  useEffect(() => {
+    setArgs({ courseId });
+  }, [courseId]);
+  const shouldFetch = courseId !== undefined && courseId !== -1;
+  const { data,
+    isLoading,
+    error,
+    mutate } = useData<ModuleItem[]>("list_external_module_items", shouldFetch, args);
+  const externalFiles = useMemo(() =>
+    data?.map(item => moduleItem2File(item))
+      .filter(item => item.external_type === "File"),
+    [data]);
+
+  return {
+    data: externalFiles ?? [],
+    isLoading,
+    error,
+    mutate,
+  };
+}

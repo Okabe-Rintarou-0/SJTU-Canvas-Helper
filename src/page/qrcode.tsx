@@ -1,80 +1,237 @@
-import { Card, Image, List, Space } from "antd";
-import BasicLayout from "../components/layout";
-import CourseSelect from "../components/course_select";
-import { useEffect, useState } from "react";
-import { QRCodeScanResult } from "../lib/model";
-import useMessage from "antd/es/message/useMessage";
+import QrCode2RoundedIcon from "@mui/icons-material/QrCode2Rounded";
+import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
+import {
+  Alert,
+  Box,
+  Card,
+  CardContent,
+  Chip,
+  CircularProgress,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  InputAdornment,
+  Stack,
+  TextField,
+  Typography
+} from "@mui/material";
+import { alpha, useTheme } from "@mui/material/styles";
 import { invoke } from "@tauri-apps/api/core";
-import Meta from "antd/es/card/Meta";
-import { Empty } from "antd/lib";
-import { useCourses } from "../lib/hooks";
+import { useMemo, useState } from "react";
+
+import CourseSelect from "../components/course_select";
+import { WorkspaceHero } from "../components/workspace_hero";
+import { surfaceCardSx, innerBoxSx } from "../lib/styles";
+import BasicLayout from "../components/layout";
+import { useCourses, useSelectedCourse, useAutoLoadCourse } from "../lib/hooks";
+import { QRCodeScanResult } from "../lib/model";
 
 export default function QRCodePage() {
-  const [messageApi, contextHolder] = useMessage();
-  const [operating, setOperating] = useState<boolean>(false);
+  const theme = useTheme();
+  const [operating, setOperating] = useState(false);
+  const { selectedCourseId, setSelectedCourseId } = useSelectedCourse();
   const [scanResults, setScanResults] = useState<QRCodeScanResult[]>([]);
+  const [keyword, setKeyword] = useState("");
+  const [previewImage, setPreviewImage] = useState<QRCodeScanResult | null>(null);
   const courses = useCourses();
-
-  useEffect(() => {
-    if (operating) {
-      messageApi.open({
-        key: "operating",
-        type: "loading",
-        content: "正在读取中...请耐心等待😁",
-      });
-    } else {
-      messageApi.destroy("operating");
-    }
-  }, [operating]);
 
   const handleGetQRCode = async (courseId: number) => {
     setOperating(true);
     try {
-      let scanResults = (await invoke("filter_course_qrcode_images", {
+      const nextScanResults = (await invoke("filter_course_qrcode_images", {
         courseId,
       })) as QRCodeScanResult[];
-      setScanResults(scanResults);
-    } catch (e) {
-      messageApi.error(`读取错误：${e}`);
+      setScanResults(nextScanResults);
+    } catch (error) {
+      console.error(error);
     }
     setOperating(false);
   };
 
   const handleCourseSelect = async (courseId: number) => {
+    setSelectedCourseId(courseId);
     if (courses.data.find((course) => course.id === courseId)) {
-      handleGetQRCode(courseId);
+      await handleGetQRCode(courseId);
     }
   };
 
+  useAutoLoadCourse(
+    (courseId) => void handleCourseSelect(courseId),
+    courses.data.length > 0
+  );
+
+  const selectedCourse = useMemo(
+    () => courses.data.find((course) => course.id === selectedCourseId),
+    [courses.data, selectedCourseId]
+  );
+
+  const filteredResults = useMemo(() => {
+    if (!keyword.trim()) {
+      return scanResults;
+    }
+    return scanResults.filter((item) =>
+      item.file.display_name.toLowerCase().includes(keyword.trim().toLowerCase())
+    );
+  }, [keyword, scanResults]);
+
   return (
     <BasicLayout>
-      {contextHolder}
-      <Space
-        direction="vertical"
-        style={{ width: "100%", overflow: "scroll" }}
-        size={"large"}
-      >
-        <CourseSelect
-          onChange={handleCourseSelect}
-          disabled={operating}
-          courses={courses.data}
+      <Stack spacing={3}>
+        <WorkspaceHero
+          chipLabel="二维码管理"
+          chipIcon={<QrCode2RoundedIcon />}
+          title="二维码识别"
+          description="从课程图片中识别二维码，并支持按文件名搜索与逐张核对。"
+          aside={
+            <Stack spacing={1} alignItems={{ xs: "flex-start", md: "flex-end" }}>
+              <Chip
+                label={selectedCourse ? "已选择课程" : "等待选择课程"}
+                color={selectedCourse ? "success" : "default"}
+                variant={selectedCourse ? "filled" : "outlined"}
+              />
+              <Typography variant="body2" color="text.secondary">
+                {selectedCourse ? selectedCourse.name : "请选择一个课程以读取二维码图片。"}
+              </Typography>
+            </Stack>
+          }
+          stats={[
+            {
+              label: "识别结果",
+              value: scanResults.length,
+              icon: <QrCode2RoundedIcon />,
+            },
+          ]}
         />
-        {scanResults.length > 0 && (
-          <List
-            grid={{ gutter: 16, column: 2 }}
-            style={{ width: "100%" }}
-            dataSource={scanResults}
-            renderItem={(scanResult) => (
-              <List.Item>
-                <Card hoverable cover={<Image src={scanResult.file.url} />}>
-                  <Meta title={scanResult.file.display_name} />
-                </Card>
-              </List.Item>
-            )}
-          ></List>
-        )}
-        {scanResults.length === 0 && <Empty />}
-      </Space>
+
+        <Card sx={surfaceCardSx}>
+          <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
+            <Stack spacing={2}>
+              <Box
+                sx={{
+                  display: "grid",
+                  gap: 2,
+                  gridTemplateColumns: { xs: "minmax(0, 1fr)", xl: "1.15fr 0.85fr" },
+                }}
+              >
+                <Box sx={{ p: 2, ...innerBoxSx }}>
+                  <CourseSelect
+                    courses={courses.data}
+                    disabled={operating}
+                    onChange={(courseId) => setSelectedCourseId(courseId)}
+                    value={selectedCourseId > 0 ? selectedCourseId : undefined}
+                  />
+                </Box>
+
+                <Box sx={{ p: 2, ...innerBoxSx }}>
+                  <TextField
+                    fullWidth
+                    value={keyword}
+                    onChange={(event) => setKeyword(event.target.value)}
+                    placeholder="按图片文件名搜索二维码…"
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchRoundedIcon color="action" />
+                        </InputAdornment>
+                      ),
+                    }}
+                  />
+                </Box>
+              </Box>
+
+              {operating ? (
+                <Box sx={{ py: 8, display: "grid", placeItems: "center" }}>
+                  <Stack spacing={1.25} alignItems="center">
+                    <CircularProgress />
+                    <Typography variant="body2" color="text.secondary">
+                      正在读取二维码图片，请稍候…
+                    </Typography>
+                  </Stack>
+                </Box>
+              ) : filteredResults.length > 0 ? (
+                <Box
+                  sx={{
+                    display: "grid",
+                    gap: 2,
+                    gridTemplateColumns: {
+                      xs: "minmax(0, 1fr)",
+                      sm: "repeat(2, minmax(0, 1fr))",
+                      xl: "repeat(3, minmax(0, 1fr))",
+                    },
+                  }}
+                >
+                  {filteredResults.map((scanResult) => (
+                    <Card
+                      key={scanResult.file.id}
+                      onClick={() => setPreviewImage(scanResult)}
+                      sx={{
+                        borderRadius: "12px",
+                        overflow: "hidden",
+                        cursor: "pointer",
+                        border: "1px solid",
+                        borderColor: "divider",
+                      }}
+                    >
+                      <Box
+                        component="img"
+                        src={scanResult.file.url}
+                        alt={scanResult.file.display_name}
+                        sx={{
+                          width: "100%",
+                          aspectRatio: "1 / 1",
+                          objectFit: "cover",
+                          display: "block",
+                          bgcolor: alpha(theme.palette.primary.main, 0.06),
+                        }}
+                      />
+                      <CardContent sx={{ p: 2 }}>
+                        <Stack spacing={0.8}>
+                          <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                            {scanResult.file.display_name}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            点击查看大图，更适合逐张核对。
+                          </Typography>
+                        </Stack>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </Box>
+              ) : (
+                <Alert severity="info" sx={{ borderRadius: "18px" }}>
+                  {selectedCourse
+                    ? "当前课程没有识别到二维码图片，或者搜索条件下没有匹配结果。"
+                    : "请选择课程后开始读取二维码图片。"}
+                </Alert>
+              )}
+            </Stack>
+          </CardContent>
+        </Card>
+      </Stack>
+
+      <Dialog
+        open={Boolean(previewImage)}
+        onClose={() => setPreviewImage(null)}
+        fullWidth
+        maxWidth="md"
+        PaperProps={{ sx: { borderRadius: "12px" } }}
+      >
+        <DialogTitle>{previewImage?.file.display_name}</DialogTitle>
+        <DialogContent dividers>
+          {previewImage ? (
+            <Box
+              component="img"
+              src={previewImage.file.url}
+              alt={previewImage.file.display_name}
+              sx={{
+                width: "100%",
+                display: "block",
+                borderRadius: "20px",
+              }}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </BasicLayout>
   );
 }

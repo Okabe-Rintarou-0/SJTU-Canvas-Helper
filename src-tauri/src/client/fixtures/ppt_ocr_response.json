@@ -1,0 +1,37 @@
+{
+  "code": 0,
+  "dataOk": true,
+  "ok": true,
+  "status": 200,
+  "data": {
+    "docList": [
+      {
+        "imageSeekTime": 359,
+        "imageSnapshotTime": "1970-01-01 08:00:00",
+        "imageUrl": "https://example.test/ppt/content-1.png",
+        "ocrText": "课程资料检索示例：信息意识、信息伦理、信息获取、信息筛选和信息利用。通过目录定位所需资料，并记录检索条件和结果。SJTU 1/2",
+        "textKeywordList": [
+          "信息意识",
+          "信息伦理",
+          "信息获取",
+          "信息筛选",
+          "信息利用"
+        ]
+      },
+      {
+        "imageSeekTime": 1768,
+        "imageSnapshotTime": "1970-01-01 08:00:02",
+        "imageUrl": "https://example.test/ppt/content-2.png",
+        "ocrText": "图书检索示例：国际标准书号 ISBN 是检索字段之一，查询后需要核对标题、版本和馆藏位置，并记录检索条件，不应只依赖单一字段判断结果。SJTU 2/2",
+        "textKeywordList": [
+          "国际标准书号",
+          "ISBN",
+          "图书检索",
+          "版本",
+          "馆藏位置"
+        ]
+      }
+    ],
+    "dupKeywordList": []
+  }
+}
