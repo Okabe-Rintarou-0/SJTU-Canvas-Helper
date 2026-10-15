@@ -131,6 +131,7 @@ impl From<LegacyCanvasVideo> for CanvasVideo {
             course_begin_time: video.course_begin_time,
             course_end_time: video.course_end_time,
             playable: true,
+            ai_available: Some(false),
             ..Default::default()
         }
     }
@@ -214,6 +215,7 @@ fn legacy_videos_from_course(course: VideoCourse) -> Vec<CanvasVideo> {
             playable: true,
             availability: "ready".to_string(),
             availability_label: "可播放".to_string(),
+            ai_available: Some(false),
             ..Default::default()
         })
         .collect()
@@ -308,6 +310,22 @@ fn canvas_video_availability(record: &Value) -> (bool, String, String) {
         Some(4) => (false, "repairing".to_string(), "修复中".to_string()),
         Some(6) => (false, "unavailable".to_string(), "暂无回放".to_string()),
         _ => (false, "unavailable".to_string(), "暂不可用".to_string()),
+    }
+}
+
+fn canvas_video_ai_available(record: &Value) -> Option<bool> {
+    // Summaries consume raw transcripts or PPT OCR, independently of video
+    // playback and optimized transcripts. Use existing list hints without probing text.
+    let transferred = record.get("courTransferFlag").and_then(Value::as_bool)
+        .or_else(|| value_as_i64(record.get("courTransferFlag")).map(|flag| flag != 0));
+    let ppt_status = value_as_i64(record.get("coursePptSliceStatus"));
+    if transferred == Some(true) || ppt_status == Some(5) {
+        return Some(true);
+    }
+    // Only declare materials unavailable when both source statuses are known.
+    match (transferred, ppt_status) {
+        (Some(false), Some(_)) => Some(false),
+        _ => None,
     }
 }
 
@@ -473,6 +491,7 @@ fn canvas_videos_from_response(value: &Value, source: VideoSource) -> Result<Vec
                 lesson_number,
                 daily_lesson_number,
                 playable,
+                ai_available: canvas_video_ai_available(record),
                 availability,
                 availability_label,
             })
@@ -1754,6 +1773,58 @@ mod tests {
         assert_eq!(slides[2].ocr[0].word, "无图片文字");
         assert_eq!(slides[2].ppt_img_url, None);
         assert!(slides[3].ocr.is_empty());
+    }
+
+    #[test]
+    fn test_video_ai_availability_uses_material_hints_without_material_probes() {
+        let records = serde_json::json!({"data": {"records": [
+            {"id": 1, "vodStatus": 5, "courTransferFlag": 0, "coursePptSliceStatus": 0, "transcriptOptimizeTaskStatus": 0},
+            {"id": 2, "vodStatus": 6, "courTransferFlag": 1, "coursePptSliceStatus": 0},
+            {"id": 3, "vodStatus": 5, "courTransferFlag": false, "coursePptSliceStatus": 5},
+            {"id": 4, "transcriptOptimizeTaskStatus": 3},
+            {"id": 5, "courTransferFlag": "0", "coursePptSliceStatus": "4", "transcriptOptimizeTaskStatus": "1"},
+            {"id": 6, "courTransferFlag": true},
+            {"id": 7, "vodStatus": 5},
+            {"id": 8, "courTransferFlag": null, "coursePptSliceStatus": null, "transcriptOptimizeTaskStatus": null},
+            {"id": 9, "courTransferFlag": 0, "coursePptSliceStatus": 0, "transcriptOptimizeTaskStatus": 3},
+            {"id": 10, "courTransferFlag": 0},
+            {"id": 11, "coursePptSliceStatus": 4}
+        ]}});
+        let videos = canvas_videos_from_response(&records, VideoSource::Canvas).unwrap();
+        assert_eq!(videos.iter().map(|v| v.ai_available).collect::<Vec<_>>(),
+            vec![Some(false), Some(true), Some(true), None, Some(false), Some(true), None, None, Some(false), None, None]);
+        assert!(videos[0].playable);
+        assert!(!videos[1].playable);
+        let space = canvas_videos_from_response(&records, VideoSource::VideoSpace).unwrap();
+        assert_eq!(space[2].ai_available, Some(true));
+        let mut serialized = serde_json::to_value(&videos[0]).unwrap();
+        assert_eq!(serialized["aiAvailable"], false);
+        serialized.as_object_mut().unwrap().remove("aiAvailable");
+        assert_eq!(serde_json::from_value::<CanvasVideo>(serialized).unwrap().ai_available, None);
+    }
+
+    #[test]
+    fn test_video_ai_availability_does_not_depend_on_transcript_optimization() {
+        for optimized_status in 0..=6 {
+            // Raw transcription remains usable even if optimization failed.
+            assert_eq!(canvas_video_ai_available(&serde_json::json!({
+                "courTransferFlag": 1, "coursePptSliceStatus": 0,
+                "transcriptOptimizeTaskStatus": optimized_status,
+            })), Some(true));
+            // OCR-only materials are sufficient for the existing summary workflow.
+            assert_eq!(canvas_video_ai_available(&serde_json::json!({
+                "courTransferFlag": 0, "coursePptSliceStatus": 5,
+                "transcriptOptimizeTaskStatus": optimized_status,
+            })), Some(true));
+            // Optimization success alone must not declare materials available.
+            assert_eq!(canvas_video_ai_available(&serde_json::json!({
+                "courTransferFlag": 0, "coursePptSliceStatus": 0,
+                "transcriptOptimizeTaskStatus": optimized_status,
+            })), Some(false));
+            assert_eq!(canvas_video_ai_available(&serde_json::json!({
+                "transcriptOptimizeTaskStatus": optimized_status,
+            })), None);
+        }
     }
 
     #[test]

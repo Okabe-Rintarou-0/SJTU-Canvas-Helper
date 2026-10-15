@@ -23,7 +23,7 @@ import { useCourses, useConfigSelector } from "../lib/hooks";
 import { useTasks } from "../lib/task_hooks";
 import { useAppMessage } from "../lib/message";
 import { compareVideoCourses, loadVideoCourse, mergeVideoCourses } from "../lib/video_courses";
-import { groupVideoSessions, groupSessionsByDate, parseVideoCitation, formatVideoTimestamp, recordingKey, recordingTime, selectedSessionScopes, toggleRecordings, hasVideoMaterial, type VideoExportOptions, type VideoMaterial, type VideoSession } from "../lib/video_library";
+import { canSummarizeRecording, groupVideoSessions, groupSessionsByDate, parseVideoCitation, formatVideoTimestamp, recordingKey, recordingTime, selectedSessionScopes, toggleRecordings, hasVideoMaterial, type VideoExportOptions, type VideoMaterial, type VideoSession } from "../lib/video_library";
 import { enqueueVideoExports, recordingRequest, saveRecordingMaterial } from "../lib/video_library_tasks";
 import { readSummaryCache, writeSummaryCache, deleteSummaryCache, summaryCacheKey, type VideoSummaryCache } from "../lib/video_summary_cache";
 import type { AccountInfo, CanvasVideo, Course, LLMChatMessage } from "../lib/model";
@@ -296,7 +296,7 @@ export default function VideoPage() {
   const rowActions = (scope: VideoSession, playbackScope = scope, key?: string) => <TableCell align="right"><Stack direction="row" gap={0.5} justifyContent="flex-end" sx={{ whiteSpace: "nowrap" }}>
     <Button size="small" sx={{ minWidth: 40 }} disabled={!scope.videos.some(isPlayable)} onClick={() => play(playbackScope, key)}>播放</Button>
     <Button size="small" sx={{ minWidth: 40 }} onClick={() => download([scope])}>下载</Button>
-    <Button size="small" sx={{ minWidth: 64 }} onClick={() => summarize([scope])}>AI 总结</Button>
+    <Button size="small" sx={{ minWidth: 64 }} disabled={!scope.videos.some(canSummarizeRecording)} onClick={() => summarize([scope])}>AI 总结</Button>
   </Stack></TableCell>;
   const chatPanel = <FileAIChatModal embedded loadingLabel={chatProgress || "等待模型回复"} open={chatOpen} title={`${chatTitle} · ${chatScope.map((scope) => scope.title).join("；")}`} messages={chatMessages} loading={chatLoading} onClose={() => setChatOpen(false)} onSend={sendMessage}
       dialogTitle="AI 课堂总结" dialogDescription={chatProgress || coverage || "围绕所选课堂字幕与 PPT OCR 继续追问。会话范围固定，不受列表勾选变化影响。"}
@@ -414,7 +414,7 @@ export default function VideoPage() {
             </Box>
             {!!selected.size && <Stack direction={{ xs: "column", sm: "row" }} alignItems={{ sm: "center" }} gap={1} sx={{ position: "sticky", bottom: 0, zIndex: 5, pt: 2, pb: 0.5, bgcolor: "background.paper", borderTop: "1px solid", borderColor: "divider" }}>
               <Box sx={{ flex: 1 }}><Typography variant="body2">已选 {scopes.length} 堂课 · {selected.size} 小节</Typography>{hiddenSelected > 0 && <Typography variant="caption" color="text.secondary">其中 {hiddenSelected} 小节不在当前筛选结果中</Typography>}</Box>
-              <Button onClick={() => setSelected(new Set())}>清空选择</Button><Button disabled={!scopes.some((scope) => scope.videos.some(isPlayable))} onClick={() => play({ id: "selected", title: "所选录像", videos: scopes.flatMap((scope) => scope.videos) })}>播放</Button><Button variant="outlined" startIcon={<CloudDownloadRoundedIcon />} onClick={() => download(scopes)}>下载…</Button><Button variant="contained" startIcon={<PsychologyRoundedIcon />} onClick={() => summarize(scopes)}>AI 总结…</Button>
+              <Button onClick={() => setSelected(new Set())}>清空选择</Button><Button disabled={!scopes.some((scope) => scope.videos.some(isPlayable))} onClick={() => play({ id: "selected", title: "所选录像", videos: scopes.flatMap((scope) => scope.videos) })}>播放</Button><Button variant="outlined" startIcon={<CloudDownloadRoundedIcon />} onClick={() => download(scopes)}>下载…</Button><Button variant="contained" startIcon={<PsychologyRoundedIcon />} disabled={!scopes.some((scope) => scope.videos.some(canSummarizeRecording))} onClick={() => summarize(scopes)}>AI 总结…</Button>
             </Stack>}
           </Stack>
         </CardContent>

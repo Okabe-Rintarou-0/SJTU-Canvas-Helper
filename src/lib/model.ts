@@ -402,6 +402,8 @@ export interface CanvasVideo {
     lessonNumber: number;
     dailyLessonNumber: number;
     playable: boolean;
+    /** Raw transcript/PPT readiness hint; omitted/null means unknown. */
+    aiAvailable?: boolean | null;
     availability: "ready" | "repairing" | "unavailable";
     availabilityLabel: string;
 }

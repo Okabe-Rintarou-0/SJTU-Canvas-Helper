@@ -993,6 +993,9 @@ pub struct CanvasVideo {
     pub lesson_number: i64,
     pub daily_lesson_number: i64,
     pub playable: bool,
+    /// Raw transcript/PPT readiness hint from the list; None means unknown.
+    #[serde(default)]
+    pub ai_available: Option<bool>,
     pub availability: String,
     pub availability_label: String,
 }

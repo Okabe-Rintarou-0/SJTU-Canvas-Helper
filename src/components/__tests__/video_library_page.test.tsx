@@ -54,6 +54,56 @@ async function load() {
   return view;
 }
 describe("video library workflows", () => {
+  it("uses AI availability independently of playback without probing materials", async () => {
+    const original = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation((command, args) => command === "get_canvas_videos"
+      ? Promise.resolve(videos.map((video) => ({ ...video, playable: video.videoId !== "c", aiAvailable: video.videoId === "c" })))
+      : original(command, args));
+    await load();
+    const reads = mocks.invoke.mock.calls.length;
+    const unavailableDay = screen.getByText("2026-09-28").closest("tr")!;
+    expect(within(unavailableDay).getByRole("button", { name: "播放" })).toBeEnabled();
+    expect(within(unavailableDay).getByRole("button", { name: "AI 总结" })).toBeDisabled();
+    expect(within(screen.getByText("2026-09-29").closest("tr")!).getByRole("button", { name: "AI 总结" })).toBeEnabled();
+    expect(within(screen.getByText("2026-09-29").closest("tr")!).getByRole("button", { name: "播放" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: /展开日期 2026-09-28/ }));
+    const lesson = screen.getByRole("checkbox", { name: "选择小节 录像a" });
+    const row = lesson.closest("tr")!;
+    expect(within(row).getByRole("button", { name: "播放" })).toBeEnabled();
+    expect(within(row).getByRole("button", { name: "AI 总结" })).toBeDisabled();
+    fireEvent.click(within(row).getByRole("button", { name: "AI 总结" }));
+    expect(screen.queryByRole("button", { name: "开始总结" })).not.toBeInTheDocument();
+    fireEvent.click(lesson);
+    expect(screen.getByRole("button", { name: "AI 总结…" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("checkbox", { name: /选择日期 2026-09-29/ }));
+    expect(screen.getByRole("button", { name: "AI 总结…" })).toBeEnabled();
+    expect(mocks.invoke.mock.calls).toHaveLength(reads);
+    expect(mocks.invoke.mock.calls.some(([command]) => command === "prepare_video_material")).toBe(false);
+  });
+  it("keeps summary enabled when another source has AI materials even without playback", async () => {
+    const original = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation((command, args) => {
+      if (command === "get_canvas_videos") return Promise.resolve(videos.map((video) => ({ ...video, playable: false, aiAvailable: false,
+        alternatives: video.videoId === "a" ? [{ ...video, source: "videoSpace", playable: false, aiAvailable: true }] : [],
+      })));
+      return original(command, args);
+    });
+    await load();
+    const reads = mocks.invoke.mock.calls.length;
+    expect(within(screen.getByText("2026-09-28").closest("tr")!).getByRole("button", { name: "AI 总结" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: /展开日期 2026-09-28/ }));
+    const available = screen.getByRole("checkbox", { name: "选择小节 录像a" });
+    const unavailable = screen.getByRole("checkbox", { name: "选择小节 录像b" });
+    expect(within(available.closest("tr")!).getByRole("button", { name: "播放" })).toBeDisabled();
+    expect(within(available.closest("tr")!).getByRole("button", { name: "AI 总结" })).toBeEnabled();
+    expect(within(unavailable.closest("tr")!).getByRole("button", { name: "AI 总结" })).toBeDisabled();
+    fireEvent.click(available);
+    expect(screen.getByRole("button", { name: "AI 总结…" })).toBeEnabled();
+    fireEvent.click(unavailable);
+    fireEvent.click(available);
+    expect(screen.getByRole("button", { name: "AI 总结…" })).toBeDisabled();
+    expect(mocks.invoke.mock.calls).toHaveLength(reads);
+  });
   it("separates summary and material caches when animation simplification changes", async () => {
     const view = await load();
     const summarize = async () => {

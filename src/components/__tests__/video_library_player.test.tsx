@@ -22,6 +22,16 @@ async function load() {
   await screen.findByRole("button", { name: "下载当前机位" });
 }
 describe("video player compatibility", () => {
+  it("disables its summary action when the list reports no AI materials", async () => {
+    const onSummarize = vi.fn();
+    render(<VideoLibraryPlayer session={{ id: "a", title: "课堂", videos: [{ ...recording, aiAvailable: false }] }} initialKey="canvas:a" onClose={() => {}} onSummarize={onSummarize} />);
+    await screen.findByRole("button", { name: "下载当前机位" });
+    const reads = vi.mocked(invoke).mock.calls.length;
+    expect(screen.getByRole("button", { name: "总结本堂课" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "总结本堂课" }));
+    expect(onSummarize).not.toHaveBeenCalled();
+    expect(vi.mocked(invoke).mock.calls).toHaveLength(reads);
+  });
   it("plays without fetching or displaying PPT OCR", async () => {
     await load();
     expect(invoke).not.toHaveBeenCalledWith("get_recording_slides", expect.anything());

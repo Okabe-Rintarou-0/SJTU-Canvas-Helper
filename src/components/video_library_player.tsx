@@ -5,7 +5,7 @@ import Draggable from "react-draggable";
 import { surfaceCardSx } from "../lib/styles";
 import { getConfig } from "../lib/config";
 import { srtToVtt } from "../lib/utils";
-import { recordingKey, type VideoMaterial, type VideoSession } from "../lib/video_library";
+import { canSummarizeRecording, recordingKey, type VideoMaterial, type VideoSession } from "../lib/video_library";
 import { recordingRequest, resolveRecording, enqueueVideoTrack } from "../lib/video_library_tasks";
 import type { CanvasVideo, VideoPlayInfo } from "../lib/model";
 
@@ -163,7 +163,7 @@ export default function VideoLibraryPlayer({ session, initialKey, seconds = 0, s
             {secondary >= 0 && <Button onClick={() => changeMain(secondary)}>交换主副屏</Button>}
             {tracks[main] && <Button onClick={() => { enqueueVideoTrack(video, tracks[main], main); setDownloadNotice(`机位 ${main + 1} 已加入下载任务，可返回资料库查看进度`); }}>下载当前机位</Button>}
             <Button onClick={() => setSettings(!settings)}>播放设置</Button>
-            <Button onClick={onSummarize}>总结本堂课</Button>
+            <Button disabled={!session.videos.some(canSummarizeRecording)} onClick={onSummarize}>总结本堂课</Button>
           </Stack>
           {downloadNotice && <Alert severity="success" onClose={() => setDownloadNotice("")}>{downloadNotice}</Alert>}
           <Collapse in={settings && !mini}><Stack spacing={1}>
