@@ -1006,6 +1006,44 @@ pub enum VideoSource {
     Legacy,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasLiveSession {
+    pub id: String,
+    pub teaching_class_id: i64,
+    pub title: String,
+    pub teacher_name: String,
+    pub classroom_name: String,
+    pub begin_time: String,
+    pub end_time: String,
+    pub start_time: i64,
+    pub finish_time: i64,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasLiveList {
+    pub sessions: Vec<CanvasLiveSession>,
+    pub server_time: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasLiveTrack {
+    pub name: String,
+    pub url: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasLiveInfo {
+    pub start_time: i64,
+    pub finish_time: i64,
+    pub server_time: i64,
+    pub tracks: Vec<CanvasLiveTrack>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub enum RelationshipNodeType {
     #[default]

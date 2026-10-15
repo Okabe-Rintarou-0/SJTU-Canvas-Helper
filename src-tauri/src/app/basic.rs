@@ -39,13 +39,85 @@ use super::{
 
 const MY_CANVAS_FILES_FOLDER_NAME: &str = "我的Canvas文件";
 
+#[cfg(test)]
+mod live_proxy_tests {
+    use super::*;
+
+    #[test]
+    fn live_playlist_rewrites_segments_variants_keys_and_maps() {
+        let playlist = "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin?key=signed\"\n#EXT-X-MAP:URI=\"/live/init.mp4\"\n../camera/index.m3u8?auth_key=abc\nhttps://mss3.sjtu.edu.cn/live/segment.ts\nsegment.ts?signature=xyz\n";
+        let rewritten = rewrite_live_playlist(playlist, "https://mss2.sjtu.edu.cn/live/a/index.m3u8?auth_key=abc", "http://localhost:3030");
+        assert!(rewritten.contains("URI=\"http://localhost:3030/canvas-stream/mss2.sjtu.edu.cn/live/a/key.bin?key=signed\""));
+        assert!(rewritten.contains("URI=\"http://localhost:3030/canvas-stream/mss2.sjtu.edu.cn/live/init.mp4\""));
+        assert!(rewritten.contains("http://localhost:3030/canvas-stream/mss2.sjtu.edu.cn/live/camera/index.m3u8?auth_key=abc"));
+        assert!(rewritten.contains("http://localhost:3030/canvas-stream/mss3.sjtu.edu.cn/live/segment.ts"));
+        assert!(rewritten.contains("http://localhost:3030/canvas-stream/mss2.sjtu.edu.cn/live/a/segment.ts?signature=xyz"));
+    }
+
+    #[test]
+    fn live_proxy_only_accepts_known_sjtu_media_hosts() {
+        assert!(canvas_stream_host("mss2.sjtu.edu.cn"));
+        assert!(canvas_stream_host("live.sjtu.edu.cn"));
+        for host in ["localhost", "127.0.0.1", "mss2.sjtu.edu.cn.evil.test", "mss.sjtu.edu.cn", "example.test"] {
+            assert!(!canvas_stream_host(host));
+        }
+        let unchanged = rewrite_live_playlist("#EXTM3U\nhttps://example.test/private.ts\n", "https://mss2.sjtu.edu.cn/live/a.m3u8", "http://localhost:3030");
+        assert!(unchanged.contains("https://example.test/private.ts"));
+    }
+
+    #[tokio::test]
+    async fn live_and_recording_share_one_ready_proxy() {
+        let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = socket.local_addr().unwrap().port();
+        drop(socket);
+        let app = App {
+            client: Arc::new(Client::new_without_proxy("http://127.0.0.1", "", "", "", None)),
+            current_account: Default::default(), config: Default::default(),
+            handle: Default::default(), mcp_handle: Default::default(), cache: Default::default(),
+        };
+        app.config.write().await.proxy_port = port;
+        let (live, recording) = tokio::join!(app.prepare_proxy(), app.prepare_proxy());
+        let denied = reqwest::Client::builder().no_proxy().build().unwrap()
+            .get(format!("http://localhost:{port}/canvas-stream/localhost/private"))
+            .send().await.unwrap();
+        app.stop_proxy().await;
+        assert!(live.unwrap()); assert!(recording.unwrap());
+        assert_eq!(denied.status(), StatusCode::BAD_REQUEST);
+    }
+}
+
+fn canvas_stream_host(host: &str) -> bool {
+    host == "live.sjtu.edu.cn" || host.strip_prefix("mss")
+        .and_then(|rest| rest.strip_suffix(".sjtu.edu.cn"))
+        .is_some_and(|number| !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
+fn rewrite_live_playlist(playlist: &str, upstream: &str, proxy_origin: &str) -> String {
+    let Ok(base) = tauri::Url::parse(upstream) else { return playlist.to_string(); };
+    let rewrite = |uri: &str| -> String {
+        let Ok(url) = base.join(uri) else { return uri.to_string(); };
+        let Some(host) = url.host_str().filter(|host| canvas_stream_host(host)) else { return uri.to_string(); };
+        if url.scheme() != "https" || url.port_or_known_default() != Some(443) { return uri.to_string(); }
+        format!("{proxy_origin}/canvas-stream/{host}{}{}", url.path(),
+            url.query().map(|query| format!("?{query}")).unwrap_or_default())
+    };
+    let uri_attribute = regex::Regex::new(r#"URI="([^"]+)""#).unwrap();
+    playlist.lines().map(|line| {
+        if line.starts_with('#') {
+            uri_attribute.replace_all(line, |captures: &regex::Captures| format!("URI=\"{}\"", rewrite(&captures[1]))).into_owned()
+        } else if line.trim().is_empty() { line.to_string() }
+        else { rewrite(line.trim()) }
+    }).collect::<Vec<_>>().join("\n") + "\n"
+}
+
 async fn proxy_video_request(
-    upstream_base: &'static str,
+    upstream_base: &str,
     referer: &'static str,
     origin: &'static str,
     tail: warp::path::Tail,
     query: String,
     headers: warp::http::HeaderMap,
+    hls_proxy_origin: Option<String>,
 ) -> std::result::Result<Response<warp::hyper::Body>, Infallible> {
     let range_value = headers
         .get("Range")
@@ -77,6 +149,20 @@ async fn proxy_video_request(
     match request.send().await {
         Ok(response) => {
             let status = response.status();
+            if status.is_success() && tail.as_str().ends_with(".m3u8") {
+                if let Some(proxy_origin) = hls_proxy_origin {
+                    return match response.text().await {
+                        Ok(playlist) => Ok(Response::builder().status(status)
+                            .header("Content-Type", "application/vnd.apple.mpegurl")
+                            .header("Cache-Control", "no-store")
+                            .header("Access-Control-Allow-Origin", "*")
+                            .body(rewrite_live_playlist(&playlist, &url, &proxy_origin).into()).unwrap()),
+                        Err(_) => Ok(Response::builder().status(StatusCode::BAD_GATEWAY)
+                            .header("Access-Control-Allow-Origin", "*")
+                            .body("Failed to read live playlist".into()).unwrap()),
+                    };
+                }
+            }
             let mut builder = Response::builder().status(status);
             for (key, value) in response.headers() {
                 if key.as_str() != TE.as_str()
@@ -89,6 +175,8 @@ async fn proxy_video_request(
                             | "trailer"
                             | "transfer-encoding"
                             | "upgrade"
+                            | "access-control-allow-origin"
+                            | "access-control-expose-headers"
                     )
                 {
                     builder = builder.header(key, value);
@@ -106,7 +194,8 @@ async fn proxy_video_request(
         }
         Err(error) => Ok(Response::builder()
             .status(StatusCode::INTERNAL_SERVER_ERROR)
-            .body(format!("Error downloading video: {error}").into())
+            .header("Access-Control-Allow-Origin", "*")
+            .body(if hls_proxy_origin.is_some() { "Error connecting to live media".to_string() } else { format!("Error downloading video: {error}") }.into())
             .unwrap()),
     }
 }
@@ -303,11 +392,11 @@ impl App {
 
     async fn wait_proxy_ready(&self, proxy_port: u16) -> Result<bool> {
         let url = format!("http://localhost:{proxy_port}/ready");
+        let client = reqwest::Client::builder().no_proxy().build()?;
         let timeout_cnt = 10;
         let mut cnt = 0;
         loop {
-            let response = reqwest::get(&url).await?;
-            if response.status() == 200 {
+            if client.get(&url).send().await.is_ok_and(|response| response.status() == 200) {
                 tracing::info!("Proxy ready check success");
                 break Ok(true);
             }
@@ -321,7 +410,9 @@ impl App {
     }
 
     pub async fn prepare_proxy(&self) -> Result<bool> {
-        if self.handle.read().await.is_some() {
+        // Serialize startup so live and recording requests cannot bind the same port twice.
+        let mut proxy_handle = self.handle.write().await;
+        if proxy_handle.as_ref().is_some_and(|handle| !handle.is_finished()) {
             return Ok(true);
         }
         let proxy_port = self.config.read().await.proxy_port;
@@ -339,6 +430,7 @@ impl App {
                     tail,
                     query,
                     headers,
+                    None,
                 )
             });
         let canvas_video_proxy = warp::get()
@@ -353,6 +445,7 @@ impl App {
                     tail,
                     query,
                     headers,
+                    None,
                 )
             });
         let legacy_canvas_video_proxy = warp::get()
@@ -367,6 +460,7 @@ impl App {
                     tail,
                     query,
                     headers,
+                    None,
                 )
             });
         let canvas_live_proxy = warp::get()
@@ -381,7 +475,23 @@ impl App {
                     tail,
                     query,
                     headers,
+                    None,
                 )
+            });
+        let canvas_stream_proxy = warp::get()
+            .and(warp::path("canvas-stream"))
+            .and(warp::path::param::<String>())
+            .and(warp::path::tail())
+            .and(query_raw().or(warp::any().map(|| "".to_string())).unify())
+            .and(warp::header::headers_cloned())
+            .and_then(move |host: String, tail, query, headers| async move {
+                if !canvas_stream_host(&host) {
+                    return Ok::<_, Infallible>(Response::builder().status(StatusCode::BAD_REQUEST)
+                        .header("Access-Control-Allow-Origin", "*").body("Unsupported live media host".into()).unwrap());
+                }
+                proxy_video_request(&format!("https://{host}"), "https://v.sjtu.edu.cn/",
+                    "https://v.sjtu.edu.cn", tail, query, headers,
+                    Some(format!("http://localhost:{proxy_port}"))).await
             });
         // Ready Check Endpoint: /ready
         let ready_check = warp::path!("ready").map(|| Response::builder().body(""));
@@ -390,11 +500,16 @@ impl App {
             .or(legacy_canvas_video_proxy)
             .or(canvas_video_proxy)
             .or(canvas_live_proxy)
+            .or(canvas_stream_proxy)
             .or(ready_check);
-        let handle = tokio::spawn(warp::serve(routes).run(([127, 0, 0, 1], proxy_port)));
-        *self.handle.write().await = Some(handle);
-
-        self.wait_proxy_ready(proxy_port).await
+        let (_, server) = warp::serve(routes).try_bind_ephemeral(([127, 0, 0, 1], proxy_port))
+            .map_err(|_| AppError::VideoDownloadError(format!("播放代理端口 {proxy_port} 无法使用，请检查端口是否被占用")))?;
+        *proxy_handle = Some(tokio::spawn(server));
+        let ready = self.wait_proxy_ready(proxy_port).await;
+        if !matches!(ready, Ok(true)) {
+            if let Some(handle) = proxy_handle.take() { handle.abort(); }
+        }
+        ready
     }
 
     pub async fn stop_proxy(&self) {

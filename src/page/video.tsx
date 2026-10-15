@@ -17,6 +17,7 @@ import VideoTrackDownloads from "../components/video_track_downloads";
 import VideoLibraryTasks from "../components/video_library_tasks";
 import VideoAggregator from "../components/video_aggregator";
 import VideoLibraryPlayer from "../components/video_library_player";
+import VideoLivePanel from "../components/video_live_panel";
 import FileAIChatModal, { type FileAIChatMessage } from "../components/file_ai_chat_modal";
 import { useCourses, useConfigSelector } from "../lib/hooks";
 import { useTasks } from "../lib/task_hooks";
@@ -52,6 +53,7 @@ export default function VideoPage() {
   const cacheEntry = useRef<VideoSummaryCache>();
   const chatNamespace = useRef("");
   const [playerMini, setPlayerMini] = useState(false);
+  const [playback, setPlayback] = useState<"live" | "recording">("recording");
   const workspaceRef = useRef<HTMLDivElement>(null);
   useEffect(() => { let cancelled = false; void invoke<AccountInfo>("read_account_info").then((info) => { if (!cancelled) setAccount(info.current_account); }).catch(() => {}); return () => { cancelled = true; }; }, []);
   const [space, setSpace] = useState<Course[]>([]);
@@ -157,6 +159,7 @@ export default function VideoPage() {
     if (!player) setPlayerMini(false);
     const video = key ? session.videos.find((v) => recordingKey(v) === key) : session.videos.find(isPlayable);
     if (!video) { messageApi.info("本堂课暂无可播放录像"); return; }
+    setPlayback("recording");
     setPlayer({ session, key: recordingKey(video), seconds, nonce: crypto.randomUUID() });
   };
   const download = (next: VideoSession[], kind?: "ppt" | "subtitle") => {
@@ -314,7 +317,7 @@ export default function VideoPage() {
         chipLabel="视频管理"
         chipIcon={<SmartDisplayRoundedIcon />}
         title="视频中心"
-        description="按课堂浏览录像，批量下载视频、PPT 和字幕，或总结课堂内容。"
+        description="观看课堂直播，按课堂浏览录像，批量下载视频、PPT 和字幕，或总结课堂内容。"
         aside={
           <Box sx={{ width: { xs: "100%", lg: 640 } }}>
             <CourseSelect
@@ -327,6 +330,7 @@ export default function VideoPage() {
           </Box>
         }
       />
+      {selectedCourse && login === "ready" && <VideoLivePanel key={selectedCourse.id} canvasCourseId={selectedCourse.canvasId} teachingClassId={selectedCourse.teachingClassId} refresh={refresh} playback={playback} onPlay={() => { setPlayer(undefined); setPlayback("live"); }} />}
       {(player || chatOpen) && <Box ref={workspaceRef} sx={{ scrollMarginTop: 16, display: "grid", gridTemplateColumns: player && !playerMini && chatOpen ? { xs: "minmax(0, 1fr)", md: "minmax(0, 1.2fr) minmax(340px, 1fr)" } : "minmax(0, 1fr)", gap: 2, alignItems: "start" }}>
         {player && <VideoLibraryPlayer onMiniChange={setPlayerMini} session={player.session} initialKey={player.key} seconds={player.seconds} seekRequest={player.nonce} onClose={() => setPlayer(undefined)} onSummarize={() => summarize([player.session])} />}
         {chatOpen && <Card sx={{ ...surfaceCardSx, minWidth: 0 }}><Stack direction="row" gap={1} flexWrap="wrap" alignItems="center" sx={{ px: 2, pt: 1 }}>

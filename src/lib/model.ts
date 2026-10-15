@@ -408,6 +408,31 @@ export interface CanvasVideo {
 
 export type VideoSource = "canvas" | "videoSpace" | "legacy";
 
+export interface CanvasLiveSession {
+    id: string;
+    teachingClassId: number;
+    title: string;
+    teacherName: string;
+    classroomName: string;
+    beginTime: string;
+    endTime: string;
+    startTime: number;
+    finishTime: number;
+    enabled: boolean;
+}
+
+export interface CanvasLiveList {
+    sessions: CanvasLiveSession[];
+    serverTime: number;
+}
+
+export interface CanvasLiveInfo {
+    startTime: number;
+    finishTime: number;
+    serverTime: number;
+    tracks: { name: string; url: string }[];
+}
+
 export interface Video {
     id: number;
     userName: string;

@@ -22,7 +22,7 @@ use crate::{
     model::{
         CanvasVideo, CanvasVideoPPT, CanvasVideoPPTOcr, CanvasVideoSubTitle, CanvasVideoSubTitleResponseBody, Course,
         ItemPage, ProgressPayload, Teacher, Term, VideoCourse, VideoInfo, VideoPlayInfo,
-        VideoSource,
+        VideoSource, CanvasLiveSession, CanvasLiveList, CanvasLiveInfo, CanvasLiveTrack,
     },
     utils::{self, file::get_file_name, file::write_file_at_offset, time::format_time},
 };
@@ -355,6 +355,68 @@ fn api_data(value: &Value) -> Result<&Value> {
         .or_else(|| value.get("result"))
         .filter(|value| !value.is_null())
         .ok_or_else(|| AppError::VideoDownloadError("Video service returned no data".to_string()))
+}
+
+fn live_server_time(value: &Value) -> i64 {
+    value_as_i64(value.get("timestamp"))
+        .filter(|time| *time > 0)
+        .unwrap_or_else(|| chrono::Utc::now().timestamp_millis())
+}
+
+fn live_sessions_from_response(value: &Value) -> Result<CanvasLiveList> {
+    let records = api_data(value)?.get("records").and_then(Value::as_array)
+        .ok_or_else(|| AppError::VideoDownloadError("直播列表缺少课节数据".into()))?;
+    let sessions = records.iter().filter_map(|record| {
+        let id = value_as_i64(record.get("id")).filter(|id| *id > 0)?;
+        let start_time = value_as_i64(record.get("liveStartTime"))?;
+        let finish_time = value_as_i64(record.get("liveEndTime"))?;
+        if start_time <= 0 || finish_time <= start_time { return None; }
+        let teacher_name = record.get("teacNames").and_then(Value::as_array)
+            .map(|names| names.iter().filter_map(Value::as_str).collect::<Vec<_>>().join("、"))
+            .unwrap_or_else(|| first_string(record, &["tecName"]));
+        Some(CanvasLiveSession {
+            id: id.to_string(),
+            teaching_class_id: value_as_i64(record.get("teclId")).unwrap_or_default(),
+            title: first_string(record, &["subjName", "courName"]),
+            teacher_name,
+            classroom_name: first_string(record, &["clroName", "classRoomName"]),
+            begin_time: first_string(record, &["courBeginTime"]),
+            end_time: first_string(record, &["courEndTime"]),
+            start_time, finish_time,
+            // courLiveOpen can be zero before the scheduled start; liveEnable is the viewing permission.
+            enabled: value_as_i64(record.get("liveEnable")) == Some(1),
+        })
+    }).collect();
+    Ok(CanvasLiveList { sessions, server_time: live_server_time(value) })
+}
+
+fn live_info_from_response(value: &Value) -> Result<CanvasLiveInfo> {
+    let data = api_data(value)?;
+    let error = first_string(data, &["errorMsg"]);
+    if !error.is_empty() { return Err(AppError::VideoDownloadError(error)); }
+    if value_as_i64(data.get("lvcrLiveStatus")) != Some(1) {
+        return Err(AppError::VideoDownloadError("暂无权限观看本节直播".into()));
+    }
+    let start_time = value_as_i64(data.get("liveStartTime")).unwrap_or_default();
+    let finish_time = value_as_i64(data.get("liveEndTime")).unwrap_or_default();
+    let server_time = live_server_time(value);
+    if start_time <= 0 || finish_time <= start_time {
+        return Err(AppError::VideoDownloadError("直播时间信息缺失".into()));
+    }
+    if server_time < start_time { return Err(AppError::VideoDownloadError("直播未开始".into())); }
+    if server_time >= finish_time { return Err(AppError::VideoDownloadError("直播已结束，请刷新录像列表查看回放".into())); }
+    let tracks: Vec<CanvasLiveTrack> = data.get("courseDeviceViewDtoList").and_then(Value::as_array)
+        .into_iter().flatten().filter_map(|record| {
+            if value_as_i64(record.get("deviceStatus")) == Some(0) { return None; }
+            let mut url = Url::parse(&first_string(record, &["chanNameMainPlayUrl"])).ok()?;
+            if url.scheme() != "https" || !url.path().ends_with(".m3u8") { return None; }
+            let token = first_string(record, &["mainTokenStr"]);
+            if !token.is_empty() { url.query_pairs_mut().append_pair("account_token", &token); }
+            let name = first_string(record, &["chanNameMain"]);
+            Some(CanvasLiveTrack { name: if name.is_empty() { "直播机位".into() } else { name }, url: url.to_string() })
+        }).collect();
+    if tracks.is_empty() { return Err(AppError::VideoDownloadError("当前教室暂无可用的 HLS 直播机位".into())); }
+    Ok(CanvasLiveInfo { start_time, finish_time, server_time, tracks })
 }
 
 fn canvas_videos_from_response(value: &Value, source: VideoSource) -> Result<Vec<CanvasVideo>> {
@@ -956,6 +1018,38 @@ impl Client {
             .await
     }
 
+    async fn live_teaching_class_token(&self, canvas_course_id: Option<i64>, teaching_class_id: Option<i64>) -> Result<(i64, String)> {
+        let (id, token) = if let Some(id) = teaching_class_id.filter(|id| *id > 0) {
+            (id, self.get_video_space_token().await?)
+        } else if let Some(id) = canvas_course_id.filter(|id| *id > 0) {
+            self.get_teaching_class_id_token(id).await?
+        } else {
+            return Err(AppError::VideoDownloadError("当前课程没有可用的直播来源".into()));
+        };
+        *self.token.write().await = token.clone();
+        Ok((id, token))
+    }
+
+    pub async fn get_video_live_sessions(&self, canvas_course_id: Option<i64>, teaching_class_id: Option<i64>) -> Result<CanvasLiveList> {
+        let (id, token) = self.live_teaching_class_token(canvas_course_id, teaching_class_id).await?;
+        let response = self.cli.get(format!("{RESOURCE_MANAGE_BASE_URL}/v1/vod_live/t-1"))
+            .header(REFERER, RESOURCE_MANAGE_UI_URL).header("jwt-token", token)
+            .query(&[("page.pageIndex", "1".to_string()), ("page.pageSize", "1000".to_string()),
+                ("page.orders[0].asc", "true".to_string()), ("page.orders[0].field", "courBeginTime".to_string()),
+                ("liveDay", "0".to_string()), ("teclId", id.to_string())])
+            .send().await?.error_for_status()?;
+        live_sessions_from_response(&serde_json::from_slice(&response.bytes().await?)?)
+    }
+
+    pub async fn get_video_live_info(&self, course_id: &str, canvas_course_id: Option<i64>, teaching_class_id: Option<i64>) -> Result<CanvasLiveInfo> {
+        let (_, token) = self.live_teaching_class_token(canvas_course_id, teaching_class_id).await?;
+        let response = self.cli.get(format!("{RESOURCE_MANAGE_BASE_URL}/v1/course_vod_videoinfos"))
+            .header(REFERER, RESOURCE_MANAGE_UI_URL).header("jwt-token", token)
+            .query(&[("courseId", course_id), ("playType", "3")])
+            .send().await?.error_for_status()?;
+        live_info_from_response(&serde_json::from_slice(&response.bytes().await?)?)
+    }
+
     async fn get_legacy_canvas_course_id(&self, course_id: i64) -> Result<Option<String>> {
         let tool_urls = self.get_course_external_tool_urls(course_id).await?;
         let client = reqwest::Client::builder()
@@ -1522,6 +1616,46 @@ mod tests {
     use super::*;
     use crate::client::constants::BASE_URL;
     use reqwest::header::{HeaderMap, HeaderValue, ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE};
+
+    #[test]
+    fn test_live_list_keeps_upcoming_sections_and_requires_valid_times() {
+        let list = live_sessions_from_response(&serde_json::json!({"status":200, "timestamp":150, "data":{"records":[
+            {"id":1,"teclId":2,"subjName":"测试课程","teacNames":["教师"],"liveStartTime":100,"liveEndTime":200,"liveEnable":1,"courLiveOpen":1},
+            {"id":2,"teclId":2,"liveStartTime":200,"liveEndTime":300,"liveEnable":1,"courLiveOpen":0},
+            {"id":3,"liveStartTime":200,"liveEndTime":100},
+            {"id":0,"liveStartTime":100,"liveEndTime":200}
+        ]}})).unwrap();
+        assert_eq!(list.server_time, 150);
+        assert_eq!(list.sessions.len(), 2);
+        assert_eq!(list.sessions[0].teacher_name, "教师");
+        assert!(list.sessions[1].enabled);
+    }
+
+    #[test]
+    fn test_live_info_preserves_signed_urls_and_encodes_camera_tokens() {
+        let value = serde_json::json!({"status":200,"timestamp":150,"data":{
+            "lvcrLiveStatus":1,"liveStartTime":100,"liveEndTime":200,"courseDeviceViewDtoList":[
+                {"chanNameMain":"老师","deviceStatus":1,"chanNameMainPlayUrl":"https://mss2.sjtu.edu.cn/live/a.m3u8?auth_key=signed","mainTokenStr":"a+b=="},
+                {"chanNameMain":"课件","deviceStatus":1,"chanNameMainPlayUrl":"https://mss2.sjtu.edu.cn/live/b.m3u8?auth_key=other"},
+                {"deviceStatus":0,"chanNameMainPlayUrl":"https://mss2.sjtu.edu.cn/live/c.m3u8"},
+                {"chanNameMainPlayUrl":"https://mss2.sjtu.edu.cn/live/a.flv"}
+            ]}});
+        let info = live_info_from_response(&value).unwrap();
+        assert_eq!(info.tracks.len(), 2);
+        let url = Url::parse(&info.tracks[0].url).unwrap();
+        let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
+        assert_eq!(query.get("auth_key").unwrap(), "signed");
+        assert_eq!(query.get("account_token").unwrap(), "a+b==");
+        assert_eq!(info.tracks[1].name, "课件");
+        let mut closed = value.clone(); closed["data"]["lvcrLiveStatus"] = 0.into();
+        assert!(live_info_from_response(&closed).unwrap_err().to_string().contains("权限"));
+        closed = value.clone(); closed["timestamp"] = 200.into();
+        assert!(live_info_from_response(&closed).unwrap_err().to_string().contains("已结束"));
+        closed = value.clone(); closed["timestamp"] = 99.into();
+        assert!(live_info_from_response(&closed).unwrap_err().to_string().contains("未开始"));
+        closed = value; closed["data"]["errorMsg"] = "直播未开放".into();
+        assert!(live_info_from_response(&closed).unwrap_err().to_string().contains("直播未开放"));
+    }
 
     #[test]
     fn test_ppt_response_preserves_full_text_keywords_and_seek_times() {

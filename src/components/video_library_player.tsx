@@ -85,7 +85,8 @@ export default function VideoLibraryPlayer({ session, initialKey, seconds = 0, s
     return () => { cancelled = true; if (objectURL) URL.revokeObjectURL(objectURL); };
   }, [video, retry]);
 
-  useEffect(() => () => { if (proxy.current) void proxy.current.then(() => invoke("stop_proxy")).catch(() => {}); }, []);
+  // The proxy is shared with classroom live playback; App stops it when exiting.
+  // Closing a recording must not stop a live player that is starting on the same port.
 
   useEffect(() => {
     const primary = mainRef.current;

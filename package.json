@@ -49,6 +49,7 @@
     "echarts": "^5.5.0",
     "echarts-for-react": "^3.0.5",
     "highlight.js": "^11.11.1",
+    "hls.js": "^1.7.3",
     "html2canvas": "^1.4.1",
     "js-base64": "^3.7.7",
     "jspdf": "^4.2.1",

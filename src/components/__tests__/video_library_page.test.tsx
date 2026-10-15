@@ -39,6 +39,7 @@ beforeEach(() => {
     if (command === "login_canvas_website") return;
     if (command === "list_video_space_courses" || command === "get_legacy_videos") return [];
     if (command === "get_canvas_videos") return videos;
+    if (command === "get_video_live_sessions") return { sessions: [], serverTime: Date.now() };
     if (command === "prepare_video_material") return { key: args!.request.key, title: args!.request.title, text: "字幕正文", subtitleAvailable: true, srt: "字幕", warnings: [] };
     if (command === "chat_video_materials") return "整堂课总结";
     throw new Error(command);

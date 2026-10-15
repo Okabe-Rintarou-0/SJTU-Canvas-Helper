@@ -9,7 +9,7 @@ use model::{
     Course, DiscussionTopic, File, FileChatStreamChunkPayload, FileChatStreamDonePayload,
     FileChatStreamErrorPayload, Folder, FullDiscussion, LLMChatMessage, LogLevel, ModuleItem,
     NetworkRequestLog, QRCodeScanResult, RelationshipTopo, Submission, User, UserSubmissions,
-    VideoAggregateParams, VideoCourse, VideoInfo, VideoPlayInfo, VideoSource,
+    VideoAggregateParams, VideoCourse, VideoInfo, VideoPlayInfo, VideoSource, CanvasLiveList, CanvasLiveInfo,
 };
 use serde::{Deserialize, Serialize};
 
@@ -859,6 +859,16 @@ async fn get_canvas_videos(course_id: i64) -> Result<Vec<CanvasVideo>> {
 }
 
 #[tauri::command]
+async fn get_video_live_sessions(canvas_course_id: Option<i64>, teaching_class_id: Option<i64>) -> Result<CanvasLiveList> {
+    APP.get_video_live_sessions(canvas_course_id, teaching_class_id).await
+}
+
+#[tauri::command]
+async fn get_video_live_info(course_id: String, canvas_course_id: Option<i64>, teaching_class_id: Option<i64>) -> Result<CanvasLiveInfo> {
+    APP.get_video_live_info(&course_id, canvas_course_id, teaching_class_id).await
+}
+
+#[tauri::command]
 async fn list_video_space_courses() -> Result<Vec<Course>> {
     APP.list_video_space_courses().await
 }
@@ -1170,6 +1180,8 @@ async fn main() -> Result<()> {
             get_uuid,
             express_login,
             get_canvas_videos,
+            get_video_live_sessions,
+            get_video_live_info,
             list_video_space_courses,
             get_video_space_videos,
             get_legacy_videos,

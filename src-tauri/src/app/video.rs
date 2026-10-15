@@ -4,7 +4,7 @@ use super::App;
 use crate::{
     error::{AppError, Result},
     model::{
-        CanvasVideo, Course, ProgressPayload, VideoCourse, VideoInfo, VideoPlayInfo, VideoSource,
+        CanvasVideo, CanvasLiveList, CanvasLiveInfo, Course, ProgressPayload, VideoCourse, VideoInfo, VideoPlayInfo, VideoSource,
     },
 };
 // Apis for course video
@@ -56,6 +56,14 @@ impl App {
 
     pub async fn list_video_space_courses(&self) -> Result<Vec<Course>> {
         self.client.list_video_space_courses().await
+    }
+
+    pub async fn get_video_live_sessions(&self, canvas_course_id: Option<i64>, teaching_class_id: Option<i64>) -> Result<CanvasLiveList> {
+        self.client.get_video_live_sessions(canvas_course_id, teaching_class_id).await
+    }
+
+    pub async fn get_video_live_info(&self, course_id: &str, canvas_course_id: Option<i64>, teaching_class_id: Option<i64>) -> Result<CanvasLiveInfo> {
+        self.client.get_video_live_info(course_id, canvas_course_id, teaching_class_id).await
     }
 
     pub async fn get_video_space_videos(&self, teaching_class_id: i64) -> Result<Vec<CanvasVideo>> {
