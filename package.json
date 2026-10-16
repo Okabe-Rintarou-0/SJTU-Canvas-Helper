@@ -13,6 +13,7 @@
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "typecheck": "tsc --noEmit",
+    "check:rust": "node script/check-rust.mjs",
     "prepare": "husky"
   },
   "lint-staged": {

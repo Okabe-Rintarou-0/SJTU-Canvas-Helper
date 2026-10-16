@@ -39,53 +39,6 @@ use super::{
 
 const MY_CANVAS_FILES_FOLDER_NAME: &str = "我的Canvas文件";
 
-#[cfg(test)]
-mod live_proxy_tests {
-    use super::*;
-
-    #[test]
-    fn live_playlist_rewrites_segments_variants_keys_and_maps() {
-        let playlist = "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin?key=signed\"\n#EXT-X-MAP:URI=\"/live/init.mp4\"\n../camera/index.m3u8?auth_key=abc\nhttps://mss3.sjtu.edu.cn/live/segment.ts\nsegment.ts?signature=xyz\n";
-        let rewritten = rewrite_live_playlist(playlist, "https://mss2.sjtu.edu.cn/live/a/index.m3u8?auth_key=abc", "http://localhost:3030");
-        assert!(rewritten.contains("URI=\"http://localhost:3030/canvas-stream/mss2.sjtu.edu.cn/live/a/key.bin?key=signed\""));
-        assert!(rewritten.contains("URI=\"http://localhost:3030/canvas-stream/mss2.sjtu.edu.cn/live/init.mp4\""));
-        assert!(rewritten.contains("http://localhost:3030/canvas-stream/mss2.sjtu.edu.cn/live/camera/index.m3u8?auth_key=abc"));
-        assert!(rewritten.contains("http://localhost:3030/canvas-stream/mss3.sjtu.edu.cn/live/segment.ts"));
-        assert!(rewritten.contains("http://localhost:3030/canvas-stream/mss2.sjtu.edu.cn/live/a/segment.ts?signature=xyz"));
-    }
-
-    #[test]
-    fn live_proxy_only_accepts_known_sjtu_media_hosts() {
-        assert!(canvas_stream_host("mss2.sjtu.edu.cn"));
-        assert!(canvas_stream_host("live.sjtu.edu.cn"));
-        for host in ["localhost", "127.0.0.1", "mss2.sjtu.edu.cn.evil.test", "mss.sjtu.edu.cn", "example.test"] {
-            assert!(!canvas_stream_host(host));
-        }
-        let unchanged = rewrite_live_playlist("#EXTM3U\nhttps://example.test/private.ts\n", "https://mss2.sjtu.edu.cn/live/a.m3u8", "http://localhost:3030");
-        assert!(unchanged.contains("https://example.test/private.ts"));
-    }
-
-    #[tokio::test]
-    async fn live_and_recording_share_one_ready_proxy() {
-        let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = socket.local_addr().unwrap().port();
-        drop(socket);
-        let app = App {
-            client: Arc::new(Client::new_without_proxy("http://127.0.0.1", "", "", "", None)),
-            current_account: Default::default(), config: Default::default(),
-            handle: Default::default(), mcp_handle: Default::default(), cache: Default::default(),
-        };
-        app.config.write().await.proxy_port = port;
-        let (live, recording) = tokio::join!(app.prepare_proxy(), app.prepare_proxy());
-        let denied = reqwest::Client::builder().no_proxy().build().unwrap()
-            .get(format!("http://localhost:{port}/canvas-stream/localhost/private"))
-            .send().await.unwrap();
-        app.stop_proxy().await;
-        assert!(live.unwrap()); assert!(recording.unwrap());
-        assert_eq!(denied.status(), StatusCode::BAD_REQUEST);
-    }
-}
-
 fn canvas_stream_host(host: &str) -> bool {
     host == "live.sjtu.edu.cn" || host.strip_prefix("mss")
         .and_then(|rest| rest.strip_suffix(".sjtu.edu.cn"))
@@ -1695,5 +1648,52 @@ try {{
         let path = Path::new(&log_file_path).join("app.log");
         let content = fs::read_to_string(path)?;
         Ok(content)
+    }
+}
+
+#[cfg(test)]
+mod live_proxy_tests {
+    use super::*;
+
+    #[test]
+    fn live_playlist_rewrites_segments_variants_keys_and_maps() {
+        let playlist = "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin?key=signed\"\n#EXT-X-MAP:URI=\"/live/init.mp4\"\n../camera/index.m3u8?auth_key=abc\nhttps://mss3.sjtu.edu.cn/live/segment.ts\nsegment.ts?signature=xyz\n";
+        let rewritten = rewrite_live_playlist(playlist, "https://mss2.sjtu.edu.cn/live/a/index.m3u8?auth_key=abc", "http://localhost:3030");
+        assert!(rewritten.contains("URI=\"http://localhost:3030/canvas-stream/mss2.sjtu.edu.cn/live/a/key.bin?key=signed\""));
+        assert!(rewritten.contains("URI=\"http://localhost:3030/canvas-stream/mss2.sjtu.edu.cn/live/init.mp4\""));
+        assert!(rewritten.contains("http://localhost:3030/canvas-stream/mss2.sjtu.edu.cn/live/camera/index.m3u8?auth_key=abc"));
+        assert!(rewritten.contains("http://localhost:3030/canvas-stream/mss3.sjtu.edu.cn/live/segment.ts"));
+        assert!(rewritten.contains("http://localhost:3030/canvas-stream/mss2.sjtu.edu.cn/live/a/segment.ts?signature=xyz"));
+    }
+
+    #[test]
+    fn live_proxy_only_accepts_known_sjtu_media_hosts() {
+        assert!(canvas_stream_host("mss2.sjtu.edu.cn"));
+        assert!(canvas_stream_host("live.sjtu.edu.cn"));
+        for host in ["localhost", "127.0.0.1", "mss2.sjtu.edu.cn.evil.test", "mss.sjtu.edu.cn", "example.test"] {
+            assert!(!canvas_stream_host(host));
+        }
+        let unchanged = rewrite_live_playlist("#EXTM3U\nhttps://example.test/private.ts\n", "https://mss2.sjtu.edu.cn/live/a.m3u8", "http://localhost:3030");
+        assert!(unchanged.contains("https://example.test/private.ts"));
+    }
+
+    #[tokio::test]
+    async fn live_and_recording_share_one_ready_proxy() {
+        let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = socket.local_addr().unwrap().port();
+        drop(socket);
+        let app = App {
+            client: Arc::new(Client::new_without_proxy("http://127.0.0.1", "", "", "", None)),
+            current_account: Default::default(), config: Default::default(),
+            handle: Default::default(), mcp_handle: Default::default(), cache: Default::default(),
+        };
+        app.config.write().await.proxy_port = port;
+        let (live, recording) = tokio::join!(app.prepare_proxy(), app.prepare_proxy());
+        let denied = reqwest::Client::builder().no_proxy().build().unwrap()
+            .get(format!("http://localhost:{port}/canvas-stream/localhost/private"))
+            .send().await.unwrap();
+        app.stop_proxy().await;
+        assert!(live.unwrap()); assert!(recording.unwrap());
+        assert_eq!(denied.status(), StatusCode::BAD_REQUEST);
     }
 }

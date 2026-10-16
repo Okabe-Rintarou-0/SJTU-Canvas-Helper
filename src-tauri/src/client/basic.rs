@@ -1253,6 +1253,45 @@ mod mock_tests {
     }
 
     #[tokio::test]
+    async fn test_list_submissions_paginates_without_live_canvas() {
+        let server = MockServer::start();
+        let mut pages = Vec::new();
+        for page in 1..=3 {
+            pages.push(server.mock(|when, then| {
+                when.method(GET)
+                    .path("/api/v1/courses/7/assignments/8/submissions")
+                    .header("Authorization", "Bearer test-token")
+                    .query_param("include[]", "submission_comments")
+                    .query_param("per_page", "100")
+                    .query_param("page", page.to_string());
+                let body = if page < 3 {
+                    json!([{"id": page, "assignment_id": 8, "user_id": 10,
+                        "late": false, "workflow_state": "submitted"}])
+                } else { json!([]) };
+                then.status(200).json_body(body);
+            }));
+        }
+        let submissions = create_test_client(&server.base_url())
+            .list_course_assignment_submissions(7, 8, "test-token").await.unwrap();
+        assert_eq!(submissions.iter().map(|item| item.id).collect::<Vec<_>>(), vec![1, 2]);
+        assert!(submissions.iter().all(|item| item.assignment_id == 8));
+        for page in pages { page.assert_hits(1); }
+    }
+
+    #[tokio::test]
+    async fn test_list_submissions_propagates_http_failure_without_live_canvas() {
+        let server = MockServer::start();
+        let denied = server.mock(|when, then| {
+            when.method(GET).path("/api/v1/courses/7/assignments/8/submissions");
+            then.status(401);
+        });
+        assert!(create_test_client(&server.base_url())
+            .list_course_assignment_submissions(7, 8, "test-token").await.is_err());
+        denied.assert_hits(1);
+    }
+
+
+    #[tokio::test]
     async fn test_update_grade_with_grade_and_comment() {
         let server = MockServer::start();
         let token = "test_token_12345";
@@ -1430,6 +1469,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[ignore = "requires a live Canvas token and network access"]
     async fn test_get_me() -> Result<()> {
         let token = get_token_from_env();
         assert!(!token.is_empty());
@@ -1441,6 +1481,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[ignore = "requires a live Canvas token and network access"]
     async fn test_list_courses() -> Result<()> {
         let token = get_token_from_env();
         assert!(!token.is_empty());
@@ -1462,6 +1503,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[ignore = "requires a live Canvas token and network access"]
     async fn test_list_assignments() -> Result<()> {
         tracing_subscriber::fmt::init();
         let token = get_token_from_env();
@@ -1487,6 +1529,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[ignore = "requires a live Canvas token and network access"]
     async fn test_list_users() -> Result<()> {
         let token = get_token_from_env();
         assert!(!token.is_empty());
@@ -1520,6 +1563,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[ignore = "requires a live Canvas token and network access"]
     async fn test_list_submissions() -> Result<()> {
         let token = get_token_from_env();
         assert!(!token.is_empty());
@@ -1547,6 +1591,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[ignore = "requires a live Canvas token and network access"]
     async fn test_list_colors() -> Result<()> {
         let token = get_token_from_env();
         assert!(!token.is_empty());

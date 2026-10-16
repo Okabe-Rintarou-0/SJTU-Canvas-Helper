@@ -1633,7 +1633,6 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::client::constants::BASE_URL;
     use reqwest::header::{HeaderMap, HeaderValue, ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE};
 
     #[test]
@@ -1941,6 +1940,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires the live SJTU authentication service"]
     async fn test_get_uuid() -> Result<()> {
         let cli = Client::default();
         let uuid = cli.get_uuid().await?;
@@ -1950,36 +1950,48 @@ mod tests {
         Ok(())
     }
 
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "macOS system-configuration panics in CI/local test env"
-    )]
     #[tokio::test]
     async fn test_download_video() -> Result<()> {
-        let _ = tracing_subscriber::fmt::try_init();
-        let cli = Arc::new(Client::new_without_proxy(BASE_URL, "", "", "", None));
-        let video_url = "https://www.w3schools.com/html/mov_bbb.mp4";
-        let save_path = "test_download_video.mp4";
-        let video_info = VideoPlayInfo {
-            rtmp_url_hdv: video_url.to_owned(),
-            ..Default::default()
-        };
-        let cli_cloned = cli.clone();
-        cli_cloned
-            .download_video(&video_info, save_path, |_| {})
-            .await?;
-
-        // download original video
-        let original = cli
-            .get_request(video_url, None::<&str>)
-            .await?
-            .bytes()
-            .await?
-            .to_vec();
-
-        let downloaded = fs::read(save_path)?;
-        assert_eq!(original, downloaded);
-        let _ = fs::remove_file(save_path);
+        use httpmock::prelude::*;
+        // Exercise both range and single-stream downloads without external media.
+        let original = vec![0x5a; num_cpus::get() * 8 + 1];
+        for supports_range in [false, true] {
+            let server = MockServer::start();
+            let probe = server.mock(|when, then| {
+                when.method(GET).path("/video.mp4").header("Range", "bytes=0-0");
+                if supports_range {
+                    then.status(206).header("Content-Range", format!("bytes 0-0/{}", original.len())).body(&original[..1]);
+                } else {
+                    then.status(200).body(&original);
+                }
+            });
+            let mut chunks = Vec::new();
+            if supports_range {
+                let size = original.len() as u64;
+                let chunk_size = size / num_cpus::get() as u64;
+                for index in 0..num_cpus::get() {
+                    let begin = index as u64 * chunk_size;
+                    let end = (begin + VIDEO_CHUNK_SIZE).min(size - 1);
+                    chunks.push(server.mock(|when, then| {
+                        when.method(GET).path("/video.mp4").header("Range", format!("bytes={begin}-{}", begin + VIDEO_CHUNK_SIZE));
+                        then.status(206).header("Content-Range", format!("bytes {begin}-{end}/{size}"))
+                            .body(&original[begin as usize..=end as usize]);
+                    }));
+                }
+            } else {
+                chunks.push(server.mock(|when, then| {
+                    when.method(GET).path("/video.mp4");
+                    then.status(200).body(&original);
+                }));
+            }
+            let output = crate::utils::file::TempFile::with_extension(std::env::temp_dir().to_string_lossy().into_owned(), "mp4")?;
+            let cli = Arc::new(Client::new_without_proxy(server.base_url().as_str(), "", "", "", None));
+            let info = VideoPlayInfo { rtmp_url_hdv: server.url("/video.mp4"), ..Default::default() };
+            cli.download_video(&info, output.path(), |_| {}).await?;
+            assert_eq!(fs::read(output.path())?, original);
+            probe.assert_hits(1);
+            for chunk in chunks { chunk.assert_hits(1); }
+        }
         Ok(())
     }
 

@@ -6,10 +6,6 @@ on:
     pull_request:
       branches: ["**"]
 
-# Make sure CI fails on all warnings, including Clippy lints
-env:
-  RUSTFLAGS: "-Dwarnings"
-
 jobs:
   rust_lint:
     defaults:
@@ -21,7 +17,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.99.0
         with:
           components: clippy
       - uses: swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
@@ -33,6 +29,4 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev patchelf
       - name: Run Clippy
-        run: |
-          mkdir ../dist
-          cargo clippy --workspace --all-targets --all-features
+        run: node ../script/check-rust.mjs --lint
