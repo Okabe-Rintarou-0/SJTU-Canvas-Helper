@@ -308,6 +308,9 @@ export interface AppConfig {
     llm_temperature: Option<number>;
     llm_api_keys: LlmApiKeyEntry[];
     llm_active_api_key: string;
+    video_summary_prompt?: string;
+    video_summary_context_tokens?: number;
+    video_summary_output_tokens?: number;
     theme: Theme;
     compact_mode: boolean;
     experimental_task_center_only?: boolean;

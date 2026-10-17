@@ -45,6 +45,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactJson from "react-json-view-ts";
 import BasicLayout from "../components/layout";
 import LogModal from "../components/log_modal";
+import VideoSummarySettings from "../components/video_summary_settings";
+import { videoSummaryOptions, videoSummaryOptionsError } from "../lib/video_summary_config";
 import { WorkspaceHero } from "../components/workspace_hero";
 import { LoginAlert } from "../components/login_alert";
 import { getConfig, saveConfig, updateConfig } from "../lib/config";
@@ -472,6 +474,9 @@ export default function SettingsPage() {
         proxy_port: config.proxy_port === 0 ? DEFAULT_PROXY_PORT : config.proxy_port,
         llm_api_keys: config.llm_api_keys ?? [],
         llm_active_api_key: config.llm_active_api_key ?? "",
+        video_summary_prompt: videoSummaryOptions(config).prompt,
+        video_summary_context_tokens: videoSummaryOptions(config).contextTokens,
+        video_summary_output_tokens: videoSummaryOptions(config).outputTokens,
       });
 
       setCurrentAccount(accountInfo.current_account);
@@ -581,6 +586,9 @@ export default function SettingsPage() {
       messageApi.error("请先修正表单中的错误，再保存设置。");
       return;
     }
+
+    const summaryError = videoSummaryOptionsError(videoSummaryOptions(formData));
+    if (summaryError) { messageApi.error(summaryError); return; }
 
     try {
       await saveConfig(formData);
@@ -1688,6 +1696,12 @@ export default function SettingsPage() {
                         }}
                       />
                     </Box>
+
+                    <Divider />
+                    <VideoSummarySettings config={{ video_summary_prompt: formData?.video_summary_prompt,
+                      video_summary_context_tokens: formData?.video_summary_context_tokens,
+                      video_summary_output_tokens: formData?.video_summary_output_tokens }}
+                      onChange={(fields) => setFormData((previous) => previous ? { ...previous, ...fields } : previous)} />
 
                     <Box
                       sx={{

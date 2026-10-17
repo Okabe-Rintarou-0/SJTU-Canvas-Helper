@@ -1,5 +1,7 @@
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::HashMap;
+mod video_summary;
+pub use video_summary::*;
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Course {
@@ -169,6 +171,12 @@ pub struct AppConfig {
     pub llm_api_keys: Vec<LlmApiKeyEntry>,
     #[serde(default)]
     pub llm_active_api_key: String,
+    #[serde(default = "default_video_summary_prompt")]
+    pub video_summary_prompt: String,
+    #[serde(default = "default_video_context_tokens")]
+    pub video_summary_context_tokens: u32,
+    #[serde(default = "default_video_output_tokens")]
+    pub video_summary_output_tokens: u32,
     #[serde(default)]
     pub ja_auth_cookie: String,
     #[serde(default)]
@@ -233,6 +241,9 @@ impl Default for AppConfig {
             debug_mode: Default::default(),
             llm_api_keys: Default::default(),
             llm_active_api_key: Default::default(),
+            video_summary_prompt: default_video_summary_prompt(),
+            video_summary_context_tokens: default_video_context_tokens(),
+            video_summary_output_tokens: default_video_output_tokens(),
         }
     }
 }
