@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import VideoPage from "../../page/video";
+import { videoSummarySession } from "../../lib/video_summary_session";
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), exports: vi.fn(), open: vi.fn(),
   centerOnly: undefined as boolean | undefined,
@@ -31,6 +32,7 @@ const videos = [
   { videoId: "c", courseBeginTime: "2026-09-29 14:00", courseEndTime: "2026-09-29 14:45" },
 ].map((video) => ({ ...video, source: "canvas", weekNumber: 4, videoName: `录像${video.videoId}`, userName: "教师", classroomName: "教室", playable: true, availability: "ready", availabilityLabel: "可播放" }));
 beforeEach(() => {
+  videoSummarySession.reset();
   vi.clearAllMocks(); localStorage.clear(); mocks.centerOnly = undefined;
   mocks.cleanUpPpt = false;
   mocks.open.mockResolvedValue("D:/导出"); mocks.exports.mockResolvedValue(2);
@@ -103,6 +105,30 @@ describe("video library workflows", () => {
     fireEvent.click(available);
     expect(screen.getByRole("button", { name: "AI 总结…" })).toBeDisabled();
     expect(mocks.invoke.mock.calls).toHaveLength(reads);
+  });
+  it("restores an in-flight summary after navigation and completes caching without the page", async () => {
+    const view = await load();
+    let finish!: (value: string) => void;
+    let chunk!: (value: string) => void;
+    const original = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation((command, args) => {
+      if (command === "chat_video_materials") return new Promise<string>((resolve) => { finish = resolve; chunk = args.onChunk.onmessage; });
+      return original(command, args);
+    });
+    fireEvent.click(within(screen.getByText("2026-09-28").closest("tr")!).getByRole("button", { name: "AI 总结" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始总结" }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("chat_video_materials", expect.anything()));
+    view.unmount();
+    act(() => chunk("后台生成的内容"));
+    const returned = render(<VideoPage />);
+    expect(screen.getByTestId("chat")).toHaveTextContent("后台生成的内容");
+    expect(screen.getByRole("button", { name: "重新生成" })).toBeDisabled();
+    returned.unmount();
+    await act(async () => finish("离开页面后完成的总结"));
+    render(<VideoPage />);
+    expect(screen.getByTestId("chat")).toHaveTextContent("离开页面后完成的总结");
+    expect(screen.getByText(/已缓存到本地/)).toBeInTheDocument();
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "chat_video_materials")).toHaveLength(1);
   });
   it("separates summary and material caches when animation simplification changes", async () => {
     const view = await load();

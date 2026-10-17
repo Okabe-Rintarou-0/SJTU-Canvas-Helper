@@ -958,10 +958,10 @@ async fn prepare_video_material(
 }
 
 #[tauri::command]
-async fn chat_video_materials(text: String, messages: Vec<LLMChatMessage>, on_chunk: tauri::ipc::Channel<String>, on_status: tauri::ipc::Channel<String>) -> Result<String> {
+async fn chat_video_materials(text: String, messages: Vec<LLMChatMessage>, options: Option<model::VideoSummaryOptions>, prepared_context: Option<model::VideoPreparedContext>, on_chunk: tauri::ipc::Channel<String>, on_status: tauri::ipc::Channel<String>) -> Result<model::VideoChatResponse> {
     let mut callback = move |chunk| { let _ = on_chunk.send(chunk); };
     let mut status_callback = move |status| { let _ = on_status.send(status); };
-    APP.chat_video_materials(text, messages, Some(&mut callback), &mut status_callback).await
+    APP.chat_video_materials(text, messages, options, prepared_context, Some(&mut callback), &mut status_callback).await
 }
 
 #[tauri::command]

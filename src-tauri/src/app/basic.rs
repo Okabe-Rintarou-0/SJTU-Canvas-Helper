@@ -1111,6 +1111,8 @@ impl App {
     }
 
     pub async fn save_config(&self, config: AppConfig) -> Result<()> {
+        crate::model::VideoSummaryOptions { prompt: config.video_summary_prompt.clone(),
+            context_tokens: config.video_summary_context_tokens, output_tokens: config.video_summary_output_tokens }.validate()?;
         let account = self.current_account.read().await.clone();
         let config_path = App::get_config_path(&account);
         fs::write(&config_path, serde_json::to_vec(&config).unwrap())?;

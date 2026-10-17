@@ -57,6 +57,7 @@ rmcp = { version = "1.7", features = [
 ] }
 axum = "0.8"
 rig = "0.38.2"
+tiktoken-rs = "0.12.1"
 [dependencies.uuid]
 version = "1.18.1"
 features = [

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { invoke, Channel } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Link as RouterLink } from "react-router-dom";
 import { Alert, Box, Button, Card, CardContent, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, LinearProgress, Menu, MenuItem, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Tooltip, Typography } from "@mui/material";
@@ -18,22 +18,23 @@ import VideoLibraryTasks from "../components/video_library_tasks";
 import VideoAggregator from "../components/video_aggregator";
 import VideoLibraryPlayer from "../components/video_library_player";
 import VideoLivePanel from "../components/video_live_panel";
-import FileAIChatModal, { type FileAIChatMessage } from "../components/file_ai_chat_modal";
+import FileAIChatModal from "../components/file_ai_chat_modal";
 import { useCourses, useConfigSelector } from "../lib/hooks";
 import { useTasks } from "../lib/task_hooks";
 import { useAppMessage } from "../lib/message";
 import { compareVideoCourses, loadVideoCourse, mergeVideoCourses } from "../lib/video_courses";
-import { canSummarizeRecording, groupVideoSessions, groupSessionsByDate, parseVideoCitation, formatVideoTimestamp, recordingKey, recordingTime, selectedSessionScopes, toggleRecordings, hasVideoMaterial, type VideoExportOptions, type VideoMaterial, type VideoSession } from "../lib/video_library";
-import { enqueueVideoExports, recordingRequest, saveRecordingMaterial } from "../lib/video_library_tasks";
-import { readSummaryCache, writeSummaryCache, deleteSummaryCache, summaryCacheKey, type VideoSummaryCache } from "../lib/video_summary_cache";
-import type { AccountInfo, CanvasVideo, Course, LLMChatMessage } from "../lib/model";
+import { canSummarizeRecording, groupVideoSessions, groupSessionsByDate, parseVideoCitation, formatVideoTimestamp, recordingKey, recordingTime, selectedSessionScopes, toggleRecordings, type VideoExportOptions, type VideoSession } from "../lib/video_library";
+import { enqueueVideoExports, saveRecordingMaterial } from "../lib/video_library_tasks";
+import { readSummaryCache, summaryCacheKey, withSummaryModelIdentity, type VideoSummaryCache } from "../lib/video_summary_cache";
+import type { AccountInfo, CanvasVideo, Course } from "../lib/model";
+import { useAISession } from "../lib/ai_session_store";
+import { videoSummarySession } from "../lib/video_summary_session";
+import { videoSummaryOptions } from "../lib/video_summary_config";
+import { DEFAULT_LLM_BASE_URL, DEFAULT_LLM_MODEL } from "../lib/llm_config";
 import { surfaceCardSx } from "../lib/styles";
 
 const isPlayable = (video: CanvasVideo) => video.playable || !!video.alternatives?.some((v) => v.playable);
 const hasSubtitleSource = (video: CanvasVideo) => [video, ...(video.alternatives ?? [])].some((v) => v.source !== "legacy");
-const message = (role: "user" | "assistant", content: string, error = false): FileAIChatMessage => ({
-  id: crypto.randomUUID(), role, content, error, createdAt: new Date().toISOString(),
-});
 function withTimeout<T>(promise: Promise<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = window.setTimeout(() => reject(new Error("请求超时，请刷新重试")), 30_000);
@@ -46,12 +47,17 @@ export default function VideoPage() {
   const centerOnly = useConfigSelector((state) => state.config.data?.experimental_task_center_only === true);
   const pptCleanupEnabled = useConfigSelector((state) => state.config.data?.experimental_ppt_cleanup === true);
   const [account, setAccount] = useState<string>();
-  const model = useConfigSelector((state) => state.config.data?.llm_model ?? "");
-  const [cachedSummaries, setCachedSummaries] = useState(readSummaryCache);
+  const aiConfig = useConfigSelector((state) => state.config.data);
+  const summaryOptions = videoSummaryOptions(aiConfig ?? undefined);
+  const activeLlm = aiConfig?.llm_api_keys?.find((entry) => entry.name === aiConfig.llm_active_api_key);
+  const modelIdentity = JSON.stringify([activeLlm?.base_url || aiConfig?.llm_base_url || DEFAULT_LLM_BASE_URL,
+    activeLlm?.model || aiConfig?.llm_model || DEFAULT_LLM_MODEL, aiConfig?.llm_temperature ?? null]);
+  const summary = useAISession(videoSummarySession);
+  const { open: chatOpen, title: chatTitle, scopes: chatScope, messages: chatMessages,
+    loading: chatLoading, progress: chatProgress, coverage, cacheNotice } = summary;
+  const setChatOpen = (open: boolean) => videoSummarySession.update({ open });
+  const cachedSummaries = useMemo(readSummaryCache, [summary.cacheEntry, cacheNotice]);
   const [cacheListOpen, setCacheListOpen] = useState(false);
-  const [cacheNotice, setCacheNotice] = useState("");
-  const cacheEntry = useRef<VideoSummaryCache>();
-  const chatNamespace = useRef("");
   const [playerMini, setPlayerMini] = useState(false);
   const [playback, setPlayback] = useState<"live" | "recording">("recording");
   const workspaceRef = useRef<HTMLDivElement>(null);
@@ -60,7 +66,7 @@ export default function VideoPage() {
   const courses = useMemo(() => mergeVideoCourses(canvas.data, space), [canvas.data, space]);
   const [courseId, setCourseId] = useState<number>();
   const selectedCourse = courses.find((course) => course.id === courseId);
-  const cacheNamespace = account && selectedCourse ? `${JSON.stringify([account, selectedCourse.canvasId, selectedCourse.teachingClassId, selectedCourse.name, selectedCourse.term.name, model])}:ppt-cleanup-v3=${Number(pptCleanupEnabled)}` : "";
+  const cacheNamespace = account && selectedCourse ? `${JSON.stringify([account, selectedCourse.canvasId, selectedCourse.teachingClassId, selectedCourse.name, selectedCourse.term.name, modelIdentity])}:ppt-cleanup-v3=${Number(pptCleanupEnabled)}` : "";
   const courseSummaries = cachedSummaries.filter((entry) => entry.namespace === cacheNamespace);
   const [login, setLogin] = useState<"checking" | "ready" | "required">("checking");
   const [refresh, setRefresh] = useState(0);
@@ -84,16 +90,6 @@ export default function VideoPage() {
   const [player, setPlayer] = useState<{ session: VideoSession; key: string; seconds: number; nonce: string }>();
   const [aiScopes, setAiScopes] = useState<VideoSession[]>();
   const [aiOrganization, setAiOrganization] = useState("sessions");
-  const [chatOpen, setChatOpen] = useState(false);
-  const [chatTitle, setChatTitle] = useState("");
-  const [chatScope, setChatScope] = useState<VideoSession[]>([]);
-  const [chatMessages, setChatMessages] = useState<FileAIChatMessage[]>([]);
-  const [chatLoading, setChatLoading] = useState(false);
-  const [chatProgress, setChatProgress] = useState("");
-  const [coverage, setCoverage] = useState("");
-  const chatText = useRef("");
-  const chatGeneration = useRef(0);
-  const materialCache = useRef(new Map<string, VideoMaterial>());
   const tasks = useTasks();
   const [messageApi, contextHolder] = useAppMessage();
   const sessions = useMemo(() => groupVideoSessions(videos), [videos]);
@@ -148,12 +144,11 @@ export default function VideoPage() {
   }, [selectedCourse, login, refresh]);
 
   const chatSessionId = chatMessages[0]?.id;
-  useEffect(() => () => { chatGeneration.current++; }, []);
   useEffect(() => { if (!playerMini || chatOpen) workspaceRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }); }, [player?.nonce, playerMini, chatOpen, chatSessionId]);
 
   const changeCourse = (id: number) => {
     setCourseId(id === -1 ? undefined : id); setVideos([]); setSelected(new Set()); setExpanded(new Map());
-    setQuery(""); setStatus("all"); setPlayer(undefined); setLoadError(""); materialCache.current.clear();
+    setQuery(""); setStatus("all"); setPlayer(undefined); setLoadError(""); videoSummarySession.clearMaterials();
   };
   const play = (session: VideoSession, key?: string, seconds = 0) => {
     if (!player) setPlayerMini(false);
@@ -190,100 +185,26 @@ export default function VideoPage() {
     ...(exportOptions.subtitle ? [{ label: "字幕另存为…", run: () => void saveSingle(singleDownload, "subtitle") }] : []),
   ] : [];
   const restoreSummary = (entry: VideoSummaryCache, currentScopes = entry.scopes) => {
-    cacheEntry.current = { ...entry, scopes: currentScopes }; chatNamespace.current = entry.namespace;
-    setChatTitle(entry.title); setChatScope(currentScopes); setChatMessages(entry.messages); setAiOrganization(entry.organization);
-    chatText.current = entry.text; setCoverage(entry.coverage); setChatOpen(true); setAiScopes(undefined); setCacheListOpen(false);
-    setCacheNotice(`已读取本地缓存 · ${new Date(entry.savedAt).toLocaleString("zh-CN")}`);
-  };
-  const persistSummary = (entry: VideoSummaryCache) => {
-    cacheEntry.current = entry;
-    const saved = !!entry.namespace && writeSummaryCache(entry);
-    setCacheNotice(saved ? `已缓存到本地 · ${new Date(entry.savedAt).toLocaleString("zh-CN")}` : "本次结果保留在当前页面，未能写入本地缓存");
-    if (saved) setCachedSummaries(readSummaryCache());
+    videoSummarySession.restore(entry, currentScopes);
+    setAiOrganization(entry.organization); setAiScopes(undefined); setCacheListOpen(false);
   };
   const summarize = (next: VideoSession[]) => {
     if (chatLoading) { setChatOpen(true); messageApi.info("请等待当前总结完成后再切换范围"); return; }
     const organization = next.length > 1 ? "sessions" : "combined";
-    const cached = cacheNamespace && readSummaryCache().find((entry) => entry.key === summaryCacheKey(cacheNamespace, next, organization));
+    const cached = cacheNamespace && readSummaryCache().find((entry) => entry.key === summaryCacheKey(cacheNamespace, next, organization, summaryOptions));
     if (cached) { restoreSummary(cached, next); return; }
     setAiScopes(next); setAiOrganization(organization);
   };
-  const requestChat = async (messages: LLMChatMessage[], history: FileAIChatMessage[], generation: number, prefix = "") => {
-    const response = message("assistant", prefix);
-    let content = "";
-    const onChunk = new Channel<string>();
-    onChunk.onmessage = (chunk) => {
-      if (generation !== chatGeneration.current) return;
-      setChatProgress("正在生成正文");
-      content += chunk;
-      setChatMessages([...history, { ...response, content: prefix + content }]);
-    };
-    const onStatus = new Channel<string>();
-    onStatus.onmessage = (status) => { if (generation === chatGeneration.current) setChatProgress(status); };
-    return invoke<string>("chat_video_materials", { text: chatText.current, messages, onChunk, onStatus });
-  };
   const startSummary = async (force = false, requested = aiScopes, organization = aiOrganization, namespace = cacheNamespace, titleOverride?: string) => {
-    if (!requested || chatLoading) return;
-    namespace = namespace.replace(/:ppt-(?:animation|cleanup)(?:-v\d+)?=[01]$/, `:ppt-cleanup-v3=${Number(pptCleanupEnabled)}`);
-    const snapshot = requested;
-    const key = summaryCacheKey(namespace, snapshot, organization);
-    const cached = !force && namespace && readSummaryCache().find((entry) => entry.key === key);
-    if (cached) { restoreSummary(cached, snapshot); return; }
-    if (force) materialCache.current.clear();
-    cacheEntry.current = undefined; chatNamespace.current = namespace; setCacheNotice("");
-    const generation = ++chatGeneration.current;
-    const prompt = organization === "sessions" ? "请逐堂总结所选课堂，每堂课内综合所有小节的字幕与 PPT OCR。列出主要知识点、作业、测验、考试及通知，每个知识点通常只引用 1 个最相关的资料位置，必要时最多 2 个；引用显示为 HH:MM:SS，不逐句堆叠时间戳。" : "请综合总结全部所选小节的字幕与 PPT OCR，串联主要知识点，并列出作业、测验、考试及通知，每个知识点通常只引用 1 个最相关的资料位置，必要时最多 2 个；引用显示为 HH:MM:SS，不逐句堆叠时间戳。";
-    const opening = message("user", prompt);
-    const title = titleOverride ?? `${selectedCourse?.name ?? "课程"} · ${snapshot.reduce((n, s) => n + s.videos.length, 0)} 小节`;
-    setChatTitle(title);
-    setChatScope(snapshot); setChatMessages([opening]); setCoverage(""); chatText.current = "";
-    setChatLoading(true); setChatOpen(true); setAiScopes(undefined);
-    try {
-      const entries = snapshot.flatMap((session) => session.videos.map((video, i) => ({ video, title: `${session.title} · ${video.courseBeginTime || `小节 ${i + 1}`}` })));
-      const materials: VideoMaterial[] = [];
-      for (const [index, entry] of entries.entries()) {
-        if (generation !== chatGeneration.current) return;
-        setChatProgress(`正在读取字幕与 PPT OCR ${index + 1}/${entries.length}`);
-        const key = `${courseId}:${recordingKey(entry.video)}:cleanup-v3=${pptCleanupEnabled}`;
-        let material = materialCache.current.get(key);
-        if (!material) {
-          try { material = await withTimeout(invoke<VideoMaterial>("prepare_video_material", { request: recordingRequest(entry.video, entry.title), cleanUpPpt: pptCleanupEnabled })); }
-          catch (e) { material = { key: recordingKey(entry.video), title: entry.title, text: "", srt: "", subtitleAvailable: false, warnings: [`${entry.title}：${e}`] }; }
-          if (hasVideoMaterial(material) && !material.warnings.length) materialCache.current.set(key, material);
-        }
-        materials.push(material);
-      }
-      if (generation !== chatGeneration.current) return;
-      const available = materials.filter(hasVideoMaterial);
-      const warnings = materials.flatMap((item) => item.warnings);
-      const report = `${materials.filter((item) => item.subtitleAvailable).length}/${entries.length} 小节字幕可用；${materials.filter((item) => item.ocrAvailable).length}/${entries.length} 小节 PPT OCR 可用${warnings.length ? `；资料提示：${warnings.join("；")}` : ""}${available.length < entries.length ? `；未覆盖小节：${materials.filter((item) => !hasVideoMaterial(item)).map((item) => item.title).join("；")}` : "；覆盖全部所选小节"}`;
-      setCoverage(report);
-      if (!available.length) throw new Error("所选小节均无可用字幕或 PPT OCR，无法生成总结");
-      chatText.current = `${report}\n\n${available.map((item) => item.text).join("\n\n")}`;
-      setChatProgress("正在准备总结");
-      const result = await requestChat([{ role: "user", content: prompt }], [opening], generation, `${report}\n\n`);
-      if (generation === chatGeneration.current) {
-        const messages = [opening, message("assistant", `${report}\n\n${result}`)]; setChatMessages(messages);
-        persistSummary({ key, namespace, title, scopes: snapshot, organization, messages, text: chatText.current, coverage: report, savedAt: new Date().toISOString() });
-      }
-    } catch (e) { if (generation === chatGeneration.current) setChatMessages([opening, message("assistant", `总结失败：${e}`, true)]); }
-    finally { if (generation === chatGeneration.current) { setChatLoading(false); setChatProgress(""); } }
+    if (!requested || videoSummarySession.getSnapshot().loading) return;
+    setAiScopes(undefined);
+    namespace = withSummaryModelIdentity(namespace, modelIdentity);
+    await videoSummarySession.start({ scopes: requested, organization, namespace, force, cleanUpPpt: pptCleanupEnabled, summaryOptions,
+      title: titleOverride ?? `${selectedCourse?.name ?? "课程"} · ${requested.reduce((n, s) => n + s.videos.length, 0)} 小节` });
   };
   const sendMessage = async (content: string) => {
-    if (chatLoading) return;
-    if (!chatText.current) { messageApi.info("没有可用课堂资料，请重新选择小节并总结"); return; }
-    const generation = chatGeneration.current;
-    const next = [...chatMessages, message("user", content)];
-    setChatMessages(next); setChatLoading(true); setChatProgress("正在准备回答");
-    try {
-      const messages: LLMChatMessage[] = next.filter((m) => !m.error).map(({ role, content: text }) => ({ role, content: text }));
-      const result = await requestChat(messages, next, generation);
-      if (generation === chatGeneration.current) {
-        const messages = [...next, message("assistant", result)]; setChatMessages(messages);
-        if (cacheEntry.current) persistSummary({ ...cacheEntry.current, messages, savedAt: new Date().toISOString() });
-      }
-    } catch (e) { if (generation === chatGeneration.current) setChatMessages([...next, message("assistant", `回答失败：${e}`, true)]); }
-    finally { if (generation === chatGeneration.current) { setChatLoading(false); setChatProgress(""); } }
+    if (!videoSummarySession.getSnapshot().text) { messageApi.info("没有可用课堂资料，请重新选择小节并总结"); return; }
+    await videoSummarySession.send(content);
   };
   const check = (items: CanvasVideo[], label: string) => {
     const count = items.filter((v) => selected.has(recordingKey(v))).length;
@@ -298,7 +219,7 @@ export default function VideoPage() {
     <Button size="small" sx={{ minWidth: 40 }} onClick={() => download([scope])}>下载</Button>
     <Button size="small" sx={{ minWidth: 64 }} disabled={!scope.videos.some(canSummarizeRecording)} onClick={() => summarize([scope])}>AI 总结</Button>
   </Stack></TableCell>;
-  const chatPanel = <FileAIChatModal embedded loadingLabel={chatProgress || "等待模型回复"} open={chatOpen} title={`${chatTitle} · ${chatScope.map((scope) => scope.title).join("；")}`} messages={chatMessages} loading={chatLoading} onClose={() => setChatOpen(false)} onSend={sendMessage}
+  const chatPanel = <FileAIChatModal embedded loadingLabel={chatProgress || "等待模型回复"} open={chatOpen} title={`${chatTitle} · ${chatScope.map((scope) => scope.title).join("；")}`} messages={chatMessages} loading={chatLoading} onClose={() => setChatOpen(false)} onSend={sendMessage} input={summary.input} onInputChange={(input) => videoSummarySession.update({ input })}
       dialogTitle="AI 课堂总结" dialogDescription={chatProgress || coverage || "围绕所选课堂字幕与 PPT OCR 继续追问。会话范围固定，不受列表勾选变化影响。"}
       contextLabel="会话范围" emptyText="正在读取所选小节资料" inputPlaceholder="继续追问知识点、作业或通知…" footerIdleText="依据本次会话的字幕与 PPT OCR；点击引用可跳转到对应小节和 PPT 时间。"
       markdownComponents={{ a: ({ href, children }) => {
@@ -334,9 +255,9 @@ export default function VideoPage() {
       {(player || chatOpen) && <Box ref={workspaceRef} sx={{ scrollMarginTop: 16, display: "grid", gridTemplateColumns: player && !playerMini && chatOpen ? { xs: "minmax(0, 1fr)", md: "minmax(0, 1.2fr) minmax(340px, 1fr)" } : "minmax(0, 1fr)", gap: 2, alignItems: "start" }}>
         {player && <VideoLibraryPlayer onMiniChange={setPlayerMini} session={player.session} initialKey={player.key} seconds={player.seconds} seekRequest={player.nonce} onClose={() => setPlayer(undefined)} onSummarize={() => summarize([player.session])} />}
         {chatOpen && <Card sx={{ ...surfaceCardSx, minWidth: 0 }}><Stack direction="row" gap={1} flexWrap="wrap" alignItems="center" sx={{ px: 2, pt: 1 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>{cacheNotice}</Typography>
-          <Button disabled={chatLoading || !chatScope.length} onClick={() => void startSummary(true, chatScope, cacheEntry.current?.organization ?? aiOrganization, chatNamespace.current, chatTitle)}>重新生成</Button>
-          <Button disabled={chatLoading || !cacheEntry.current} onClick={() => { if (cacheEntry.current && deleteSummaryCache(cacheEntry.current.key)) { setCachedSummaries(readSummaryCache()); cacheEntry.current = undefined; setCacheNotice("本地缓存已删除，当前会话仍可阅读"); } else messageApi.error("删除缓存失败"); }}>删除缓存</Button>
+          <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>{cacheNotice} · 本会话上下文 {summary.summaryOptions.contextTokens.toLocaleString("zh-CN")} / 输出上限 {summary.summaryOptions.outputTokens.toLocaleString("zh-CN")} tokens · 追问沿用本会话设置，重新生成使用当前设置</Typography>
+          <Button disabled={chatLoading || !chatScope.length} onClick={() => void startSummary(true, chatScope, summary.organization, summary.namespace, chatTitle)}>重新生成</Button>
+          <Button disabled={chatLoading || !summary.cacheEntry} onClick={() => { if (!videoSummarySession.deleteCache()) messageApi.error("删除缓存失败"); }}>删除缓存</Button>
           <Button onClick={() => setChatOpen(false)}>收起总结</Button>
         </Stack>{chatPanel}</Card>}
       </Box>}
@@ -365,7 +286,7 @@ export default function VideoPage() {
               <TextField select size="small" label="录像状态" value={status} onChange={(e) => setStatus(e.target.value)} sx={{ minWidth: 140 }}>
                 <MenuItem value="all">全部状态</MenuItem><MenuItem value="ready">可播放</MenuItem><MenuItem value="unavailable">暂不可播放</MenuItem>
               </TextField>
-              <Button disabled={loading || courseLoading || login === "checking"} onClick={() => { materialCache.current.clear(); setRefresh((value) => value + 1); void canvas.mutate(); }}>刷新</Button>
+              <Button disabled={loading || courseLoading || login === "checking"} onClick={() => { videoSummarySession.clearMaterials(); setRefresh((value) => value + 1); void canvas.mutate(); }}>刷新</Button>
             </Stack>
             {loadError && <Alert severity="error">读取录像失败：{loadError}</Alert>}
             <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: "8px", overflow: "auto" }}>

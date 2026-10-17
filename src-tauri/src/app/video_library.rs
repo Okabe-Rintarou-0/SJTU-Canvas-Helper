@@ -1,7 +1,7 @@
 use super::App;
 use crate::{
     error::{AppError, Result},
-    model::{CanvasVideo, CanvasVideoPPT, LLMChatMessage, VideoInfo, VideoSource},
+    model::{CanvasVideo, CanvasVideoPPT, LLMChatMessage, VideoInfo, VideoSource, VideoSummaryOptions, VideoPreparedContext, VideoChatResponse},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -211,10 +211,18 @@ impl App {
         &self,
         text: String,
         messages: Vec<LLMChatMessage>,
+        options: Option<VideoSummaryOptions>,
+        prepared_context: Option<VideoPreparedContext>,
         on_chunk: Option<&mut (dyn FnMut(String) + Send)>,
         on_status: &mut (dyn FnMut(String) + Send),
-    ) -> Result<String> {
-        self.client.chat_video_materials(&text, &messages, on_chunk, on_status).await
+    ) -> Result<VideoChatResponse> {
+        let options = match options {
+            Some(options) => options,
+            None => { let config = self.config.read().await; VideoSummaryOptions {
+                prompt: config.video_summary_prompt.clone(), context_tokens: config.video_summary_context_tokens,
+                output_tokens: config.video_summary_output_tokens } },
+        };
+        self.client.chat_video_materials(&text, &messages, &options, prepared_context, on_chunk, on_status).await
     }
 
     pub async fn export_video_materials(
