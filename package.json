@@ -101,8 +101,8 @@
     "rollup-plugin-copy": "^3.5.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.61.1",
-    "vite": "^5.0.0",
-    "vite-plugin-static-copy": "^1.0.1",
+    "vite": "7.3.1",
+    "vite-plugin-static-copy": "3.2.0",
     "vitest": "^4.1.9"
   }
 }
