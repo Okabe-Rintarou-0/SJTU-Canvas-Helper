@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import ForumRoundedIcon from "@mui/icons-material/ForumRounded";
 import SchoolRoundedIcon from "@mui/icons-material/SchoolRounded";
@@ -17,47 +16,23 @@ import {
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import BasicLayout from "../components/layout";
 import { WorkspaceHero } from "../components/workspace_hero";
 import { useCourses } from "../lib/hooks";
-import { useAppMessage } from "../lib/message";
-import { CanvasAgentChatMessage, LLMChatMessage } from "../lib/model";
+import { useAISession } from "../lib/ai_session_store";
+import { canvasAgentSession } from "../lib/canvas_agent_session";
+import { CanvasAgentChatMessage } from "../lib/model";
 import { formatDate } from "../lib/utils";
 
-const DEFAULT_MAX_TURNS = 6;
 const MIN_MAX_TURNS = 1;
 const MAX_MAX_TURNS = 12;
 
-const DEFAULT_MAX_TOKENS = 4096;
 const MIN_MAX_TOKENS = 256;
 const MAX_MAX_TOKENS = 8192;
-
-function createMessage(
-  role: "user" | "assistant",
-  content: string,
-  extras?: Partial<CanvasAgentChatMessage>
-): CanvasAgentChatMessage {
-  return {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    role,
-    content,
-    createdAt: new Date().toISOString(),
-    ...extras,
-  };
-}
-
-function toPayload(messages: CanvasAgentChatMessage[]): LLMChatMessage[] {
-  return messages
-    .filter((message) => !message.pending)
-    .map((message) => ({
-      role: message.role,
-      content: message.content,
-    }));
-}
 
 function TypingDots() {
   return (
@@ -195,12 +170,10 @@ const SUGGESTIONS = [
 export default function CanvasAgentPage() {
   const theme = useTheme();
   const courses = useCourses();
-  const [messageApi] = useAppMessage();
-  const [messages, setMessages] = useState<CanvasAgentChatMessage[]>([]);
-  const [input, setInput] = useState("");
-  const [maxTurns, setMaxTurns] = useState(String(DEFAULT_MAX_TURNS));
-  const [maxTokens, setMaxTokens] = useState(String(DEFAULT_MAX_TOKENS));
-  const [loading, setLoading] = useState(false);
+  const { messages, input, maxTurns, maxTokens, loading } = useAISession(canvasAgentSession);
+  const setInput = (input: string) => canvasAgentSession.update({ input });
+  const setMaxTurns = (maxTurns: string) => canvasAgentSession.update({ maxTurns });
+  const setMaxTokens = (maxTokens: string) => canvasAgentSession.update({ maxTokens });
   const bodyRef = useRef<HTMLDivElement>(null);
 
   const stats = useMemo(
@@ -221,83 +194,11 @@ export default function CanvasAgentPage() {
 
   const canSend = input.trim().length > 0 && !loading;
 
-  const normalizeNumber = (
-    value: string,
-    defaultValue: number,
-    min: number,
-    max: number
-  ) => {
-    const parsed = Number.parseInt(value.trim(), 10);
-    if (!Number.isFinite(parsed)) {
-      return defaultValue;
-    }
-    return Math.min(Math.max(parsed, min), max);
-  };
+  useEffect(() => {
+    bodyRef.current?.scrollTo?.({ top: bodyRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages]);
 
-  const scrollToBottom = () => {
-    window.setTimeout(() => {
-      bodyRef.current?.scrollTo({
-        top: bodyRef.current.scrollHeight,
-        behavior: "smooth",
-      });
-    }, 0);
-  };
-
-  const sendMessage = async (content: string) => {
-    const userMessage = createMessage("user", content);
-    const pendingAssistantMessage = createMessage("assistant", "", { pending: true });
-    const nextMessages = [...messages, userMessage];
-    const resolvedMaxTurns = normalizeNumber(
-      maxTurns,
-      DEFAULT_MAX_TURNS,
-      MIN_MAX_TURNS,
-      MAX_MAX_TURNS
-    );
-    const resolvedMaxTokens = normalizeNumber(
-      maxTokens,
-      DEFAULT_MAX_TOKENS,
-      MIN_MAX_TOKENS,
-      MAX_MAX_TOKENS
-    );
-
-    setMessages([...nextMessages, pendingAssistantMessage]);
-    setLoading(true);
-    scrollToBottom();
-
-    try {
-      const response = (await invoke("canvas_agent_chat", {
-        messages: toPayload(nextMessages),
-        options: {
-          max_turns: resolvedMaxTurns,
-          max_tokens: resolvedMaxTokens,
-        },
-      })) as string;
-
-      setMessages([
-        ...nextMessages,
-        {
-          ...pendingAssistantMessage,
-          content: response,
-          pending: false,
-        },
-      ]);
-    } catch (error) {
-      const errorText = String(error);
-      messageApi.error(`Canvas Agent 调用失败：${errorText}`);
-      setMessages([
-        ...nextMessages,
-        {
-          ...pendingAssistantMessage,
-          content: `Canvas Agent 调用失败：${errorText}`,
-          pending: false,
-          error: true,
-        },
-      ]);
-    } finally {
-      setLoading(false);
-      scrollToBottom();
-    }
-  };
+  const sendMessage = canvasAgentSession.send;
 
   const handleSubmit = async () => {
     const nextInput = input.trim();

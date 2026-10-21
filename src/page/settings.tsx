@@ -45,7 +45,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactJson from "react-json-view-ts";
 import BasicLayout from "../components/layout";
 import LogModal from "../components/log_modal";
-import { videoSummarySession } from "../lib/video_summary_session";
+import { resetAISessions } from "../lib/ai_sessions";
 import VideoSummarySettings from "../components/video_summary_settings";
 import { videoSummaryOptions, videoSummaryOptionsError } from "../lib/video_summary_config";
 import { WorkspaceHero } from "../components/workspace_hero";
@@ -694,7 +694,7 @@ export default function SettingsPage() {
   const handleSwitchAccount = async (account: string) => {
     try {
       await invoke("switch_account", { account });
-      videoSummarySession.reset();
+      resetAISessions();
       await initConfig();
     } catch (e) {
       messageApi.error(`切换账号失败：${e}`);
@@ -704,7 +704,7 @@ export default function SettingsPage() {
   const handleDeleteAccount = useCallback(async () => {
     try {
       await invoke("delete_account", { account: currentAccount });
-      videoSummarySession.reset();
+      resetAISessions();
       await initConfig();
       messageApi.success("删除账号成功！");
     } catch (e) {

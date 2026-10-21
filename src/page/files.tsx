@@ -47,13 +47,10 @@ import {
   MouseEvent as ReactMouseEvent,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 
-import FileAIChatModal, {
-  FileAIChatMessage,
-} from "../components/file_ai_chat_modal";
+import FileAIChatModal from "../components/file_ai_chat_modal";
 import BasicLayout from "../components/layout";
 import { WorkspaceHero } from "../components/workspace_hero";
 import CourseSelect from "../components/course_select";
@@ -78,7 +75,6 @@ import {
   File,
   FileDownloadTask,
   Folder,
-  LLMChatMessage,
   LOG_LEVEL_ERROR,
   Option,
   entryName,
@@ -91,7 +87,8 @@ import {
   isMergableFileType,
   scrollToTop,
 } from "../lib/utils";
-import { useTauriEvent } from "../lib/events";
+import { useAISession } from "../lib/ai_session_store";
+import { fileAISession } from "../lib/file_ai_session";
 import { surfaceCardSx } from "../lib/styles";
 
 interface FileActionMenuState {
@@ -105,9 +102,6 @@ type SnackSeverity = "success" | "info" | "warning" | "error";
 const COURSE_FILES = "course files";
 const MY_FILES = "my files";
 const EXPLAINABLE_FILE_EXTS = [".pdf", ".docx"];
-const FILE_SUMMARY_OPENING_MESSAGE =
-  "请先总结这份文件。若它与作业相关，请额外列出得分点、提交要求、截止时间、文件格式限制和任何容易遗漏的注意事项。";
-
 function isExplainableFile(file: File) {
   const dotPos = file.display_name.lastIndexOf(".");
   if (dotPos === -1) {
@@ -115,29 +109,6 @@ function isExplainableFile(file: File) {
   }
   const ext = file.display_name.slice(dotPos);
   return EXPLAINABLE_FILE_EXTS.includes(ext);
-}
-
-function createConversationMessage(
-  role: "user" | "assistant",
-  content: string,
-  extras?: Partial<FileAIChatMessage>
-): FileAIChatMessage {
-  return {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    role,
-    content,
-    createdAt: new Date().toISOString(),
-    ...extras,
-  };
-}
-
-function toLLMChatMessages(messages: FileAIChatMessage[]): LLMChatMessage[] {
-  return messages
-    .filter((message) => !message.pending)
-    .map((message) => ({
-      role: message.role,
-      content: message.content,
-    }));
 }
 
 export default function FilesPage() {
@@ -159,13 +130,9 @@ export default function FilesPage() {
   const [keyword, setKeyword] = useState<string>("");
   const [openFileOrderSelectModal, setOpenFileOrderSelectModal] =
     useState<boolean>(false);
-  const [chatOpen, setChatOpen] = useState(false);
-  const [chatFile, setChatFile] = useState<File | null>(null);
-  const [chatMessages, setChatMessages] = useState<FileAIChatMessage[]>([]);
-  const [chatLoading, setChatLoading] = useState(false);
+  const { open: chatOpen, file: chatFile, messages: chatMessages, loading: chatLoading, input: chatInput } = useAISession(fileAISession);
   const [fileActionMenu, setFileActionMenu] =
     useState<FileActionMenuState | null>(null);
-  const activeChatRequestIdRef = useRef<string | null>(null);
   const [messageApi] = useAppMessage();
   const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry, setEntries } =
     usePreview();
@@ -198,71 +165,6 @@ export default function FilesPage() {
     setEntries(files);
   }, [files]);
 
-  useTauriEvent("file_ai_chat://chunk", (payload) => {
-    if (payload.request_id !== activeChatRequestIdRef.current) {
-      return;
-    }
-    setChatMessages((prev) => {
-      const next = [...prev];
-      for (let i = next.length - 1; i >= 0; i -= 1) {
-        if (next[i].role === "assistant") {
-          next[i] = {
-            ...next[i],
-            content: `${next[i].content}${payload.chunk}`,
-          };
-          break;
-        }
-      }
-      return next;
-    });
-  });
-
-  useTauriEvent("file_ai_chat://done", (payload) => {
-    if (payload.request_id !== activeChatRequestIdRef.current) {
-      return;
-    }
-    setChatLoading(false);
-    activeChatRequestIdRef.current = null;
-    setChatMessages((prev) => {
-      const next = [...prev];
-      for (let i = next.length - 1; i >= 0; i -= 1) {
-        if (next[i].role === "assistant") {
-          next[i] = {
-            ...next[i],
-            content: payload.content || next[i].content,
-            pending: false,
-          };
-          break;
-        }
-      }
-      return next;
-    });
-  });
-
-  useTauriEvent("file_ai_chat://error", (payload) => {
-    if (payload.request_id !== activeChatRequestIdRef.current) {
-      return;
-    }
-    setChatLoading(false);
-    activeChatRequestIdRef.current = null;
-    notify(`AI 对话出错：${payload.error}`, "error");
-    setChatMessages((prev) => {
-      const next = [...prev];
-      for (let i = next.length - 1; i >= 0; i -= 1) {
-        if (next[i].role === "assistant") {
-          next[i] = {
-            ...next[i],
-            content: next[i].content || `对话出错：${payload.error}`,
-            pending: false,
-            error: true,
-          };
-          break;
-        }
-      }
-      return next;
-    });
-  });
-
   useEffect(() => {
     if (currentFolderId > 0) {
       void handleGetFoldersAndFiles(currentFolderId);
@@ -279,86 +181,8 @@ export default function FilesPage() {
     }
   }, [section, selectedCourseId, courses.data.length]);
 
-  const handleExplainFile = async (file: File) => {
-    const openingUserMessage = createConversationMessage(
-      "user",
-      FILE_SUMMARY_OPENING_MESSAGE
-    );
-    const pendingAssistantMessage = createConversationMessage("assistant", "", {
-      pending: true,
-    });
-
-    setChatFile(file);
-    setChatOpen(true);
-    setChatLoading(true);
-    setChatMessages([openingUserMessage, pendingAssistantMessage]);
-
-    try {
-      const requestId = crypto.randomUUID();
-      activeChatRequestIdRef.current = requestId;
-      await invoke("start_file_chat_stream", {
-        requestId,
-        file,
-        messages: toLLMChatMessages([openingUserMessage]),
-      });
-    } catch (error) {
-      notify(`总结出错：${error}，请前往设置确认 API Key。`, "error");
-      activeChatRequestIdRef.current = null;
-      setChatLoading(false);
-      setChatMessages([
-        openingUserMessage,
-        {
-          ...pendingAssistantMessage,
-          content: `总结出错：${error}`,
-          pending: false,
-          error: true,
-        },
-      ]);
-    } finally {
-      setChatLoading(false);
-    }
-  };
-
-  const handleSendChatMessage = async (content: string) => {
-    if (!chatFile || chatLoading) {
-      return;
-    }
-
-    const userMessage = createConversationMessage("user", content);
-    const pendingAssistantMessage = createConversationMessage("assistant", "", {
-      pending: true,
-    });
-    const nextMessages = [...chatMessages, userMessage];
-
-    setChatLoading(true);
-    setChatMessages([...nextMessages, pendingAssistantMessage]);
-
-    try {
-      const requestId = crypto.randomUUID();
-      activeChatRequestIdRef.current = requestId;
-      await invoke("start_file_chat_stream", {
-        requestId,
-        file: chatFile,
-        messages: toLLMChatMessages(nextMessages),
-      });
-    } catch (error) {
-      notify(`继续对话出错：${error}`, "error");
-      activeChatRequestIdRef.current = null;
-      setChatMessages([
-        ...nextMessages,
-        {
-          ...pendingAssistantMessage,
-          content: `继续对话出错：${error}`,
-          pending: false,
-          error: true,
-        },
-      ]);
-    } finally {
-      if (!activeChatRequestIdRef.current) {
-        setChatLoading(false);
-      }
-    }
-  };
+  const handleExplainFile = fileAISession.explain;
+  const handleSendChatMessage = fileAISession.send;
 
   const getSelectedCourse = () => {
     if (section !== COURSE_FILES) {
@@ -670,7 +494,9 @@ export default function FilesPage() {
         title={chatFile?.display_name ?? ""}
         messages={chatMessages}
         loading={chatLoading}
-        onClose={() => setChatOpen(false)}
+        onClose={() => fileAISession.update({ open: false })}
+        input={chatInput}
+        onInputChange={(input) => fileAISession.update({ input })}
         onSend={handleSendChatMessage}
       />
 
@@ -962,6 +788,7 @@ export default function FilesPage() {
                                 {isExplainableFile(file) ? (
                                   <Button
                                     size="small"
+                                    disabled={chatLoading && chatFile?.id !== file.id}
                                     startIcon={<AutoAwesomeRoundedIcon />}
                                     onClick={() => void handleExplainFile(file)}
                                   >
