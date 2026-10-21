@@ -1,3 +1,4 @@
+import WorkspaceSelect from "../components/workspace_select";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -42,7 +43,7 @@ function withTimeout<T>(promise: Promise<T>): Promise<T> {
   });
 }
 
-export default function VideoPage() {
+export default function VideoPage({ active = true }: { active?: boolean }) {
   const canvas = useCourses();
   const centerOnly = useConfigSelector((state) => state.config.data?.experimental_task_center_only === true);
   const pptCleanupEnabled = useConfigSelector((state) => state.config.data?.experimental_ppt_cleanup === true);
@@ -90,6 +91,13 @@ export default function VideoPage() {
   const [player, setPlayer] = useState<{ session: VideoSession; key: string; seconds: number; nonce: string }>();
   const [aiScopes, setAiScopes] = useState<VideoSession[]>();
   const [aiOrganization, setAiOrganization] = useState("sessions");
+  useEffect(() => {
+    if (!active) {
+      setToolsAnchor(null); setDownloadActionAnchor(null);
+      setDownloadScopes(undefined); setAiScopes(undefined);
+      setCacheListOpen(false); setAggregator(false); setTrackDownload(undefined);
+    }
+  }, [active]);
   const tasks = useTasks();
   const [messageApi, contextHolder] = useAppMessage();
   const sessions = useMemo(() => groupVideoSessions(videos), [videos]);
@@ -144,7 +152,7 @@ export default function VideoPage() {
   }, [selectedCourse, login, refresh]);
 
   const chatSessionId = chatMessages[0]?.id;
-  useEffect(() => { if (!playerMini || chatOpen) workspaceRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }); }, [player?.nonce, playerMini, chatOpen, chatSessionId]);
+  useEffect(() => { if (active && (!playerMini || chatOpen)) workspaceRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }); }, [active, player?.nonce, playerMini, chatOpen, chatSessionId]);
 
   const changeCourse = (id: number) => {
     setCourseId(id === -1 ? undefined : id); setVideos([]); setSelected(new Set()); setExpanded(new Map());
@@ -231,7 +239,7 @@ export default function VideoPage() {
         }} title="跳转到此小节的对应时间">{formatVideoTimestamp(citation.seconds)}</a>;
       } }} />
 
-  return <BasicLayout>
+  return <BasicLayout active={active} contentKey="video-workspace">
     {contextHolder}
     <Stack spacing={2} sx={{ width: "100%" }}>
       <WorkspaceHero
@@ -251,7 +259,7 @@ export default function VideoPage() {
           </Box>
         }
       />
-      {selectedCourse && login === "ready" && <VideoLivePanel key={selectedCourse.id} canvasCourseId={selectedCourse.canvasId} teachingClassId={selectedCourse.teachingClassId} refresh={refresh} playback={playback} onPlay={() => { setPlayer(undefined); setPlayback("live"); }} />}
+      {selectedCourse && login === "ready" && <VideoLivePanel visible={active} key={selectedCourse.id} canvasCourseId={selectedCourse.canvasId} teachingClassId={selectedCourse.teachingClassId} refresh={refresh} playback={playback} onPlay={() => { setPlayer(undefined); setPlayback("live"); }} />}
       {(player || chatOpen) && <Box ref={workspaceRef} sx={{ scrollMarginTop: 16, display: "grid", gridTemplateColumns: player && !playerMini && chatOpen ? { xs: "minmax(0, 1fr)", md: "minmax(0, 1.2fr) minmax(340px, 1fr)" } : "minmax(0, 1fr)", gap: 2, alignItems: "start" }}>
         {player && <VideoLibraryPlayer onMiniChange={setPlayerMini} session={player.session} initialKey={player.key} seconds={player.seconds} seekRequest={player.nonce} onClose={() => setPlayer(undefined)} onSummarize={() => summarize([player.session])} />}
         {chatOpen && <Card sx={{ ...surfaceCardSx, minWidth: 0 }}><Stack direction="row" gap={1} flexWrap="wrap" alignItems="center" sx={{ px: 2, pt: 1 }}>
@@ -283,9 +291,9 @@ export default function VideoPage() {
             {courseError && <Alert severity="warning">视频空间课程读取失败：{courseError}。其他来源仍可使用。</Alert>}
             <Stack direction="row" gap={1} flexWrap="wrap">
               <TextField size="small" placeholder="搜索日期、课堂或小节" inputProps={{ "aria-label": "搜索课堂" }} value={query} onChange={(e) => setQuery(e.target.value)} sx={{ flex: 1, minWidth: 180 }} />
-              <TextField select size="small" label="录像状态" value={status} onChange={(e) => setStatus(e.target.value)} sx={{ minWidth: 140 }}>
+              <WorkspaceSelect size="small" label="录像状态" value={status} onChange={(e) => setStatus(e.target.value)} sx={{ minWidth: 140 }}>
                 <MenuItem value="all">全部状态</MenuItem><MenuItem value="ready">可播放</MenuItem><MenuItem value="unavailable">暂不可播放</MenuItem>
-              </TextField>
+              </WorkspaceSelect>
               <Button disabled={loading || courseLoading || login === "checking"} onClick={() => { videoSummarySession.clearMaterials(); setRefresh((value) => value + 1); void canvas.mutate(); }}>刷新</Button>
             </Stack>
             {loadError && <Alert severity="error">读取录像失败：{loadError}</Alert>}
@@ -342,20 +350,20 @@ export default function VideoPage() {
       </Card>
       {!centerOnly && <Box><VideoLibraryTasks tasks={tasks.filter((task) => task.source === "video")} /></Box>}
     </Stack>
-    <Menu anchorEl={toolsAnchor} open={!!toolsAnchor} onClose={() => setToolsAnchor(null)}><MenuItem onClick={() => { setAggregator(true); setToolsAnchor(null); }}>视频合成工具</MenuItem></Menu>
-    <Dialog open={!!downloadScopes} onClose={() => { if (!exporting) setDownloadScopes(undefined); }} fullWidth maxWidth="sm">
+    <Menu anchorEl={toolsAnchor} open={active && !!toolsAnchor} onClose={() => setToolsAnchor(null)}><MenuItem onClick={() => { setAggregator(true); setToolsAnchor(null); }}>视频合成工具</MenuItem></Menu>
+    <Dialog open={active && !!downloadScopes} onClose={() => { if (!exporting) setDownloadScopes(undefined); }} fullWidth maxWidth="sm">
       <DialogTitle>{singleDownload ? "下载小节资料" : `下载 ${downloadScopes?.length} 堂课 · ${downloadCount} 小节`}</DialogTitle>
       <DialogContent><Stack spacing={2} sx={{ pt: 1 }}>
         <Typography variant="body2" color="text.secondary">{downloadScopes?.map((s) => s.title).join("；")}</Typography>
         <Stack direction="row" flexWrap="wrap">{([ ["video", "视频"], ["ppt", "PPT 切片 PDF"], ["subtitle", "字幕"] ] as const).map(([key, label]) => <FormControlLabel key={key} label={label} control={<Checkbox checked={exportOptions[key]} onChange={(_, checked) => setExportOptions((previous) => ({ ...previous, [key]: checked }))} />} />)}</Stack>
         {exportOptions.video && <Stack spacing={1}>
           <Typography variant="subtitle2">视频</Typography>
-          <TextField select label="视频机位" size="small" value={exportOptions.tracks} onChange={(e) => setExportOptions((p) => ({ ...p, tracks: e.target.value as "all" | "first" }))}><MenuItem value="all">全部可用机位</MenuItem><MenuItem value="first">仅首个机位</MenuItem></TextField>
+          <WorkspaceSelect label="视频机位" size="small" value={exportOptions.tracks} onChange={(e) => setExportOptions((p) => ({ ...p, tracks: e.target.value as "all" | "first" }))}><MenuItem value="all">全部可用机位</MenuItem><MenuItem value="first">仅首个机位</MenuItem></WorkspaceSelect>
           <Typography variant="caption" color="text.secondary">每个机位保存为独立视频文件。</Typography>
         </Stack>}
         {exportOptions.ppt && <Stack spacing={1}>
           <Typography variant="subtitle2">PPT 切片 PDF</Typography>
-          {canMergePpt ? <TextField select label="PPT 输出" size="small" value={exportOptions.pptPerSession ? "session" : "section"} onChange={(e) => setExportOptions((p) => ({ ...p, pptPerSession: e.target.value === "session" }))}><MenuItem value="session">每堂课合并一个 PDF（仅包含所选小节）</MenuItem><MenuItem value="section">每小节一个 PDF</MenuItem></TextField> : <Typography variant="body2">{singleDownload ? "本小节的 PPT 切片保存为一个 PDF。" : "每堂课仅选中一个小节，各自保存为一个 PDF。"}</Typography>}
+          {canMergePpt ? <WorkspaceSelect label="PPT 输出" size="small" value={exportOptions.pptPerSession ? "session" : "section"} onChange={(e) => setExportOptions((p) => ({ ...p, pptPerSession: e.target.value === "session" }))}><MenuItem value="session">每堂课合并一个 PDF（仅包含所选小节）</MenuItem><MenuItem value="section">每小节一个 PDF</MenuItem></WorkspaceSelect> : <Typography variant="body2">{singleDownload ? "本小节的 PPT 切片保存为一个 PDF。" : "每堂课仅选中一个小节，各自保存为一个 PDF。"}</Typography>}
           {pptCleanupEnabled && <Alert severity="info">已开启“导出 PPT 时去除无用页面”：排除明确的桌面和签到页面，连续重复或增量切片保留完整画面；不合并中途切页后再次出现的页面。此实验性设置也用于 AI 总结与追问，处理记录保存在任务日志中，关闭后可导出全部切片。</Alert>}
         </Stack>}
         {exportOptions.subtitle && <Stack spacing={1}>
@@ -372,22 +380,22 @@ export default function VideoPage() {
         {singleDownloadActions.length > 1 && <Button disabled={exporting} aria-haspopup="menu" aria-controls={downloadActionAnchor ? "single-download-menu" : undefined} aria-expanded={!!downloadActionAnchor} onClick={(event) => setDownloadActionAnchor(event.currentTarget)}>单独下载 ▾</Button>}
         <Button variant="contained" disabled={exporting || !(exportOptions.video || exportOptions.ppt || exportOptions.subtitle)} onClick={() => void submitDownload()}>{exporting ? "正在加入队列…" : "选择目录并下载"}</Button>
       </DialogActions>
-      <Menu id="single-download-menu" anchorEl={downloadActionAnchor} open={!!downloadActionAnchor && !!downloadScopes && singleDownloadActions.length > 1} onClose={() => setDownloadActionAnchor(null)}>
+      <Menu id="single-download-menu" anchorEl={downloadActionAnchor} open={active && !!downloadActionAnchor && !!downloadScopes && singleDownloadActions.length > 1} onClose={() => setDownloadActionAnchor(null)}>
         {singleDownloadActions.map((action) => <MenuItem key={action.label} onClick={() => { setDownloadActionAnchor(null); action.run(); }}>{action.label}</MenuItem>)}
       </Menu>
     </Dialog>
-    <Dialog open={!!aiScopes} onClose={() => setAiScopes(undefined)} fullWidth maxWidth="sm">
+    <Dialog open={active && !!aiScopes} onClose={() => setAiScopes(undefined)} fullWidth maxWidth="sm">
       <DialogTitle>总结所选 {aiScopes?.reduce((n, s) => n + s.videos.length, 0)} 小节</DialogTitle>
       <DialogContent><Stack spacing={2} sx={{ pt: 1 }}>
         <Typography variant="body2">{aiScopes?.map((s) => s.title).join("；")}</Typography>
         <Typography variant="body2" color="text.secondary">结合字幕与 PPT OCR，按各自时间点组织资料；OCR 可能仅含关键词。缺失资料会明确标注，引用可跳转到对应视频时间。成功结果缓存在本机，重新生成会重新读取资料。</Typography>
-        <TextField select size="small" label="结果组织" value={aiOrganization} onChange={(e) => setAiOrganization(e.target.value)}><MenuItem value="sessions">逐堂总结，堂内综合各小节</MenuItem><MenuItem value="combined">综合所有所选小节</MenuItem></TextField>
+        <WorkspaceSelect size="small" label="结果组织" value={aiOrganization} onChange={(e) => setAiOrganization(e.target.value)}><MenuItem value="sessions">逐堂总结，堂内综合各小节</MenuItem><MenuItem value="combined">综合所有所选小节</MenuItem></WorkspaceSelect>
       </Stack></DialogContent>
       <DialogActions><Button onClick={() => setAiScopes(undefined)}>取消</Button><Button variant="contained" onClick={() => void startSummary()}>开始总结</Button></DialogActions>
     </Dialog>
-    <Dialog open={cacheListOpen} onClose={() => setCacheListOpen(false)} fullWidth maxWidth="sm"><DialogTitle>本课程的已缓存总结</DialogTitle><DialogContent><Stack spacing={1}><Typography variant="caption" color="text.secondary">本机最多保留 12 份会话，总计约 3 MB；超出时移除最早保存的缓存。缓存不会自动检查字幕更新，可在会话中重新生成。</Typography>{courseSummaries.map((entry) => <Button key={entry.key} disabled={chatLoading} sx={{ justifyContent: "flex-start", textAlign: "left" }} onClick={() => restoreSummary(entry)}>{entry.scopes.map((scope) => scope.title).join("；")} · {entry.organization === "combined" ? "综合总结" : "逐堂总结"} · {new Date(entry.savedAt).toLocaleString("zh-CN")}</Button>)}</Stack></DialogContent><DialogActions><Button onClick={() => setCacheListOpen(false)}>关闭</Button></DialogActions></Dialog>
-    <Dialog open={aggregator} onClose={() => setAggregator(false)} maxWidth="lg" fullWidth><DialogTitle><Stack direction="row" justifyContent="space-between">视频合成工具<Button onClick={() => setAggregator(false)}>关闭</Button></Stack></DialogTitle><DialogContent>{aggregator && <VideoAggregator />}</DialogContent></Dialog>
-    {trackDownload && <VideoTrackDownloads video={trackDownload} onClose={() => setTrackDownload(undefined)} />}
+    <Dialog open={active && cacheListOpen} onClose={() => setCacheListOpen(false)} fullWidth maxWidth="sm"><DialogTitle>本课程的已缓存总结</DialogTitle><DialogContent><Stack spacing={1}><Typography variant="caption" color="text.secondary">本机最多保留 12 份会话，总计约 3 MB；超出时移除最早保存的缓存。缓存不会自动检查字幕更新，可在会话中重新生成。</Typography>{courseSummaries.map((entry) => <Button key={entry.key} disabled={chatLoading} sx={{ justifyContent: "flex-start", textAlign: "left" }} onClick={() => restoreSummary(entry)}>{entry.scopes.map((scope) => scope.title).join("；")} · {entry.organization === "combined" ? "综合总结" : "逐堂总结"} · {new Date(entry.savedAt).toLocaleString("zh-CN")}</Button>)}</Stack></DialogContent><DialogActions><Button onClick={() => setCacheListOpen(false)}>关闭</Button></DialogActions></Dialog>
+    <Dialog open={active && aggregator} onClose={() => setAggregator(false)} maxWidth="lg" fullWidth><DialogTitle><Stack direction="row" justifyContent="space-between">视频合成工具<Button onClick={() => setAggregator(false)}>关闭</Button></Stack></DialogTitle><DialogContent>{active && aggregator && <VideoAggregator />}</DialogContent></Dialog>
+    {active && trackDownload && <VideoTrackDownloads video={trackDownload} onClose={() => setTrackDownload(undefined)} />}
     {chatLoading && !chatOpen && <Box sx={{ ...surfaceCardSx, position: "fixed", bottom: 20, right: 24, zIndex: 8, bgcolor: "background.paper", p: 1 }}><Button startIcon={<CircularProgress size={14} />} onClick={() => setChatOpen(true)}>{chatProgress}</Button></Box>}
   </BasicLayout>;
 }

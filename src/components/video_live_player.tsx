@@ -1,7 +1,8 @@
+import WorkspaceSelect from "./workspace_select";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import Hls from "hls.js";
-import { Alert, Box, Button, LinearProgress, MenuItem, Stack, TextField, Typography } from "@mui/material";
+import { Alert, Box, Button, LinearProgress, MenuItem, Stack, Typography } from "@mui/material";
 import { getConfig } from "../lib/config";
 import { livePlaybackURL, liveRequest } from "../lib/video_live";
 import type { CanvasLiveInfo, CanvasLiveSession } from "../lib/model";
@@ -29,6 +30,7 @@ export default function VideoLivePlayer({ session, canvasCourseId, teachingClass
         const [next, config] = await liveRequest(Promise.all([
           invoke<CanvasLiveInfo>("get_video_live_info", { courseId: session.id, canvasCourseId, teachingClassId }), getConfig(),
         ]));
+        if (cancelled) return;
         // Validate all media origins before starting the proxy.
         next.tracks.forEach((item) => livePlaybackURL(item.url, config.proxy_port));
         if (!next.tracks.length) throw new Error("当前教室暂无可用直播机位");
@@ -104,9 +106,9 @@ export default function VideoLivePlayer({ session, canvasCourseId, teachingClass
           style={{ width: "100%", maxHeight: "65vh", display: "block", aspectRatio: "16 / 9" }} />
       </Box>
       <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
-        {!!info?.tracks.length && <TextField select size="small" label="直播机位" value={track} onChange={(e) => setTrack(Number(e.target.value))} sx={{ minWidth: 120 }}>
+        {!!info?.tracks.length && <WorkspaceSelect size="small" label="直播机位" value={track} onChange={(e) => setTrack(Number(e.target.value))} sx={{ minWidth: 120 }}>
           {info.tracks.map((item, index) => <MenuItem key={index} value={index}>{item.name}</MenuItem>)}
-        </TextField>}
+        </WorkspaceSelect>}
         <Button size="small" disabled={!info || !!error} onClick={goLive}>回到直播</Button>
         <Button size="small" onClick={() => setRetry((value) => value + 1)}>重新连接</Button>
       </Stack>

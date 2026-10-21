@@ -2,6 +2,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import VideoPage from "../../page/video";
+import { Link, MemoryRouter } from "react-router-dom";
+import RetainedVideoWorkspace from "../retained_video_workspace";
 import { videoSummarySession } from "../../lib/video_summary_session";
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), exports: vi.fn(), open: vi.fn(),
@@ -56,6 +58,24 @@ async function load() {
   return view;
 }
 describe("video library workflows", () => {
+  it("keeps the selected course, filters and current recording when visiting another page", async () => {
+    render(<MemoryRouter initialEntries={["/video"]}>
+      <Link to="/settings">去设置</Link><Link to="/video">回到视频</Link>
+      <RetainedVideoWorkspace>{(active) => <VideoPage active={active} />}</RetainedVideoWorkspace>
+    </MemoryRouter>);
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("list_video_space_courses"));
+    fireEvent.click(screen.getByRole("button", { name: "选择测试课程" }));
+    await screen.findByText("2 小节");
+    fireEvent.click(within(screen.getByText("2026-09-28").closest("tr")!).getByRole("button", { name: "播放" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索课堂" }), { target: { value: "2026-09-28" } });
+    const player = screen.getByText("播放器内容");
+    fireEvent.click(screen.getByRole("link", { name: "去设置" }));
+    expect(player).toBeInTheDocument(); expect(player).not.toBeVisible();
+    fireEvent.click(screen.getByRole("link", { name: "回到视频" }));
+    expect(screen.getByRole("textbox", { name: "搜索课堂" })).toHaveValue("2026-09-28");
+    expect(screen.getByText("播放器内容")).toBe(player);
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "get_canvas_videos")).toHaveLength(1);
+  });
   it("uses AI availability independently of playback without probing materials", async () => {
     const original = mocks.invoke.getMockImplementation()!;
     mocks.invoke.mockImplementation((command, args) => command === "get_canvas_videos"

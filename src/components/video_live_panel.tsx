@@ -6,8 +6,8 @@ import { liveRequest, liveSessionStatus, liveStatusLabels } from "../lib/video_l
 import type { CanvasLiveList, CanvasLiveSession } from "../lib/model";
 import VideoLivePlayer from "./video_live_player";
 
-export default function VideoLivePanel({ canvasCourseId, teachingClassId, refresh, playback, onPlay }: {
-  canvasCourseId?: number; teachingClassId?: number; refresh: number; playback: "live" | "recording"; onPlay: () => void;
+export default function VideoLivePanel({ canvasCourseId, teachingClassId, refresh, playback, onPlay, visible = true }: {
+  canvasCourseId?: number; teachingClassId?: number; refresh: number; playback: "live" | "recording"; onPlay: () => void; visible?: boolean;
 }) {
   const [list, setList] = useState<CanvasLiveList>();
   const [clockOffset, setClockOffset] = useState(0);
@@ -18,6 +18,7 @@ export default function VideoLivePanel({ canvasCourseId, teachingClassId, refres
   const [active, setActive] = useState<CanvasLiveSession>();
 
   useEffect(() => {
+    if (!visible) return;
     let cancelled = false;
     let inFlight = false;
     const load = async () => {
@@ -32,12 +33,14 @@ export default function VideoLivePanel({ canvasCourseId, teachingClassId, refres
     void load();
     const timer = window.setInterval(() => void load(), 60_000);
     return () => { cancelled = true; clearInterval(timer); };
-  }, [canvasCourseId, teachingClassId, refresh, reload]);
+  }, [canvasCourseId, teachingClassId, refresh, reload, visible]);
 
   useEffect(() => {
+    if (!visible) return;
+    setNow(Date.now() + clockOffset);
     const timer = window.setInterval(() => setNow(Date.now() + clockOffset), 1000);
     return () => clearInterval(timer);
-  }, [clockOffset]);
+  }, [clockOffset, visible]);
 
   const sessions = [...(list?.sessions ?? [])].sort((a, b) => a.startTime - b.startTime);
   const liveCount = sessions.filter((session) => liveSessionStatus(session, now) === "live").length;

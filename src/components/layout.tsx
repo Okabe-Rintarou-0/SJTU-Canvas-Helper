@@ -84,7 +84,7 @@ const pageTitleMap: Record<string, string> = {
   debug: "Debug 控制台",
 };
 
-export default function BasicLayout({ children }: React.PropsWithChildren) {
+export default function BasicLayout({ children, active = true, contentKey }: React.PropsWithChildren<{ active?: boolean; contentKey?: string }>) {
   const tasks = useTasks();
   const activeTaskCount = tasks.filter(isTaskActive).length;
   const failedTaskCount = tasks.filter((task) => task.status === "failed").length;
@@ -107,6 +107,14 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
   const [collapsed, setCollapsed] = useState(false);
   const [messageApi, contextHolder] = useAppMessage();
   const { availableVersion, setAvailableVersion, previewOnly } = useUpdateNotice();
+
+  useEffect(() => {
+    if (!active) {
+      setMobileOpen(false);
+      setShowChangeLog(false);
+      setTaskAnchor(null);
+    }
+  }, [active]);
 
   useEffect(() => {
     getVersion().then((value) => setVersion(value));
@@ -361,7 +369,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
 
       <Drawer
         variant={isDesktop ? "permanent" : "temporary"}
-        open={isDesktop ? true : mobileOpen}
+        open={active && (isDesktop || mobileOpen)}
         onClose={() => setMobileOpen(false)}
         ModalProps={{ keepMounted: true }}
         sx={{
@@ -405,7 +413,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
         ) : null}
 
         <Box
-          key={location.pathname}
+          key={contentKey ?? location.pathname}
           className="page-enter"
           sx={{
             p: { xs: 1.5, md: 2.5 },
@@ -421,11 +429,11 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
       </Box>
 
       <ChangeLogModal
-        open={showChangeLog}
+        open={active && showChangeLog}
         onCancel={() => setShowChangeLog(false)}
         onOk={() => setShowChangeLog(false)}
       />
-      {taskCenterEnabled && <TaskPopover anchorEl={taskAnchor} onClose={() => setTaskAnchor(null)} />}
+      {active && taskCenterEnabled && <TaskPopover anchorEl={taskAnchor} onClose={() => setTaskAnchor(null)} />}
     </Box>
   );
 }

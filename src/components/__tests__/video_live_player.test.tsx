@@ -1,6 +1,9 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import VideoLivePlayer from "../video_live_player";
+import { Link, MemoryRouter } from "react-router-dom";
+import RetainedVideoWorkspace from "../retained_video_workspace";
+import { resetVideoWorkspace } from "../../lib/video_workspace";
 import type { CanvasLiveInfo, CanvasLiveSession } from "../../lib/model";
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), supported: true, instances: [] as {
@@ -34,6 +37,24 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 const props = { session, canvasCourseId: 10, onClose: () => {} };
 describe("live player lifecycle", () => {
+  it("keeps the media and HLS connection through navigation, releasing them on account reset", async () => {
+    render(<MemoryRouter initialEntries={["/video"]}>
+      <Link to="/settings">离开视频</Link><Link to="/video">返回视频</Link>
+      <RetainedVideoWorkspace>{() => <VideoLivePlayer {...props} />}</RetainedVideoWorkspace>
+    </MemoryRouter>);
+    await screen.findByRole("combobox", { name: "直播机位" });
+    const media = document.querySelector("video");
+    const hls = mocks.instances[0];
+    fireEvent.click(screen.getByRole("link", { name: "离开视频" }));
+    expect(media).toBeInTheDocument(); expect(media).not.toBeVisible();
+    expect(hls.destroy).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("link", { name: "返回视频" }));
+    expect(document.querySelector("video")).toBe(media);
+    expect(media).toBeVisible(); expect(mocks.instances).toHaveLength(1);
+    fireEvent.click(screen.getByRole("link", { name: "离开视频" }));
+    act(() => resetVideoWorkspace());
+    expect(hls.destroy).toHaveBeenCalledOnce(); expect(media).not.toBeInTheDocument();
+  });
   it("plays through the proxy, switches camera, goes live, and destroys HLS on close", async () => {
     const view = render(<VideoLivePlayer {...props} />);
     await screen.findByRole("combobox", { name: "直播机位" });

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import VideoLivePanel from "../video_live_panel";
 import type { CanvasLiveList } from "../../lib/model";
@@ -12,8 +12,20 @@ const list: CanvasLiveList = { serverTime: now, sessions: [
   { id: "next", teachingClassId: 2, title: "课程", teacherName: "老师", classroomName: "教室", beginTime: "2026-10-12 14:50", endTime: "2026-10-12 15:45", startTime: now + 600_000, finishTime: now + 1200_000, enabled: true },
 ] };
 beforeEach(() => { vi.clearAllMocks(); mocks.invoke.mockResolvedValue(list); });
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 describe("live course panel", () => {
+  it("pauses list polling off-page while keeping the live player mounted", async () => {
+    vi.useFakeTimers();
+    let view!: ReturnType<typeof render>;
+    await act(async () => { view = render(<VideoLivePanel canvasCourseId={10} refresh={0} playback="live" onPlay={() => {}} />); });
+    fireEvent.click(screen.getAllByRole("button", { name: "观看直播" })[0]);
+    const player = screen.getByTestId("live-player");
+    view.rerender(<VideoLivePanel visible={false} canvasCourseId={10} refresh={0} playback="live" onPlay={() => {}} />);
+    await act(async () => { vi.advanceTimersByTime(120_000); });
+    expect(mocks.invoke).toHaveBeenCalledOnce(); expect(screen.getByTestId("live-player")).toBe(player);
+    await act(async () => { view.rerender(<VideoLivePanel visible canvasCourseId={10} refresh={0} playback="live" onPlay={() => {}} />); });
+    expect(mocks.invoke).toHaveBeenCalledTimes(2); expect(screen.getByTestId("live-player")).toBe(player);
+  });
   it("shows live and upcoming sections and prevents playing an upcoming section", async () => {
     const onPlay = vi.fn();
     const view = render(<VideoLivePanel canvasCourseId={10} refresh={0} playback="live" onPlay={onPlay} />);

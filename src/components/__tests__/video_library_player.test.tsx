@@ -2,6 +2,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import VideoLibraryPlayer from "../video_library_player";
+import { Link, MemoryRouter } from "react-router-dom";
+import RetainedVideoWorkspace from "../retained_video_workspace";
 import type { CanvasVideo } from "../../lib/model";
 
 const mocks = vi.hoisted(() => ({ download: vi.fn(), resolve: vi.fn() }));
@@ -11,6 +13,7 @@ vi.mock("../../lib/video_library_tasks", () => ({ resolveRecording: mocks.resolv
 const recording = { source: "canvas", videoId: "a", videoName: "第一节", courseBeginTime: "2026-09-28 08:00", playable: true } as CanvasVideo;
 const tracks = [{ id: 1, rtmpUrlHdv: "https://example.test/one.mp4" }, { id: 2, rtmpUrlHdv: "https://example.test/two.mp4" }];
 beforeEach(() => {
+  vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
   vi.mocked(invoke).mockImplementation(async () => ({ srt: "" }) as never);
   mocks.resolve.mockResolvedValue({ source: "canvas", info: { videoPlayResponseVoList: tracks } });
   vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(function (this: HTMLMediaElement) { Object.defineProperty(this, "paused", { configurable: true, value: false }); return Promise.resolve(); });
@@ -22,6 +25,45 @@ async function load() {
   await screen.findByRole("button", { name: "下载当前机位" });
 }
 describe("video player compatibility", () => {
+  it("explicitly releases media when closed, without stopping the shared proxy", async () => {
+    const view = render(<VideoLibraryPlayer session={{ id: "a", title: "课堂", videos: [recording] }} initialKey="canvas:a" onClose={() => {}} onSummarize={() => {}} />);
+    await screen.findByRole("button", { name: "下载当前机位" });
+    const media = document.querySelector("video")!;
+    await media.play(); view.unmount();
+    expect(media.paused).toBe(true); expect(media).not.toHaveAttribute("src");
+    expect(media.load).toHaveBeenCalled(); expect(invoke).not.toHaveBeenCalledWith("stop_proxy");
+  });
+
+  it("does not start a proxy or fetch subtitles after the player was closed during resolution", async () => {
+    let finish!: (value: unknown) => void;
+    mocks.resolve.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    const view = render(<VideoLibraryPlayer session={{ id: "a", title: "课堂", videos: [recording] }} initialKey="canvas:a" onClose={() => {}} onSummarize={() => {}} />);
+    view.unmount();
+    finish({ source: "canvas", info: { videoPlayResponseVoList: [{ id: 1, rtmpUrlHdv: "https://videos.sjtu.edu.cn/vod/a.mp4" }] } });
+    await Promise.resolve(); await Promise.resolve();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+  it("keeps the same playing or paused media element, timestamp and speed when navigating", async () => {
+    const session = { id: "a", title: "课堂", videos: [recording] };
+    render(<MemoryRouter initialEntries={["/video"]}>
+      <Link to="/settings">离开视频</Link><Link to="/video">返回视频</Link>
+      <RetainedVideoWorkspace>{() => <VideoLibraryPlayer session={session} initialKey="canvas:a" onClose={() => {}} onSummarize={() => {}} />}</RetainedVideoWorkspace>
+    </MemoryRouter>);
+    await screen.findByRole("button", { name: "下载当前机位" });
+    const media = document.querySelector("video")!;
+    media.currentTime = 123; media.playbackRate = 1.5; await media.play();
+    fireEvent.click(screen.getByRole("link", { name: "离开视频" }));
+    expect(document.querySelector("video")).toBe(media);
+    expect(media.paused).toBe(false);
+    media.currentTime = 130;
+    fireEvent.click(screen.getByRole("link", { name: "返回视频" }));
+    expect(document.querySelector("video")).toBe(media);
+    expect(media.currentTime).toBe(130); expect(media.playbackRate).toBe(1.5);
+    media.pause();
+    fireEvent.click(screen.getByRole("link", { name: "离开视频" }));
+    fireEvent.click(screen.getByRole("link", { name: "返回视频" }));
+    expect(media.paused).toBe(true); expect(mocks.resolve).toHaveBeenCalledOnce();
+  });
   it("disables its summary action when the list reports no AI materials", async () => {
     const onSummarize = vi.fn();
     render(<VideoLibraryPlayer session={{ id: "a", title: "课堂", videos: [{ ...recording, aiAvailable: false }] }} initialKey="canvas:a" onClose={() => {}} onSummarize={onSummarize} />);
