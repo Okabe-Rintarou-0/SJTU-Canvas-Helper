@@ -1,5 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { AISessionStore, aiMessage, aiPayload } from "./ai_session_store";
+import { isAccountTransitioning } from "./account_transition";
 import type { CanvasAgentChatMessage, LLMChatMessage } from "./model";
 import { hasVideoMaterial, recordingKey, type VideoMaterial, type VideoSession } from "./video_library";
 import { recordingRequest } from "./video_library_tasks";
@@ -100,7 +101,7 @@ export class VideoSummarySession extends AISessionStore<SummaryState> {
   }
 
   start = async ({ scopes, organization, namespace, title, cleanUpPpt, force = false, summaryOptions = videoSummaryOptions() }: SummaryRequest) => {
-    if (this.state.loading || !scopes.length) return;
+    if (isAccountTransitioning() || this.state.loading || !scopes.length) return;
     namespace = namespace.replace(/:ppt-(?:animation|cleanup)(?:-v\d+)?=[01]$/, `:ppt-cleanup-v3=${Number(cleanUpPpt)}`);
     summaryOptions = { ...summaryOptions, prompt: summaryOptions.prompt.trim() || videoSummaryOptions().prompt };
     const key = summaryCacheKey(namespace, scopes, organization, summaryOptions);
@@ -153,7 +154,7 @@ export class VideoSummarySession extends AISessionStore<SummaryState> {
   };
 
   send = async (content: string) => {
-    if (this.state.loading || !this.state.text || !content.trim()) return;
+    if (isAccountTransitioning() || this.state.loading || !this.state.text || !content.trim()) return;
     const generation = ++this.generation;
     const next = [...this.state.messages, aiMessage("user", content.trim())];
     this.update({ messages: next, loading: true, progress: "正在准备回答", input: "" });

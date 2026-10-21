@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { AISessionStore, aiMessage, aiPayload } from "./ai_session_store";
 import type { CanvasAgentChatMessage } from "./model";
+import { isAccountTransitioning } from "./account_transition";
 
 interface AgentState {
   messages: CanvasAgentChatMessage[];
@@ -21,7 +22,7 @@ export class CanvasAgentSession extends AISessionStore<AgentState> {
   }
 
   send = async (content: string) => {
-    if (this.state.loading || !content.trim()) return;
+    if (isAccountTransitioning() || this.state.loading || !content.trim()) return;
     const generation = ++this.generation;
     const history = [...this.state.messages, aiMessage("user", content.trim())];
     const pending = aiMessage("assistant", "", { pending: true });

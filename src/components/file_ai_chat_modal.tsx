@@ -1,3 +1,4 @@
+import { isAccountTransitioning, useAccountTransitioning } from "../lib/account_transition";
 import SendRoundedIcon from "@mui/icons-material/SendRounded";
 import SmartToyRoundedIcon from "@mui/icons-material/SmartToyRounded";
 import {
@@ -248,7 +249,8 @@ export default function FileAIChatModal({
   const bodyRef = useRef<HTMLDivElement>(null);
   const shouldStickToBottomRef = useRef(true);
 
-  const canSend = useMemo(() => input.trim().length > 0 && !loading, [input, loading]);
+  const changingAccount = useAccountTransitioning();
+  const canSend = useMemo(() => input.trim().length > 0 && !loading && !changingAccount, [input, loading, changingAccount]);
 
   useEffect(() => {
     if (!open && controlledInput === undefined) {
@@ -280,7 +282,7 @@ export default function FileAIChatModal({
 
   const handleSubmit = async () => {
     const nextInput = input.trim();
-    if (!nextInput || loading) {
+    if (!nextInput || loading || isAccountTransitioning()) {
       return;
     }
     setInput("");
@@ -413,7 +415,7 @@ export default function FileAIChatModal({
               value={input}
               onChange={(event) => setInput(event.target.value)}
               placeholder={inputPlaceholder}
-              disabled={loading}
+              disabled={loading || changingAccount}
             />
             <Stack direction="row" justifyContent="space-between" alignItems="center">
               <Typography variant="caption" color="text.secondary">

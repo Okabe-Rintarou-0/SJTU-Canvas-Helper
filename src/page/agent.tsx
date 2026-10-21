@@ -1,3 +1,4 @@
+import { isAccountTransitioning, useAccountTransitioning } from "../lib/account_transition";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import ForumRoundedIcon from "@mui/icons-material/ForumRounded";
 import SchoolRoundedIcon from "@mui/icons-material/SchoolRounded";
@@ -192,7 +193,8 @@ export default function CanvasAgentPage() {
     [courses.data.length, messages]
   );
 
-  const canSend = input.trim().length > 0 && !loading;
+  const changingAccount = useAccountTransitioning();
+  const canSend = input.trim().length > 0 && !loading && !changingAccount;
 
   useEffect(() => {
     bodyRef.current?.scrollTo?.({ top: bodyRef.current.scrollHeight, behavior: "smooth" });
@@ -202,7 +204,7 @@ export default function CanvasAgentPage() {
 
   const handleSubmit = async () => {
     const nextInput = input.trim();
-    if (!nextInput || loading) {
+    if (!nextInput || loading || isAccountTransitioning()) {
       return;
     }
     setInput("");
@@ -267,7 +269,7 @@ export default function CanvasAgentPage() {
                         label="最大轮次"
                         value={maxTurns}
                         onChange={(event) => setMaxTurns(event.target.value)}
-                        disabled={loading}
+                        disabled={loading || changingAccount}
                         size="small"
                         type="number"
                         inputProps={{ min: MIN_MAX_TURNS, max: MAX_MAX_TURNS, step: 1 }}
@@ -277,7 +279,7 @@ export default function CanvasAgentPage() {
                         label="最大输出 Tokens"
                         value={maxTokens}
                         onChange={(event) => setMaxTokens(event.target.value)}
-                        disabled={loading}
+                        disabled={loading || changingAccount}
                         size="small"
                         type="number"
                         inputProps={{ min: MIN_MAX_TOKENS, max: MAX_MAX_TOKENS, step: 256 }}
@@ -302,7 +304,7 @@ export default function CanvasAgentPage() {
                       key={suggestion}
                       variant="outlined"
                       onClick={() => void sendMessage(suggestion)}
-                      disabled={loading}
+                      disabled={loading || changingAccount}
                       sx={{
                         minHeight: 68,
                         px: 1.75,
@@ -394,7 +396,7 @@ export default function CanvasAgentPage() {
                     value={input}
                     onChange={(event) => setInput(event.target.value)}
                     placeholder="直接描述你的需求，例如：帮我找出最近截止的作业，并告诉我每门课各有几个。"
-                    disabled={loading}
+                    disabled={loading || changingAccount}
                   />
                   <Stack direction="row" justifyContent="space-between" alignItems="center">
                     <Typography variant="caption" color="text.secondary">

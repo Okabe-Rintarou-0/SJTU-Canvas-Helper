@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { AISessionStore, aiMessage, aiPayload } from "./ai_session_store";
+import { isAccountTransitioning } from "./account_transition";
 import type { CanvasAgentChatMessage, File, FileChatStreamChunkPayload, FileChatStreamDonePayload, FileChatStreamErrorPayload } from "./model";
 
 const OPENING = "请先总结这份文件。若它与作业相关，请额外列出得分点、提交要求、截止时间、文件格式限制和任何容易遗漏的注意事项。";
@@ -30,6 +31,7 @@ export class FileAISession extends AISessionStore<FileChatState> {
   }
 
   explain = async (file: File) => {
+    if (isAccountTransitioning()) return;
     this.update({ open: true });
     // Reopening the current file restores its conversation; do not discard a running request.
     if (this.state.loading) return;
@@ -42,7 +44,7 @@ export class FileAISession extends AISessionStore<FileChatState> {
   };
 
   send = async (content: string) => {
-    if (this.state.loading || !this.state.file || !content.trim()) return;
+    if (isAccountTransitioning() || this.state.loading || !this.state.file || !content.trim()) return;
     const file = this.state.file;
     const generation = ++this.generation;
     const requestId = crypto.randomUUID();
