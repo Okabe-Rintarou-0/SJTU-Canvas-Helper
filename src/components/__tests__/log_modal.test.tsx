@@ -8,7 +8,7 @@ vi.mock("@tauri-apps/api/app", () => ({ getVersion: mocks.getVersion }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ save: mocks.save }));
 vi.mock("@tauri-apps/plugin-shell", () => ({ open: mocks.open }));
 
-const environment = "应用版本：3.0.13\n系统：Windows x64\n安装方式：便携版";
+const environment = "应用版本：3.0.13\n系统平台：windows\n系统版本：Windows 11 Pro (10.0.26100)\n架构：x86_64\n运行方式：便携版";
 const log = "2026-10-04T11:20:00Z WARN request_id=7 连接超时";
 const report = `${environment}\n近期运行日志\n${log}`;
 

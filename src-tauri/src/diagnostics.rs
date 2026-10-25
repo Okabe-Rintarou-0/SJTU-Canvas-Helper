@@ -795,8 +795,8 @@ pub fn report() -> String {
             sanitize_text(&error.to_string())
         ),
     };
-    format!("SJTU Canvas Helper 诊断信息\n\n应用版本：{}\n系统平台：{}\n架构：{}\n运行方式：{}\n构建类型：{}\n导出时间：{}\n日志范围：最近两份日志，最多 256 KiB；各行时间为 UTC\n隐私说明：不包含旧版 app.log、配置文件或课程资料；提交前请检查内容。\n\n近期运行日志\n{}\n",
-        env!("CARGO_PKG_VERSION"), std::env::consts::OS, std::env::consts::ARCH,
+    format!("SJTU Canvas Helper 诊断信息\n\n应用版本：{}\n系统平台：{}\n系统版本：{}\n架构：{}\n运行方式：{}\n构建类型：{}\n导出时间：{}\n日志范围：最近两份日志，最多 256 KiB；各行时间为 UTC\n隐私说明：不包含旧版 app.log、配置文件或课程资料；提交前请检查内容。\n\n近期运行日志\n{}\n",
+        env!("CARGO_PKG_VERSION"), std::env::consts::OS, os_info::get(), std::env::consts::ARCH,
         if crate::app::App::portable() { "便携版" } else { "普通模式" },
         if cfg!(debug_assertions) { "开发构建" } else { "发布构建" }, chrono::Utc::now().to_rfc3339(), logs)
 }
@@ -1250,6 +1250,7 @@ mod tests {
         save_report(&path).unwrap();
         let text = fs::read_to_string(path).unwrap();
         assert!(text.contains("应用版本："));
+        assert!(text.contains(&format!("系统版本：{}\n", os_info::get())));
         assert!(text.contains("\n近期运行日志\n"));
         assert!(!text.contains('�'));
         assert!(save_report(Path::new("relative.txt")).is_err());
