@@ -53,6 +53,7 @@ afterEach(cleanup);
 async function load() {
   const view = render(<VideoPage />);
   await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("list_video_space_courses"));
+  await waitFor(() => expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "选择测试课程" }));
   await screen.findByText("2 小节");
   return view;
@@ -64,14 +65,17 @@ describe("video library workflows", () => {
       <RetainedVideoWorkspace>{(active) => <VideoPage active={active} />}</RetainedVideoWorkspace>
     </MemoryRouter>);
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("list_video_space_courses"));
+    // A started request does not mean the merged course list has settled.
+    await waitFor(() => expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "选择测试课程" }));
     await screen.findByText("2 小节");
     fireEvent.click(within(screen.getByText("2026-09-28").closest("tr")!).getByRole("button", { name: "播放" }));
     fireEvent.change(screen.getByRole("textbox", { name: "搜索课堂" }), { target: { value: "2026-09-28" } });
     const player = screen.getByText("播放器内容");
-    fireEvent.click(screen.getByRole("link", { name: "去设置" }));
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "get_canvas_videos")).toHaveLength(1);
+    await act(async () => { fireEvent.click(screen.getByRole("link", { name: "去设置" })); });
     expect(player).toBeInTheDocument(); expect(player).not.toBeVisible();
-    fireEvent.click(screen.getByRole("link", { name: "回到视频" }));
+    await act(async () => { fireEvent.click(screen.getByRole("link", { name: "回到视频" })); });
     expect(screen.getByRole("textbox", { name: "搜索课堂" })).toHaveValue("2026-09-28");
     expect(screen.getByText("播放器内容")).toBe(player);
     expect(mocks.invoke.mock.calls.filter(([command]) => command === "get_canvas_videos")).toHaveLength(1);
