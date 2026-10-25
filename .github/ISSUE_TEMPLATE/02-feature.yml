@@ -1,0 +1,22 @@
+name: 功能建议
+description: 提出新功能、体验优化或文档改进建议。
+title: "[Feature] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        功能异常或使用疑问请使用[问题反馈模板](https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/issues/new?template=01-bug.yml)。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 建议内容
+      description: 请描述希望增加的功能或改进之处，并简要说明使用场景。
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: 补充信息（可选）
+      description: 可补充截图、参考链接或目前的替代方案。提交前请遮挡个人信息。
+    validations:
+      required: false

@@ -1,0 +1,43 @@
+name: 问题反馈
+description: 反馈使用中遇到的问题，或咨询使用方法。
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        功能或改进建议请使用[功能建议模板](https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/issues/new?template=02-feature.yml)。
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 请描述遇到的问题，尽量说明操作过程、实际表现和期望结果。使用咨询可直接说明疑问。
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        <details>
+        <summary>可补充的信息</summary>
+
+        - 问题出现的大致时间和频率。
+        - 影响范围，如部分课程或文件，以及正常与异常情况的区别。
+        - 已尝试的处理方法及结果。
+
+        </details>
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 截图与日志（可选）
+      description: |
+        可上传截图、录屏或诊断文件，也可粘贴报错信息和相关链接。
+        在应用中点击“反馈 → 导出诊断信息”，将生成的 .txt 文件拖到此处。无法启动、找不到导出入口或没有日志时，也可以直接提交。
+        提交内容公开，请遮挡个人信息，勿上传 Token、API Key、原始配置文件或旧版 app.log。
+    validations:
+      required: false
+  - type: textarea
+    id: environment
+    attributes:
+      label: 应用版本与操作系统（可选）
+      description: 可粘贴应用中“复制环境信息”的内容，或填写应用版本和操作系统版本。已自动填入或附有诊断文件时，无需重复填写；无法查看版本时，可提供安装包文件名。
+    validations:
+      required: false
