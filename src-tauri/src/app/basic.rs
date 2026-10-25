@@ -156,13 +156,12 @@ async fn proxy_video_request(
 impl App {
     fn ensure_directory(dir: &str) {
         let metadata = fs::metadata(dir);
-        tracing::info!("dir: {:?}", dir);
         if metadata.is_err() {
             _ = fs::create_dir_all(dir);
         }
     }
 
-    fn portable() -> bool {
+    pub(crate) fn portable() -> bool {
         let exe_dir = std::env::current_exe()
             .map(|path| path.parent().unwrap().to_owned())
             .ok();
@@ -176,17 +175,15 @@ impl App {
     }
 
     pub fn config_dir() -> Result<String> {
-        if App::portable() {
-            let exe_dir = std::env::current_exe()
-                .map(|path| path.parent().unwrap().to_owned())
-                .ok()
-                .unwrap();
-            let config_dir = exe_dir.join(".config");
-            Ok(config_dir.to_str().unwrap().to_owned())
+        let directory = if App::portable() {
+            std::env::current_exe()?.parent()
+                .ok_or_else(|| std::io::Error::other("Application directory unavailable"))?
+                .join(".config")
         } else {
-            let config_dir = config_dir().unwrap().join("SJTU-Canvas-Helper");
-            Ok(config_dir.to_str().unwrap().to_owned())
-        }
+            config_dir().ok_or_else(|| std::io::Error::other("Configuration directory unavailable"))?
+                .join("SJTU-Canvas-Helper")
+        };
+        Ok(directory.to_str().ok_or_else(|| std::io::Error::other("Configuration path is not valid UTF-8"))?.to_owned())
     }
 
     fn save_account_info(account: &AccountInfo) -> Result<()> {
@@ -272,6 +269,7 @@ impl App {
         }
         let config_path = App::get_config_path(account);
         let config = App::read_config_from_file(&config_path)?;
+        crate::diagnostics::protect_config(&config);
         let base_url = Self::get_base_url(&config.account_type);
         self.client.set_base_url(base_url).await;
         Self::apply_llm_config(&config, &self.client).await?;
@@ -309,10 +307,13 @@ impl App {
                 account
             }
         };
-        tracing::info!("Read current account: {:?}", account_info);
+        tracing::info!("Loaded current account configuration");
         let config_path = App::get_config_path(&account_info.current_account);
-        tracing::info!("Read config path: {}", config_path);
-        let config = App::read_config_from_file(&config_path).unwrap_or_default();
+        let config = App::read_config_from_file(&config_path).unwrap_or_else(|error| {
+            tracing::warn!(error = %error, "Could not read configuration; using defaults");
+            AppConfig::default()
+        });
+        crate::diagnostics::protect_config(&config);
 
         let canvas_base_url = Self::get_base_url(&config.account_type);
         let llm_config = crate::client::EffectiveLlmConfig::from_app_config(&config);
@@ -333,7 +334,7 @@ impl App {
         let mut config = self.get_config().await;
         let cookies = &config.video_cookies;
         if !cookies.is_empty() {
-            tracing::info!("Detected saved cookies: {}", cookies);
+            tracing::info!("Restoring saved video login");
             self.client.init_cookie(cookies);
             if let Ok(Some(consumer_key)) = self.client.get_oauth_consumer_key().await {
                 config.oauth_consumer_key = consumer_key;
@@ -715,7 +716,7 @@ impl App {
     }
 
     pub async fn test_token(&self, token: &str) -> Result<User> {
-        self.client.get_me(token).await
+        self.client.test_credential(token).await
     }
 
     pub async fn get_me(&self) -> Result<User> {
@@ -805,7 +806,7 @@ impl App {
                         results.push(scan_result);
                     }
                 }
-                Err(err) => tracing::error!("{:?}", err),
+                Err(err) => tracing::error!(error = %err, "Background file download failed"),
             }
         }
         Ok(results)
@@ -910,7 +911,7 @@ impl App {
             .join(folder_path);
         let save_path = save_path.to_str().unwrap_or_default();
         App::ensure_directory(save_path);
-        tracing::info!("Download file at path: {:?}", save_path);
+        tracing::info!("Starting course file download");
         self.client
             .download_file(file, token, save_path, progress_handler)
             .await?;
@@ -930,7 +931,7 @@ impl App {
             .join(folder_path);
         let save_path = save_path.to_str().unwrap_or_default();
         App::ensure_directory(save_path);
-        tracing::info!("Download file at path: {:?}", save_path);
+        tracing::info!("Starting personal file download");
         self.client
             .download_file(file, token, save_path, progress_handler)
             .await?;
@@ -1113,6 +1114,7 @@ impl App {
     pub async fn save_config(&self, config: AppConfig) -> Result<()> {
         crate::model::VideoSummaryOptions { prompt: config.video_summary_prompt.clone(),
             context_tokens: config.video_summary_context_tokens, output_tokens: config.video_summary_output_tokens }.validate()?;
+        crate::diagnostics::protect_config(&config);
         let account = self.current_account.read().await.clone();
         let config_path = App::get_config_path(&account);
         fs::write(&config_path, serde_json::to_vec(&config).unwrap())?;
@@ -1519,7 +1521,7 @@ try {{
             .extension()
             .and_then(|value| value.to_str())
             .map(str::to_lowercase)
-            .ok_or_else(|| AppError::UnsupportedFileExtensionError(file.display_name.clone()))?;
+            .ok_or_else(|| AppError::UnsupportedFileExtensionError("(missing)".to_owned()))?;
         if !matches!(extension.as_str(), "doc" | "docx" | "ppt" | "pptx") {
             return Err(AppError::UnsupportedFileExtensionError(extension));
         }
@@ -1568,8 +1570,26 @@ try {{
     pub fn is_ffmpeg_installed() -> bool {
         let output = Command::new("ffmpeg").arg("-version").output();
         match output {
-            Ok(output) => output.status.success(),
-            Err(_) => false,
+            Ok(output) => {
+                let success = output.status.success();
+                tracing::info!(
+                    operation = "ffmpeg_probe",
+                    success,
+                    exit_code = ?output.status.code(),
+                    "FFmpeg availability check completed"
+                );
+                success
+            }
+            Err(error) => {
+                tracing::warn!(
+                    operation = "ffmpeg_probe",
+                    success = false,
+                    error_kind = ?error.kind(),
+                    raw_os_error = ?error.raw_os_error(),
+                    "FFmpeg availability check failed"
+                );
+                false
+            }
         }
     }
 
@@ -1646,10 +1666,7 @@ try {{
     }
 
     pub fn read_log_content() -> Result<String> {
-        let log_file_path = App::config_dir()?;
-        let path = Path::new(&log_file_path).join("app.log");
-        let content = fs::read_to_string(path)?;
-        Ok(content)
+        Ok(crate::diagnostics::read_log()?)
     }
 }
 

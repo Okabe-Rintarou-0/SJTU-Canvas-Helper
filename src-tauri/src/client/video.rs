@@ -7,6 +7,7 @@ use std::{
 };
 
 use super::{
+    debug::RequestLogId,
     constants::{
         AUTH_URL, CANVAS_LOGIN_URL, EXPRESS_LOGIN_URL, MY_SJTU_ACCOUNT_URL, MY_SJTU_URL,
         VIDEO_BASE_URL, VIDEO_LOGIN_URL, VIDEO_OAUTH_KEY_URL,
@@ -34,8 +35,8 @@ use regex::Regex;
 use reqwest::{
     cookie::{CookieStore, Jar},
     header::{
-        HeaderMap, HeaderValue, ACCEPT, ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE, RANGE,
-        REFERER,
+        HeaderMap, HeaderValue, ACCEPT, ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE,
+        RANGE, REFERER,
     },
     redirect::Policy,
     Response, StatusCode,
@@ -53,6 +54,50 @@ const VIDEO_SPACE_LAUNCH_URL: &str =
 const CANVAS_VIDEO_TOOL_ID: i64 = 8329;
 const LEGACY_VIDEO_LIST_URL: &str = "https://courses.sjtu.edu.cn/lti/vodVideo/findVodVideoList";
 const LEGACY_VIDEO_INFO_URL: &str = "https://courses.sjtu.edu.cn/lti/vodVideo/getVodVideoInfos";
+
+fn ppt_content_type(headers: &HeaderMap) -> &'static str {
+    let Some(value) = headers.get(CONTENT_TYPE) else {
+        return "missing";
+    };
+    let Ok(value) = value.to_str() else {
+        return "other";
+    };
+    let mime = value
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    match mime.as_str() {
+        "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "image/bmp" | "image/tiff" => {
+            "image"
+        }
+        "text/html" | "application/xhtml+xml" => "html",
+        "application/json" => "json",
+        "text/plain" => "text",
+        "application/octet-stream" => "binary",
+        _ => "other",
+    }
+}
+
+fn log_ppt_failure(
+    operation: &'static str,
+    step: &'static str,
+    image_index: Option<usize>,
+    status: Option<u16>,
+    content_type: &'static str,
+    bytes: Option<usize>,
+) {
+    tracing::warn!(
+        operation,
+        step,
+        ?image_index,
+        ?status,
+        content_type,
+        ?bytes,
+        "PPT processing failed"
+    );
+}
 
 fn deserialize_null_default<'de, D, T>(deserializer: D) -> std::result::Result<T, D::Error>
 where
@@ -1317,8 +1362,7 @@ impl Client {
 
     async fn get_download_video_metadata(&self, url: &str) -> Result<(u64, bool)> {
         let resp = self.download_video_partial(url, 0, 0).await?;
-        // log headers:
-        tracing::info!("headers: {:?}", resp.headers());
+        tracing::info!(status = resp.status().as_u16(), "Video download metadata received");
         Ok(parse_download_probe(resp.status(), resp.headers()))
     }
 
@@ -1374,7 +1418,7 @@ impl Client {
                 payload_guard.processed = current_offset;
                 progress_handler.lock().await(payload_guard.clone());
             }
-            tracing::info!("Successfully downloaded video to {}", save_path);
+            tracing::info!("Video download completed");
             return Ok(());
         }
 
@@ -1434,7 +1478,7 @@ impl Client {
         while let Some(result) = tasks.join_next().await {
             result??;
         }
-        tracing::info!("Successfully downloaded video to {}", save_path);
+        tracing::info!("Video download completed");
         Ok(())
     }
 
@@ -1462,10 +1506,6 @@ impl Client {
         let oauth_nonce = self.get_oauth_nonce();
         let oauth_signature = self.get_oauth_signature(video_id, &oauth_nonce, oauth_consumer_key);
 
-        tracing::debug!("oauth_nonce: {}", oauth_nonce);
-        tracing::debug!("oauth_signature: {}", oauth_signature);
-        tracing::debug!("oauth_consumer_key: {}", oauth_consumer_key);
-        tracing::debug!("video_id: {}", video_id);
 
         let video_id_str = video_id.to_string();
         form_data.insert("playTypeHls", "true");
@@ -1535,17 +1575,36 @@ impl Client {
 
     pub async fn get_ppt(&self, canvas_course_id: i64) -> Result<Vec<CanvasVideoPPT>> {
         let url = format!("{RESOURCE_MANAGE_BASE_URL}/v1/course/ai/ppt");
-        let resp = self
+        let request = self
             .cli
             .get(url)
             .query(&[("courseId", canvas_course_id)])
             .header("jwt-token", self.token.read().await.as_str())
             .header(REFERER, RESOURCE_MANAGE_UI_URL)
-            .send()
-            .await?
-            .error_for_status()?;
-        let value: Value = serde_json::from_slice(&resp.bytes().await?)?;
-        ppts_from_response(&value)
+            .build()
+            .inspect_err(|_| {
+                log_ppt_failure("ppt_list", "request", None, None, "unknown", None);
+            })?;
+        let response = self.execute_request(request).await.inspect_err(|_| {
+            log_ppt_failure("ppt_list", "request", None, None, "unknown", None);
+        })?;
+        let status = Some(response.status().as_u16());
+        let content_type = ppt_content_type(response.headers());
+        let value: Value = self
+            .parse_response_json(response)
+            .await
+            .inspect_err(|error| {
+                let step = match error {
+                    AppError::Network(error) if error.is_status() => "http_status",
+                    AppError::Network(_) => "body",
+                    AppError::JsonDeserialize(..) | AppError::JsonParse(_) => "json_decode",
+                    _ => "response",
+                };
+                log_ppt_failure("ppt_list", step, None, status, content_type, None);
+            })?;
+        ppts_from_response(&value).inspect_err(|_| {
+            log_ppt_failure("ppt_list", "schema", None, status, content_type, None);
+        })
     }
 
     /// Downloads PPT images and converts them to a PDF document
@@ -1570,21 +1629,71 @@ impl Client {
                 continue;
             }
             let ppt_img_url = ppt.ppt_img_url.clone().unwrap();
-            // Download image with error handling
-            let image_data = match self.cli.get(&ppt_img_url).send().await {
-                Ok(response) => response.bytes().await?,
-                Err(e) => {
-                    return Err(AppError::VideoDownloadError(format!(
-                        "Failed to download PPT image {index}: {e}"
-                    )))
+            let request = self.cli.get(&ppt_img_url).build().inspect_err(|_| {
+                log_ppt_failure("ppt_image", "request", Some(index), None, "unknown", None);
+            })?;
+            let response = self.execute_request(request).await.map_err(|error| {
+                log_ppt_failure("ppt_image", "request", Some(index), None, "unknown", None);
+                AppError::VideoDownloadError(format!(
+                    "Failed to download PPT image {index}: {error}"
+                ))
+            })?;
+            let status = Some(response.status().as_u16());
+            let content_type = ppt_content_type(response.headers());
+            let request_id = response.extensions().get::<RequestLogId>().cloned();
+            // A login/error page must remain an HTTP failure, never an image-decode failure.
+            let response = response.error_for_status().inspect_err(|_| {
+                log_ppt_failure(
+                    "ppt_image",
+                    "http_status",
+                    Some(index),
+                    status,
+                    content_type,
+                    None,
+                );
+            })?;
+            let image_data = match response.bytes().await {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    if let Some(request_id) = &request_id {
+                        self.debug_store
+                            .capture_response_failure(request_id, "response_body_read_failed")
+                            .await;
+                    }
+                    log_ppt_failure("ppt_image", "body", Some(index), status, content_type, None);
+                    return Err(error.into());
                 }
             };
+            if let Some(request_id) = &request_id {
+                self.debug_store
+                    .capture_response_body(request_id, image_data.len())
+                    .await;
+            }
 
             tracing::info!("Downloaded image {}: {} bytes", index, image_data.len());
 
             // TODO: Add To PDF
-            let image = RawImage::decode_from_bytes(&image_data, &mut warning)
-                .map_err(|e| AppError::VideoDownloadError(format!("Invalid PPT image {index}: {e}")))?;
+            let image = match RawImage::decode_from_bytes(&image_data, &mut warning) {
+                Ok(image) => image,
+                Err(error) => {
+                    if let Some(request_id) = &request_id {
+                        self.debug_store
+                            .capture_response_failure(request_id, "ppt_image_decode_failed")
+                            .await;
+                    }
+                    log_ppt_failure(
+                        "ppt_image",
+                        "decode",
+                        Some(index),
+                        status,
+                        content_type,
+                        Some(image_data.len()),
+                    );
+                    return Err(AppError::VideoDownloadError(format!(
+                        "Invalid PPT image {index}: {error}"
+                    )));
+                }
+            };
             images.push(image.clone());
 
             // Report progress
@@ -1621,8 +1730,7 @@ impl Client {
         let mut file = File::create(save_path)?;
         file.write_all(&pdf_bytes)?;
         file.flush()?;
-        tracing::info!("PDF saved to {}", save_path);
-        tracing::info!("PDF warnings: {:?}", warning);
+        tracing::info!(warning_count = warning.len(), "PPT PDF saved");
 
         Ok(())
     }
@@ -1673,6 +1781,81 @@ mod tests {
         assert!(live_info_from_response(&closed).unwrap_err().to_string().contains("未开始"));
         closed = value; closed["data"]["errorMsg"] = "直播未开放".into();
         assert!(live_info_from_response(&closed).unwrap_err().to_string().contains("直播未开放"));
+    }
+
+    #[tokio::test]
+    async fn test_ppt_image_http_and_decode_failures_are_distinct_and_safe() {
+        use httpmock::{Method::GET, MockServer};
+
+        let server = MockServer::start();
+        let body = "private-response-body";
+        for (status, mime, expected_error) in [
+            (401, "text/html; charset=private-header-value", "HTTP 401"),
+            (
+                200,
+                "image/png; extra=private-header-value",
+                "ppt_image_decode_failed",
+            ),
+        ] {
+            let route = format!("/private-image-{status}");
+            let request_mock = server.mock(|when, then| {
+                when.method(GET)
+                    .path(&route)
+                    .query_param("signature", "signed-private-value");
+                then.status(status).header("content-type", mime).body(body);
+            });
+            let client = Arc::new(Client::new_without_proxy(
+                server.base_url().as_str(),
+                "",
+                "",
+                "",
+                None,
+            ));
+            client.set_debug_mode(true);
+            let slides = vec![CanvasVideoPPT {
+                ppt_img_url: Some(format!(
+                    "{}?signature=signed-private-value",
+                    server.url(&route)
+                )),
+                ..Default::default()
+            }];
+            let output = std::env::temp_dir()
+                .join(format!("private-ppt-output-{}.pdf", uuid::Uuid::new_v4()));
+            let error = client
+                .clone()
+                .download_ppt_pdf(&slides, output.to_str().unwrap(), |_| {})
+                .await
+                .unwrap_err();
+
+            request_mock.assert();
+            assert!(!output.exists(), "a failed image must not create a PDF");
+            if status == 401 {
+                assert!(
+                    matches!(&error, AppError::Network(error) if error.status() == Some(StatusCode::UNAUTHORIZED))
+                );
+                assert!(!error.to_string().contains("Invalid PPT image"));
+            } else {
+                assert!(error.to_string().contains("Invalid PPT image 0"));
+            }
+            let logs = client.list_network_logs().await;
+            assert_eq!(logs.len(), 1);
+            assert_eq!(logs[0].status, Some(status));
+            assert_eq!(logs[0].ok, Some(false));
+            assert_eq!(logs[0].error.as_deref(), Some(expected_error));
+            let diagnostics = format!("{logs:?}\n{}", serde_json::to_string(&error).unwrap());
+            for private in [
+                "signed-private-value",
+                "private-response-body",
+                "private-header-value",
+                "private-image",
+                "private-ppt-output",
+            ] {
+                assert!(
+                    !diagnostics.contains(private),
+                    "leaked {private}: {diagnostics}"
+                );
+            }
+        }
     }
 
     #[test]

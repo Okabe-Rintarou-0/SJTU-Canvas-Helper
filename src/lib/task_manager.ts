@@ -1,3 +1,6 @@
+import { logDiagnostic } from "./diagnostics";
+import { LOG_LEVEL_ERROR, LOG_LEVEL_INFO } from "./model";
+
 export type TaskStatus = "queued" | "running" | "succeeded" | "failed";
 export type TaskKind = "file" | "sync" | "conversion" | "upload" | "upload-pdf" | "attachment" | "video" | "ppt" | "subtitle" | "pdf-merge" | "pdf-save" | "video-merge";
 export type TaskSource = "files" | "submissions" | "video";
@@ -56,6 +59,20 @@ export interface TaskSpec {
 
 export const isTaskActive = (task: Task) => task.status === "queued" || task.status === "running";
 
+const diagnosticStages = new Set([
+  "等待执行", "等待重试", "正在处理", "正在下载", "正在上传至云盘", "正在合并 PDF",
+  "正在转换 PDF", "正在转换 PDF 并上传", "正在重新登录交大云盘", "正在检查文件差异",
+  "准备合并", "正在生成合并结果", "正在保存 PDF", "正在合成视频", "准备资料",
+  "正在下载 PPT 切片", "正在导出视频", "正在导出PPT 切片 PDF", "正在导出字幕 SRT", "正在导出整堂课字幕文本",
+]);
+function diagnosticStage(stage: string): string {
+  if (diagnosticStages.has(stage)) return stage;
+  // UI stages may embed filenames or course titles; only retain the operation label.
+  if (stage.startsWith("正在添加 ")) return "正在添加文件";
+  if (stage.startsWith("正在下载机位 ")) return "正在下载机位";
+  return "其他处理阶段";
+}
+
 /** Session-scoped executor. UI mounts never start, restart or own a job. */
 export class TaskManager {
   private tasks: Task[] = [];
@@ -63,6 +80,7 @@ export class TaskManager {
   private listeners = new Set<() => void>();
   private executing = new Set<string>();
   private actionBusy = new Set<string>();
+  private failureStages = new Map<string, string>();
   private draining = false;
   constructor(private readonly concurrency = 3) {}
   getSnapshot = () => this.tasks;
@@ -97,6 +115,11 @@ export class TaskManager {
   retry(id: string) {
     const task = this.tasks.find((item) => item.id === id);
     if (task?.status !== "failed" || this.executing.has(id)) return;
+    logDiagnostic(LOG_LEVEL_INFO, "frontend.task.retry", {
+      kind: task.kind, source: task.source, stage: this.failureStages.get(id),
+      attempt: task.attempt, error: task.error,
+    });
+    this.failureStages.delete(id);
     this.patch(id, { status: "queued", stage: "等待重试", progress: undefined, error: undefined, actionError: undefined, finishedAt: undefined, log: undefined });
     this.drain();
   }
@@ -105,6 +128,7 @@ export class TaskManager {
     if (!task || isTaskActive(task) || this.executing.has(id) || this.actionBusy.has(id)) return;
     this.specs.get(id)?.dispose?.();
     this.specs.delete(id);
+    this.failureStages.delete(id);
     this.tasks = this.tasks.filter((item) => item.id !== id);
     this.emit();
   }
@@ -121,7 +145,10 @@ export class TaskManager {
     this.actionBusy.add(id);
     this.patch(id, { actionError: undefined });
     try { await handler(); }
-    catch (error) { this.patch(id, { actionError: String(error) }); }
+    catch (error) {
+      logDiagnostic(LOG_LEVEL_ERROR, "frontend.task.output_action", { kind: task.kind, source: task.source, action, attempt: task.attempt }, error);
+      this.patch(id, { actionError: String(error) });
+    }
     finally { this.actionBusy.delete(id); }
   }
   progress(channel: string, id: string, processed: number, total: number) {
@@ -167,6 +194,12 @@ export class TaskManager {
       });
       this.patch(task.id, { status: "succeeded", stage: "已完成", progress: 100, finishedAt: Date.now(), unreadCompletion: true });
     } catch (error) {
+      const current = this.tasks.find((item) => item.id === task.id) ?? task;
+      const stage = diagnosticStage(current.stage);
+      this.failureStages.set(task.id, stage);
+      logDiagnostic(LOG_LEVEL_ERROR, "frontend.task.failed", {
+        kind: current.kind, source: current.source, stage, attempt: current.attempt,
+      }, error);
       this.patch(task.id, { status: "failed", stage: "执行失败", error: String(error), finishedAt: Date.now() });
     } finally {
       this.executing.delete(task.id);

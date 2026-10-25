@@ -53,10 +53,11 @@ impl Client {
     }
 
     pub async fn get_user_space_info(&self, user_token: &str) -> Result<PersonalSpaceInfo> {
+        crate::diagnostics::protect_secret(user_token);
         let url = format!("{JBOX_USER_SPACE_URL}?user_token={user_token}");
         let info = self.post_request::<PersonalSpaceInfo, _>(&url, "").await?;
         if info.status != 0 {
-            tracing::error!("{}", info.message);
+            tracing::error!(status = info.status, "JBox user space request failed");
             return Err(AppError::JBoxError(info.message));
         }
         Ok(info)

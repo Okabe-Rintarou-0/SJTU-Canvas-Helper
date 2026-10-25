@@ -94,7 +94,7 @@ export async function enqueueVideoExports(scopes: VideoSession[], options: Video
           setOpen(() => invoke("open_local_path", { path: result.paths.length === 1 ? result.paths[0] : folder }));
           if (result.warnings.length) {
             update({ log: `已保存：\n${result.paths.join("\n")}\n${(result.notes ?? []).join("\n")}\n未完成：\n${result.warnings.join("\n")}` });
-            throw new Error(`部分资料未完成，已保存文件保留在 ${folder}。${result.warnings.join("；")}`);
+            throw new Error(`部分资料未完成：已保存 ${result.paths.length} 个文件，${result.warnings.length} 项失败。请查看任务详情。`);
           }
           update({ stage: "已完成", progress: 100, log: [...result.paths, ...(result.notes ?? [])].join("\n") });
         },

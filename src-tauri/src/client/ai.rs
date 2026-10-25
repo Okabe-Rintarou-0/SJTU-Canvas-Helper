@@ -52,7 +52,7 @@ impl Client {
     pub async fn chat_with_file(&self, file: &File, messages: &[LLMChatMessage]) -> Result<String> {
         let text = self.read_file_content(file).await?;
         let prompt = self.build_file_chat_prompt(file, &text, messages);
-        tracing::info!("File Chat Prompt built for: {}", file.display_name);
+        tracing::info!("File chat prompt prepared");
         self.llm_cli.chat(prompt).await
     }
 
@@ -64,7 +64,7 @@ impl Client {
     ) -> Result<String> {
         let text = self.read_file_content(file).await?;
         let prompt = self.build_file_chat_prompt(file, &text, messages);
-        tracing::info!("File Stream Chat Prompt built for: {}", file.display_name);
+        tracing::info!("File streaming chat prompt prepared");
         self.llm_cli.chat_stream(prompt, on_chunk).await
     }
 
@@ -151,7 +151,7 @@ impl Client {
         let subtitle = &self.get_subtitle(canvas_course_id).await?.before_assembly_list;
         let compressed_subtitle = self.compress_subtitle(subtitle)?;
         let prompt = self.build_subtitle_chat_prompt(&compressed_subtitle, messages);
-        tracing::info!("Subtitle Chat Prompt built for course id: {}", canvas_course_id);
+        tracing::info!("Subtitle chat prompt prepared");
         self.llm_cli.chat(prompt).await
     }
 
@@ -164,10 +164,7 @@ impl Client {
         let subtitle = &self.get_subtitle(canvas_course_id).await?.before_assembly_list;
         let compressed_subtitle = self.compress_subtitle(subtitle)?;
         let prompt = self.build_subtitle_chat_prompt(&compressed_subtitle, messages);
-        tracing::info!(
-            "Subtitle Stream Chat Prompt built for course id: {}",
-            canvas_course_id
-        );
+        tracing::info!("Subtitle streaming chat prompt prepared");
         self.llm_cli.chat_stream(prompt, on_chunk).await
     }
 

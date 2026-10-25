@@ -366,7 +366,7 @@ impl Client {
             file.write_all(&chunk)?;
         }
 
-        tracing::info!("File {:?} downloaded successfully!", path);
+        tracing::info!("File download completed");
         Ok(())
     }
 
@@ -546,7 +546,7 @@ impl Client {
     ) -> Result<Vec<File>> {
         let folders_and_files = self.get_folders_and_files(course.id, token).await?;
         let folders_map = &folders_and_files.folders_map;
-        tracing::info!("folders_map: {:?}", folders_map);
+        tracing::info!(folder_count = folders_map.len(), "Synchronizing course files");
         let files = folders_and_files
             .files
             .into_iter()
@@ -782,6 +782,19 @@ impl Client {
         let url = format!("{}/api/v1/users/self", self.base_url.read().await);
         let me = self.get_json_with_token(&url, None::<&str>, token).await?;
         Ok(me)
+    }
+
+    pub async fn test_credential(&self, token: &str) -> Result<User> {
+        // Use the same URL for dispatch and diagnostics if settings change during the request.
+        let url = format!("{}/api/v1/users/self", self.base_url.read().await);
+        let result = self.get_json_with_token(&url, None::<&str>, token).await;
+        tracing::info!(
+            operation = "credential_test",
+            endpoint = %crate::diagnostics::sanitize_url(&url),
+            success = result.is_ok(),
+            "Credential test completed"
+        );
+        result
     }
 
     async fn upload_submission_file_with(
@@ -1021,6 +1034,43 @@ mod mock_tests {
 
     fn create_test_client(mock_server_url: &str) -> Client {
         Client::new_without_proxy(mock_server_url, "", "", "", None)
+    }
+
+    #[tokio::test]
+    async fn test_credential_uses_current_endpoint_and_preserves_http_errors() {
+        let first = MockServer::start();
+        let second = MockServer::start();
+        let user = crate::model::User {
+            id: 7,
+            ..Default::default()
+        };
+        let accepted = first.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/users/self")
+                .header("Authorization", "Bearer supplied-credential");
+            then.status(200)
+                .json_body(serde_json::to_value(&user).unwrap());
+        });
+        let rejected = second.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/users/self")
+                .header("Authorization", "Bearer supplied-credential");
+            then.status(401);
+        });
+        let client = create_test_client(&first.base_url());
+        assert_eq!(
+            client.test_credential("supplied-credential").await.unwrap().id,
+            7
+        );
+        client.set_base_url(second.base_url()).await;
+        let error = client
+            .test_credential("supplied-credential")
+            .await
+            .unwrap_err();
+        assert!(matches!(error, crate::error::AppError::Network(error)
+            if error.status() == Some(reqwest::StatusCode::UNAUTHORIZED)));
+        accepted.assert();
+        rejected.assert();
     }
 
     #[tokio::test]

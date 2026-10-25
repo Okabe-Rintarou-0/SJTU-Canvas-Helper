@@ -1,5 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskManager, type TaskSpec } from "./task_manager";
+import { logDiagnostic } from "./diagnostics";
+import { LOG_LEVEL_ERROR, LOG_LEVEL_INFO } from "./model";
+
+vi.mock("./diagnostics", () => ({ logDiagnostic: vi.fn() }));
+beforeEach(() => vi.mocked(logDiagnostic).mockClear());
 
 function deferred() {
   let resolve!: () => void;
@@ -11,6 +16,46 @@ const flush = async () => { await Promise.resolve(); await Promise.resolve(); };
 const spec = (id: string, run: TaskSpec["run"], extra: Partial<TaskSpec> = {}): TaskSpec => ({ id, name: id, source: "files", kind: "file", run, ...extra });
 
 describe("application task executor", () => {
+  it("records the failure stage and original error before retry clears the UI record", async () => {
+    const manager = new TaskManager();
+    const cause = new Error("offline");
+    const error = Object.assign(new Error("transfer failed"), { cause });
+    const retried = deferred();
+    const run = vi.fn<TaskSpec["run"]>().mockImplementationOnce(async ({ update }) => {
+      update({ stage: "正在上传至云盘" });
+      throw error;
+    }).mockImplementationOnce(() => retried.promise);
+    manager.enqueue(spec("private-file-id", run, {
+      name: "私人课程资料.pdf", outputPath: "C:/Users/private/file.pdf", context: "私人课程", data: { token: "secret" }, kind: "upload",
+    }));
+    await flush();
+    expect(logDiagnostic).toHaveBeenNthCalledWith(1, LOG_LEVEL_ERROR, "frontend.task.failed", {
+      kind: "upload", source: "files", stage: "正在上传至云盘", attempt: 1,
+    }, error);
+    manager.retry("private-file-id");
+    expect(logDiagnostic).toHaveBeenNthCalledWith(2, LOG_LEVEL_INFO, "frontend.task.retry", {
+      kind: "upload", source: "files", stage: "正在上传至云盘", attempt: 1, error: "Error: transfer failed",
+    });
+    const logged = JSON.stringify(vi.mocked(logDiagnostic).mock.calls);
+    for (const sensitive of ["private-file-id", "私人课程", "C:/Users/private", "secret"]) expect(logged).not.toContain(sensitive);
+    expect(manager.getSnapshot()[0]).toMatchObject({ status: "running", attempt: 2, error: undefined });
+    retried.resolve();
+    await flush();
+  });
+
+  it("does not copy filenames embedded in UI progress stages into task diagnostics", async () => {
+    const manager = new TaskManager();
+    manager.enqueue(spec("merge", async ({ update }) => {
+      update({ stage: "正在添加 私人课程文件.pdf（1/2）" });
+      throw new Error("invalid PDF");
+    }, { kind: "pdf-merge" }));
+    await flush();
+    expect(logDiagnostic).toHaveBeenCalledWith(LOG_LEVEL_ERROR, "frontend.task.failed", {
+      kind: "pdf-merge", source: "files", stage: "正在添加文件", attempt: 1,
+    }, expect.any(Error));
+    expect(JSON.stringify(vi.mocked(logDiagnostic).mock.calls)).not.toContain("私人课程文件");
+  });
+
   it("tracks only newly successful completions and acknowledges them without losing future completions", async () => {
     const manager = new TaskManager();
     const first = deferred();

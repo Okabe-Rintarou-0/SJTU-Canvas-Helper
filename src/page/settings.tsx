@@ -1730,7 +1730,7 @@ export default function SettingsPage() {
                         Debug 模式
                       </Typography>
                       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                        开启后，左侧导航栏将显示 Debug 控制台入口，自动记录最近 1000 条网络请求（请求头、请求体、响应状态），方便排查问题。
+                        开启后，左侧导航栏将显示 Debug 控制台入口。日常日志记录和问题反馈无需开启此模式，可直接使用“日志与反馈”。
                       </Typography>
                       <FormControlLabel
                         control={
@@ -1889,7 +1889,7 @@ export default function SettingsPage() {
                     <Box>
                       <Typography variant="h5">实用工具</Typography>
                       <Typography variant="body2" color="text.secondary">
-                        打开配置文件目录，或查看运行日志以排查问题。
+                        打开配置文件目录，或导出近期日志并反馈问题。
                       </Typography>
                     </Box>
 
@@ -1912,7 +1912,7 @@ export default function SettingsPage() {
                         onClick={() => setShowLogModal(true)}
                         startIcon={<PreviewRoundedIcon />}
                       >
-                        查看运行日志
+                        日志与反馈
                       </Button>
                     </Box>
                   </Stack>

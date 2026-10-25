@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { getOutputFile, type FileOutputFormat } from "./file_conversion";
 import type { File } from "./model";
 import type { TaskSpec } from "./task_manager";
+import { logDiagnostic } from "./diagnostics";
+import { LOG_LEVEL_WARN } from "./model";
 
 function uploadError(message: string, cause: unknown) {
   return Object.assign(new Error(message), { cause });
@@ -28,7 +30,10 @@ export function createCloudUploadTask(file: File, outputFormat: FileOutputFormat
     locks: ["jbox-upload"],
     run: async ({ update }) => {
       try { await upload(); return; }
-      catch (error) { if (conversionError(error)) throw describeError(error); }
+      catch (error) {
+        if (conversionError(error)) throw describeError(error);
+        logDiagnostic(LOG_LEVEL_WARN, "frontend.upload.retry_after_login", error);
+      }
       update({ stage: "正在重新登录交大云盘", progress: undefined });
       try { await invoke("login_jbox"); }
       catch (error) { throw uploadError(`登录交大云盘失败：${String(error)}。请先登录后重试。`, error); }

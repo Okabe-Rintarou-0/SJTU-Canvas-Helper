@@ -13,19 +13,13 @@ use model::{
 };
 use serde::{Deserialize, Serialize};
 
-use dirs::config_dir;
-
 use tauri::{Emitter, Runtime, Window};
-use tracing::Level;
-use tracing_subscriber::{
-    fmt::{self, writer::MakeWriterExt},
-    layer::SubscriberExt,
-};
 
 use crate::app::App;
 mod app;
 mod canvas_agent;
 mod client;
+mod diagnostics;
 mod error;
 mod mcp;
 mod model;
@@ -46,6 +40,23 @@ async fn generate_annual_report(year: i32) -> Result<AnnualReport> {
 #[tauri::command]
 fn read_log_content() -> Result<String> {
     App::read_log_content()
+}
+
+#[tauri::command]
+fn read_diagnostic_report() -> String {
+    diagnostics::report()
+}
+
+#[tauri::command]
+fn save_diagnostic_report(path: String) -> Result<()> {
+    diagnostics::save_report(std::path::Path::new(&path))?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn open_log_directory() -> Result<()> {
+    let directory = diagnostics::directory()?;
+    APP.open_local_path(&directory.to_string_lossy())
 }
 
 #[tauri::command]
@@ -168,7 +179,7 @@ async fn check_zhipu_balance(cli: &reqwest::Client, api_key: &str) -> Result<Use
         return Err(AppError::LLMError("智谱余额查询失败，请检查 API Key。".into()));
     }
     let text = resp.text().await?;
-    tracing::info!("Zhipu balance response: {}", text);
+    tracing::info!("Zhipu balance request completed");
     let body: ZhipuBalanceResponse = serde_json::from_str(&text)?;
     Ok(UserBalance {
         available_balance: body.data.available_balance,
@@ -188,7 +199,7 @@ async fn check_minimax_balance(cli: &reqwest::Client, auth: &str) -> Result<User
                 return Err(AppError::LLMError("MiniMax 余额查询失败，请检查 API Key。".into()));
             }
             let text = resp.text().await?;
-            tracing::info!("MiniMax balance response: {}", text);
+            tracing::info!("MiniMax balance request completed");
             let body: MiniMaxBalanceResponse = serde_json::from_str(&text)?;
             let d = body.data.unwrap_or_default();
             Ok(UserBalance {
@@ -362,6 +373,7 @@ async fn list_folder_folders(folder_id: i64) -> Result<Vec<Folder>> {
 
 #[tauri::command]
 async fn test_token(token: String) -> Result<User> {
+    diagnostics::protect_secret(&token);
     APP.test_token(&token).await
 }
 
@@ -698,7 +710,8 @@ async fn get_colors() -> Result<Colors> {
 
 #[tauri::command]
 async fn save_config(config: AppConfig) -> Result<()> {
-    tracing::info!("Receive config: {:?}", config);
+    diagnostics::protect_config(&config);
+    tracing::info!("Saving application configuration");
     APP.save_config(config).await
 }
 
@@ -1077,24 +1090,18 @@ async fn stop_mcp_server() {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // set up logger
-    let appender = tracing_appender::rolling::never(App::config_dir()?, "app.log");
-    let subscriber = tracing_subscriber::registry()
-        .with(
-            fmt::Layer::new()
-                .with_writer(std::io::stdout.with_max_level(Level::INFO))
-                .pretty(),
-        )
-        .with(fmt::Layer::new().with_writer(
-            appender.with_max_level(Level::INFO),
-        ));
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("Unable to set a tracing subscriber");
-    tracing::info!("log setup, path: {:?}", config_dir());
-
-    APP.init().await?;
+    let log_directory = App::config_dir().map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::env::temp_dir().join("SJTU-Canvas-Helper"));
+    diagnostics::init(log_directory);
+    if let Err(error) = APP.init().await {
+        tracing::error!(error = %error, "Application initialization failed");
+        return Err(error);
+    }
     if APP.get_config().await.mcp_enabled {
-        APP.start_mcp().await?;
+        if let Err(error) = APP.start_mcp().await {
+            tracing::error!(error = %error, "MCP initialization failed");
+            return Err(error);
+        }
     }
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -1104,6 +1111,9 @@ async fn main() -> Result<()> {
         .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             read_log_content,
+            read_diagnostic_report,
+            save_diagnostic_report,
+            open_log_directory,
             console_log,
             is_ffmpeg_installed,
             run_video_aggregate,
