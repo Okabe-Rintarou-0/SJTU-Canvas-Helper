@@ -262,20 +262,30 @@ it("adopts successor ownership after each inline API Key edit", async () => {
   config.llm_api_keys = [{ name: "Original", key: "old-key", base_url: "https://example.com/v1", model: "test-model" }];
   config.llm_active_api_key = "Original";
   await openSettings(); section("AI 与模型");
+  // Settings keeps every category mounted. Scope label queries to the active
+  // panel instead of repeatedly traversing all hidden MUI controls in jsdom.
+  const ai = within(screen.getByRole("tabpanel", { name: "AI 与模型" }));
+  const saveAll = screen.getAllByText("保存全部设置", { selector: "button" })[0];
+  expect(saveAll).toBeVisible();
   for (const [label, value, field] of [
     ["名称", "Renamed", "llm_active_api_key"],
     ["API Key", "new-key", "llm_api_key"],
     ["Base URL", "https://new.example.com/v1", "llm_base_url"],
   ]) {
     const previousOwner = config.__config_owner;
-    const input = screen.getByLabelText(label);
-    fireEvent.change(input, { target: { value } }); fireEvent.blur(input);
-    await waitFor(() => expect(config).toMatchObject({ [field]: value, __config_owner: `${previousOwner}:saved` }));
-    await act(async () => {});
+    const input = ai.getByLabelText(label);
+    fireEvent.change(input, { target: { value } });
+    // The save fixture resolves immediately; await its React update directly
+    // rather than polling the entire document and then flushing a second time.
+    await act(async () => { fireEvent.blur(input); });
+    expect(mocks.saveConfig).toHaveBeenLastCalledWith(expect.objectContaining({ [field]: value, __config_owner: previousOwner }));
+    expect(config).toMatchObject({ [field]: value, __config_owner: `${previousOwner}:saved` });
   }
-  fireEvent.change(screen.getByLabelText("Temperature"), { target: { value: "0.7" } });
-  save();
-  await waitFor(() => expect(config.llm_temperature).toBe(0.7));
+  const previousOwner = config.__config_owner;
+  fireEvent.change(ai.getByLabelText("Temperature"), { target: { value: "0.7" } });
+  await act(async () => { fireEvent.click(saveAll); });
+  expect(config).toMatchObject({ llm_temperature: 0.7, __config_owner: `${previousOwner}:saved` });
+  expect(mocks.saveConfig).toHaveBeenCalledTimes(4);
   expect(mocks.message.error).not.toHaveBeenCalled();
 });
 
