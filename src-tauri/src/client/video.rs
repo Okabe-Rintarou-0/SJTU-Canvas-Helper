@@ -791,7 +791,6 @@ impl Client {
         }
         if let Some(cookies) = login_jar.cookies(&Url::parse(VIDEO_BASE_URL).unwrap()) {
             if let Ok(cookies) = cookies.to_str() {
-                self.init_cookie(cookies);
                 return Ok(Some(cookies.to_owned()));
             }
         }
@@ -1301,6 +1300,38 @@ impl Client {
         canvas_videos_from_response(&value, source)
     }
 
+    pub(crate) fn video_client_for_cookies(cookies: &str) -> Result<reqwest::Client> {
+        let jar = Arc::new(Jar::default());
+        let url = Url::parse(VIDEO_BASE_URL).unwrap();
+        for cookie in cookies.split(';').map(str::trim).filter(|value| !value.is_empty()) {
+            jar.add_cookie_str(cookie, &url);
+        }
+        Ok(reqwest::Client::builder()
+            .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36")
+            .cookie_provider(jar)
+            .build()?)
+    }
+
+    pub async fn get_oauth_consumer_key_for_cookies(&self, cookies: &str) -> Result<Option<String>> {
+        let client = Self::video_client_for_cookies(cookies)?;
+        self.get_oauth_consumer_key_with_client(&client).await
+    }
+
+    pub(crate) async fn get_oauth_consumer_key_with_client(&self, client: &reqwest::Client) -> Result<Option<String>> {
+        let request = client.get(VIDEO_OAUTH_KEY_URL).build()?;
+        let resp = self.debug_store.send(&client, request).await?;
+        let body = resp.text().await?;
+        let document = Document::from(body.as_str());
+        let Some(meta) = document.find(Name("meta")).find(|n: &Node| n.attr("id").unwrap_or_default() == "xForSecName") else {
+            return Ok(None);
+        };
+        let Some(v) = meta.attr("vaule") else {
+            return Ok(None);
+        };
+        let bytes = STANDARD.decode(v)?;
+        Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
+    }
+
     pub async fn get_oauth_consumer_key(&self) -> Result<Option<String>> {
         let resp = self.get_request(VIDEO_OAUTH_KEY_URL, None::<&str>).await?;
         let body = resp.text().await?;
@@ -1361,7 +1392,7 @@ impl Client {
     }
 
     async fn get_download_video_metadata(&self, url: &str) -> Result<(u64, bool)> {
-        let resp = self.download_video_partial(url, 0, 0).await?;
+        let resp = self.download_video_partial(url, 0, 0).await?.error_for_status().map_err(reqwest::Error::without_url)?;
         tracing::info!(status = resp.status().as_u16(), "Video download metadata received");
         Ok(parse_download_probe(resp.status(), resp.headers()))
     }
@@ -1372,7 +1403,6 @@ impl Client {
         save_path: &str,
         progress_handler: F,
     ) -> Result<()> {
-        let output_file = Arc::new(Mutex::new(File::create(save_path)?));
         let url = &video.rtmp_url_hdv;
         let (size, supports_range) = self.get_download_video_metadata(url).await?;
         let payload = ProgressPayload {
@@ -1405,6 +1435,7 @@ impl Client {
                 return Err(AppError::VideoDownloadError(save_path.to_owned()));
             }
 
+            let output_file = Arc::new(Mutex::new(File::create(save_path)?));
             let progress_handler = Arc::new(Mutex::new(progress_handler));
             let payload = Arc::new(Mutex::new(payload));
             let mut current_offset = 0;
@@ -1422,6 +1453,7 @@ impl Client {
             return Ok(());
         }
 
+        let output_file = Arc::new(Mutex::new(File::create(save_path)?));
         let progress_handler = Arc::new(Mutex::new(progress_handler));
         let payload = Arc::new(Mutex::new(payload));
 
@@ -1515,6 +1547,49 @@ impl Client {
 
         let response = self
             .cli
+            .post(VIDEO_INFO_URL)
+            .form(&form_data)
+            .header(ACCEPT, "application/json")
+            .header("oauth-consumer-key", oauth_consumer_key)
+            .header("oauth-nonce", oauth_nonce)
+            .header("oauth-path", OAUTH_PATH)
+            .header("oauth-signature", oauth_signature)
+            .send()
+            .await?
+            .error_for_status()?;
+        let bytes = response.bytes().await?;
+        let video = utils::json::parse_json(&bytes)?;
+        Ok(video)
+    }
+
+    pub async fn get_video_info_for_cookies(
+        &self,
+        video_id: i64,
+        oauth_consumer_key: &str,
+        cookies: &str,
+    ) -> Result<VideoInfo> {
+        let client = Self::video_client_for_cookies(cookies)?;
+        self.get_video_info_with_client(video_id, oauth_consumer_key, &client).await
+    }
+
+    pub(crate) async fn get_video_info_with_client(
+        &self,
+        video_id: i64,
+        oauth_consumer_key: &str,
+        client: &reqwest::Client,
+    ) -> Result<VideoInfo> {
+        let mut form_data = HashMap::new();
+        let oauth_nonce = self.get_oauth_nonce();
+        let oauth_signature = self.get_oauth_signature(video_id, &oauth_nonce, oauth_consumer_key);
+
+
+        let video_id_str = video_id.to_string();
+        form_data.insert("playTypeHls", "true");
+        form_data.insert("id", &video_id_str);
+        form_data.insert(OAUTH_RANDOM_P1, OAUTH_RANDOM_P1_VAL);
+        form_data.insert(OAUTH_RANDOM_P2, OAUTH_RANDOM_P2_VAL);
+
+        let response = client
             .post(VIDEO_INFO_URL)
             .form(&form_data)
             .header(ACCEPT, "application/json")
@@ -2122,8 +2197,8 @@ mod tests {
         sso.assert();
     }
 
+    #[ignore = "Live service: requires explicit credentials/network opt-in"]
     #[tokio::test]
-    #[ignore = "requires the live SJTU authentication service"]
     async fn test_get_uuid() -> Result<()> {
         let cli = Client::default();
         let uuid = cli.get_uuid().await?;

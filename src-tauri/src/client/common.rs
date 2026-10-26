@@ -1,13 +1,134 @@
 use reqwest::{
-    header::{HeaderValue, ACCEPT, CONTENT_TYPE},
-    Body, Response,
+    cookie::{CookieStore, Jar},
+    header::{HeaderValue, ACCEPT, CONTENT_TYPE, COOKIE, LOCATION, SET_COOKIE},
+    Body, Method, Response, Url,
 };
 use serde::{de::DeserializeOwned, Serialize};
 
 use super::{debug::RequestLogId, Client};
-use crate::{error::Result, utils};
+use crate::{error::{AppError, Result}, utils};
+use std::{io, sync::Arc};
+
+// Keep the existing proxy selection and user agent in every request channel.
+// Only Canvas requests share credentials; download redirects are checked per hop.
+pub(super) fn build_http_client(
+    no_proxy: bool,
+    jar: Option<Arc<Jar>>,
+    redirect: reqwest::redirect::Policy,
+) -> reqwest::Client {
+    let mut builder = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36")
+        .redirect(redirect);
+    if no_proxy {
+        builder = builder.no_proxy();
+    }
+    if let Some(jar) = jar {
+        builder = builder.cookie_provider(jar);
+    }
+    builder.build().unwrap()
+}
+
+pub(super) fn canvas_redirect_policy() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| {
+        let target = attempt.url();
+        if !target.username().is_empty() || target.password().is_some()
+            || attempt.previous().first()
+                .map(|source| source.origin() != target.origin()).unwrap_or(true)
+        {
+            return attempt.error("Canvas redirect must stay on its original origin without URL credentials");
+        }
+        if attempt.previous().len() >= 10 {
+            return attempt.error("Too many Canvas redirects");
+        }
+        attempt.follow()
+    })
+}
+
+fn request_boundary_error(message: &'static str) -> AppError {
+    io::Error::new(io::ErrorKind::InvalidInput, message).into()
+}
+
+fn parse_http_url(value: &str) -> Result<Url> {
+    let url = Url::parse(value).map_err(|_| request_boundary_error("Invalid request URL"))?;
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none()
+        || !url.username().is_empty() || url.password().is_some()
+    {
+        return Err(request_boundary_error("Request URL must be absolute HTTP(S) without embedded credentials"));
+    }
+    Ok(url)
+}
 
 impl Client {
+    pub(super) async fn canvas_request(
+        &self,
+        method: Method,
+        url: &str,
+        token: &str,
+    ) -> Result<reqwest::RequestBuilder> {
+        let target = parse_http_url(url)?;
+        let base = parse_http_url(&self.base_url.read().await)?;
+        if target.origin() != base.origin() {
+            return Err(request_boundary_error("Canvas token request must target the configured Canvas origin"));
+        }
+        Ok(self.canvas_cli.request(method, target).bearer_auth(token))
+    }
+
+    pub(super) async fn execute_canvas_request(&self, request: reqwest::Request) -> Result<Response> {
+        let base = parse_http_url(&self.base_url.read().await)?;
+        if request.url().origin() != base.origin() {
+            return Err(request_boundary_error("Canvas origin changed before request execution"));
+        }
+        let response = self.debug_store.send(&self.canvas_cli, request).await
+            .map_err(reqwest::Error::without_url)?;
+        if response.status().is_redirection() {
+            return Err(request_boundary_error("Canvas request returned an unresolved redirect"));
+        }
+        Ok(response)
+    }
+
+    // A foreign download never receives the account jar or Canvas bearer token,
+    // even if it later redirects back to Canvas. Its own cookies are ephemeral.
+    pub(super) async fn download_response(&self, url: &str, token: &str) -> Result<Response> {
+        let base = parse_http_url(&self.base_url.read().await)?;
+        let mut target = parse_http_url(url)?;
+        let mut trusted = target.origin() == base.origin();
+        let anonymous_jar = Jar::default();
+        let mut redirects = 0;
+        loop {
+            let jar = if trusted { self.jar.as_ref() } else { &anonymous_jar };
+            let mut request = self.download_cli.get(target.clone());
+            if trusted {
+                request = request.bearer_auth(token);
+            }
+            if let Some(cookies) = jar.cookies(&target) {
+                request = request.header(COOKIE, cookies);
+            }
+            let response = self.debug_store.send(&self.download_cli, request.build()?).await
+                .map_err(reqwest::Error::without_url)?;
+            jar.set_cookies(&mut response.headers().get_all(SET_COOKIE).iter(), &target);
+            if !response.status().is_redirection() {
+                return Ok(response);
+            }
+            if !matches!(response.status().as_u16(), 301 | 302 | 303 | 307 | 308) {
+                return Err(request_boundary_error("Unsupported download redirect status"));
+            }
+            redirects += 1;
+            if redirects >= 10 {
+                return Err(request_boundary_error("Too many download redirects"));
+            }
+            let location = response.headers().get(LOCATION).and_then(|value| std::str::from_utf8(value.as_bytes()).ok())
+                .ok_or_else(|| request_boundary_error("Download redirect has no valid Location"))?;
+            let next = target.join(location)
+                .map_err(|_| request_boundary_error("Invalid download redirect URL"))?;
+            let next = parse_http_url(next.as_str())?;
+            if target.scheme() == "https" && next.scheme() != "https" {
+                return Err(request_boundary_error("HTTPS download redirect cannot downgrade to HTTP"));
+            }
+            trusted = trusted && next.origin() == base.origin();
+            target = next;
+        }
+    }
+
     pub async fn execute_request(
         &self,
         request: reqwest::Request,
@@ -57,17 +178,14 @@ impl Client {
         query: Option<&T>,
         token: &str,
     ) -> Result<Response> {
-        let mut req = self
-            .cli
-            .get(url)
-            .header("Authorization", format!("Bearer {token}"));
+        let mut req = self.canvas_request(Method::GET, url, token).await?;
 
         if let Some(query) = query {
             req = req.query(query)
         }
 
         let req = req.build()?;
-        let res = self.execute_request(req).await?;
+        let res = self.execute_canvas_request(req).await?;
         Ok(res)
     }
 
@@ -88,16 +206,12 @@ impl Client {
         form: &T,
         token: &str,
     ) -> Result<Response> {
-        let mut request = self
-            .cli
-            .post(url)
-            .header("Authorization".to_owned(), format!("Bearer {token}"))
-            .form(form);
+        let mut request = self.canvas_request(Method::POST, url, token).await?.form(form);
         if let Some(query) = query {
             request = request.query(query);
         }
         let request = request.build()?;
-        let response = self.execute_request(request).await?;
+        let response = self.execute_canvas_request(request).await?;
         Ok(response)
     }
 
@@ -108,16 +222,12 @@ impl Client {
         form: &T,
         token: &str,
     ) -> Result<Response> {
-        let mut request = self
-            .cli
-            .put(url)
-            .header("Authorization".to_owned(), format!("Bearer {token}"))
-            .form(form);
+        let mut request = self.canvas_request(Method::PUT, url, token).await?.form(form);
         if let Some(query) = query {
             request = request.query(query);
         }
         let request = request.build()?;
-        let response = self.execute_request(request).await?;
+        let response = self.execute_canvas_request(request).await?;
         Ok(response)
     }
 

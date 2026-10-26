@@ -1,5 +1,9 @@
-use super::{constants::BASE_URL, file_parser, llm, Client};
+use super::{
+    common::{build_http_client, canvas_redirect_policy},
+    constants::BASE_URL, file_parser, llm, Client,
+};
 use ::bytes::Bytes;
+use futures::{stream::FuturesUnordered, StreamExt};
 use reqwest::{cookie, multipart};
 use serde::de::DeserializeOwned;
 use std::{cmp::min, collections::HashSet, fs, io::Write, ops::Deref, path::Path, sync::Arc};
@@ -14,7 +18,7 @@ use crate::{
         RelationshipNode, RelationshipNodeType, RelationshipTopo, Submission, SubmissionUploadResult,
         SubmissionUploadSuccessResponse, User, UserSubmissions,
     },
-    utils::{self, file::get_file_name},
+    utils::{self, file::{checked_download_path, get_file_name}},
 };
 
 // Apis here are for canvas
@@ -33,12 +37,9 @@ impl Client {
         llm_temperature: Option<f32>,
     ) -> Self {
         let jar = Arc::new(cookie::Jar::default());
-        let cli = reqwest::Client::builder()
-            .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36")
-            .no_proxy()
-            .cookie_provider(jar.clone())
-            .build()
-            .unwrap();
+        let cli = build_http_client(true, Some(jar.clone()), reqwest::redirect::Policy::default());
+        let canvas_cli = build_http_client(true, Some(jar.clone()), canvas_redirect_policy());
+        let download_cli = build_http_client(true, None, reqwest::redirect::Policy::none());
         let base_url = RwLock::new(base_url.into());
         let token = RwLock::new("".to_owned());
         let llm_cli = llm::chat::LlmRuntime::new(llm::chat::EffectiveLlmConfig::from_parts(
@@ -51,12 +52,14 @@ impl Client {
         let file_parser = file_parser::new_generic_file_reader();
         Self {
             cli,
+            canvas_cli,
+            download_cli,
             jar,
             base_url,
             token,
             llm_cli,
             file_parser,
-            debug_store: super::debug::NetworkDebugStore::new(false),
+            debug_store: Arc::new(super::debug::NetworkDebugStore::new(false)),
         }
     }
 
@@ -83,24 +86,43 @@ impl Client {
         llm_config: llm::chat::EffectiveLlmConfig,
     ) -> Self {
         let jar = Arc::new(cookie::Jar::default());
-        let cli = reqwest::Client::builder()
-            .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36")
-            .cookie_provider(jar.clone())
-            .build()
-            .unwrap();
+        let cli = build_http_client(false, Some(jar.clone()), reqwest::redirect::Policy::default());
+        let canvas_cli = build_http_client(false, Some(jar.clone()), canvas_redirect_policy());
+        let download_cli = build_http_client(false, None, reqwest::redirect::Policy::none());
         let base_url = RwLock::new(base_url.into());
         let token = RwLock::new("".to_owned());
         let llm_cli = llm::chat::LlmRuntime::new(llm_config).unwrap();
         let file_parser = file_parser::new_generic_file_reader();
         Self {
             cli,
+            canvas_cli,
+            download_cli,
             jar,
             base_url,
             token,
             llm_cli,
             file_parser,
-            debug_store: super::debug::NetworkDebugStore::new(false),
+            debug_store: Arc::new(super::debug::NetworkDebugStore::new(false)),
         }
+    }
+
+    /// Pin Canvas identity while sharing only the diagnostic sink.
+    /// No live cookie Jar, video JWT or mutable origin is copied.
+    pub(crate) fn canvas_read_snapshot(&self, base_url: &str) -> Self {
+        let mut snapshot = Self::new_with_llm_config(
+            base_url,
+            crate::client::EffectiveLlmConfig::from_app_config(&crate::model::AppConfig::default()),
+        );
+        snapshot.debug_store = Arc::clone(&self.debug_store);
+        snapshot
+    }
+
+    pub(crate) fn video_read_snapshot(&self, base_url: &str, cookies: &str) -> Result<Self> {
+        let mut snapshot = self.canvas_read_snapshot(base_url);
+        let scope = reqwest::Url::parse(super::constants::VIDEO_BASE_URL)
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid fixed video origin"))?;
+        snapshot.cli = super::media_auth::client_for_cookie_scope(cookies, scope)?;
+        Ok(snapshot)
     }
 
     pub async fn reconfigure_llm(&self, config: llm::chat::EffectiveLlmConfig) -> Result<()> {
@@ -109,6 +131,14 @@ impl Client {
 
     pub async fn llm_snapshot(&self) -> Result<llm::chat::LlmSnapshot> {
         self.llm_cli.snapshot().await
+    }
+
+    pub async fn llm_state_snapshot(&self) -> Option<llm::chat::LlmSnapshot> {
+        self.llm_cli.snapshot_state().await
+    }
+
+    pub async fn restore_llm_snapshot(&self, snapshot: Option<llm::chat::LlmSnapshot>) {
+        self.llm_cli.restore_snapshot(snapshot).await;
     }
 
     pub fn set_debug_mode(&self, enabled: bool) {
@@ -149,12 +179,11 @@ impl Client {
             student_id,
             comment_id
         );
-        self.cli
-            .delete(url)
-            .header("Authorization", format!("Bearer {token}"))
-            .send()
+        let request = self
+            .canvas_request(reqwest::Method::DELETE, &url, token)
             .await?
-            .error_for_status()?;
+            .build()?;
+        self.execute_canvas_request(request).await?.error_for_status()?;
         Ok(())
     }
 
@@ -280,12 +309,11 @@ impl Client {
             assignment_id,
             override_id
         );
-        self.cli
-            .delete(url)
-            .header("Authorization", format!("Bearer {token}"))
-            .send()
+        let request = self
+            .canvas_request(reqwest::Method::DELETE, &url, token)
             .await?
-            .error_for_status()?;
+            .build()?;
+        self.execute_canvas_request(request).await?.error_for_status()?;
         Ok(())
     }
 
@@ -339,33 +367,40 @@ impl Client {
         &self,
         file: &File,
         token: &str,
-        save_path: &str,
+        save_path: impl AsRef<Path> + Send,
         progress_handler: F,
     ) -> Result<()> {
-        let mut response = self
-            .get_request_with_token(&file.url, None::<&str>, token)
-            .await?
-            .error_for_status()?;
-
-        let mut payload = ProgressPayload {
-            uuid: file.uuid.clone(),
-            processed: 0,
-            total: file.size,
-        };
-        let path = Path::new(save_path).join(&file.display_name);
-        let total = file.size;
-        let mut file = fs::File::create(path.to_str().unwrap())?;
+        let save_path = save_path.as_ref();
+        let path = checked_download_path(save_path, None, "", &file.display_name)?;
+        let mut response = self.download_response(&file.url, token).await?.error_for_status()?;
+        let expected_size = file.expected_download_size();
+        let total = expected_size.or_else(|| response.content_length()).unwrap_or(0);
+        let mut payload = ProgressPayload { uuid: file.uuid.clone(), processed: 0, total };
+        // Same-directory exclusive temporary creation preserves any previous file
+        // on network/write failure or when this future is dropped.
+        let mut temporary = tempfile::NamedTempFile::new_in(save_path)?;
         let mut last_chunk_no = 0;
         while let Some(chunk) = response.chunk().await? {
-            payload.processed += chunk.len() as u64;
-            let chunk_no = payload.processed / CHUNK_SIZE;
-            if chunk_no != last_chunk_no || payload.processed == total {
+            let processed = payload.processed.checked_add(chunk.len() as u64).ok_or_else(||
+                std::io::Error::new(std::io::ErrorKind::InvalidData, "Download size overflow"))?;
+            if expected_size.is_some_and(|size| processed > size) {
+                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Downloaded file exceeds expected size").into());
+            }
+            temporary.write_all(&chunk)?;
+            payload.processed = processed;
+            let chunk_no = processed / CHUNK_SIZE;
+            if chunk_no != last_chunk_no && (total == 0 || processed < total) {
                 last_chunk_no = chunk_no;
                 progress_handler(payload.clone());
             }
-            file.write_all(&chunk)?;
         }
-
+        if expected_size.is_some_and(|size| payload.processed != size) {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Downloaded file size does not match expected size").into());
+        }
+        temporary.as_file().sync_all()?;
+        temporary.persist(&path).map_err(|error| error.error)?;
+        payload.total = payload.processed;
+        progress_handler(payload);
         tracing::info!("File download completed");
         Ok(())
     }
@@ -532,10 +567,10 @@ impl Client {
     }
 
     pub fn get_course_identifier(&self, course: &Course) -> String {
-        format!(
-            "{}({} {})",
-            course.name, course.term.name, course.teachers[0].display_name
-        )
+        match course.teachers.first() {
+            Some(teacher) => format!("{}({} {})", course.name, course.term.name, teacher.display_name),
+            None => format!("{}({} course-{})", course.name, course.term.name, course.id),
+        }
     }
 
     pub async fn sync_course_files(
@@ -546,31 +581,36 @@ impl Client {
     ) -> Result<Vec<File>> {
         let folders_and_files = self.get_folders_and_files(course.id, token).await?;
         let folders_map = &folders_and_files.folders_map;
-        tracing::info!(folder_count = folders_map.len(), "Synchronizing course files");
-        let files = folders_and_files
-            .files
-            .into_iter()
-            .filter(|file| {
-                let folder = folders_map.get(&file.folder_id);
-                match folder {
-                    Some(folder) => {
-                        let folder_name = &folder.full_name;
-                        if folder_name.len() < 12 {
-                            return false;
-                        }
-
-                        let mut path = Path::new(save_dir).join(self.get_course_identifier(course));
-                        if folder_name != "course files" {
-                            path = path.join(&folder_name[13..]);
-                        }
-                        path = path.join(&file.display_name);
-                        fs::metadata(&path).is_err()
-                    }
-                    None => true,
-                }
-            })
-            .collect();
-        Ok(files)
+        tracing::info!(folder_count = folders_map.len(), "Prepared folder map");
+        let course_identifier = self.get_course_identifier(course);
+        let mut pending = Vec::new();
+        for file in folders_and_files.files {
+            let folder = folders_map.get(&file.folder_id);
+            let folder_path = match folder {
+                Some(folder) if folder.full_name == "course files" => "",
+                Some(folder) => match folder.full_name.strip_prefix("course files/") {
+                    Some(path) => path,
+                    None => { pending.push(file); continue; }
+                },
+                None => "",
+            };
+            let path = match checked_download_path(Path::new(save_dir), Some(&course_identifier), folder_path, &file.display_name) {
+                Ok(path) => path,
+                // Keep per-file failures in the queue; the download entry rejects
+                // the invalid path without blocking unrelated course files.
+                Err(_) => { pending.push(file); continue; }
+            };
+            if folder.is_none() {
+                pending.push(file);
+                continue;
+            }
+            let complete = match fs::metadata(path) {
+                Ok(metadata) => metadata.is_file() && file.expected_download_size().is_some_and(|size| metadata.len() == size),
+                Err(_) => false,
+            };
+            if !complete { pending.push(file); }
+        }
+        Ok(pending)
     }
 
     pub async fn get_colors(&self, token: &str) -> Result<Colors> {
@@ -742,7 +782,7 @@ impl Client {
             num_students / STUDENT_PER_PARITION + 1
         };
 
-        let mut tasks = JoinSet::new();
+        let mut tasks = FuturesUnordered::new();
         let mut results = Vec::with_capacity(num_partitions);
         for i in 0..num_partitions {
             results.push(vec![]);
@@ -756,15 +796,15 @@ impl Client {
             let sub_student_ids = student_ids[start..end].to_vec();
             let cloned_token = token.to_owned();
             let cloned_self = self.clone();
-            tasks.spawn(async move {
+            tasks.push(async move {
                 cloned_self
                     .list_user_submissions_inner(course_id, i, &sub_student_ids, &cloned_token)
                     .await
             });
         }
 
-        while let Some(res) = tasks.join_next().await {
-            let res = res??;
+        while let Some(res) = tasks.next().await {
+            let res = res?;
             let partition_id = res.0;
             let partitioned_user_submissions = res.1;
             results[partition_id] = partitioned_user_submissions;
@@ -987,15 +1027,14 @@ impl Client {
             tasks.spawn(async move {
                 let course_users = self_cloned
                     .list_course_users(course.id, &token_cloned)
-                    .await
-                    .unwrap_or_default();
+                    .await;
                 (course, course_users)
             });
         }
         while let Some(res) = tasks.join_next().await {
             let res = res?;
             let course = res.0;
-            let course_users = res.1;
+            let course_users = res.1?;
             nodes.push(RelationshipNode {
                 id: course.id.to_string(),
                 label: course.name,
@@ -1518,8 +1557,8 @@ mod test {
         !filtered.is_empty()
     }
 
+    #[ignore = "Live service: requires explicit credentials/network opt-in"]
     #[tokio::test]
-    #[ignore = "requires a live Canvas token and network access"]
     async fn test_get_me() -> Result<()> {
         let token = get_token_from_env();
         assert!(!token.is_empty());
@@ -1530,8 +1569,8 @@ mod test {
         Ok(())
     }
 
+    #[ignore = "Live service: requires explicit credentials/network opt-in"]
     #[tokio::test]
-    #[ignore = "requires a live Canvas token and network access"]
     async fn test_list_courses() -> Result<()> {
         let token = get_token_from_env();
         assert!(!token.is_empty());
@@ -1552,8 +1591,8 @@ mod test {
         Ok(())
     }
 
+    #[ignore = "Live service: requires explicit credentials/network opt-in"]
     #[tokio::test]
-    #[ignore = "requires a live Canvas token and network access"]
     async fn test_list_assignments() -> Result<()> {
         tracing_subscriber::fmt::init();
         let token = get_token_from_env();
@@ -1578,8 +1617,8 @@ mod test {
         Ok(())
     }
 
+    #[ignore = "Live service: requires explicit credentials/network opt-in"]
     #[tokio::test]
-    #[ignore = "requires a live Canvas token and network access"]
     async fn test_list_users() -> Result<()> {
         let token = get_token_from_env();
         assert!(!token.is_empty());
@@ -1612,8 +1651,8 @@ mod test {
         Ok(())
     }
 
+    #[ignore = "Live service: requires explicit credentials/network opt-in"]
     #[tokio::test]
-    #[ignore = "requires a live Canvas token and network access"]
     async fn test_list_submissions() -> Result<()> {
         let token = get_token_from_env();
         assert!(!token.is_empty());
@@ -1640,8 +1679,8 @@ mod test {
         Ok(())
     }
 
+    #[ignore = "Live service: requires explicit credentials/network opt-in"]
     #[tokio::test]
-    #[ignore = "requires a live Canvas token and network access"]
     async fn test_list_colors() -> Result<()> {
         let token = get_token_from_env();
         assert!(!token.is_empty());

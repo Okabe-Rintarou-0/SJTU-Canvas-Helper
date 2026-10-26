@@ -1,6 +1,3 @@
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-use std::process;
-
 use dirs::config_dir;
 use error::{AppError, Result};
 use futures::StreamExt;
@@ -29,12 +26,13 @@ use crate::{
     },
     error,
     model::*,
-    utils::{self, file::TempFile},
+    utils::{self, file::{checked_download_path, write_file_atomic, TempFile}},
 };
 
 use super::{
     constants::{COURSES_CACHE_KEY, RELATIONSHIP_CACHE_KEY},
     App,
+    config_store::{ConfigStore, sync_directory},
 };
 
 const MY_CANVAS_FILES_FOLDER_NAME: &str = "我的Canvas文件";
@@ -62,6 +60,24 @@ fn rewrite_live_playlist(playlist: &str, upstream: &str, proxy_origin: &str) -> 
         else { rewrite(line.trim()) }
     }).collect::<Vec<_>>().join("\n") + "\n"
 }
+
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum AccountOperation { Create, Delete }
+
+// Identity and content fingerprints only. Never persist configuration bodies,
+// authentication tokens, cookies, or client secrets in the recovery record.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AccountIntent {
+    version: u8,
+    operation: AccountOperation,
+    account: Account,
+    before: AccountInfo,
+    after: AccountInfo,
+    target_sha256: String,
+}
+
 
 async fn proxy_video_request(
     upstream_base: &str,
@@ -154,6 +170,24 @@ async fn proxy_video_request(
 }
 
 impl App {
+    fn store_ready(&self) -> Result<&ConfigStore> {
+        let store = self.config_store.as_ref().ok_or(AppError::StaleConfigOwner)?;
+        store.ensure_ready()?;
+        Ok(store)
+    }
+
+    fn sync_parent_directory(path: &str) -> Result<()> {
+        let parent = Path::new(path).parent().ok_or_else(|| std::io::Error::new(
+            std::io::ErrorKind::InvalidInput, "configuration path has no parent",
+        ))?;
+        sync_directory(parent).map_err(|_| AppError::PersistenceUncertain)
+    }
+
+    fn persist_prepared(staged: tempfile::NamedTempFile, path: &str) -> Result<()> {
+        staged.persist(path).map_err(|error| error.error)?;
+        Self::sync_parent_directory(path)
+    }
+
     fn ensure_directory(dir: &str) {
         let metadata = fs::metadata(dir);
         if metadata.is_err() {
@@ -186,43 +220,368 @@ impl App {
         Ok(directory.to_str().ok_or_else(|| std::io::Error::other("Configuration path is not valid UTF-8"))?.to_owned())
     }
 
-    fn save_account_info(account: &AccountInfo) -> Result<()> {
-        let config_dir = App::config_dir()?;
-        let account_path = format!("{}/{}", config_dir, "account.json");
+    fn prepare_config_write(path: &str, bytes: &[u8]) -> Result<tempfile::NamedTempFile> {
+        let target = std::path::Path::new(path);
+        let parent = target.parent().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "configuration path has no parent")
+        })?;
+        let permissions = match std::fs::symlink_metadata(target) {
+            Ok(metadata) => {
+                if !metadata.file_type().is_file() {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "configuration target is not a regular file",
+                    ).into());
+                }
+                if metadata.permissions().readonly() {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::PermissionDenied,
+                        "configuration target is read-only",
+                    ).into());
+                }
+                Some(metadata.permissions())
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error.into()),
+        };
+        let mut staged = tempfile::NamedTempFile::new_in(parent)?;
+        if let Some(permissions) = permissions {
+            staged.as_file().set_permissions(permissions)?;
+        }
+        std::io::Write::write_all(staged.as_file_mut(), bytes)?;
+        staged.as_file().sync_all()?;
+        Ok(staged)
+    }
+
+    fn write_config_atomically(path: &str, bytes: &[u8]) -> Result<()> {
+        let staged = Self::prepare_config_write(path, bytes)?;
+        Self::persist_prepared(staged, path)
+    }
+
+    fn save_account_info_in(config_dir: &str, account: &AccountInfo) -> Result<()> {
+        let account_path = Self::account_index_path_in(config_dir);
         let content = serde_json::to_vec(account)?;
-        fs::write(account_path, content)?;
+        Self::write_config_atomically(&account_path, &content)?;
         Ok(())
     }
 
+    fn validate_account_name(account: &Account) -> Result<()> {
+        if let Account::Custom(name) = account {
+            let unsafe_path = name.contains('/') || name.contains('\0')
+                || (cfg!(windows) && (name.contains('\\') || name.contains(':')));
+            // The unit enum variant serializes as "Default" too; it cannot name a custom account.
+            if name == "Default" || unsafe_path {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput, "invalid account file name",
+                ).into());
+            }
+        }
+        Ok(())
+    }
+
+    fn read_regular_config_file(path: &str) -> Result<Vec<u8>> {
+        let metadata = fs::symlink_metadata(path)?;
+        if !metadata.file_type().is_file() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput, "configuration is not a regular file",
+            ).into());
+        }
+        Ok(fs::read(path)?)
+    }
+
     pub fn read_account_info() -> Result<AccountInfo> {
-        let config_dir = App::config_dir()?;
-        let account_path = format!("{}/{}", config_dir, "account.json");
-        fs::metadata(&account_path)?;
-        let content = fs::read(&account_path)?;
-        utils::json::parse_json(&content)
+        Self::read_account_info_in(&Self::config_dir()?)
+    }
+
+    pub fn active_account_info(&self) -> Result<AccountInfo> {
+        Self::read_account_info_in(self.store_ready()?.root_str()?)
+    }
+
+    pub fn active_accounts(&self) -> Result<Vec<Account>> {
+        Ok(self.active_account_info()?.all_accounts)
+    }
+
+    fn account_index_path_in(directory: &str) -> String {
+        Path::new(directory).join("account.json").to_string_lossy().into_owned()
+    }
+
+    fn read_account_info_in(directory: &str) -> Result<AccountInfo> {
+        let account_path = Self::account_index_path_in(directory);
+        let content = Self::read_regular_config_file(&account_path)?;
+        let account: AccountInfo = serde_json::from_slice(&content).map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid account metadata")
+        })?;
+        Self::validate_account_info(&account)?;
+        Ok(account)
     }
 
     pub fn account_exists(account: &Account) -> Result<bool> {
-        let config_path = App::get_config_path(account);
-        let exists = fs::metadata(config_path).is_ok();
-        Ok(exists)
+        Self::account_exists_in(&Self::config_dir()?, account)
     }
 
-    pub fn create_account(account: &Account) -> Result<()> {
-        if *account == Account::Default {
-            return Err(AppError::NotAllowedToCreateDefaultAccount);
+    fn account_exists_in(directory: &str, account: &Account) -> Result<bool> {
+        Self::validate_account_name(account)?;
+        match fs::symlink_metadata(Self::get_config_path_in(directory, account)) {
+            Ok(metadata) if metadata.file_type().is_file() => Ok(true),
+            Ok(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput, "configuration is not a regular file",
+            ).into()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(error.into()),
         }
-        if App::account_exists(account)? {
+    }
+
+    fn validate_account_info(account: &AccountInfo) -> Result<()> {
+        for (index, entry) in account.all_accounts.iter().enumerate() {
+            Self::validate_account_name(entry)?;
+            if account.all_accounts[..index].contains(entry) {
+                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData,
+                    "duplicate account metadata entry").into());
+            }
+        }
+        Self::validate_account_name(&account.current_account)?;
+        if !account.all_accounts.contains(&Account::Default)
+            || !account.all_accounts.contains(&account.current_account)
+        {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData,
+                "account metadata membership is inconsistent").into());
+        }
+        Ok(())
+    }
+
+    fn content_fingerprint(bytes: &[u8]) -> String {
+        use sha2::{Digest, Sha256};
+        format!("{:x}", Sha256::digest(bytes))
+    }
+
+    fn intent_path(directory: &str) -> String {
+        Path::new(directory).join(".account-transaction.json").to_string_lossy().into_owned()
+    }
+
+    // Call only while holding config_owner. A read-only UI inspection must not
+    // mistake this instance's in-flight transaction for abandoned recovery work.
+    fn ensure_no_pending_intent(store: &ConfigStore) -> Result<()> {
+        match fs::symlink_metadata(store.root().join(".account-transaction.json")) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            _ => { store.poison(); Err(AppError::PersistenceUncertain) }
+        }
+    }
+
+    fn validate_intent(intent: &AccountIntent) -> Result<()> {
+        let invalid = || std::io::Error::new(std::io::ErrorKind::InvalidData,
+            "invalid or unsupported account transaction");
+        if intent.version != 1 || intent.account == Account::Default
+            || intent.target_sha256.len() != 64
+            || !intent.target_sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
+        { return Err(invalid().into()); }
+        Self::validate_account_name(&intent.account)?;
+        Self::validate_account_info(&intent.before)?;
+        Self::validate_account_info(&intent.after)?;
+        let mut expected = intent.before.clone();
+        match intent.operation {
+            AccountOperation::Create => {
+                if expected.all_accounts.contains(&intent.account) { return Err(invalid().into()); }
+                expected.all_accounts.push(intent.account.clone());
+            }
+            AccountOperation::Delete => {
+                if !expected.all_accounts.contains(&intent.account) { return Err(invalid().into()); }
+                expected.all_accounts.retain(|account| account != &intent.account);
+                if expected.current_account == intent.account {
+                    expected.current_account = Account::Default;
+                }
+            }
+        }
+        if expected != intent.after { return Err(invalid().into()); }
+        Ok(())
+    }
+
+    fn transaction_may_have_started(directory: &str, error: &AppError) -> bool {
+        matches!(error, AppError::PersistenceUncertain)
+            || !matches!(fs::symlink_metadata(Self::intent_path(directory)),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound)
+    }
+
+    fn begin_account_transaction(directory: &str, intent: &AccountIntent) -> Result<()> {
+        Self::validate_intent(intent)?;
+        let path = Self::intent_path(directory);
+        let bytes = serde_json::to_vec(intent)?;
+        Self::prepare_config_write(&path, &bytes)?
+            .persist_noclobber(&path).map_err(|error| error.error)?;
+        Self::sync_parent_directory(&path)
+    }
+
+    fn recover_account_transaction(directory: &str) -> Result<()> {
+        let path = Self::intent_path(directory);
+        let bytes = match Self::read_regular_config_file(&path) {
+            Ok(bytes) => bytes,
+            Err(AppError::IO(error)) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error),
+        };
+        let intent: AccountIntent = serde_json::from_slice(&bytes).map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid account transaction")
+        })?;
+        Self::validate_intent(&intent)?;
+        let current = Self::read_account_info_in(directory)?;
+        if current != intent.before && current != intent.after {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData,
+                "account metadata changed outside the pending transaction").into());
+        }
+        let target = Self::get_config_path_in(directory, &intent.account);
+        let existing = match Self::read_regular_config_file(&target) {
+            Ok(bytes) => Some(bytes),
+            Err(AppError::IO(error)) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error),
+        };
+        if let Some(bytes) = &existing {
+            if Self::content_fingerprint(bytes) != intent.target_sha256 {
+                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData,
+                    "account transaction target was replaced; original files preserved").into());
+            }
+        }
+        // A prior process may have renamed the intent but failed before syncing
+        // its directory. Visibility alone is not a durable write-ahead record.
+        Self::sync_parent_directory(&path)?;
+        match intent.operation {
+            AccountOperation::Create => {
+                if let Some(bytes) = &existing {
+                    let _: AppConfig = serde_json::from_slice(bytes).map_err(|_| {
+                        std::io::Error::new(std::io::ErrorKind::InvalidData,
+                            "transaction configuration is invalid")
+                    })?;
+                } else {
+                    let bytes = serde_json::to_vec(&AppConfig::default())?;
+                    if Self::content_fingerprint(&bytes) != intent.target_sha256 {
+                        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData,
+                            "default schema changed; transaction requires explicit recovery").into());
+                    }
+                    Self::prepare_config_write(&target, &bytes)?
+                        .persist_noclobber(&target).map_err(|error| error.error)?;
+                    Self::sync_parent_directory(&target)?;
+                }
+                if current != intent.after { Self::save_account_info_in(directory, &intent.after)?; }
+            }
+            AccountOperation::Delete => {
+                if intent.before.current_account == intent.account {
+                    Self::read_config_from_file(&Self::get_config_path_in(directory, &Account::Default))?;
+                }
+                if current != intent.after { Self::save_account_info_in(directory, &intent.after)?; }
+                if existing.is_some() { fs::remove_file(&target)?; }
+                // Also sync when already absent: a previous unlink may have returned
+                // before the directory entry was confirmed persistent.
+                Self::sync_parent_directory(&target)?;
+            }
+        }
+        // Confirm a previously completed metadata replacement as well, rather
+        // than assuming that observing its bytes proves directory durability.
+        Self::sync_parent_directory(&Self::account_index_path_in(directory))?;
+        fs::remove_file(&path)?;
+        Self::sync_parent_directory(&path)
+    }
+
+    // Startup never repairs corrupt or unreadable metadata by overwriting it.
+    // Only a genuinely absent account index can initialize a new default account.
+    fn load_startup_configuration(directory: &str) -> Result<(AccountInfo, AppConfig)> {
+        let account_info = match Self::read_account_info_in(directory) {
+            Ok(info) => info,
+            Err(AppError::IO(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+                // A lost index alongside existing custom accounts is not a fresh installation.
+                for entry in fs::read_dir(&directory)? {
+                    let name = entry?.file_name();
+                    let name = name.to_string_lossy();
+                    if name.starts_with("sjtu_canvas_helper_config_") && name.ends_with(".json") {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData, "account metadata is missing for existing accounts",
+                        ).into());
+                    }
+                }
+                let account = AccountInfo::default();
+                let config_path = Self::get_config_path_in(directory, &Account::Default);
+                match Self::read_config_from_file(&config_path) {
+                    Ok(_) => {},
+                    Err(AppError::IO(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+                        let bytes = serde_json::to_vec(&AppConfig::default())?;
+                        Self::prepare_config_write(&config_path, &bytes)?
+                            .persist_noclobber(&config_path).map_err(|error| error.error)?;
+                Self::sync_parent_directory(&config_path)?;
+                    }
+                    Err(error) => return Err(error),
+                }
+                let account_path = Self::account_index_path_in(directory);
+                let bytes = serde_json::to_vec(&account)?;
+                Self::prepare_config_write(&account_path, &bytes)?
+                    .persist_noclobber(&account_path).map_err(|error| error.error)?;
+                Self::sync_parent_directory(&account_path)?;
+                account
+            }
+            Err(error) => return Err(error),
+        };
+        let config_path = Self::get_config_path_in(directory, &account_info.current_account);
+        let config = match Self::read_config_from_file(&config_path) {
+            Ok(config) => config,
+            Err(AppError::IO(error))
+                if error.kind() == std::io::ErrorKind::NotFound
+                    && account_info == AccountInfo::default() =>
+            {
+                // Older versions legitimately created only a Default-only index at first launch.
+                // This is indistinguishable from a lost Default-only configuration: initialize
+                // empty defaults, never claim credential recovery or adopt any orphaned account.
+                for entry in fs::read_dir(&directory)? {
+                    let name = entry?.file_name();
+                    let name = name.to_string_lossy();
+                    if name.starts_with("sjtu_canvas_helper_config_") && name.ends_with(".json") {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "default configuration is missing alongside existing custom accounts",
+                        ).into());
+                    }
+                }
+                let bytes = serde_json::to_vec(&AppConfig::default())?;
+                Self::prepare_config_write(&config_path, &bytes)?
+                    .persist_noclobber(&config_path).map_err(|error| error.error)?;
+                Self::sync_parent_directory(&config_path)?;
+                tracing::warn!("Missing Default-only configuration initialized with empty defaults; no credentials recovered");
+                Self::read_config_from_file(&config_path)?
+            }
+            Err(error) => return Err(error),
+        };
+        Ok((account_info, config))
+    }
+
+    pub async fn create_account(&self, account: &Account) -> Result<()> {
+        let mut owner = self.config_owner.lock().await;
+        let store = self.store_ready()?;
+        Self::ensure_no_pending_intent(store)?;
+        let directory = store.root_str()?;
+        owner.as_ref().ok_or(AppError::StaleConfigOwner)?;
+        if *account == Account::Default { return Err(AppError::NotAllowedToCreateDefaultAccount); }
+        Self::validate_account_name(account)?;
+        let before = Self::read_account_info_in(directory)?;
+        if before.current_account != *self.current_account.read().await {
+            return Err(AppError::StaleConfigOwner);
+        }
+        if Self::account_exists_in(directory, account)? || before.all_accounts.contains(account) {
             return Err(AppError::AccountAlreadyExists);
         }
-        let config = AppConfig::default();
-        let config_path = App::get_config_path(account);
-        let content = serde_json::to_vec(&config)?;
-        fs::write(config_path, content)?;
-
-        let mut account_info = App::read_account_info()?;
-        account_info.all_accounts.push(account.clone());
-        App::save_account_info(&account_info)?;
+        let bytes = serde_json::to_vec(&AppConfig::default())?;
+        let mut after = before.clone();
+        after.all_accounts.push(account.clone());
+        let intent = AccountIntent { version: 1, operation: AccountOperation::Create,
+            account: account.clone(), before, after,
+            target_sha256: Self::content_fingerprint(&bytes) };
+        let previous_owner = owner.clone();
+        if let Err(error) = Self::begin_account_transaction(directory, &intent) {
+            if Self::transaction_may_have_started(directory, &error) {
+                store.poison();
+                *owner = None;
+            }
+            return Err(error);
+        }
+        *owner = None;
+        if let Err(error) = Self::recover_account_transaction(directory) {
+            store.poison();
+            return Err(error);
+        }
+        *owner = previous_owner;
         Ok(())
     }
 
@@ -232,29 +591,82 @@ impl App {
     }
 
     pub async fn delete_account(&self, account: &Account) -> Result<()> {
-        if *account == Account::Default {
-            return Err(AppError::NotAllowedToDeleteDefaultAccount);
+        let mut owner = self.config_owner.lock().await;
+        let store = self.store_ready()?;
+        Self::ensure_no_pending_intent(store)?;
+        let directory = store.root_str()?;
+        owner.as_ref().ok_or(AppError::StaleConfigOwner)?;
+        if *account == Account::Default { return Err(AppError::NotAllowedToDeleteDefaultAccount); }
+        Self::validate_account_name(account)?;
+        let before = Self::read_account_info_in(directory)?;
+        if before.current_account != *self.current_account.read().await {
+            return Err(AppError::StaleConfigOwner);
         }
-        if !App::account_exists(account)? {
-            return Err(AppError::AccountNotExists);
-        }
-
-        let config_path = App::get_config_path(account);
-        fs::remove_file(&config_path)?;
-
-        let current_account = self.current_account.read().await.clone();
-        // if delete current account, then switch to default
-        if *account == current_account {
-            self.switch_account(&Default::default()).await?;
-        }
-        let mut account_info = App::read_account_info()?;
-        for i in 0..account_info.all_accounts.len() {
-            if account_info.all_accounts[i] == *account {
-                account_info.all_accounts.remove(i);
-                break;
+        if !before.all_accounts.contains(account) { return Err(AppError::AccountNotExists); }
+        let target = Self::get_config_path_in(directory, account);
+        let bytes = Self::read_regular_config_file(&target)?;
+        let deleting_current = before.current_account == *account;
+        let default_config = if deleting_current {
+            Some(Self::read_config_from_file(&Self::get_config_path_in(directory, &Account::Default))?)
+        } else { None };
+        let mut after = before.clone();
+        after.all_accounts.retain(|entry| entry != account);
+        if deleting_current { after.current_account = Account::Default; }
+        let intent = AccountIntent { version: 1, operation: AccountOperation::Delete,
+            account: account.clone(), before, after,
+            target_sha256: Self::content_fingerprint(&bytes) };
+        Self::validate_intent(&intent)?;
+        let previous_owner = owner.clone();
+        let previous = self.config.read().await.clone();
+        let previous_llm = if deleting_current {
+            Some(self.client.llm_state_snapshot().await)
+        } else { None };
+        let mcp_was_running = if deleting_current { self.quiesce_mcp_locked().await? } else { false };
+        let mcp_enabled = default_config.as_ref().is_some_and(|config| config.mcp_enabled);
+        let result: Result<()> = async {
+            if deleting_current { self.invalidate_cache()?; }
+            *owner = None;
+            if let Some(config) = &default_config {
+                self.client.set_base_url(Self::get_base_url(&config.account_type)).await;
+                if let Err(error) = Self::apply_llm_config(config, &self.client).await {
+                    self.client.set_base_url(Self::get_base_url(&previous.account_type)).await;
+                    self.client.restore_llm_snapshot(previous_llm.unwrap()).await;
+                    *owner = previous_owner;
+                    return Err(error);
+                }
             }
+            if let Err(error) = Self::begin_account_transaction(directory, &intent) {
+                if Self::transaction_may_have_started(directory, &error) {
+                    store.poison();
+                } else {
+                    if let Some(snapshot) = previous_llm {
+                        self.client.set_base_url(Self::get_base_url(&previous.account_type)).await;
+                        self.client.restore_llm_snapshot(snapshot).await;
+                    }
+                    *owner = previous_owner;
+                }
+                return Err(error);
+            }
+            // No ordinary error rollback after the intent can be persistent. A
+            // restart will finish exactly this before -> after transition.
+            if let Err(error) = Self::recover_account_transaction(directory) {
+                store.poison();
+                return Err(error);
+            }
+            if let Some(config) = default_config {
+                self.client.set_debug_mode(config.debug_mode);
+                *self.config.write().await = config;
+                *self.current_account.write().await = Account::Default;
+                *owner = Some(Uuid::new_v4().to_string());
+            } else {
+                *owner = previous_owner;
+            }
+            Ok(())
+        }.await;
+        if let Err(error) = result {
+            return Err(self.restore_mcp_after_failure(mcp_was_running, &owner, error).await);
         }
-        App::save_account_info(&account_info)?;
+        if deleting_current { self.start_mcp_after_commit(mcp_enabled).await?; }
         Ok(())
     }
 
@@ -264,31 +676,67 @@ impl App {
     }
 
     pub async fn switch_account(&self, account: &Account) -> Result<()> {
-        if !App::account_exists(account)? {
-            return Err(AppError::AccountNotExists);
-        }
-        let config_path = App::get_config_path(account);
-        let config = App::read_config_from_file(&config_path)?;
-        crate::diagnostics::protect_config(&config);
-        let base_url = Self::get_base_url(&config.account_type);
-        self.client.set_base_url(base_url).await;
-        Self::apply_llm_config(&config, &self.client).await?;
-        self.client.set_debug_mode(config.debug_mode);
-        *self.config.write().await = config;
-
-        let mut account_info = App::read_account_info()?;
-        account_info.current_account = account.clone();
-        App::save_account_info(&account_info)?;
-        *self.current_account.write().await = account.clone();
-        self.invalidate_cache()?;
-        // Restart MCP server if enabled (token may have changed)
-        if self.config.read().await.mcp_enabled {
-            self.restart_mcp().await?;
-        }
-        Ok(())
+        let mut owner = self.config_owner.lock().await;
+        self.switch_account_locked(account, &mut owner).await
     }
 
-    fn get_base_url(tp: &AccountType) -> &'static str {
+    async fn switch_account_locked(
+        &self,
+        account: &Account,
+        owner: &mut Option<String>,
+    ) -> Result<()> {
+        let store = self.store_ready()?;
+        Self::ensure_no_pending_intent(store)?;
+        let directory = store.root_str()?;
+        Self::validate_account_name(account)?;
+        let mut account_info = Self::read_account_info_in(directory)?;
+        // An orphaned file after an interrupted deletion must not revive the account.
+        if !account_info.all_accounts.contains(account) {
+            return Err(AppError::AccountNotExists);
+        }
+        let config_path = Self::get_config_path_in(directory, account);
+        let config = App::read_config_from_file(&config_path)?;
+        crate::diagnostics::protect_config(&config);
+        account_info.current_account = account.clone();
+        let previous = self.config.read().await.clone();
+        let previous_llm = self.client.llm_state_snapshot().await;
+        let previous_owner = owner.clone();
+        let mcp_was_running = self.quiesce_mcp_locked().await?;
+        let mcp_enabled = config.mcp_enabled;
+        let result: Result<()> = async {
+            self.invalidate_cache()?;
+            *owner = None;
+            let base_url = Self::get_base_url(&config.account_type);
+            self.client.set_base_url(base_url).await;
+            if let Err(error) = Self::apply_llm_config(&config, &self.client).await {
+                self.client.set_base_url(Self::get_base_url(&previous.account_type)).await;
+                self.client.restore_llm_snapshot(previous_llm).await;
+                *owner = previous_owner;
+                return Err(error);
+            }
+            if let Err(error) = Self::save_account_info_in(directory, &account_info) {
+                if matches!(error, AppError::PersistenceUncertain) {
+                    store.poison();
+                    return Err(error);
+                }
+                self.client.set_base_url(Self::get_base_url(&previous.account_type)).await;
+                self.client.restore_llm_snapshot(previous_llm).await;
+                *owner = previous_owner;
+                return Err(error);
+            }
+            self.client.set_debug_mode(config.debug_mode);
+            *self.config.write().await = config;
+            *self.current_account.write().await = account.clone();
+            *owner = Some(uuid::Uuid::new_v4().to_string());
+            Ok(())
+        }.await;
+        if let Err(error) = result {
+            return Err(self.restore_mcp_after_failure(mcp_was_running, owner, error).await);
+        }
+        self.start_mcp_after_commit(mcp_enabled).await
+    }
+
+    pub(super) fn get_base_url(tp: &AccountType) -> &'static str {
         if *tp == AccountType::JI {
             JI_BASE_URL
         } else {
@@ -297,21 +745,25 @@ impl App {
     }
 
     pub fn new() -> Self {
-        let config_dir = App::config_dir().unwrap();
-        App::ensure_directory(&config_dir);
-        let account_info = match App::read_account_info() {
-            Ok(account) => account,
-            Err(_) => {
-                let account = Default::default();
-                App::save_account_info(&account).unwrap();
-                account
-            }
-        };
-        tracing::info!("Loaded current account configuration");
-        let config_path = App::get_config_path(&account_info.current_account);
-        let config = App::read_config_from_file(&config_path).unwrap_or_else(|error| {
-            tracing::warn!(error = %error, "Could not read configuration; using defaults");
-            AppConfig::default()
+        let config_store = Self::config_dir()
+            .and_then(|directory| ConfigStore::open(Path::new(&directory))).ok();
+        let loaded = config_store.as_ref().ok_or(AppError::StaleConfigOwner)
+            .and_then(|store| {
+                let directory = store.root_str()?;
+                if let Err(error) = Self::recover_account_transaction(directory) {
+                    store.poison();
+                    return Err(error);
+                }
+                Self::load_startup_configuration(directory)
+            });
+        if matches!(&loaded, Err(AppError::PersistenceUncertain)) {
+            if let Some(store) = &config_store { store.poison(); }
+        }
+        let config_is_valid = loaded.is_ok();
+        let (account_info, config) = loaded.unwrap_or_else(|_| {
+            // Do not include parser context: configuration files may contain credentials.
+            tracing::error!("Configuration unavailable; owner withheld until the store can be validated");
+            (AccountInfo::default(), AppConfig::default())
         });
         crate::diagnostics::protect_config(&config);
 
@@ -321,9 +773,13 @@ impl App {
         client.set_debug_mode(config.debug_mode);
 
         Self {
+            config_store,
             client: Arc::new(client),
             current_account: RwLock::new(account_info.current_account),
             config: RwLock::new(config),
+            config_owner: tokio::sync::Mutex::new(
+                config_is_valid.then(|| uuid::Uuid::new_v4().to_string()),
+            ),
             handle: Default::default(),
             mcp_handle: Default::default(),
             cache: Default::default(),
@@ -331,14 +787,16 @@ impl App {
     }
 
     pub async fn init(&self) -> Result<()> {
-        let mut config = self.get_config().await;
-        let cookies = &config.video_cookies;
+        let snapshot = match self.get_config_snapshot().await {
+            Ok(snapshot) => snapshot,
+            Err(AppError::StaleConfigOwner) => return Ok(()),
+            Err(error) => return Err(error),
+        };
+        let cookies = &snapshot.config.video_cookies;
         if !cookies.is_empty() {
-            tracing::info!("Restoring saved video login");
-            self.client.init_cookie(cookies);
-            if let Ok(Some(consumer_key)) = self.client.get_oauth_consumer_key().await {
-                config.oauth_consumer_key = consumer_key;
-                self.save_config(config).await?;
+            tracing::info!("Detected saved video cookies");
+            if let Ok(Some(consumer_key)) = self.client.get_oauth_consumer_key_for_cookies(cookies).await {
+                self.commit_video_consumer_key(&snapshot.owner, consumer_key).await?;
             }
         }
         Ok(())
@@ -476,66 +934,169 @@ impl App {
     }
 
     pub async fn start_mcp(&self) -> Result<bool> {
-        if self.mcp_handle.read().await.is_some() {
+        let owner = self.config_owner.lock().await;
+        self.store_ready()?;
+        owner.as_ref().ok_or(AppError::StaleConfigOwner)?;
+        self.start_mcp_locked().await
+    }
+
+    // Internal helpers require the configuration owner lock. The lifecycle
+    // mutex serializes the complete check/bind/store and stop/join transition.
+    async fn start_mcp_locked(&self) -> Result<bool> {
+        let mut slot = self.mcp_handle.lock().await;
+        self.start_mcp_slot(&mut slot).await
+    }
+
+    async fn start_mcp_slot(&self, slot: &mut Option<crate::mcp::McpRuntime>) -> Result<bool> {
+        if slot.as_ref().is_some_and(crate::mcp::McpRuntime::is_running) {
             return Ok(true);
         }
+        Self::stop_mcp_slot(slot).await?;
         let port = self.config.read().await.mcp_port;
-        let handle = crate::mcp::start_mcp_server(port);
-        *self.mcp_handle.write().await = Some(handle);
-        tracing::info!("MCP server started on port {port}");
+        let runtime = crate::mcp::start_mcp_server(port).await?;
+        *slot = Some(runtime);
+        tracing::info!("MCP listener bound on port {port}");
         Ok(true)
     }
 
-    pub async fn stop_mcp(&self) {
-        let mut handle = self.mcp_handle.write().await;
-        if let Some(handle) = handle.as_ref() {
-            tracing::info!("Stopping MCP server");
-            handle.abort();
+    async fn stop_mcp_slot(slot: &mut Option<crate::mcp::McpRuntime>) -> Result<()> {
+        if let Some(runtime) = slot.as_mut() {
+            runtime.stop().await?;
         }
-        *handle = None;
+        *slot = None;
+        Ok(())
+    }
+
+    async fn quiesce_mcp_locked(&self) -> Result<bool> {
+        let mut slot = self.mcp_handle.lock().await;
+        let was_running = slot.as_ref().is_some_and(crate::mcp::McpRuntime::is_running);
+        Self::stop_mcp_slot(&mut slot).await?;
+        Ok(was_running)
+    }
+
+    pub async fn stop_mcp(&self) -> Result<()> {
+        let _owner = self.config_owner.lock().await;
+        self.quiesce_mcp_locked().await.map(|_| ())
     }
 
     pub async fn restart_mcp(&self) -> Result<bool> {
-        self.stop_mcp().await;
-        self.start_mcp().await
+        let owner = self.config_owner.lock().await;
+        self.store_ready()?;
+        owner.as_ref().ok_or(AppError::StaleConfigOwner)?;
+        let mut slot = self.mcp_handle.lock().await;
+        Self::stop_mcp_slot(&mut slot).await?;
+        self.start_mcp_slot(&mut slot).await
+    }
+
+    async fn restore_mcp_after_failure(
+        &self, was_running: bool, owner: &Option<String>, error: AppError,
+    ) -> AppError {
+        // Uncertain persistence and an invalid owner must remain fail-closed.
+        if was_running && owner.is_some() && self.store_ready().is_ok() {
+            if let Err(restore) = self.start_mcp_locked().await {
+                return std::io::Error::other(format!(
+                    "Configuration operation failed ({error}); previous MCP runtime could not be restored ({restore})"
+                )).into();
+            }
+        }
+        error
+    }
+
+    async fn start_mcp_after_commit(&self, enabled: bool) -> Result<()> {
+        if enabled {
+            self.start_mcp_locked().await.map_err(|error| std::io::Error::other(format!(
+                "Configuration committed, but MCP could not start: {error}"
+            )))?;
+        }
+        Ok(())
     }
 
     fn read_config_from_file(config_path: &str) -> Result<AppConfig> {
-        let content = fs::read(config_path)?;
-        let config = utils::json::parse_json(&content)?;
-        Ok(config)
+        let content = Self::read_regular_config_file(config_path)?;
+        serde_json::from_slice(&content).map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid configuration JSON").into()
+        })
+    }
+
+    /// Owner tokens change across account switches and credential revisions,
+    /// including A -> B -> A. Account display names are not cache identities.
+    fn owner_cache_key(base: &str, owner: &str) -> String {
+        format!("{base}:owner:{owner}")
     }
 
     fn get_config_path(account: &Account) -> String {
-        let config_dir = App::config_dir().unwrap();
+        Self::get_config_path_in(&Self::config_dir().unwrap(), account)
+    }
+
+    fn get_config_path_in(config_dir: &str, account: &Account) -> String {
         let mut config_file_name = "sjtu_canvas_helper_config".to_owned();
         if let Account::Custom(name) = account {
             config_file_name += &format!("_{name}");
         }
-        let config_path = format!("{config_dir}/{config_file_name}.json");
-        config_path
+        Path::new(config_dir).join(format!("{config_file_name}.json")).to_string_lossy().into_owned()
     }
 
     pub async fn get_config(&self) -> AppConfig {
         self.config.read().await.clone()
     }
 
+    pub async fn get_config_snapshot(&self) -> Result<super::ConfigSnapshot> {
+        let owner = self.config_owner.lock().await;
+        self.store_ready()?;
+        let token = owner
+            .as_ref()
+            .ok_or(AppError::StaleConfigOwner)?
+            .clone();
+        Ok(super::ConfigSnapshot {
+            config: self.config.read().await.clone(),
+            owner: token,
+        })
+    }
+
+    pub(super) async fn ensure_config_owner(&self, expected_owner: &str) -> Result<()> {
+        let owner = self.config_owner.lock().await;
+        self.store_ready()?;
+        if owner.as_deref() == Some(expected_owner) {
+            Ok(())
+        } else {
+            Err(AppError::StaleConfigOwner)
+        }
+    }
+
     pub async fn get_raw_config(&self) -> Result<String> {
+        let store = self.store_ready()?;
         let account = self.current_account.read().await.clone();
-        let config_path = App::get_config_path(&account);
+        let config_path = Self::get_config_path_in(store.root_str()?, &account);
         let content = fs::read_to_string(config_path)?;
         Ok(content)
     }
 
     pub async fn list_courses(&self) -> Result<Vec<Course>> {
-        if let Some(cached_courses) = self.cache.get(COURSES_CACHE_KEY)? {
-            return Ok(cached_courses);
+        let (expected_owner, cache_key, token, client) = {
+            let owner = self.config_owner.lock().await;
+            self.store_ready()?;
+            let expected_owner = owner.as_ref().ok_or(AppError::StaleConfigOwner)?.clone();
+            let cache_key = Self::owner_cache_key(COURSES_CACHE_KEY, &expected_owner);
+            if let Some(cached) = self.cache.get(&cache_key)? {
+                return Ok(cached);
+            }
+            let config = self.config.read().await.clone();
+            // These Canvas read methods use only bearer-token requests. Give
+            // their entire request tree an immutable origin and a fresh Jar;
+            // never reuse the mutable App client after releasing owner.
+            let client = Arc::new(self.client.canvas_read_snapshot(Self::get_base_url(&config.account_type)));
+            (expected_owner, cache_key, config.token, client)
+        };
+        let response = client.list_courses(&token).await;
+        // Keep comparison, cache publication and return in one critical section.
+        // No network await holds the account-transition lock.
+        let owner = self.config_owner.lock().await;
+        self.store_ready()?;
+        if owner.as_deref() != Some(expected_owner.as_str()) {
+            return Err(AppError::StaleConfigOwner);
         }
-        let courses = self
-            .client
-            .list_courses(&self.config.read().await.token)
-            .await?;
-        self.cache.set(COURSES_CACHE_KEY, courses.clone())?;
+        let courses = response?;
+        self.cache.set(&cache_key, courses.clone())?;
         Ok(courses)
     }
 
@@ -806,7 +1367,7 @@ impl App {
                         results.push(scan_result);
                     }
                 }
-                Err(err) => tracing::error!(error = %err, "Background file download failed"),
+                Err(_) => tracing::error!("QR code image processing failed"),
             }
         }
         Ok(results)
@@ -883,58 +1444,42 @@ impl App {
     }
 
     pub async fn download_file<F: Fn(ProgressPayload) + Send>(
-        &self,
-        file: &File,
-        progress_handler: F,
+        &self, file: &File, expected_owner: &str, progress_handler: F,
     ) -> Result<()> {
-        let guard = self.config.read().await;
-        let token = &guard.token.clone();
-        let save_path = &guard.save_path.clone();
-        self.client
-            .download_file(file, token, save_path, progress_handler)
-            .await?;
+        let snapshot = self.get_config_snapshot().await?;
+        if snapshot.owner != expected_owner { return Err(AppError::StaleConfigOwner); }
+        let client = self.client.canvas_read_snapshot(Self::get_base_url(&snapshot.config.account_type));
+        client.download_file(file, &snapshot.config.token, &snapshot.config.save_path, progress_handler).await?;
         Ok(())
     }
 
     pub async fn download_course_file<F: Fn(ProgressPayload) + Send>(
-        &self,
-        file: &File,
-        course: &Course,
-        folder_path: &str,
-        progress_handler: F,
+        &self, file: &File, course: &Course, folder_path: &str,
+        expected_owner: &str, progress_handler: F,
     ) -> Result<()> {
-        let guard = self.config.read().await;
-        let token = &guard.token.clone();
+        let snapshot = self.get_config_snapshot().await?;
+        if snapshot.owner != expected_owner { return Err(AppError::StaleConfigOwner); }
+        let client = self.client.canvas_read_snapshot(Self::get_base_url(&snapshot.config.account_type));
         let course_identifier = self.get_course_identifier(course);
-        let save_path = Path::new(&guard.save_path)
-            .join(course_identifier)
-            .join(folder_path);
-        let save_path = save_path.to_str().unwrap_or_default();
-        App::ensure_directory(save_path);
-        tracing::info!("Starting course file download");
-        self.client
-            .download_file(file, token, save_path, progress_handler)
-            .await?;
+        let target = checked_download_path(Path::new(&snapshot.config.save_path), Some(&course_identifier), folder_path, &file.display_name)?;
+        let save_path = target.parent().ok_or_else(|| std::io::Error::new(
+            std::io::ErrorKind::InvalidInput, "Download path has no parent"))?;
+        fs::create_dir_all(save_path)?;
+        client.download_file(file, &snapshot.config.token, save_path, progress_handler).await?;
         Ok(())
     }
 
     pub async fn download_my_file<F: Fn(ProgressPayload) + Send>(
-        &self,
-        file: &File,
-        folder_path: &str,
-        progress_handler: F,
+        &self, file: &File, folder_path: &str, expected_owner: &str, progress_handler: F,
     ) -> Result<()> {
-        let guard = self.config.read().await;
-        let token = &guard.token.clone();
-        let save_path = Path::new(&guard.save_path)
-            .join(MY_CANVAS_FILES_FOLDER_NAME)
-            .join(folder_path);
-        let save_path = save_path.to_str().unwrap_or_default();
-        App::ensure_directory(save_path);
-        tracing::info!("Starting personal file download");
-        self.client
-            .download_file(file, token, save_path, progress_handler)
-            .await?;
+        let snapshot = self.get_config_snapshot().await?;
+        if snapshot.owner != expected_owner { return Err(AppError::StaleConfigOwner); }
+        let client = self.client.canvas_read_snapshot(Self::get_base_url(&snapshot.config.account_type));
+        let target = checked_download_path(Path::new(&snapshot.config.save_path), Some(MY_CANVAS_FILES_FOLDER_NAME), folder_path, &file.display_name)?;
+        let save_path = target.parent().ok_or_else(|| std::io::Error::new(
+            std::io::ErrorKind::InvalidInput, "Download path has no parent"))?;
+        fs::create_dir_all(save_path)?;
+        client.download_file(file, &snapshot.config.token, save_path, progress_handler).await?;
         Ok(())
     }
 
@@ -943,23 +1488,52 @@ impl App {
         file: &File,
         course: &Course,
         folder_path: &str,
+        expected_owner: &str,
     ) -> Result<()> {
-        let (pdf_name, pdf_content) = self.convert_office_file_to_pdf(file).await?;
-        let save_path = Path::new(&self.config.read().await.save_path)
-            .join(self.get_course_identifier(course))
-            .join(folder_path);
-        fs::create_dir_all(&save_path)?;
-        fs::write(save_path.join(pdf_name), pdf_content)?;
+        let snapshot = self.get_config_snapshot().await?;
+        if snapshot.owner != expected_owner {
+            return Err(AppError::StaleConfigOwner);
+        }
+        let save_root = snapshot.config.save_path.clone();
+        let client = self.client.canvas_read_snapshot(Self::get_base_url(&snapshot.config.account_type));
+        checked_download_path(Path::new(&save_root), Some(&self.get_course_identifier(course)), folder_path, &file.display_name)?;
+        let converted = self.convert_office_file_to_pdf_with_client(file, &client, &snapshot.config.token).await;
+        // Account admission and atomic output publication are one critical section.
+        let owner = self.config_owner.lock().await;
+        self.store_ready()?;
+        if owner.as_deref() != Some(snapshot.owner.as_str()) {
+            return Err(AppError::StaleConfigOwner);
+        }
+        let (pdf_name, pdf_content) = converted?;
+        let target = checked_download_path(Path::new(&save_root), Some(&self.get_course_identifier(course)), folder_path, &pdf_name)?;
+        let directory = target.parent().ok_or_else(|| std::io::Error::new(
+            std::io::ErrorKind::InvalidInput, "Download path has no parent"))?;
+        fs::create_dir_all(directory)?;
+        write_file_atomic(&target, &pdf_content)?;
         Ok(())
     }
 
-    pub async fn download_my_file_as_pdf(&self, file: &File, folder_path: &str) -> Result<()> {
-        let (pdf_name, pdf_content) = self.convert_office_file_to_pdf(file).await?;
-        let save_path = Path::new(&self.config.read().await.save_path)
-            .join(MY_CANVAS_FILES_FOLDER_NAME)
-            .join(folder_path);
-        fs::create_dir_all(&save_path)?;
-        fs::write(save_path.join(pdf_name), pdf_content)?;
+    pub async fn download_my_file_as_pdf(&self, file: &File, folder_path: &str, expected_owner: &str) -> Result<()> {
+        let snapshot = self.get_config_snapshot().await?;
+        if snapshot.owner != expected_owner {
+            return Err(AppError::StaleConfigOwner);
+        }
+        let save_root = snapshot.config.save_path.clone();
+        let client = self.client.canvas_read_snapshot(Self::get_base_url(&snapshot.config.account_type));
+        checked_download_path(Path::new(&save_root), Some(MY_CANVAS_FILES_FOLDER_NAME), folder_path, &file.display_name)?;
+        let converted = self.convert_office_file_to_pdf_with_client(file, &client, &snapshot.config.token).await;
+        // Account admission and atomic output publication are one critical section.
+        let owner = self.config_owner.lock().await;
+        self.store_ready()?;
+        if owner.as_deref() != Some(snapshot.owner.as_str()) {
+            return Err(AppError::StaleConfigOwner);
+        }
+        let (pdf_name, pdf_content) = converted?;
+        let target = checked_download_path(Path::new(&save_root), Some(MY_CANVAS_FILES_FOLDER_NAME), folder_path, &pdf_name)?;
+        let directory = target.parent().ok_or_else(|| std::io::Error::new(
+            std::io::ErrorKind::InvalidInput, "Download path has no parent"))?;
+        fs::create_dir_all(directory)?;
+        write_file_atomic(&target, &pdf_content)?;
         Ok(())
     }
 
@@ -976,33 +1550,60 @@ impl App {
             .await
     }
 
-    pub async fn open_file(&self, name: &str) -> Result<()> {
-        let save_path = &self.config.read().await.save_path;
-        let path = Path::new(save_path).join(name);
-        self.open_path(path.to_str().unwrap_or_default())
+    async fn open_download_for_owner(
+        &self, name: &str, group: Option<&str>, folder_path: &str,
+        expected_owner: &str, expected_save_path: &str,
+    ) -> Result<()> {
+        let owner = self.config_owner.lock().await;
+        self.store_ready()?;
+        if owner.as_deref() != Some(expected_owner) {
+            return Err(AppError::StaleConfigOwner);
+        }
+        let config = self.config.read().await;
+        if config.save_path != expected_save_path {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Download destination changed; reopen the file from its original location",
+            ).into());
+        }
+        let path = checked_download_path(Path::new(&config.save_path), group, folder_path, name)?;
+        let program = if cfg!(target_os = "macos") { "open" }
+            else if cfg!(target_os = "linux") { "xdg-open" }
+            else if cfg!(target_os = "windows") { "explorer" }
+            else { return Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported, "Opening downloads is unsupported on this platform",
+            ).into()); };
+        // Admission covers only spawning the captured path, not the viewer lifetime.
+        let mut child = TokioCommand::new(program).arg(&path)
+            .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
+            .spawn()?;
+        drop(config);
+        drop(owner);
+        // Preserve the existing opener exit-status semantics; reap without blocking Tokio.
+        let _ = child.wait().await?;
+        Ok(())
+    }
+
+    pub async fn open_file(
+        &self, name: &str, expected_owner: &str, expected_save_path: &str,
+    ) -> Result<()> {
+        self.open_download_for_owner(name, None, "", expected_owner, expected_save_path).await
     }
 
     pub async fn open_course_file(
-        &self,
-        name: &str,
-        course: &Course,
-        folder_path: &str,
+        &self, name: &str, course: &Course, folder_path: &str,
+        expected_owner: &str, expected_save_path: &str,
     ) -> Result<()> {
-        let save_path = &self.config.read().await.save_path;
-        let path = Path::new(save_path)
-            .join(self.get_course_identifier(course))
-            .join(folder_path)
-            .join(name);
-        self.open_path(path.to_str().unwrap_or_default())
+        let course_identifier = self.get_course_identifier(course);
+        self.open_download_for_owner(name, Some(&course_identifier), folder_path,
+            expected_owner, expected_save_path).await
     }
 
-    pub async fn open_my_file(&self, name: &str, folder_path: &str) -> Result<()> {
-        let save_path = &self.config.read().await.save_path;
-        let path = Path::new(save_path)
-            .join(MY_CANVAS_FILES_FOLDER_NAME)
-            .join(folder_path)
-            .join(name);
-        self.open_path(path.to_str().unwrap_or_default())
+    pub async fn open_my_file(
+        &self, name: &str, folder_path: &str, expected_owner: &str, expected_save_path: &str,
+    ) -> Result<()> {
+        self.open_download_for_owner(name, Some(MY_CANVAS_FILES_FOLDER_NAME), folder_path,
+            expected_owner, expected_save_path).await
     }
 
     pub fn open_local_path(&self, path: &str) -> Result<()> {
@@ -1034,13 +1635,17 @@ impl App {
     }
 
     pub async fn open_config_dir(&self) -> Result<()> {
-        let config_dir = App::config_dir()?;
-        self.open_path(&config_dir)
+        // Keep manual inspection available even when persistence is poisoned.
+        if let Some(store) = &self.config_store {
+            self.open_path(store.root_str()?)
+        } else {
+            self.open_path(&Self::config_dir()?)
+        }
     }
 
     pub async fn delete_file(&self, file: &File) -> Result<()> {
         let save_path = &self.config.read().await.save_path;
-        let path = Path::new(save_path).join(&file.display_name);
+        let path = checked_download_path(Path::new(save_path), None, "", &file.display_name)?;
         fs::remove_file(path)?;
         Ok(())
     }
@@ -1052,27 +1657,21 @@ impl App {
         folder_path: &str,
     ) -> Result<()> {
         let save_path = &self.config.read().await.save_path;
-        let path = Path::new(save_path)
-            .join(self.get_course_identifier(course))
-            .join(folder_path)
-            .join(&file.display_name);
+        let path = checked_download_path(Path::new(save_path), Some(&self.get_course_identifier(course)), folder_path, &file.display_name)?;
         fs::remove_file(path)?;
         Ok(())
     }
 
     pub async fn delete_my_file(&self, file: &File, folder_path: &str) -> Result<()> {
         let save_path = &self.config.read().await.save_path;
-        let path = Path::new(save_path)
-            .join(MY_CANVAS_FILES_FOLDER_NAME)
-            .join(folder_path)
-            .join(&file.display_name);
+        let path = checked_download_path(Path::new(save_path), Some(MY_CANVAS_FILES_FOLDER_NAME), folder_path, &file.display_name)?;
         fs::remove_file(path)?;
         Ok(())
     }
 
     pub async fn delete_file_with_name(&self, name: &str) -> Result<()> {
         let save_path = &self.config.read().await.save_path;
-        let path = Path::new(save_path).join(name);
+        let path = checked_download_path(Path::new(save_path), None, "", name)?;
         fs::remove_file(path)?;
         Ok(())
     }
@@ -1111,32 +1710,96 @@ impl App {
             .await
     }
 
-    pub async fn save_config(&self, config: AppConfig) -> Result<()> {
+    pub async fn save_config(&self, config: AppConfig, expected_owner: &str) -> Result<String> {
+        let mut owner = self.config_owner.lock().await;
+        self.save_config_locked(config, expected_owner, &mut owner).await
+    }
+
+    // The caller owns the account-transition lock for the complete commit.
+    pub(super) async fn save_config_locked(
+        &self, config: AppConfig, expected_owner: &str, owner: &mut Option<String>,
+    ) -> Result<String> {
+        let store = self.store_ready()?;
+        Self::ensure_no_pending_intent(store)?;
+        let directory = store.root_str()?;
+        if owner.as_deref() != Some(expected_owner) {
+            return Err(AppError::StaleConfigOwner);
+        }
         crate::model::VideoSummaryOptions { prompt: config.video_summary_prompt.clone(),
-            context_tokens: config.video_summary_context_tokens, output_tokens: config.video_summary_output_tokens }.validate()?;
+            context_tokens: config.video_summary_context_tokens,
+            output_tokens: config.video_summary_output_tokens }.validate()?;
+        let previous = self.config.read().await.clone();
+        let rotates = previous.token != config.token
+            || previous.account_type != config.account_type
+            || previous.ja_auth_cookie != config.ja_auth_cookie
+            || previous.video_cookies != config.video_cookies
+            || previous.oauth_consumer_key != config.oauth_consumer_key
+            || previous.jbox_login_info != config.jbox_login_info;
+        let next_owner = if rotates {
+            uuid::Uuid::new_v4().to_string()
+        } else {
+            expected_owner.to_owned()
+        };
         crate::diagnostics::protect_config(&config);
         let account = self.current_account.read().await.clone();
-        let config_path = App::get_config_path(&account);
-        fs::write(&config_path, serde_json::to_vec(&config).unwrap())?;
-        let base_url = Self::get_base_url(&config.account_type);
-        if self.client.set_base_url(base_url).await {
+        let account_info = Self::read_account_info_in(directory)?;
+        if account_info.current_account != account || !account_info.all_accounts.contains(&account)
+            || !Self::account_exists_in(directory, &account)?
+        { return Err(AppError::StaleConfigOwner); }
+        let config_path = Self::get_config_path_in(directory, &account);
+        let bytes = serde_json::to_vec(&config)?;
+        let staged = Self::prepare_config_write(&config_path, &bytes)?;
+        let previous_llm = self.client.llm_state_snapshot().await;
+        let mcp_was_running = self.quiesce_mcp_locked().await?;
+        let should_start = config.mcp_enabled || (!previous.mcp_enabled && mcp_was_running);
+        let result: Result<()> = async {
             self.invalidate_cache()?;
-        }
-        Self::apply_llm_config(&config, &self.client).await?;
-        self.client.set_debug_mode(config.debug_mode);
-        let was_enabled = self.config.read().await.mcp_enabled;
-        *self.config.write().await = config;
-        let is_enabled = self.config.read().await.mcp_enabled;
-        if was_enabled != is_enabled {
-            if is_enabled {
-                self.start_mcp().await?;
-            } else {
-                self.stop_mcp().await;
+            *owner = None;
+            self.client
+                .set_base_url(Self::get_base_url(&config.account_type))
+                .await;
+            if let Err(error) = Self::apply_llm_config(&config, &self.client).await {
+                self.client.set_base_url(Self::get_base_url(&previous.account_type)).await;
+                self.client.restore_llm_snapshot(previous_llm).await;
+                *owner = Some(expected_owner.to_owned());
+                return Err(error);
             }
-        } else if is_enabled {
-            self.restart_mcp().await?;
+            if let Err(error) = Self::persist_prepared(staged, &config_path) {
+                if matches!(error, AppError::PersistenceUncertain) {
+                    store.poison();
+                    return Err(error);
+                }
+                self.client.set_base_url(Self::get_base_url(&previous.account_type)).await;
+                self.client.restore_llm_snapshot(previous_llm).await;
+                *owner = Some(expected_owner.to_owned());
+                return Err(error);
+            }
+            self.client.set_debug_mode(config.debug_mode);
+            *self.config.write().await = config;
+            *owner = Some(next_owner.clone());
+            Ok(())
+        }.await;
+        if let Err(error) = result {
+            return Err(self.restore_mcp_after_failure(mcp_was_running, owner, error).await);
         }
-        Ok(())
+        self.start_mcp_after_commit(should_start).await?;
+        Ok(next_owner)
+    }
+
+    /// Merge derived login information into the latest configuration, so a
+    /// same-owner appearance/path change made during authentication is retained.
+    pub(super) async fn commit_jbox_login(
+        &self, expected_owner: &str, info: crate::model::JBoxLoginInfo,
+    ) -> Result<super::ConfigSnapshot> {
+        let mut owner = self.config_owner.lock().await;
+        self.store_ready()?;
+        if owner.as_deref() != Some(expected_owner) {
+            return Err(AppError::StaleConfigOwner);
+        }
+        let mut config = self.config.read().await.clone();
+        config.jbox_login_info = info;
+        let next_owner = self.save_config_locked(config.clone(), expected_owner, &mut owner).await?;
+        Ok(super::ConfigSnapshot { config, owner: next_owner })
     }
 
     pub async fn list_network_logs(&self) -> Vec<NetworkRequestLog> {
@@ -1227,13 +1890,31 @@ impl App {
     }
 
     pub async fn collect_relationship(&self) -> Result<RelationshipTopo> {
-        let topo = self.cache.get(RELATIONSHIP_CACHE_KEY)?;
-        if let Some(topo) = topo {
-            return Ok(topo);
+        let (expected_owner, cache_key, token, client) = {
+            let owner = self.config_owner.lock().await;
+            self.store_ready()?;
+            let expected_owner = owner.as_ref().ok_or(AppError::StaleConfigOwner)?.clone();
+            let cache_key = Self::owner_cache_key(RELATIONSHIP_CACHE_KEY, &expected_owner);
+            if let Some(cached) = self.cache.get(&cache_key)? {
+                return Ok(cached);
+            }
+            let config = self.config.read().await.clone();
+            // These Canvas read methods use only bearer-token requests. Give
+            // their entire request tree an immutable origin and a fresh Jar;
+            // never reuse the mutable App client after releasing owner.
+            let client = Arc::new(self.client.canvas_read_snapshot(Self::get_base_url(&config.account_type)));
+            (expected_owner, cache_key, config.token, client)
+        };
+        let response = client.collect_relationship(&token).await;
+        // Keep comparison, cache publication and return in one critical section.
+        // No network await holds the account-transition lock.
+        let owner = self.config_owner.lock().await;
+        self.store_ready()?;
+        if owner.as_deref() != Some(expected_owner.as_str()) {
+            return Err(AppError::StaleConfigOwner);
         }
-        let token = self.config.read().await.token.clone();
-        let topo = self.client.clone().collect_relationship(&token).await?;
-        self.cache.set(RELATIONSHIP_CACHE_KEY, topo.clone())?;
+        let topo = response?;
+        self.cache.set(&cache_key, topo.clone())?;
         Ok(topo)
     }
 
@@ -1285,226 +1966,126 @@ impl App {
         Ok(())
     }
 
-    fn try_convert_with_libreoffice(
+    async fn try_convert_with_libreoffice(
         &self,
         input_path: &Path,
         pdf_path: &Path,
     ) -> std::result::Result<(), String> {
-        #[cfg(target_os = "windows")]
-        let candidates = [
-            "soffice.exe",
-            r"C:\Program Files\LibreOffice\program\soffice.exe",
-            r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
-        ];
-        #[cfg(target_os = "macos")]
-        let candidates = [
-            "/Applications/LibreOffice.app/Contents/MacOS/soffice",
-            "soffice",
-        ];
-        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-        let candidates = ["libreoffice", "soffice"];
-
-        let output_dir = pdf_path
-            .parent()
-            .ok_or_else(|| "无法确定 PDF 输出目录".to_owned())?;
-        let generated_pdf_path = output_dir
-            .join(
-                input_path
-                    .file_stem()
-                    .ok_or_else(|| "无法确定源文件名".to_owned())?,
-            )
-            .with_extension("pdf");
-        let mut errors = Vec::new();
-
-        for candidate in candidates {
-            match Command::new(candidate)
-                .args(["--headless", "--convert-to", "pdf", "--outdir"])
-                .arg(output_dir)
-                .arg(input_path)
-                .output()
-            {
-                Ok(output) if output.status.success() && generated_pdf_path.exists() => {
-                    if generated_pdf_path != pdf_path {
-                        fs::rename(&generated_pdf_path, pdf_path)
-                            .map_err(|error| error.to_string())?;
+        // Keep an explicit waiter after cancellation; kill_on_drop alone
+        // only offers best-effort orphan reaping. Runtime shutdown remains
+        // outside this guarantee, as does termination of descendant processes.
+        struct ConversionChild(Option<tokio::process::Child>);
+        impl Drop for ConversionChild {
+            fn drop(&mut self) {
+                if let Some(mut child) = self.0.take() {
+                    if matches!(child.try_wait(), Ok(Some(_))) {
+                        return;
                     }
-                    return Ok(());
+                    let _ = child.start_kill();
+                    if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+                        runtime.spawn(async move {
+                            if child.wait().await.is_err() {
+                                tracing::warn!("Failed to reap conversion child");
+                            }
+                        });
+                    }
+                    // Without an active runtime, the child's existing
+                    // kill_on_drop policy is the remaining best effort.
                 }
-                Ok(output) => errors.push(format!(
-                    "{candidate}: {}",
-                    String::from_utf8_lossy(&output.stderr).trim()
-                )),
-                Err(error) => errors.push(format!("{candidate}: {error}")),
             }
         }
 
+        // The console launcher waits for conversion on Windows. Do not fall
+        // back to Word/PowerPoint automation or attach to the user's session.
+        #[cfg(target_os = "windows")]
+        let candidates = [
+            "soffice.com",
+            r"C:\Program Files\LibreOffice\program\soffice.com",
+            r"C:\Program Files (x86)\LibreOffice\program\soffice.com",
+        ];
+        #[cfg(target_os = "macos")]
+        let candidates = ["/Applications/LibreOffice.app/Contents/MacOS/soffice", "soffice"];
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        let candidates = ["libreoffice", "soffice"];
+
+        let output_dir = pdf_path.parent().ok_or_else(|| "无法确定 PDF 输出目录".to_owned())?;
+        let stem = input_path.file_stem().ok_or_else(|| "无法确定源文件名".to_owned())?;
+        let mut output_name = stem.to_os_string();
+        output_name.push(".pdf");
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(300);
+        let mut errors = Vec::new();
+        for candidate in candidates {
+            // Private profiles prevent command forwarding into an existing UI
+            // instance. Each attempt also has a fresh output directory so an
+            // earlier failed conversion cannot supply a stale success result.
+            let profile = tempfile::tempdir().map_err(|error| error.to_string())?;
+            let profile_user = profile.path().join("user");
+            fs::create_dir(&profile_user).map_err(|error| error.to_string())?;
+            fs::write(profile_user.join("registrymodifications.xcu"), br#"<?xml version="1.0" encoding="UTF-8"?>
+<oor:items xmlns:oor="http://openoffice.org/2001/registry">
+  <item oor:path="/org.openoffice.Office.Common/Security/Scripting">
+    <prop oor:name="DisableMacrosExecution" oor:op="fuse"><value>true</value></prop>
+  </item>
+</oor:items>"#).map_err(|error| error.to_string())?;
+            let profile_url = reqwest::Url::from_directory_path(profile.path())
+                .map_err(|_| "无法创建隔离的 LibreOffice 配置地址".to_owned())?;
+            let attempt_output = tempfile::tempdir_in(output_dir).map_err(|error| error.to_string())?;
+            let generated_pdf = attempt_output.path().join(&output_name);
+            let mut command = TokioCommand::new(candidate);
+            command
+                .arg(format!("-env:UserInstallation={profile_url}"))
+                .args(["--headless", "--norestore", "--convert-to", "pdf", "--outdir"])
+                .arg(attempt_output.path())
+                .arg(input_path)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .kill_on_drop(true);
+            if tokio::time::Instant::now() >= deadline {
+                return Err("LibreOffice 转换已超过 5 分钟预算".to_owned());
+            }
+            let child = match command.spawn() {
+                Ok(child) => child,
+                Err(error) => { errors.push(format!("{candidate}: {error}")); continue; }
+            };
+            let mut child_owner = ConversionChild(Some(child));
+            let child = child_owner.0.as_mut().expect("conversion child is owned until drop");
+            let status = match tokio::time::timeout_at(deadline, child.wait()).await {
+                Ok(Ok(status)) => status,
+                Ok(Err(error)) => {
+                    let _ = child.start_kill();
+                    let _ = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
+                    errors.push(format!("{candidate}: {error}"));
+                    continue;
+                }
+                Err(_) => {
+                    let _ = child.start_kill();
+                    let _ = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
+                    return Err("LibreOffice 转换超过 5 分钟，已请求停止转换进程".to_owned());
+                }
+            };
+            let has_pdf_header = fs::File::open(&generated_pdf).and_then(|mut file| {
+                let mut header = [0u8; 5];
+                std::io::Read::read_exact(&mut file, &mut header)?;
+                Ok(header == *b"%PDF-")
+            }).unwrap_or(false);
+            if status.success() && has_pdf_header {
+                fs::rename(&generated_pdf, pdf_path).map_err(|error| error.to_string())?;
+                return Ok(());
+            }
+            errors.push(format!("{candidate}: {status}，未生成具有 PDF 文件头的输出"));
+        }
         Err(errors.join("; "))
     }
 
-    #[cfg(target_os = "macos")]
-    fn convert_pptx_to_pdf_inner(&self, pptx_path: &Path, pdf_path: &Path) -> Result<()> {
-        if self
-            .try_convert_with_libreoffice(pptx_path, pdf_path)
-            .is_ok()
-        {
-            return Ok(());
-        }
-
-        let output = process::Command::new("osascript")
-            .arg("-e")
-            .arg(
-                r#"on run {input, output}
-                    tell application "Microsoft PowerPoint"
-                        launch
-                        set pptx to input as POSIX file
-                        set pdfPath to output as POSIX file as string
-                        open pptx
-                        save active presentation in pdfPath as save as PDF
-                        close active presentation saving no
-                    end tell
-                end run"#,
-            )
-            .arg(pptx_path)
-            .arg(pdf_path)
-            .output()?;
-        if !output.status.success() || !pdf_path.exists() {
-            return Err(AppError::DocumentConversion(format!(
-                "PowerPoint/LibreOffice 均无法完成转换：{}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            )));
-        }
-        Ok(())
+    async fn convert_docx_to_pdf_inner(&self, docx_path: &Path, pdf_path: &Path) -> Result<()> {
+        self.try_convert_with_libreoffice(docx_path, pdf_path).await.map_err(|error|
+            AppError::DocumentConversion(format!("自动转换 Word 文件需要可用的 LibreOffice：{error}")))
     }
 
-    #[cfg(target_os = "macos")]
-    fn convert_docx_to_pdf_inner(&self, docx_path: &Path, pdf_path: &Path) -> Result<()> {
-        if self
-            .try_convert_with_libreoffice(docx_path, pdf_path)
-            .is_ok()
-        {
-            return Ok(());
-        }
-
-        let output = process::Command::new("osascript")
-            .arg("-e")
-            .arg(
-                r#"on run {input, output}
-                    tell application "Microsoft Word"
-                        launch
-                        set docx to input as POSIX file
-                        set pdfPath to output as POSIX file as string
-                        open docx
-                        set activeDoc to active document
-                        save as activeDoc file name pdfPath file format format PDF
-                        close activeDoc saving no
-                    end tell
-                end run"#,
-            )
-            .arg(docx_path)
-            .arg(pdf_path)
-            .output()?;
-        if !output.status.success() || !pdf_path.exists() {
-            return Err(AppError::DocumentConversion(format!(
-                "Word/LibreOffice 均无法完成转换：{}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            )));
-        }
-        Ok(())
-    }
-
-    #[cfg(target_os = "windows")]
-    fn convert_docx_to_pdf_inner(&self, docx_path: &Path, pdf_path: &Path) -> Result<()> {
-        if self
-            .try_convert_with_libreoffice(docx_path, pdf_path)
-            .is_ok()
-        {
-            return Ok(());
-        }
-
-        let input = docx_path.to_string_lossy().replace('\'', "''");
-        let output_path = pdf_path.to_string_lossy().replace('\'', "''");
-        let script = format!(
-            r#"$ErrorActionPreference = 'Stop'
-$wordApp = $null
-$document = $null
-try {{
-    $wordApp = New-Object -ComObject Word.Application
-    $wordApp.Visible = $false
-    $document = $wordApp.Documents.Open('{input}', $false, $true)
-    $document.ExportAsFixedFormat('{output_path}', 17)
-}} finally {{
-    if ($null -ne $document) {{ $document.Close($false) }}
-    if ($null -ne $wordApp) {{ $wordApp.Quit() }}
-}}"#
-        );
-        let output = process::Command::new("powershell.exe")
-            .args(["-NoProfile", "-NonInteractive", "-Command"])
-            .arg(script)
-            .output()?;
-        if !output.status.success() || !pdf_path.exists() {
-            return Err(AppError::DocumentConversion(format!(
-                "Word/LibreOffice 均无法完成转换：{}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            )));
-        }
-        Ok(())
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    fn convert_docx_to_pdf_inner(&self, docx_path: &Path, pdf_path: &Path) -> Result<()> {
-        self.try_convert_with_libreoffice(docx_path, pdf_path)
-            .map_err(|error| {
-                AppError::DocumentConversion(format!(
-                    "需要安装 LibreOffice 才能转换 Word 文件：{error}"
-                ))
-            })
-    }
-
-    #[cfg(target_os = "windows")]
-    fn convert_pptx_to_pdf_inner(&self, pptx_path: &Path, pdf_path: &Path) -> Result<()> {
-        if self
-            .try_convert_with_libreoffice(pptx_path, pdf_path)
-            .is_ok()
-        {
-            return Ok(());
-        }
-
-        let input = pptx_path.to_string_lossy().replace('\'', "''");
-        let output_path = pdf_path.to_string_lossy().replace('\'', "''");
-        let script = format!(
-            r#"$ErrorActionPreference = 'Stop'
-$powerPointApp = $null
-$presentation = $null
-try {{
-    $powerPointApp = New-Object -ComObject PowerPoint.Application
-    $presentation = $powerPointApp.Presentations.Open('{input}', $true, $false, $false)
-    $presentation.SaveAs('{output_path}', 32)
-}} finally {{
-    if ($null -ne $presentation) {{ $presentation.Close() }}
-    if ($null -ne $powerPointApp) {{ $powerPointApp.Quit() }}
-}}"#
-        );
-        let output = process::Command::new("powershell.exe")
-            .args(["-NoProfile", "-NonInteractive", "-Command"])
-            .arg(script)
-            .output()?;
-        if !output.status.success() || !pdf_path.exists() {
-            return Err(AppError::DocumentConversion(format!(
-                "PowerPoint/LibreOffice 均无法完成转换：{}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            )));
-        }
-        Ok(())
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    fn convert_pptx_to_pdf_inner(&self, pptx_path: &Path, pdf_path: &Path) -> Result<()> {
-        self.try_convert_with_libreoffice(pptx_path, pdf_path)
-            .map_err(|error| {
-                AppError::DocumentConversion(format!(
-                    "需要安装 LibreOffice 才能转换 PowerPoint 文件：{error}"
-                ))
-            })
+    async fn convert_pptx_to_pdf_inner(&self, pptx_path: &Path, pdf_path: &Path) -> Result<()> {
+        self.try_convert_with_libreoffice(pptx_path, pdf_path).await.map_err(|error|
+            AppError::DocumentConversion(format!("自动转换 PowerPoint 文件需要可用的 LibreOffice：{error}")))
     }
 
     fn pdf_file_name(file_name: &str) -> Result<String> {
@@ -1517,6 +2098,16 @@ try {{
     }
 
     pub async fn convert_office_file_to_pdf(&self, file: &File) -> Result<(String, Vec<u8>)> {
+        let snapshot = self.get_config_snapshot().await?;
+        let client = self.client.canvas_read_snapshot(Self::get_base_url(&snapshot.config.account_type));
+        let result = self.convert_office_file_to_pdf_with_client(file, &client, &snapshot.config.token).await;
+        self.ensure_config_owner(&snapshot.owner).await?;
+        result
+    }
+
+    pub(super) async fn convert_office_file_to_pdf_with_client(
+        &self, file: &File, client: &Client, token: &str,
+    ) -> Result<(String, Vec<u8>)> {
         let extension = Path::new(&file.display_name)
             .extension()
             .and_then(|value| value.to_str())
@@ -1526,33 +2117,29 @@ try {{
             return Err(AppError::UnsupportedFileExtensionError(extension));
         }
 
-        let temp_dir = std::env::temp_dir()
-            .join("sjtu-canvas-helper")
-            .join(Uuid::new_v4().to_string());
-        fs::create_dir_all(&temp_dir)?;
-        let input_path = temp_dir.join(format!("source.{extension}"));
-        let pdf_path = temp_dir.join("source.pdf");
+        // RAII also attempts cleanup when the conversion future is cancelled.
+        let temp_dir = tempfile::Builder::new().prefix("sjtu-canvas-helper-").tempdir()?;
+        let input_path = temp_dir.path().join(format!("source.{extension}"));
+        let pdf_path = temp_dir.path().join("source.pdf");
         let pdf_name = Self::pdf_file_name(&file.display_name)?;
-        let token = self.config.read().await.token.clone();
         let mut temp_file = file.clone();
         temp_file.display_name = format!("source.{extension}");
 
         let result = async {
-            let temp_dir_string = temp_dir.to_string_lossy().into_owned();
-            self.client
-                .download_file(&temp_file, &token, &temp_dir_string, |_| {})
+            client
+                .download_file(&temp_file, token, temp_dir.path(), |_| {})
                 .await?;
             if matches!(extension.as_str(), "doc" | "docx") {
-                self.convert_docx_to_pdf_inner(&input_path, &pdf_path)?;
+                self.convert_docx_to_pdf_inner(&input_path, &pdf_path).await?;
             } else {
-                self.convert_pptx_to_pdf_inner(&input_path, &pdf_path)?;
+                self.convert_pptx_to_pdf_inner(&input_path, &pdf_path).await?;
             }
             Ok((pdf_name, fs::read(&pdf_path)?))
         }
         .await;
 
-        if let Err(error) = fs::remove_dir_all(&temp_dir) {
-            tracing::warn!("Failed to remove conversion temp directory: {error}");
+        if temp_dir.close().is_err() {
+            tracing::warn!("Failed to remove conversion temp directory");
         }
         result
     }
@@ -1701,11 +2288,21 @@ mod live_proxy_tests {
         let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = socket.local_addr().unwrap().port();
         drop(socket);
+        let config_directory = tempfile::tempdir().unwrap();
+        let store = ConfigStore::open(config_directory.path()).unwrap();
+        let directory = store.root_str().unwrap();
+        App::recover_account_transaction(directory).unwrap();
+        let (account_info, config) = App::load_startup_configuration(directory).unwrap();
         let app = App {
+            config_store: Some(store),
             client: Arc::new(Client::new_without_proxy("http://127.0.0.1", "", "", "", None)),
-            current_account: Default::default(), config: Default::default(),
+            current_account: RwLock::new(account_info.current_account),
+            config: RwLock::new(config),
+            config_owner: tokio::sync::Mutex::new(Some(uuid::Uuid::new_v4().to_string())),
             handle: Default::default(), mcp_handle: Default::default(), cache: Default::default(),
         };
+        assert!(app.store_ready().is_ok());
+        assert!(app.get_config_snapshot().await.is_ok());
         app.config.write().await.proxy_port = port;
         let (live, recording) = tokio::join!(app.prepare_proxy(), app.prepare_proxy());
         let denied = reqwest::Client::builder().no_proxy().build().unwrap()
@@ -1714,5 +2311,30 @@ mod live_proxy_tests {
         app.stop_proxy().await;
         assert!(live.unwrap()); assert!(recording.unwrap());
         assert_eq!(denied.status(), StatusCode::BAD_REQUEST);
+        drop(app);
+        drop(config_directory);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cache_keys_are_scoped_to_the_owning_generation() {
+        let first_a = App::owner_cache_key(COURSES_CACHE_KEY, "owner-a-first");
+        let b = App::owner_cache_key(COURSES_CACHE_KEY, "owner-b");
+        let returned_a = App::owner_cache_key(COURSES_CACHE_KEY, "owner-a-returned");
+        let relationship = App::owner_cache_key(RELATIONSHIP_CACHE_KEY, "owner-a-first");
+        assert_ne!(first_a, b);
+        assert_ne!(first_a, returned_a);
+        assert_ne!(first_a, relationship);
+        assert_ne!(b, relationship);
+        assert_eq!(first_a, App::owner_cache_key(COURSES_CACHE_KEY, "owner-a-first"));
+        assert_eq!(b, App::owner_cache_key(COURSES_CACHE_KEY, "owner-b"));
+        // Account names never enter these keys: Default and Custom("default")
+        // have different owner generations, as do credential revisions.
+        assert_ne!(App::owner_cache_key(COURSES_CACHE_KEY, "default-generation"),
+                   App::owner_cache_key(COURSES_CACHE_KEY, "custom-default-generation"));
     }
 }

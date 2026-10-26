@@ -108,7 +108,7 @@ export default function ModifyDDLModal({
         })) as User[];
         setUsers(nextUsers);
       } catch (error) {
-        consoleLog(LOG_LEVEL_ERROR, error);
+        consoleLog(LOG_LEVEL_ERROR, "Course student list loading failed");
       }
     };
     void handleInitUsers();

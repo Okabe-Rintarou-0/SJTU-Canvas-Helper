@@ -172,7 +172,7 @@ export default function ArchiveRenderer({
       setExpandedKeys(new Set([""]));
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : String(e);
-      consoleLog(LOG_LEVEL_ERROR, e);
+      consoleLog(LOG_LEVEL_ERROR, "Archive parsing failed");
       messageApi.error(errorMsg);
       setError(errorMsg);
     } finally {
@@ -205,7 +205,7 @@ export default function ArchiveRenderer({
         setSelectedDoc((oldDoc) => setDocAndGC(oldDoc, doc));
         setSelectedPath(path);
       } catch (e) {
-        consoleLog(LOG_LEVEL_ERROR, e);
+        consoleLog(LOG_LEVEL_ERROR, "Archive entry loading failed");
         messageApi.error(`文件 "${path}" 加载失败：${e instanceof Error ? e.message : String(e)}`);
       }
     } else {

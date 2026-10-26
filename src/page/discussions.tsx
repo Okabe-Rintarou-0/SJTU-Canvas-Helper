@@ -205,7 +205,7 @@ export default function DiscussionsPage() {
       })) as FullDiscussion;
       setFullDiscussion(nextFullDiscussion);
     } catch (error) {
-      consoleLog(LOG_LEVEL_ERROR, error);
+      consoleLog(LOG_LEVEL_ERROR, "Discussion content loading failed");
       messageApi.error(`获取讨论内容失败：${error}`);
     }
   };

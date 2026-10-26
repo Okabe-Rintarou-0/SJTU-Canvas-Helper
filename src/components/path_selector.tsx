@@ -9,7 +9,7 @@ import {
 import { open } from "@tauri-apps/plugin-dialog";
 import React, { useEffect, useState } from "react";
 
-import { getConfig } from "../lib/config";
+import { getConfig, StaleConfigSessionError } from "../lib/config";
 
 interface PathSelectorProps {
   value?: string;
@@ -61,7 +61,12 @@ export const PathSelector = React.forwardRef<HTMLInputElement, PathSelectorProps
     const inputProps: TextFieldProps["InputProps"] = {
       endAdornment: (
         <InputAdornment position="end">
-          <IconButton edge="end" onClick={handleSelectDirectory}>
+          <IconButton edge="end" onClick={() => {
+            void handleSelectDirectory().catch((error: unknown) => {
+              if (error instanceof StaleConfigSessionError) return;
+              console.error("Failed to select path:", error);
+            });
+          }}>
             <FolderOpenRoundedIcon />
           </IconButton>
         </InputAdornment>

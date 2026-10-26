@@ -1,4 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
+import { currentSession, isSessionCurrent } from "../lib/session";
+import { captureOperationConfig, isConfigOwnerCurrent } from "../lib/config";
 import AssignmentRoundedIcon from "@mui/icons-material/AssignmentRounded";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import EditCalendarRoundedIcon from "@mui/icons-material/EditCalendarRounded";
@@ -186,11 +188,15 @@ export default function AssignmentsPage() {
   };
 
   const handleDownloadAttachment = async (attachment: Attachment) => {
-    const file = attachmentToFile(attachment);
+    const session = currentSession();
+    const file = structuredClone(attachmentToFile(attachment));
     try {
-      await invoke("download_file", { file });
+      const config = captureOperationConfig();
+      await invoke("download_file", { file, expectedOwner: config.__config_owner, operationId: crypto.randomUUID() });
+      if (!isSessionCurrent(session) || !isConfigOwnerCurrent(config)) return;
       messageApi.success("下载成功", 0.5);
     } catch (error) {
+      if (!isSessionCurrent(session)) return;
       messageApi.error(`下载失败：${error}`);
     }
   };
@@ -266,7 +272,7 @@ export default function AssignmentsPage() {
       );
       setAssignments(nextAssignments);
     } catch (error) {
-      consoleLog(LOG_LEVEL_ERROR, error);
+      consoleLog(LOG_LEVEL_ERROR, "Submission details loading failed");
       messageApi.error(`加载出错：${error}`);
     }
   };
@@ -284,7 +290,7 @@ export default function AssignmentsPage() {
       messageApi.success("删除成功", 0.5);
       await handleGetMySingleSubmission(selectedCourseId, assignmentId);
     } catch (error) {
-      consoleLog(LOG_LEVEL_ERROR, error);
+      consoleLog(LOG_LEVEL_ERROR, "Assignment comment deletion failed");
       messageApi.error(error as string);
     }
   };

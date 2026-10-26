@@ -22,14 +22,16 @@ import {
   useState,
 } from "react";
 import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
-import useWebSocket, { ReadyState } from "react-use-websocket";
+import { ReadyState } from "react-use-websocket";
+import { useOwnedQRCodeSocket } from "./useOwnedQRCodeSocket";
 import { LoginAlertModal } from "../components/login_alert_modal";
 import PreviewModal from "../components/preview_modal";
-import { getConfig, saveConfig } from "./config";
+import { getConfig, isConfigOwnerCurrent, saveConfig, StaleConfigSessionError } from "./config";
 import { BASE_URL, JI_BASE_URL } from "./constants";
 import { appMessage } from "./message";
 import {
   AnnualReport,
+  AppConfig,
   Assignment,
   Course,
   Entry,
@@ -44,6 +46,12 @@ import {
   isFile,
 } from "./model";
 import { ConfigDispatch, ConfigState, courseSlice } from "./store";
+import {
+  currentSession,
+  isSessionCurrent,
+  subscribeSession,
+  useSessionEpoch,
+} from "./session";
 import { consoleLog, isMergableFileType, moduleItem2File } from "./utils";
 
 const UPDATE_QRCODE_MESSAGE = '{ "type": "UPDATE_QR_CODE" }';
@@ -347,72 +355,159 @@ export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {
   const [uuid, setUuid] = useState<string>("");
   const [qrcode, setQrcode] = useState<string>("");
   const [wsURL, setWsURL] = useState<string>("");
+  const [connectionGeneration, setConnectionGeneration] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const hasRetriedRef = useRef(false);
   const uuidRef = useRef("");
-  const { sendMessage, lastMessage, readyState } = useWebSocket(
+  const uuidRequestRef = useRef(0);
+  const qrIntentRef = useRef(0);
+  const connectionOwnerRef = useRef<{ session: number; request: number; uuid: string; url: string; config: AppConfig } | null>(null);
+  const invalidatedSocketsRef = useRef(new WeakSet<object>());
+  useEffect(() => {
+    const invalidate = () => {
+      const previousSocket = getWebSocket();
+      if (previousSocket) invalidatedSocketsRef.current.add(previousSocket);
+      uuidRequestRef.current += 1;
+      connectionOwnerRef.current = null;
+      uuidRef.current = "";
+      setUuid("");
+      setWsURL("");
+      setQrcode("");
+      setLoading(false);
+      setError("");
+    };
+    const unsubscribe = subscribeSession(invalidate);
+    return () => {
+      qrIntentRef.current += 1;
+      unsubscribe();
+      uuidRequestRef.current += 1;
+      connectionOwnerRef.current = null;
+    };
+  }, []);
+  const { sendMessage, lastMessage, readyState, getWebSocket, connectionFailed } = useOwnedQRCodeSocket(
     wsURL,
-    undefined,
+    connectionGeneration,
     wsURL.length > 0
   );
 
+  const ownsConnection = (
+    connection: typeof connectionOwnerRef.current,
+    socket: ReturnType<typeof getWebSocket>
+  ) => Boolean(connection && socket
+    && connectionOwnerRef.current === connection
+    && isSessionCurrent(connection.session)
+    && isConfigOwnerCurrent(connection.config)
+    && connection.request === uuidRequestRef.current
+    && connection.uuid === uuidRef.current
+    && socket === getWebSocket()
+    && !invalidatedSocketsRef.current.has(socket)
+    && socket.url === connection.url);
+
   const showQRCode = useCallback(async () => {
+    const intent = ++qrIntentRef.current;
+    const previousSocket = getWebSocket();
+    if (previousSocket) invalidatedSocketsRef.current.add(previousSocket);
+    uuidRequestRef.current += 1;
+    connectionOwnerRef.current = null;
+    uuidRef.current = "";
+    setUuid("");
+    setWsURL("");
+    setQrcode("");
     setLoading(true);
     setError("");
-    setQrcode("");
     hasRetriedRef.current = false;
-    const nextUuid = (await invoke("get_uuid")) as string | null;
-    consoleLog(LOG_LEVEL_ERROR, nextUuid)
-    if (nextUuid) {
-      uuidRef.current = nextUuid;
-      setUuid(nextUuid);
-      setWsURL(`${WEBSOCKET_BASE_URL}/${nextUuid}`);
-      return;
+    let owns = () => intent === qrIntentRef.current;
+    try {
+      const sourceConfig = { ...await getConfig(true) };
+      if (!owns() || !isConfigOwnerCurrent(sourceConfig)) return;
+      const request = ++uuidRequestRef.current;
+      const session = currentSession();
+      owns = () => intent === qrIntentRef.current
+        && request === uuidRequestRef.current
+        && isSessionCurrent(session)
+        && isConfigOwnerCurrent(sourceConfig);
+      setLoading(true);
+      const nextUuid = (await invoke("get_uuid")) as string | null;
+      if (!owns()) return;
+      if (nextUuid) {
+        uuidRef.current = nextUuid;
+        connectionOwnerRef.current = { session, request, uuid: nextUuid, url: `${WEBSOCKET_BASE_URL}/${nextUuid}`, config: sourceConfig };
+        setConnectionGeneration(request);
+        setUuid(nextUuid);
+        setWsURL(`${WEBSOCKET_BASE_URL}/${nextUuid}`);
+        return;
+      }
+      setLoading(false);
+      setError("未能获取登录二维码标识，请稍后重试。");
+    } catch (error) {
+      if (!owns() || error instanceof StaleConfigSessionError) return;
+      setLoading(false);
+      setError("未能获取登录二维码标识，请稍后重试。");
     }
-    setLoading(false);
-    setError("未能获取登录二维码标识，请稍后重试。");
   }, []);
 
   const handleScanSuccess = async () => {
+    const connection = connectionOwnerRef.current;
+    if (!connection || !isSessionCurrent(connection.session)
+        || connection.request !== uuidRequestRef.current
+        || connection.uuid !== uuidRef.current) return;
+    const owner = currentSession();
+    const request = uuidRequestRef.current;
+    const requestedUuid = uuidRef.current || uuid;
+    const owns = () => isSessionCurrent(owner)
+      && request === uuidRequestRef.current
+      && requestedUuid === (uuidRef.current || uuid)
+      && isConfigOwnerCurrent(connection.config);
+    const config = connection.config;
     try {
-      const JAAuthCookie = (await invoke("express_login", { uuid: uuidRef.current || uuid })) as
-        | string
-        | null;
-      if (!JAAuthCookie) {
-        return;
-      }
-      const config = await getConfig();
-      config.ja_auth_cookie = JAAuthCookie;
-      await saveConfig(config);
-      onScanSuccess?.();
-    } catch (e) {
-      appMessage().error(`登录失败🥹：${e}`);
+      const JAAuthCookie = (await invoke("express_login", { uuid: requestedUuid })) as string | null;
+      if (!owns() || !JAAuthCookie) return;
+      const nextConfig = { ...config, ja_auth_cookie: JAAuthCookie };
+      await saveConfig(nextConfig, {
+        isCurrent: owns,
+        onCommitted: () => onScanSuccess?.(),
+      });
+    } catch {
+      if (!owns()) return;
+      appMessage().error("登录失败，请重新获取二维码后重试。");
     }
   };
 
   useEffect(() => {
-    if (readyState == ReadyState.OPEN) {
-      sendMessage(UPDATE_QRCODE_MESSAGE);
-      const handle = setInterval(() => {
-        refreshQRCode();
-      }, SEND_INTERVAL);
-      return () => {
-        clearInterval(handle);
-      };
-    }
-  }, [readyState]);
+    const connection = connectionOwnerRef.current;
+    const socket = getWebSocket();
+    if (readyState !== ReadyState.OPEN || !ownsConnection(connection, socket)) return;
+    sendMessage(UPDATE_QRCODE_MESSAGE, false);
+    const handle = setInterval(() => {
+      if (!ownsConnection(connection, socket)) return;
+      refreshQRCode();
+    }, SEND_INTERVAL);
+    return () => clearInterval(handle);
+  }, [readyState, wsURL, uuid]);
 
   useEffect(() => {
     if (!wsURL || readyState !== ReadyState.CLOSED || qrcode) {
       return;
     }
+    const owner = connectionOwnerRef.current;
+    if (!owner || !isSessionCurrent(owner.session)
+        || owner.request !== uuidRequestRef.current
+        || owner.uuid !== uuidRef.current) return;
+    if (!connectionFailed && !ownsConnection(owner, getWebSocket())) return;
     setLoading(false);
     setError("二维码连接未建立成功，请重新获取。");
-  }, [readyState, wsURL, qrcode]);
+  }, [readyState, wsURL, qrcode, connectionFailed, connectionGeneration]);
 
   useEffect(() => {
     if (lastMessage) {
+      const connection = connectionOwnerRef.current;
+      const socket = getWebSocket();
+      if (!connection || !isSessionCurrent(connection.session)
+          || connection.request !== uuidRequestRef.current
+          || connection.uuid !== uuidRef.current
+          || !socket || invalidatedSocketsRef.current.has(socket) || lastMessage.target !== socket
+          || socket.url !== connection.url) return;
       try {
         const loginMessage = JSON.parse(lastMessage.data) as LoginMessage;
         switch (loginMessage.type.toUpperCase()) {
@@ -424,28 +519,31 @@ export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {
             break;
         }
       } catch (e) {
-        consoleLog(LOG_LEVEL_ERROR, e);
+        consoleLog(LOG_LEVEL_ERROR, "QR message processing failed");
       }
     }
   }, [lastMessage]);
 
   useEffect(() => {
-    if (!loading || qrcode || !wsURL) {
-      return;
-    }
-
-    const timeout = window.setTimeout(() => {
+    if (!loading || qrcode || !wsURL || readyState !== ReadyState.OPEN) return;
+    const connection = connectionOwnerRef.current;
+    const socket = getWebSocket();
+    if (!ownsConnection(connection, socket)) return;
+    let timeout: number;
+    const onTimeout = () => {
+      if (!ownsConnection(connection, socket)) return;
       if (!hasRetriedRef.current) {
         hasRetriedRef.current = true;
         refreshQRCode();
+        timeout = window.setTimeout(onTimeout, QRCODE_TIMEOUT);
         return;
       }
       setLoading(false);
       setError("二维码获取超时，请重新获取。");
-    }, QRCODE_TIMEOUT);
-
+    };
+    timeout = window.setTimeout(onTimeout, QRCODE_TIMEOUT);
     return () => window.clearTimeout(timeout);
-  }, [loading, qrcode, wsURL]);
+  }, [loading, qrcode, wsURL, uuid, readyState]);
 
   const handleUpdateQrcode = (loginMessage: LoginMessage) => {
     const payload = loginMessage.payload;
@@ -456,9 +554,10 @@ export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {
   };
 
   const refreshQRCode = () => {
+    if (readyState !== ReadyState.OPEN || !ownsConnection(connectionOwnerRef.current, getWebSocket())) return;
     setLoading(true);
     setError("");
-    sendMessage(UPDATE_QRCODE_MESSAGE);
+    sendMessage(UPDATE_QRCODE_MESSAGE, false);
   };
 
   return { qrcode, showQRCode, refreshQRCode, loading, error };
@@ -476,28 +575,49 @@ export function useLoginModal({ onLogin }: { onLogin?: () => void }) {
 }
 
 export function useData<T>(command: string, shouldFetch: boolean, args?: any) {
+  const session = useSessionEpoch();
   const [data, setData] = useState<T | undefined>();
   const [error, setError] = useState<unknown>();
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
+  // A new account session owns this state from now on: whatever the previous
+  // session loaded must not stay visible while the new session is fetching.
+  useEffect(() => {
+    setData(undefined);
+    setError(undefined);
+    setIsLoading(false);
+  }, [session]);
+
   const mutate = async () => {
+    const owner = currentSession();
     setIsLoading(true);
+    setError(undefined);
     try {
       const data = (await invoke(command, args)) as T;
+      if (!isSessionCurrent(owner)) {
+        return;
+      }
       setData(data);
     } catch (e) {
-      consoleLog(LOG_LEVEL_ERROR, e);
+      if (!isSessionCurrent(owner)) {
+        return;
+      }
+      consoleLog(LOG_LEVEL_ERROR, "Data request failed");
       appMessage().error(e as string);
       setError(e);
+    } finally {
+      if (isSessionCurrent(owner)) {
+        setIsLoading(false);
+      }
     }
-    setIsLoading(false);
   };
 
   useEffect(() => {
     if (shouldFetch) {
       mutate();
     }
-  }, [command, args]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [command, args, session]);
   return {
     data,
     isLoading,
@@ -652,16 +772,28 @@ export const useKeyPress = (targetKey: string, action: () => void) => {
 };
 
 export const useBaseURL = () => {
+  const session = useSessionEpoch();
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [baseURL, setBaseURL] = useState<string>(BASE_URL);
   useEffect(() => {
-    getConfig(true).then((config) => {
+    const owner = currentSession();
+    let active = true;
+    const ownsRequest = () => active && isSessionCurrent(owner);
+    setIsLoading(true);
+    setBaseURL(BASE_URL);
+    void getConfig(true).then((config) => {
+      if (!ownsRequest()) return;
       if (config.account_type === "JI") {
         setBaseURL(JI_BASE_URL);
       }
       setIsLoading(false);
+    }).catch((error: unknown) => {
+      if (error instanceof StaleConfigSessionError || !ownsRequest()) return;
+      console.error("Failed to load base URL:", error);
+      setIsLoading(false);
     });
-  }, []);
+    return () => { active = false; };
+  }, [session]);
   return { isLoading, data: baseURL };
 };
 
@@ -694,7 +826,13 @@ export function useAutoLoadCourse(
   ready?: boolean
 ) {
   const { selectedCourseId } = useSelectedCourse();
+  const session = useSessionEpoch();
   const loadedRef = useRef(-1);
+  useEffect(() => {
+    // The new account must load its own course, even when the id happens to
+    // match the one the previous account had selected.
+    loadedRef.current = -1;
+  }, [session]);
   useEffect(() => {
     if (
       ready !== false &&
