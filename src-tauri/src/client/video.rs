@@ -1425,16 +1425,16 @@ impl Client {
         let progress_handler = Arc::new(Mutex::new(progress_handler));
         let payload = Arc::new(Mutex::new(payload));
 
-        let nproc = num_cpus::get();
+        let nproc = (num_cpus::get().max(1) as u64).min(size) as usize;
         tracing::info!("nproc: {}", nproc);
         let chunk_size = size / nproc as u64;
         let mut tasks = JoinSet::new();
         for i in 0..nproc {
             let begin = i as u64 * chunk_size;
             let end = if i == nproc - 1 {
-                size - 1
+                size
             } else {
-                (i + 1) as u64 * chunk_size - 1
+                (i + 1) as u64 * chunk_size
             };
             let self_clone = self.clone();
             let save_path = save_path.to_owned();
@@ -1445,11 +1445,12 @@ impl Client {
             tasks.spawn(async move {
                 let mut current_begin = begin;
                 while current_begin < end {
-                    let response = self_clone
+                    let request_end = current_begin.saturating_add(VIDEO_CHUNK_SIZE).min(end);
+                    let mut response = self_clone
                         .download_video_partial(
                             &url,
                             current_begin,
-                            current_begin + VIDEO_CHUNK_SIZE,
+                            request_end - 1,
                         )
                         .await?;
                     let status = response.status();
@@ -1457,8 +1458,19 @@ impl Client {
                         tracing::error!("status not ok: {}", status);
                         return Err(AppError::VideoDownloadError(save_path));
                     }
-                    let bytes = response.bytes().await?;
+                    // Bound each response before writing; a server may ignore Range.
+                    let mut bytes = Vec::new();
+                    let expected = request_end - current_begin;
+                    while let Some(chunk) = response.chunk().await? {
+                        if chunk.len() as u64 > expected - bytes.len() as u64 {
+                            return Err(AppError::VideoDownloadError(save_path));
+                        }
+                        bytes.extend_from_slice(&chunk);
+                    }
                     let read_bytes = bytes.len() as u64;
+                    if read_bytes == 0 {
+                        return Err(AppError::VideoDownloadError(save_path));
+                    }
                     tracing::info!("read_bytes: {:?}", read_bytes);
                     {
                         let mut file = output_file.lock().await;
@@ -2154,9 +2166,9 @@ mod tests {
                 let chunk_size = size / num_cpus::get() as u64;
                 for index in 0..num_cpus::get() {
                     let begin = index as u64 * chunk_size;
-                    let end = (begin + VIDEO_CHUNK_SIZE).min(size - 1);
+                    let end = if index == num_cpus::get() - 1 { size - 1 } else { (index + 1) as u64 * chunk_size - 1 };
                     chunks.push(server.mock(|when, then| {
-                        when.method(GET).path("/video.mp4").header("Range", format!("bytes={begin}-{}", begin + VIDEO_CHUNK_SIZE));
+                        when.method(GET).path("/video.mp4").header("Range", format!("bytes={begin}-{end}"));
                         then.status(206).header("Content-Range", format!("bytes {begin}-{end}/{size}"))
                             .body(&original[begin as usize..=end as usize]);
                     }));
@@ -2175,6 +2187,48 @@ mod tests {
             probe.assert_hits(1);
             for chunk in chunks { chunk.assert_hits(1); }
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_range_download_rejects_empty_and_oversized_bodies() -> Result<()> {
+        use httpmock::prelude::*;
+        let size = num_cpus::get().max(1) * 2;
+        for body in [Vec::new(), vec![0x5a; size + 1]] {
+            let server = MockServer::start();
+            let probe = server.mock(|when, then| {
+                when.method(GET).path("/video.mp4").header("Range", "bytes=0-0");
+                then.status(206).header("Content-Range", format!("bytes 0-0/{size}")).body("Z");
+            });
+            let chunks = server.mock(|when, then| {
+                when.method(GET).path("/video.mp4");
+                then.status(206).body(body);
+            });
+            let output = crate::utils::file::TempFile::with_extension(std::env::temp_dir().to_string_lossy().into_owned(), "mp4")?;
+            let cli = Arc::new(Client::new_without_proxy(server.base_url().as_str(), "", "", "", None));
+            let info = VideoPlayInfo { rtmp_url_hdv: server.url("/video.mp4"), ..Default::default() };
+            let result = tokio::time::timeout(std::time::Duration::from_secs(5), cli.download_video(&info, output.path(), |_| {})).await;
+            assert!(result.expect("invalid range response must terminate").is_err());
+            probe.assert_hits(1);
+            assert!(chunks.hits() <= num_cpus::get().max(1));
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_range_download_handles_single_byte() -> Result<()> {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        let response = server.mock(|when, then| {
+            when.method(GET).path("/video.mp4").header("Range", "bytes=0-0");
+            then.status(206).header("Content-Range", "bytes 0-0/1").body("Z");
+        });
+        let output = crate::utils::file::TempFile::with_extension(std::env::temp_dir().to_string_lossy().into_owned(), "mp4")?;
+        let cli = Arc::new(Client::new_without_proxy(server.base_url().as_str(), "", "", "", None));
+        let info = VideoPlayInfo { rtmp_url_hdv: server.url("/video.mp4"), ..Default::default() };
+        cli.download_video(&info, output.path(), |_| {}).await?;
+        assert_eq!(fs::read(output.path())?, b"Z");
+        response.assert_hits(2);
         Ok(())
     }
 
