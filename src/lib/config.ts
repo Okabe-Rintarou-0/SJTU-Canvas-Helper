@@ -24,6 +24,9 @@ let CONFIG: AppConfig | null = null;
 // The account session this config was read for. A cached config is only valid
 // while the session that produced it is still the active one.
 let CONFIG_SESSION = -1;
+// A failed read revokes ownership once; repeated reads in that invalid session
+// must not emit another epoch and recursively restart session-dependent effects.
+let INVALID_CONFIG_SESSION: number | undefined;
 
 let configQueue: Promise<void> = Promise.resolve();
 
@@ -42,12 +45,16 @@ export function isConfigOwnerCurrent(config: AppConfig): boolean {
 function invalidateConfig(): void {
   CONFIG = null;
   CONFIG_SESSION = -1;
-  invalidateSession();
+  if (INVALID_CONFIG_SESSION !== currentSession()) {
+    invalidateSession();
+    INVALID_CONFIG_SESSION = currentSession();
+  }
 }
 
 function publishConfig(config: AppConfig): void {
   if (CONFIG?.__config_owner && CONFIG.__config_owner !== config.__config_owner)
     invalidateSession();
+  INVALID_CONFIG_SESSION = undefined;
   CONFIG = config;
   CONFIG_SESSION = currentSession();
   configStore.dispatch(updateConfig(cloneDeep(config)));
@@ -67,9 +74,9 @@ export async function getConfig(revalidate = false): Promise<AppConfig> {
       throw new ConfigReadFailure(currentSession());
     }
     if (!isSessionCurrent(session)) throw new StaleConfigSessionError();
-    if (typeof config.__config_owner !== "string" || !config.__config_owner) {
+    if (!config || typeof config.__config_owner !== "string" || !config.__config_owner) {
       invalidateConfig();
-      throw new StaleConfigSessionError();
+      throw new ConfigReadFailure(currentSession());
     }
     publishConfig(config);
     return config;

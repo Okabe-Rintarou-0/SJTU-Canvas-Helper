@@ -282,6 +282,7 @@ export default function SettingsPage() {
   // Guards initConfig against out-of-order completion: rapid account switches
   // each re-read the config, and only the newest read may publish its result.
   const initConfigRef = useRef(0);
+  const settingsMountedRef = useRef(true);
   const extraCheckRef = useRef(0);
   const [accounts, setAccounts] = useState<string[]>([]);
   const [openTour, setOpenTour] = useState<boolean>(false);
@@ -485,8 +486,13 @@ export default function SettingsPage() {
     setExtraLoginReady(false);
   }), []);
 
-  useEffect(() => () => {
-    extraCheckRef.current += 1;
+  useEffect(() => {
+    settingsMountedRef.current = true;
+    return () => {
+      settingsMountedRef.current = false;
+      initConfigRef.current += 1;
+      extraCheckRef.current += 1;
+    };
   }, []);
 
   const initAccounts = async () => {
@@ -495,6 +501,7 @@ export default function SettingsPage() {
   };
 
   const initConfig = async () => {
+    if (!settingsMountedRef.current) return;
     const generation = ++initConfigRef.current;
     let observedSession = currentSession();
     let observedConfig: AppConfig | undefined;
@@ -504,7 +511,7 @@ export default function SettingsPage() {
       observedSession = currentSession();
       observedConfig = config;
       const accountInfo = (await invoke("read_account_info")) as AccountInfo;
-      if (generation !== initConfigRef.current || !isSessionCurrent(observedSession) || !isConfigOwnerCurrent(config)) {
+      if (!settingsMountedRef.current || generation !== initConfigRef.current || !isSessionCurrent(observedSession) || !isConfigOwnerCurrent(config)) {
         // A newer switch already started; its result is the current account.
         return;
       }
@@ -536,7 +543,7 @@ export default function SettingsPage() {
         setTourStep(0);
       }
     } catch (e) {
-      if (generation !== initConfigRef.current || e instanceof StaleConfigSessionError) return;
+      if (!settingsMountedRef.current || generation !== initConfigRef.current || e instanceof StaleConfigSessionError) return;
       if (e instanceof ConfigReadFailure) {
         if (isSessionCurrent(e.failureSession)) messageApi.error(e.message);
         return;
@@ -750,8 +757,7 @@ export default function SettingsPage() {
         invalidateSession();
         try { await invoke("switch_account", { account }); }
         finally { invalidateSession(); }
-      });
-      await initConfig();
+      }, initConfig);
     } catch (e) {
       messageApi.error(`切换账号失败：${e}`);
     }
@@ -763,8 +769,7 @@ export default function SettingsPage() {
         invalidateSession();
         try { await invoke("delete_account", { account: currentAccount }); }
         finally { invalidateSession(); }
-      });
-      await initConfig();
+      }, initConfig);
       messageApi.success("删除账号成功！");
     } catch (e) {
       messageApi.error(`删除账号失败：${e}`);
