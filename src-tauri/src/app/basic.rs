@@ -188,13 +188,6 @@ impl App {
         Self::sync_parent_directory(path)
     }
 
-    fn ensure_directory(dir: &str) {
-        let metadata = fs::metadata(dir);
-        if metadata.is_err() {
-            _ = fs::create_dir_all(dir);
-        }
-    }
-
     pub(crate) fn portable() -> bool {
         let exe_dir = std::env::current_exe()
             .map(|path| path.parent().unwrap().to_owned())
@@ -289,6 +282,7 @@ impl App {
         Ok(fs::read(path)?)
     }
 
+    #[cfg(test)]
     pub fn read_account_info() -> Result<AccountInfo> {
         Self::read_account_info_in(&Self::config_dir()?)
     }
@@ -315,6 +309,7 @@ impl App {
         Ok(account)
     }
 
+    #[cfg(test)]
     pub fn account_exists(account: &Account) -> Result<bool> {
         Self::account_exists_in(&Self::config_dir()?, account)
     }
@@ -485,7 +480,7 @@ impl App {
             Ok(info) => info,
             Err(AppError::IO(error)) if error.kind() == std::io::ErrorKind::NotFound => {
                 // A lost index alongside existing custom accounts is not a fresh installation.
-                for entry in fs::read_dir(&directory)? {
+                for entry in fs::read_dir(directory)? {
                     let name = entry?.file_name();
                     let name = name.to_string_lossy();
                     if name.starts_with("sjtu_canvas_helper_config_") && name.ends_with(".json") {
@@ -525,7 +520,7 @@ impl App {
                 // Older versions legitimately created only a Default-only index at first launch.
                 // This is indistinguishable from a lost Default-only configuration: initialize
                 // empty defaults, never claim credential recovery or adopt any orphaned account.
-                for entry in fs::read_dir(&directory)? {
+                for entry in fs::read_dir(directory)? {
                     let name = entry?.file_name();
                     let name = name.to_string_lossy();
                     if name.starts_with("sjtu_canvas_helper_config_") && name.ends_with(".json") {
@@ -585,6 +580,7 @@ impl App {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn list_accounts() -> Result<Vec<Account>> {
         let account_info = App::read_account_info()?;
         Ok(account_info.all_accounts)
@@ -979,15 +975,6 @@ impl App {
         self.quiesce_mcp_locked().await.map(|_| ())
     }
 
-    pub async fn restart_mcp(&self) -> Result<bool> {
-        let owner = self.config_owner.lock().await;
-        self.store_ready()?;
-        owner.as_ref().ok_or(AppError::StaleConfigOwner)?;
-        let mut slot = self.mcp_handle.lock().await;
-        Self::stop_mcp_slot(&mut slot).await?;
-        self.start_mcp_slot(&mut slot).await
-    }
-
     async fn restore_mcp_after_failure(
         &self, was_running: bool, owner: &Option<String>, error: AppError,
     ) -> AppError {
@@ -1022,10 +1009,6 @@ impl App {
     /// including A -> B -> A. Account display names are not cache identities.
     fn owner_cache_key(base: &str, owner: &str) -> String {
         format!("{base}:owner:{owner}")
-    }
-
-    fn get_config_path(account: &Account) -> String {
-        Self::get_config_path_in(&Self::config_dir().unwrap(), account)
     }
 
     fn get_config_path_in(config_dir: &str, account: &Account) -> String {

@@ -64,46 +64,6 @@ impl Client {
         Ok(info)
     }
 
-    pub async fn login_jbox(&self, cookie: &str) -> Result<String> {
-        self.jar
-            .add_cookie_str(cookie, &Url::parse(AUTH_URL).unwrap());
-        let resp = self
-            .get_request(JBOX_LOGIN_URL, None::<&str>)
-            .await?
-            .error_for_status()?;
-        let re = Regex::new(r"code=(.+?)&state=").unwrap();
-        let url = resp.url().to_string();
-        let Some(captures) = re.captures(&url) else {
-            return Err(AppError::LoginError);
-        };
-
-        let Some(m) = captures.get(1) else {
-            return Err(AppError::LoginError);
-        };
-
-        let code = m.as_str().to_owned();
-        let next_url = format!("{JBOX_LOGIN_URL2}{code}");
-        let login_result = self
-            .post_request::<JboxLoginResult, _>(&next_url, "")
-            .await?;
-
-        if login_result.status != 0 || login_result.user_token.len() != 128 {
-            return Err(AppError::LoginError);
-        }
-        Ok(login_result.user_token)
-    }
-
-    pub async fn get_user_space_info(&self, user_token: &str) -> Result<PersonalSpaceInfo> {
-        crate::diagnostics::protect_secret(user_token);
-        let url = format!("{JBOX_USER_SPACE_URL}?user_token={user_token}");
-        let info = self.post_request::<PersonalSpaceInfo, _>(&url, "").await?;
-        if info.status != 0 {
-            tracing::error!(status = info.status, "JBox user space request failed");
-            return Err(AppError::JBoxError(info.message));
-        }
-        Ok(info)
-    }
-
     pub async fn start_chunk_upload(
         &self,
         path: &str,
@@ -206,6 +166,7 @@ impl Client {
         Ok(())
     }
 
+    #[cfg(test)]
     pub async fn upload_file<F: Fn(ProgressPayload) + Send>(
         &self,
         file: &File,
