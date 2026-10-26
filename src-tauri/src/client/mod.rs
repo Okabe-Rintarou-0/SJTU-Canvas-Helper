@@ -8,6 +8,7 @@ pub mod ai;
 pub mod annual;
 pub mod basic;
 mod common;
+pub(crate) use common::authentication;
 pub mod constants;
 mod debug;
 mod file_parser;

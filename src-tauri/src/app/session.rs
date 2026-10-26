@@ -1,18 +1,10 @@
 //! A session is owned by one configuration generation, never by an account name.
 //! Old tasks retain their old Arc (including its Jar and JWT). Replacing this
 //! single-slot cache cannot make a late HTTP response mutate a newer session.
-use std::{future::Future, sync::Arc, time::Duration};
+use std::{future::Future, sync::Arc};
 use tokio::sync::Mutex;
 use super::App;
-use crate::{client::Client, error::{AppError, Result}};
-
-const AUTH_BUDGET: Duration = Duration::from_secs(30);
-
-pub(super) async fn authentication<T>(future: impl Future<Output = Result<T>>) -> Result<T> {
-    tokio::time::timeout(AUTH_BUDGET, future).await.map_err(|_| {
-        std::io::Error::new(std::io::ErrorKind::TimedOut, "Authentication timed out")
-    })?
-}
+use crate::{client::{authentication, Client}, error::{AppError, Result}};
 
 pub(super) struct CanvasSession {
     pub owner: String,
@@ -160,6 +152,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
     use crate::model::{Account, AccountInfo, AppConfig};
     use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::{oneshot, RwLock}};
 
