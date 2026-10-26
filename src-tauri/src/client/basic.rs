@@ -1292,6 +1292,30 @@ mod mock_tests {
     }
 
     #[tokio::test]
+    async fn test_get_course_syllabus_without_published_body() {
+        for body in [
+            json!({"id": 42, "syllabus_body": null}),
+            json!({"id": 42}),
+            json!({"id": 42, "syllabus_body": ""}),
+        ] {
+            let server = MockServer::start();
+            let mock = server.mock(|when, then| {
+                when.method(GET)
+                    .path("/api/v1/courses/42")
+                    .query_param("include[]", "syllabus_body");
+                then.status(200).json_body(body.clone());
+            });
+            let course = create_test_client(&server.base_url())
+                .get_course_syllabus(42, "test-token")
+                .await
+                .unwrap();
+            assert_eq!(course.id, 42);
+            assert!(course.syllabus_body.is_empty());
+            mock.assert();
+        }
+    }
+
+    #[tokio::test]
     async fn test_list_submissions_paginates_without_live_canvas() {
         let server = MockServer::start();
         let mut pages = Vec::new();

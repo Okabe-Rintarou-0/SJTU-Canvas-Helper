@@ -20,8 +20,16 @@ pub struct Course {
     pub teachers: Vec<Teacher>,
     #[serde(default)]
     pub term: Term,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_syllabus_body")]
     pub syllabus_body: String,
+}
+
+// Canvas uses null as well as an omitted/empty string for an unpublished syllabus.
+fn deserialize_syllabus_body<'de, D>(deserializer: D) -> std::result::Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
