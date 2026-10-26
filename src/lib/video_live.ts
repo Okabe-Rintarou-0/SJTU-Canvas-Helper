@@ -9,6 +9,16 @@ export function liveSessionStatus(session: CanvasLiveSession, now: number): "liv
 
 export const liveStatusLabels = { live: "直播中", upcoming: "未开始", ended: "已结束", unavailable: "未开放" };
 
+// Only follow the same teaching class on the same teaching day, not next week's lesson.
+export function nextLiveSession(current: CanvasLiveSession, sessions: CanvasLiveSession[], now: number): CanvasLiveSession | undefined {
+  const day = (time: number) => new Date(time + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return sessions.filter((session) => session.id !== current.id && session.enabled
+    && session.teachingClassId === current.teachingClassId
+    && session.startTime > current.startTime && session.finishTime > now
+    && day(session.startTime) === day(current.startTime))
+    .sort((a, b) => a.startTime - b.startTime)[0];
+}
+
 export function livePlaybackURL(source: string, port: number): string {
   const url = new URL(source);
   if (url.protocol !== "https:" || (url.port && url.port !== "443")

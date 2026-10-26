@@ -1,4 +1,4 @@
-﻿import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
+import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import AccountBalanceWalletRoundedIcon from "@mui/icons-material/AccountBalanceWalletRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
@@ -6,9 +6,7 @@ import FolderOpenRoundedIcon from "@mui/icons-material/FolderOpenRounded";
 import KeyRoundedIcon from "@mui/icons-material/KeyRounded";
 import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
 import PreviewRoundedIcon from "@mui/icons-material/PreviewRounded";
-import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
-import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
-import TipsAndUpdatesRoundedIcon from "@mui/icons-material/TipsAndUpdatesRounded";
+import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
 import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import {
@@ -29,7 +27,6 @@ import {
   IconButton,
   InputAdornment,
   MenuItem,
-  Link as MuiLink,
   Stack,
   Switch,
   TextField,
@@ -37,7 +34,7 @@ import {
   Typography
 } from "@mui/material";
 import { ProviderIcon } from "@lobehub/icons";
-import { alpha, useTheme, type Theme } from "@mui/material/styles";
+import { alpha, useTheme } from "@mui/material/styles";
 import { surfaceCardSx } from "../lib/styles";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -45,10 +42,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactJson from "react-json-view-ts";
 import BasicLayout from "../components/layout";
 import LogModal from "../components/log_modal";
+import CanvasTokenGuideDialog, { CanvasTokenGuideContent } from "../components/canvas_token_guide";
 import { changeSessionAccount } from "../lib/account_sessions";
 import VideoSummarySettings from "../components/video_summary_settings";
 import { videoSummaryOptions, videoSummaryOptionsError } from "../lib/video_summary_config";
-import { WorkspaceHero } from "../components/workspace_hero";
+import SettingsShell, { SettingsPanel, type SettingsSection } from "../components/settings_shell";
 import { LoginAlert } from "../components/login_alert";
 import { ConfigReadFailure, getConfig, isConfigOwnerCurrent, saveConfig, StaleConfigSessionError, updateConfig } from "../lib/config";
 import { useConfigDispatch, useQRCode } from "../lib/hooks";
@@ -69,7 +67,6 @@ const DEFAULT_PROXY_PORT = 3030;
 const MIN_LLM_TEMPERATURE = 0;
 const MAX_LLM_TEMPERATURE = 2;
 const LLM_TEMPERATURE_STEP = 0.1;
-const CANVAS_TOKEN_URL = "https://oc.sjtu.edu.cn/profile/settings";
 const ZHIYUAN_LLM_BASE_URL = "https://models.sjtu.edu.cn/api/v1";
 const ZHIYUAN_LLM_DEFAULT_MODEL = "deepseek-reasoner";
 
@@ -173,23 +170,7 @@ function LlmProviderIcon({ provider, size }: { provider: string; size: number })
   return <ProviderIcon provider={provider} size={size} />;
 }
 
-const cardSx = {
-  ...surfaceCardSx,
-  boxShadow: (theme: Theme) =>
-    theme.palette.mode === "dark"
-      ? "inset 0 1px 0 rgba(255,255,255,0.04)"
-      : "0 6px 18px rgba(31, 42, 36, 0.05)",
-};
-
-const fullWidthChipSx = {
-  width: "100%",
-  display: "flex",
-  minWidth: 0,
-  "& .MuiChip-label": {
-    width: "100%",
-    textAlign: "center",
-  },
-};
+const cardSx = surfaceCardSx;
 
 function InlineQRCodePanel({
   onScanSuccess,
@@ -208,7 +189,7 @@ function InlineQRCodePanel({
   return (
     <Card
       sx={{
-        borderRadius: "24px",
+        borderRadius: "12px",
         border: "1px solid",
         borderColor: "divider",
         boxShadow: "0 10px 28px rgba(15, 23, 42, 0.05)",
@@ -250,7 +231,7 @@ function InlineQRCodePanel({
               justifyContent="center"
               sx={{
                 minHeight: 260,
-                borderRadius: "24px",
+                borderRadius: "12px",
                 border: "1px dashed",
                 borderColor: alpha(theme.palette.primary.main, 0.18),
                 bgcolor: alpha(theme.palette.background.paper, 0.62),
@@ -273,6 +254,7 @@ function InlineQRCodePanel({
 
 export default function SettingsPage() {
   const theme = useTheme();
+  const [activeSection, setActiveSection] = useState<SettingsSection>("account");
   const dispatch = useConfigDispatch();
   const [messageApi, contextHolder] = useAppMessage();
   const tokenFieldRef = useRef<HTMLDivElement>(null);
@@ -290,11 +272,16 @@ export default function SettingsPage() {
   const [accountMode, setAccountMode] = useState<AccountMode>("select");
   const [currentAccount, setCurrentAccount] = useState<string>("");
   const [rawConfig, setRawConfig] = useState<string>("");
+  const [rawConfigLoading, setRawConfigLoading] = useState(false);
+  const [rawConfigError, setRawConfigError] = useState("");
+  const [testingToken, setTestingToken] = useState(false);
+  const [tokenTestResult, setTokenTestResult] = useState<{ severity: "success" | "error"; text: string } | null>(null);
   const [showLogModal, setShowLogModal] = useState<boolean>(false);
   const [formData, setFormData] = useState<AppConfig | null>(null);
   const [initialSnapshot, setInitialSnapshot] = useState<string>("");
   const [createAccountName, setCreateAccountName] = useState<string>("");
   const [showToken, setShowToken] = useState<boolean>(false);
+  const [showTokenGuide, setShowTokenGuide] = useState(false);
   const [showNewKeyValue, setShowNewKeyValue] = useState<boolean>(false);
   const [showAddKeyDialog, setShowAddKeyDialog] = useState<boolean>(false);
   const [newKeyName, setNewKeyName] = useState<string>("");
@@ -343,12 +330,15 @@ export default function SettingsPage() {
   const [extraLoginReady, setExtraLoginReady] = useState<boolean | null>(null);
   const [checkingExtraLogin, setCheckingExtraLogin] = useState(true);
 
+  useEffect(() => {
+    if (activeSection !== "account") return;
+    const field = tokenError ? tokenFieldRef.current : savePathError ? savePathFieldRef.current : null;
+    field?.querySelector("input")?.focus();
+  }, [activeSection, tokenError, savePathError]);
+
   const steps = [
     {
       title: "填写您的 Canvas Token",
-      description:
-        "请前往 https://oc.sjtu.edu.cn/profile/settings 创建您的 API Token。",
-      image: "help.png",
     },
     {
       title: "填写您的下载保存目录",
@@ -356,7 +346,7 @@ export default function SettingsPage() {
     },
     {
       title: "保存",
-      description: "保存您的设置。",
+      description: "点击“保存全部设置”，保存您的配置。",
     },
   ];
 
@@ -368,6 +358,22 @@ export default function SettingsPage() {
   }, [formData, initialSnapshot]);
 
   const loading = !formData;
+
+  const mcpConnectionText = useMemo(() => {
+    if (!formData?.token) return "// 请先配置 Canvas Token 并保存";
+    const config = { mcpServers: { "sjtu-canvas": {
+      type: "streamable-http",
+      url: `http://localhost:${formData.mcp_port ?? 3100}`,
+    } } };
+    return [
+      "我现在在本机运行了一个 Canvas MCP 服务器。",
+      "请帮我做以下几件事：",
+      "1. 读取下面的 MCP 服务器配置，连接到 MCP Server",
+      "2. 连接成功后，调用 list_courses 工具列出我的所有 Canvas 课程",
+      "3. 检查有无临近截止的作业，并提醒我",
+      "", "MCP 配置如下：", JSON.stringify(config, null, 2),
+    ].join("\n");
+  }, [formData?.token, formData?.mcp_port]);
 
   const parsedRawConfig = useMemo(() => {
     if (!rawConfig) {
@@ -537,6 +543,7 @@ export default function SettingsPage() {
       setInitialSnapshot(JSON.stringify(normalizedConfig));
       initialSnapshotRef.current = JSON.stringify(normalizedConfig);
       setTokenError("");
+      setTokenTestResult(null);
       setSavePathError("");
       if (normalizedConfig.token.length === 0) {
         setOpenTour(true);
@@ -642,12 +649,13 @@ export default function SettingsPage() {
 
     const valid = await validateForm();
     if (!valid) {
+      setActiveSection("account");
       messageApi.error("请先修正表单中的错误，再保存设置。");
       return;
     }
 
     const summaryError = videoSummaryOptionsError(videoSummaryOptions(formData));
-    if (summaryError) { messageApi.error(summaryError); return; }
+    if (summaryError) { setActiveSection("ai"); messageApi.error(summaryError); return; }
 
     try {
       const saved = await saveConfig(formData);
@@ -671,11 +679,19 @@ export default function SettingsPage() {
       return;
     }
 
+    setTestingToken(true);
+    setTokenTestResult(null);
     try {
       const me = (await invoke("test_token", { token })) as User;
+      if (latestFormDataRef.current?.token !== token) return;
+      setTokenTestResult({ severity: "success", text: `Token 校验通过，已连接到 ${me.name} 的 Canvas。` });
       messageApi.success(`你好，${me.name}。欢迎使用 SJTU Canvas Helper。`, 2);
-    } catch (e) {
+    } catch {
+      if (latestFormDataRef.current?.token !== token) return;
+      setTokenTestResult({ severity: "error", text: "Token 校验失败，请检查 Token 或网络连接后重试。" });
       messageApi.error("Token 无效，请检查后重试。");
+    } finally {
+      setTestingToken(false);
     }
   };
 
@@ -777,11 +793,17 @@ export default function SettingsPage() {
   }, [currentAccount, messageApi]);
 
   const getRawConfig = async () => {
+    setRawConfigLoading(true);
+    setRawConfigError("");
     try {
       const nextRawConfig = (await invoke("get_raw_config")) as string;
+      if (!nextRawConfig.trim()) throw new Error("配置内容为空，请稍后重试。");
       setRawConfig(nextRawConfig);
     } catch (e) {
+      setRawConfigError(`无法加载配置：${e}`);
       messageApi.error(`获取失败：${e}`);
+    } finally {
+      setRawConfigLoading(false);
     }
   };
 
@@ -808,30 +830,6 @@ export default function SettingsPage() {
     setSavePathError("");
   };
 
-  const renderCardSaveAction = (label: string) => (
-    <>
-      <Divider />
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        spacing={1.25}
-        justifyContent="space-between"
-        alignItems={{ xs: "stretch", sm: "center" }}
-      >
-        <Typography variant="body2" color="text.secondary">
-          {dirty ? "当前修改尚未写入本地配置。" : "当前卡片内容已与本地配置同步。"}
-        </Typography>
-        <Button
-          variant="contained"
-          onClick={handleSaveConfig}
-          startIcon={<SaveRoundedIcon />}
-          sx={{ minWidth: { xs: "100%", sm: 168 } }}
-        >
-          {label}
-        </Button>
-      </Stack>
-    </>
-  );
-
   return (
     <BasicLayout>
       {contextHolder}
@@ -846,27 +844,11 @@ export default function SettingsPage() {
           color: "text.primary",
         }}
       >
-        <Stack spacing={3}>
-          <WorkspaceHero
-            chipLabel="系统设置"
-            chipIcon={<SettingsRoundedIcon />}
-            title="系统设置"
-            description="配置账号连接、界面偏好与高级选项。"
-          />
-          <Box
-            sx={{
-              display: "grid",
-              gap: 3,
-              gridTemplateColumns: {
-                xs: "minmax(0, 1fr)",
-                xl: "minmax(0, 1.35fr) minmax(320px, 0.9fr)",
-              },
-            }}
-          >
-            <Stack spacing={3}>
+        <SettingsShell active={activeSection} onSectionChange={setActiveSection} dirty={dirty} onSave={() => void handleSaveConfig()}>
+            <SettingsPanel id="account" active={activeSection}>
               <Card sx={cardSx}>
                 <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-                  <Stack spacing={3}>
+                  <Stack spacing={2.5}>
                     <Stack
                       direction={{ xs: "column", sm: "row" }}
                       justifyContent="space-between"
@@ -881,8 +863,8 @@ export default function SettingsPage() {
                         variant="outlined"
                         label={`当前账号：${currentAccount || "未选择"}`}
                         sx={{
-                          ...fullWidthChipSx,
-                          width: { xs: "100%", sm: 260 },
+                          maxWidth: "100%",
+                          alignSelf: "flex-start",
                           flexShrink: 0,
                         }}
                       />
@@ -894,15 +876,16 @@ export default function SettingsPage() {
                           display: "grid",
                           gap: 2,
                           gridTemplateColumns: {
-                            xs: "minmax(0, 1fr)",
-                            md: "1.2fr auto auto",
+                            xs: "minmax(0, 1fr) auto",
+                            sm: "minmax(0, 1fr) auto auto",
                           },
-                          alignItems: "end",
+                          alignItems: "start",
                         }}
                       >
-                        <TextField
+                        <TextField size="small" fullWidth
                           select
                           label="选择账号"
+                          sx={{ gridColumn: { xs: "1 / -1", sm: "auto" } }}
                           name="account_select"
                           value={currentAccount}
                           onChange={(event) =>
@@ -918,6 +901,7 @@ export default function SettingsPage() {
                         </TextField>
                         <Button
                           variant="outlined"
+                          sx={{ minHeight: 40 }}
                           onClick={() => setAccountMode("create")}
                         >
                           新建账号
@@ -926,6 +910,7 @@ export default function SettingsPage() {
                           color="error"
                           variant="outlined"
                           onClick={handleDeleteAccount}
+                          sx={{ minHeight: 40 }}
                           disabled={currentAccount === "Default"}
                           startIcon={<DeleteOutlineRoundedIcon />}
                         >
@@ -938,14 +923,15 @@ export default function SettingsPage() {
                           display: "grid",
                           gap: 2,
                           gridTemplateColumns: {
-                            xs: "minmax(0, 1fr)",
-                            md: "1.2fr auto auto",
+                            xs: "minmax(0, 1fr) auto",
+                            sm: "minmax(0, 1fr) auto auto",
                           },
-                          alignItems: "end",
+                          alignItems: "start",
                         }}
                       >
-                        <TextField
+                        <TextField size="small" fullWidth
                           label="新账号名称"
+                          sx={{ gridColumn: { xs: "1 / -1", sm: "auto" } }}
                           name="account_name"
                           value={createAccountName}
                           onChange={(event) =>
@@ -954,94 +940,92 @@ export default function SettingsPage() {
                           placeholder='例如：本科账号…'
                           helperText="建议按用途命名，后续切换会更清晰。"
                         />
-                        <Button variant="contained" onClick={handleCreateAccount}>
+                        <Button variant="contained" onClick={handleCreateAccount} sx={{ minHeight: 40 }}>
                           创建账号
                         </Button>
                         <Button
                           variant="text"
                           onClick={() => setAccountMode("select")}
+                          sx={{ minHeight: 40 }}
                         >
                           取消
                         </Button>
                       </Box>
                     )}
 
-                    <Box>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                        Canvas 连接
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        这是最核心的连接配置。建议先完成 Token 校验，再保存整页设置。
-                      </Typography>
-                    </Box>
-
-                    <Alert
-                      severity="info"
-                      icon={<TipsAndUpdatesRoundedIcon />}
-                      sx={{ borderRadius: "18px" }}
-                    >
-                      请前往{" "}
-                      <MuiLink
-                        href={CANVAS_TOKEN_URL}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Canvas Token 页面
-                      </MuiLink>{" "}
-                      创建 API Token，并将其粘贴到下方字段。
-                    </Alert>
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ xs: "flex-start", sm: "center" }} justifyContent="space-between">
+                      <Box>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                          Canvas 连接
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          配置访问 Canvas 所需的 Token 与账号环境。
+                        </Typography>
+                      </Box>
+                      <Button onClick={() => setShowTokenGuide(true)} startIcon={<KeyRoundedIcon />} sx={{ flexShrink: 0 }}>
+                        获取 Canvas Token
+                      </Button>
+                    </Stack>
                     <Box
                       sx={{
                         display: "grid",
                         gap: 2,
-                        gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "1fr 220px" },
+                        gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "minmax(0, 1fr) 160px" },
                       }}
                     >
-                      <Box ref={tokenFieldRef}>
-                        <TextField
-                          label="Canvas Token"
-                          name="token"
-                          type={showToken ? "text" : "password"}
-                          value={formData?.token ?? ""}
-                          onChange={(event) =>
-                            updateField("token", event.target.value)
-                          }
-                          placeholder="请输入 Canvas Token…"
-                          error={Boolean(tokenError)}
-                          helperText={
-                            tokenError ||
-                            "Token 仅用于访问你的 Canvas 数据，不会在界面中明文展示。"
-                          }
-                          autoComplete="off"
-                          spellCheck={false}
-                          InputProps={{
-                            startAdornment: (
-                              <InputAdornment position="start">
-                                <KeyRoundedIcon color="action" />
-                              </InputAdornment>
-                            ),
-                            endAdornment: (
-                              <InputAdornment position="end">
-                                <Tooltip title={showToken ? "隐藏 Token" : "显示 Token"}>
-                                  <IconButton
-                                    aria-label={showToken ? "隐藏 Token" : "显示 Token"}
-                                    onClick={() => setShowToken((prev) => !prev)}
-                                    edge="end"
-                                  >
-                                    {showToken ? (
-                                      <VisibilityOffRoundedIcon />
-                                    ) : (
-                                      <VisibilityRoundedIcon />
-                                    )}
-                                  </IconButton>
-                                </Tooltip>
-                              </InputAdornment>
-                            ),
-                          }}
-                        />
+                      <Box role="group" aria-label="Canvas Token 与校验" sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "minmax(0, 1fr) auto" }, gap: 1.5, alignItems: "start" }}>
+                        <Box ref={tokenFieldRef}>
+                          <TextField size="small" fullWidth
+                            label="Canvas Token"
+                            name="token"
+                            type={showToken ? "text" : "password"}
+                            value={formData?.token ?? ""}
+                            onChange={(event) => {
+                              updateField("token", event.target.value);
+                              setTokenError("");
+                              setTokenTestResult(null);
+                            }}
+                            placeholder="请输入 Canvas Token…"
+                            error={Boolean(tokenError)}
+                            helperText={
+                              tokenError ||
+                              "用于访问你的 Canvas 数据，默认隐藏显示。"
+                            }
+                            autoComplete="off"
+                            spellCheck={false}
+                            InputProps={{
+                              startAdornment: (
+                                <InputAdornment position="start">
+                                  <KeyRoundedIcon color="action" />
+                                </InputAdornment>
+                              ),
+                              endAdornment: (
+                                <InputAdornment position="end">
+                                  <Tooltip title={showToken ? "隐藏 Token" : "显示 Token"}>
+                                    <IconButton
+                                      aria-label={showToken ? "隐藏 Token" : "显示 Token"}
+                                      onClick={() => setShowToken((prev) => !prev)}
+                                      edge="end"
+                                    >
+                                      {showToken ? (
+                                        <VisibilityOffRoundedIcon />
+                                      ) : (
+                                        <VisibilityRoundedIcon />
+                                      )}
+                                    </IconButton>
+                                  </Tooltip>
+                                </InputAdornment>
+                              ),
+                            }}
+                          />
+                        </Box>
+                        <Button variant="outlined" onClick={handleTestToken} disabled={testingToken} aria-label="测试 Canvas Token"
+                          startIcon={testingToken ? <CircularProgress size={16} color="inherit" /> : <AutoAwesomeRoundedIcon />} sx={{ minHeight: 40, whiteSpace: "nowrap" }}>
+                          {testingToken ? "校验中…" : "测试 Canvas Token"}
+                        </Button>
                       </Box>
 
-                      <TextField
+                      <TextField size="small" fullWidth
                         select
                         label="账号类型"
                         name="account_type"
@@ -1052,33 +1036,25 @@ export default function SettingsPage() {
                             event.target.value as AppConfig["account_type"]
                           )
                         }
-                        helperText="用于区分本部与密院环境。"
+                        helperText="本部或密院环境。"
                       >
                         <MenuItem value="Default">本部</MenuItem>
                         <MenuItem value="JI">密院</MenuItem>
                       </TextField>
                     </Box>
 
-                    <Box>
-                      <Button
-                        variant="outlined"
-                        onClick={handleTestToken}
-                        startIcon={<AutoAwesomeRoundedIcon />}
-                      >
-                        测试 Canvas Token
-                      </Button>
-                    </Box>
+                    {tokenTestResult && <Alert severity={tokenTestResult.severity}>{tokenTestResult.text}</Alert>}
 
                     <Box
                       sx={{
                         display: "grid",
                         gap: 2,
-                        gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "1fr auto" },
+                        gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "minmax(0, 1fr) auto" },
                         alignItems: "start",
                       }}
                     >
                       <Box ref={savePathFieldRef}>
-                        <TextField
+                        <TextField size="small" fullWidth
                           label="下载保存目录"
                           name="save_path"
                           value={formData?.save_path ?? ""}
@@ -1098,49 +1074,49 @@ export default function SettingsPage() {
                         variant="outlined"
                         onClick={handleSelectSavePath}
                         startIcon={<FolderOpenRoundedIcon />}
-                        sx={{ minHeight: 56 }}
+                        sx={{ minHeight: 40 }}
                       >
                         选择目录
                       </Button>
                     </Box>
 
-                    {renderCardSaveAction("保存账号设置")}
+                    <Divider />
 
-                    <Stack spacing={2.5}>
-                      <Box>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                          额外扫码登录
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          用于启用视频等依赖额外登录态的功能。只有在你需要这些能力时，才需要手动扫码登录。
-                        </Typography>
-                      </Box>
+                    <Stack spacing={2}>
+                      <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems={{ xs: "stretch", md: "center" }} justifyContent="space-between">
+                        <Box>
+                          <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                            额外扫码登录
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            视频等功能需要额外登录态，未连接时可在下方扫码登录。
+                          </Typography>
+                        </Box>
 
-                      <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} useFlexGap flexWrap="wrap">
-                        <Chip
-                          icon={<LinkRoundedIcon />}
-                          color={extraLoginReady ? "success" : "default"}
-                          label={
-                            checkingExtraLogin
-                              ? "登录态检查中"
-                              : extraLoginReady === null
-                                ? "登录态待检测"
-                                : extraLoginReady
-                                ? "额外登录已连接"
-                                : "额外登录未连接"
-                          }
-                          sx={fullWidthChipSx}
-                        />
-                      </Stack>
-
-                      <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} useFlexGap flexWrap="wrap">
-                        <Button
-                          variant="outlined"
-                          onClick={() => void checkExtraLoginStatus()}
-                          disabled={checkingExtraLogin}
-                        >
-                          检查登录状态
-                        </Button>
+                        <Stack role="group" aria-label="额外登录状态与检查" direction="row" spacing={1.25} useFlexGap flexWrap="wrap" alignItems="center" sx={{ flexShrink: 0 }}>
+                          <Chip
+                            icon={<LinkRoundedIcon />}
+                            color={extraLoginReady ? "success" : "default"}
+                            label={
+                              checkingExtraLogin
+                                ? "登录态检查中"
+                                : extraLoginReady === null
+                                  ? "登录态待检测"
+                                  : extraLoginReady
+                                  ? "额外登录已连接"
+                                  : "额外登录未连接"
+                            }
+                            sx={{ maxWidth: "100%" }}
+                          />
+                          <Button
+                            variant="outlined"
+                            startIcon={<RefreshRoundedIcon />}
+                            onClick={() => void checkExtraLoginStatus()}
+                            disabled={checkingExtraLogin}
+                          >
+                            检查登录状态
+                          </Button>
+                        </Stack>
                       </Stack>
 
                       {extraLoginReady === false ? (
@@ -1154,7 +1130,7 @@ export default function SettingsPage() {
                       ) : extraLoginReady === null || checkingExtraLogin ? (
                         <Card
                           sx={{
-                            borderRadius: "24px",
+                            borderRadius: "12px",
                             border: "1px solid",
                             borderColor: alpha(theme.palette.primary.main, 0.12),
                             boxShadow: "none",
@@ -1178,10 +1154,11 @@ export default function SettingsPage() {
                   </Stack>
                 </CardContent>
               </Card>
-
+            </SettingsPanel>
+            <SettingsPanel id="appearance" active={activeSection}>
               <Card sx={cardSx}>
                 <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-                  <Stack spacing={3}>
+                  <Stack spacing={2.5}>
                     <Box>
                       <Typography variant="h5">界面偏好</Typography>
                       <Typography variant="body2" color="text.secondary">
@@ -1194,12 +1171,12 @@ export default function SettingsPage() {
                         gap: 2,
                         gridTemplateColumns: {
                           xs: "minmax(0, 1fr)",
-                          md: "repeat(3, minmax(0, 1fr))",
+                          sm: "repeat(2, minmax(0, 1fr))",
                         },
                         alignItems: "start",
                       }}
                     >
-                      <TextField
+                      <TextField size="small" fullWidth
                         select
                         label="界面主题"
                         name="theme"
@@ -1213,7 +1190,7 @@ export default function SettingsPage() {
                         <MenuItem value="dark">深色主题</MenuItem>
                       </TextField>
 
-                      <TextField
+                      <TextField size="small" fullWidth
                         label="主色调"
                         name="color_primary"
                         value={formData?.color_primary ?? DEFAULT_PRIMARY}
@@ -1262,55 +1239,18 @@ export default function SettingsPage() {
                       />
                     </Box>
 
-                    {renderCardSaveAction("保存界面偏好")}
                   </Stack>
                 </CardContent>
               </Card>
-
+            </SettingsPanel>
+            <SettingsPanel id="ai" active={activeSection}>
               <Card sx={cardSx}>
                 <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-                  <Stack spacing={3}>
+                  <Stack spacing={2.5}>
                     <Box>
-                      <Typography variant="h5">实验性功能</Typography>
+                      <Typography variant="h5">AI 与模型</Typography>
                       <Typography variant="body2" color="text.secondary">
-                        默认关闭，保存后生效。
-                      </Typography>
-                    </Box>
-                    <Box>
-                      <FormControlLabel
-                        control={
-                          <Switch
-                            checked={formData?.experimental_task_center_only ?? false}
-                            onChange={(event) => updateField("experimental_task_center_only", event.target.checked)}
-                          />
-                        }
-                        label="使用任务中心替代页面任务列表"
-                      />
-                      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                        开启后，使用左下角任务中心；关闭后，使用各页任务列表。切换不会中断任务。
-                      </Typography>
-                    </Box>
-                    <Box>
-                      <FormControlLabel
-                        control={<Switch checked={formData?.experimental_ppt_cleanup ?? false} onChange={(event) => updateField("experimental_ppt_cleanup", event.target.checked)} />}
-                        label="导出 PPT 时去除无用页面"
-                      />
-                      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                        根据 OCR 排除特征明确的桌面和签到页面，并将连续重复或动画增量切片合并为完整画面。禁止跨页面回访合并。应用于 AI 总结与追问及 PDF 导出；字幕保持完整。文字不足或判断不明确时保留，图形变化可能无法由 OCR 识别。默认关闭，关闭后可重新导出全部切片。
-                      </Typography>
-                    </Box>
-                    {renderCardSaveAction("保存实验性功能")}
-                  </Stack>
-                </CardContent>
-              </Card>
-
-              <Card sx={cardSx}>
-                <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-                  <Stack spacing={3}>
-                    <Box>
-                      <Typography variant="h5">高级选项</Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        这部分用于接入 OpenAI-compatible 的 LLM 功能。
+                        管理模型服务、API Key 和课堂 AI 总结的生成偏好。
                       </Typography>
                     </Box>
 
@@ -1322,8 +1262,8 @@ export default function SettingsPage() {
                         添加多个 API Key 并命名，方便在多个账号之间切换。
                       </Typography>
 
-                      <Box sx={{ display: "flex", gap: 2, alignItems: "center", mb: 3 }}>
-                        <TextField
+                      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "minmax(0, 1fr) auto" }, gap: 1.5, alignItems: "start", mb: 2 }}>
+                        <TextField size="small"
                           select
                           fullWidth
                           label="当前使用的 API Key"
@@ -1376,7 +1316,7 @@ export default function SettingsPage() {
                         <Button
                           variant="outlined"
                           onClick={() => setShowAddKeyDialog(true)}
-                          sx={{ minWidth: 100, whiteSpace: "nowrap" }}
+                          sx={{ minWidth: 100, minHeight: 40, whiteSpace: "nowrap" }}
                         >
                           添加 Key
                         </Button>
@@ -1390,11 +1330,11 @@ export default function SettingsPage() {
                           return (
                             <Box
                               sx={{
-                                p: 3,
+                                p: 2,
                                 borderRadius: "16px",
                                 border: "1px solid",
-                                borderColor: "primary.main",
-                                bgcolor: alpha(theme.palette.primary.main, 0.06),
+                                borderColor: "divider",
+                                bgcolor: alpha(theme.palette.primary.main, 0.025),
                               }}
                             >
                               <Stack spacing={2.5}>
@@ -1404,67 +1344,69 @@ export default function SettingsPage() {
                                     {entry.name}
                                   </Typography>
                                 </Box>
-                                <TextField
-                                  label="名称"
-                                  size="small"
-                                  value={editingName ?? entry.name}
-                                  onChange={(e) => setEditingName(e.target.value)}
-                                  onBlur={async () => {
-                                    if (!editingName?.trim() || !formData) return;
-                                    const updated = formData.llm_api_keys.map((k) =>
-                                      k.name === entry.name ? { ...k, name: editingName.trim() } : k
-                                    );
-                                    const newActive = formData.llm_active_api_key === entry.name ? editingName.trim() : formData.llm_active_api_key;
-                                    const next = { ...formData, llm_api_keys: updated, llm_active_api_key: newActive };
-                                    setFormData(next);
-                                    try { const saved = await saveConfig(next); acceptSavedOwner(next, saved); } catch (e) { if (!(e instanceof StaleConfigSessionError)) messageApi.error(e as string); }
-                                  }}
-                                  placeholder="Key 名称"
-                                  autoComplete="off"
-                                />
-                                <TextField
-                                  label="API Key"
-                                  size="small"
-                                  type={showNewKeyValue ? "text" : "password"}
-                                  value={editingKey ?? entry.key}
-                                  onChange={(e) => setEditingKey(e.target.value)}
-                                  onBlur={async () => {
-                                    if (!formData || editingKey === null) return;
-                                    const keyName = editingName?.trim() || entry.name;
-                                    const keyVal = editingKey.trim();
-                                    if (!keyVal) return;
-                                    const updated = formData.llm_api_keys.map((k) =>
-                                      k.name === keyName ? { ...k, key: keyVal } : k
-                                    );
-                                    const next = { ...formData, llm_api_keys: updated, llm_api_key: keyVal };
-                                    setFormData(next);
-                                    try { const saved = await saveConfig(next); acceptSavedOwner(next, saved); } catch (e) { if (!(e instanceof StaleConfigSessionError)) messageApi.error(e as string); }
-                                  }}
-                                  placeholder="sk-…"
-                                  autoComplete="off"
-                                  spellCheck={false}
-                                  InputProps={{
-                                    endAdornment: (
-                                      <InputAdornment position="end">
-                                        <Tooltip title={showNewKeyValue ? "隐藏" : "显示"}>
-                                          <IconButton
-                                            size="small"
-                                            onClick={() => setShowNewKeyValue((prev) => !prev)}
-                                            edge="end"
-                                          >
-                                            {showNewKeyValue ? (
-                                              <VisibilityOffRoundedIcon fontSize="small" />
-                                            ) : (
-                                              <VisibilityRoundedIcon fontSize="small" />
-                                            )}
-                                          </IconButton>
-                                        </Tooltip>
-                                      </InputAdornment>
-                                    ),
-                                  }}
-                                />
-                                <Box sx={{ display: "grid", gap: 1, gridTemplateColumns: "1fr 1fr" }}>
-                                  <TextField
+                                <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "repeat(2, minmax(0, 1fr))" } }}>
+                                  <TextField fullWidth
+                                    label="名称"
+                                    size="small"
+                                    value={editingName ?? entry.name}
+                                    onChange={(e) => setEditingName(e.target.value)}
+                                    onBlur={async () => {
+                                      if (!editingName?.trim() || !formData) return;
+                                      const updated = formData.llm_api_keys.map((k) =>
+                                        k.name === entry.name ? { ...k, name: editingName.trim() } : k
+                                      );
+                                      const newActive = formData.llm_active_api_key === entry.name ? editingName.trim() : formData.llm_active_api_key;
+                                      const next = { ...formData, llm_api_keys: updated, llm_active_api_key: newActive };
+                                      setFormData(next);
+                                      try { const saved = await saveConfig(next); acceptSavedOwner(next, saved); } catch (e) { if (!(e instanceof StaleConfigSessionError)) messageApi.error(e as string); }
+                                    }}
+                                    placeholder="Key 名称"
+                                    autoComplete="off"
+                                  />
+                                  <TextField fullWidth
+                                    label="API Key"
+                                    size="small"
+                                    type={showNewKeyValue ? "text" : "password"}
+                                    value={editingKey ?? entry.key}
+                                    onChange={(e) => setEditingKey(e.target.value)}
+                                    onBlur={async () => {
+                                      if (!formData || editingKey === null) return;
+                                      const keyName = editingName?.trim() || entry.name;
+                                      const keyVal = editingKey.trim();
+                                      if (!keyVal) return;
+                                      const updated = formData.llm_api_keys.map((k) =>
+                                        k.name === keyName ? { ...k, key: keyVal } : k
+                                      );
+                                      const next = { ...formData, llm_api_keys: updated, llm_api_key: keyVal };
+                                      setFormData(next);
+                                      try { const saved = await saveConfig(next); acceptSavedOwner(next, saved); } catch (e) { if (!(e instanceof StaleConfigSessionError)) messageApi.error(e as string); }
+                                    }}
+                                    placeholder="sk-…"
+                                    autoComplete="off"
+                                    spellCheck={false}
+                                    InputProps={{
+                                      endAdornment: (
+                                        <InputAdornment position="end">
+                                          <Tooltip title={showNewKeyValue ? "隐藏" : "显示"}>
+                                            <IconButton
+                                              size="small"
+                                              onClick={() => setShowNewKeyValue((prev) => !prev)}
+                                              edge="end"
+                                            >
+                                              {showNewKeyValue ? (
+                                                <VisibilityOffRoundedIcon fontSize="small" />
+                                              ) : (
+                                                <VisibilityRoundedIcon fontSize="small" />
+                                              )}
+                                            </IconButton>
+                                          </Tooltip>
+                                        </InputAdornment>
+                                      ),
+                                    }}
+                                  />
+                                </Box>
+                                <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "repeat(2, minmax(0, 1fr))" } }}>
+                                  <TextField fullWidth
                                     label="Base URL"
                                     size="small"
                                     value={editingBaseUrl ?? (entry.base_url || (formData?.llm_base_url ?? ""))}
@@ -1596,7 +1538,7 @@ export default function SettingsPage() {
                       </DialogTitle>
                       <DialogContent>
                         <Stack spacing={2} sx={{ mt: 1 }}>
-                          <TextField
+                          <TextField size="small"
                             select
                             fullWidth
                             label="服务商"
@@ -1623,7 +1565,7 @@ export default function SettingsPage() {
                               </MenuItem>
                             ))}
                           </TextField>
-                          <TextField
+                          <TextField size="small" fullWidth
                             label="名称"
                             name="new_key_name"
                             value={newKeyName}
@@ -1632,7 +1574,7 @@ export default function SettingsPage() {
                             helperText="起一个好记的名字，方便后续在列表中切换。"
                             autoComplete="off"
                           />
-                          <TextField
+                          <TextField size="small" fullWidth
                             label="API Key"
                             name="new_key_value"
                             type={showNewKeyValue ? "text" : "password"}
@@ -1660,7 +1602,7 @@ export default function SettingsPage() {
                               ),
                             }}
                           />
-                          <TextField
+                          <TextField size="small" fullWidth
                             label="Base URL"
                             name="new_key_base_url"
                             value={newKeyBaseUrl}
@@ -1676,7 +1618,7 @@ export default function SettingsPage() {
                             }
                             autoComplete="off"
                           />
-                          <Autocomplete
+                          <Autocomplete size="small"
                             freeSolo
                             fullWidth
                             loading={loadingModels}
@@ -1747,8 +1689,8 @@ export default function SettingsPage() {
                       </DialogActions>
                     </Dialog>
 
-                    <Box sx={{ maxWidth: 220 }}>
-                      <TextField
+                    <Box sx={{ maxWidth: { sm: 320 } }}>
+                      <TextField size="small"
                         label="Temperature"
                         name="llm_temperature"
                         type="number"
@@ -1775,14 +1717,27 @@ export default function SettingsPage() {
                       video_summary_output_tokens: formData?.video_summary_output_tokens }}
                       onChange={(fields) => setFormData((previous) => previous ? { ...previous, ...fields } : previous)} />
 
+
+                  </Stack>
+                </CardContent>
+              </Card>
+            </SettingsPanel>
+            <SettingsPanel id="advanced" active={activeSection}>
+              <Card sx={cardSx}>
+                <CardContent sx={{ p: { xs: 2, sm: 2.5 } }}>
+                  <Stack spacing={2.5}>
+                    <Box>
+                      <Typography variant="h5">高级选项</Typography>
+                      <Typography variant="body2" color="text.secondary">配置文件打开方式、开发调试与 MCP 服务。</Typography>
+                    </Box>
                     <Box
                       sx={{
                         display: "grid",
                         gap: 2,
-                        gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "1fr 1fr" },
+                        gridTemplateColumns: "minmax(0, 1fr)",
                       }}
                     >
-                      <TextField
+                      <TextField size="small" fullWidth
                         label="明文类型白名单"
                         name="serve_as_plaintext"
                         value={formData?.serve_as_plaintext ?? ""}
@@ -1805,7 +1760,7 @@ export default function SettingsPage() {
                       </Typography>
                       <FormControlLabel
                         control={
-                          <Switch
+                          <Switch size="small"
                             checked={formData?.debug_mode ?? false}
                             onChange={(event) =>
                               updateField("debug_mode", event.target.checked)
@@ -1827,13 +1782,14 @@ export default function SettingsPage() {
                         sx={{
                           display: "grid",
                           gap: 2,
-                          gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "1fr 180px" },
-                          alignItems: "center",
+                          gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "minmax(0, 1fr) 240px" },
+                          alignItems: "start",
                         }}
                       >
                         <FormControlLabel
+                          sx={{ minHeight: 40, m: 0 }}
                           control={
-                            <Switch
+                            <Switch size="small"
                               checked={formData?.mcp_enabled ?? false}
                               onChange={(event) =>
                                 updateField("mcp_enabled", event.target.checked)
@@ -1842,8 +1798,9 @@ export default function SettingsPage() {
                           }
                           label="启用 MCP Server"
                         />
-                        <TextField
+                        <TextField size="small" fullWidth
                           label="MCP 端口"
+                          sx={{ maxWidth: { sm: 240 } }}
                           name="mcp_port"
                           type="number"
                           value={formData?.mcp_port ?? 3100}
@@ -1863,97 +1820,81 @@ export default function SettingsPage() {
                     <Box
                       sx={{
                         p: 2,
-                        borderRadius: "18px",
+                        borderRadius: "10px",
                         bgcolor: alpha(theme.palette.background.default, 0.6),
                         border: "1px solid",
                         borderColor: "divider",
                       }}
                     >
                       <Stack spacing={1}>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                          复制 MCP 连接配置
-                        </Typography>
+                        <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>MCP 连接配置</Typography>
+                          <Button size="small" startIcon={<ContentCopyRoundedIcon />} disabled={!formData?.token}
+                            onClick={() => {
+                              navigator.clipboard.writeText(mcpConnectionText).then(
+                                () => messageApi.success("已复制！"),
+                                () => messageApi.error("复制失败")
+                              );
+                            }}>复制配置</Button>
+                        </Stack>
                         <Typography variant="caption" color="text.secondary">
                           粘贴到 opencode / Claude Desktop / Cline 等支持 MCP 的 AI 客户端即可自动接入。MCP 服务器仅监听本机，无需额外鉴权。
                         </Typography>
-                        <TextField
+                        <TextField size="small"
+                          label="MCP 连接配置"
                           multiline
                           fullWidth
-                          minRows={9}
-                          maxRows={16}
+                          minRows={5}
+                          maxRows={8}
                           sx={{
                             "& .MuiInputBase-root": { fontFamily: "monospace", fontSize: "0.8125rem", lineHeight: 1.6 },
                           }}
-                          value={(() => {
-                            if (!formData?.token) return "// 请先配置 Canvas Token 并保存";
-                            const config = {
-                              mcpServers: {
-                                "sjtu-canvas": {
-                                  type: "sse",
-                                  url: `http://localhost:${formData.mcp_port ?? 3100}`,
-                                },
-                              },
-                            };
-                            return [
-                              "我现在在本机运行了一个 Canvas MCP 服务器。",
-                              "请帮我做以下几件事：",
-                              "1. 读取下面的 MCP 服务器配置，连接到 MCP Server",
-                              "2. 连接成功后，调用 list_courses 工具列出我的所有 Canvas 课程",
-                              "3. 检查有无临近截止的作业，并提醒我",
-                              "",
-                              "MCP 配置如下：",
-                              JSON.stringify(config, null, 2),
-                            ].join("\n");
-                          })()}
-                          slotProps={{
-                            input: {
-                              readOnly: true,
-                              endAdornment: formData?.token ? (
-                                <InputAdornment position="end">
-                                  <IconButton
-                                    size="small"
-                                    onClick={() => {
-                                    const config = {
-                                      mcpServers: {
-                                        "sjtu-canvas": {
-                                          type: "streamable-http",
-                                          url: `http://localhost:${formData?.mcp_port ?? 3100}`,
-                                        },
-                                      },
-                                    };
-                                    const text = [
-                                      "我现在在本机运行了一个 Canvas MCP 服务器。",
-                                      "请帮我做以下几件事：",
-                                      "1. 读取下面的 MCP 服务器配置，连接到 MCP Server",
-                                      "2. 连接成功后，调用 list_courses 工具列出我的所有 Canvas 课程",
-                                      "3. 检查有无临近截止的作业，并提醒我",
-                                      "",
-                                      "MCP 配置如下：",
-                                      JSON.stringify(config, null, 2),
-                                    ].join("\n");
-                                    navigator.clipboard.writeText(text).then(
-                                      () => messageApi.success("已复制！"),
-                                      () => messageApi.error("复制失败")
-                                    );
-                                  }}
-                                >
-                                  <ContentCopyRoundedIcon />
-                                </IconButton>
-                              </InputAdornment>
-                              ) : undefined,
-                            },
-                          }}
+                          value={mcpConnectionText}
+                          slotProps={{ input: { readOnly: true } }}
                         />
                       </Stack>
                     </Box>
 
-                    {renderCardSaveAction("保存高级选项")}
                   </Stack>
                 </CardContent>
               </Card>
-            </Stack>
-
-            <Stack spacing={3}>
+              <Card sx={cardSx}>
+                <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+                  <Stack spacing={2.5}>
+                    <Box>
+                      <Typography variant="h5">实验性功能</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        默认关闭，保存后生效。
+                      </Typography>
+                    </Box>
+                    <Box>
+                      <FormControlLabel
+                        control={
+                          <Switch size="small"
+                            checked={formData?.experimental_task_center_only ?? false}
+                            onChange={(event) => updateField("experimental_task_center_only", event.target.checked)}
+                          />
+                        }
+                        label="使用任务中心替代页面任务列表"
+                      />
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, pr: { sm: 6 } }}>
+                        开启后，使用左下角任务中心；关闭后，使用各页任务列表。切换不会中断任务。
+                      </Typography>
+                    </Box>
+                    <Box>
+                      <FormControlLabel
+                        control={<Switch size="small" checked={formData?.experimental_ppt_cleanup ?? false} onChange={(event) => updateField("experimental_ppt_cleanup", event.target.checked)} />}
+                        label="导出 PPT 时去除无用页面"
+                      />
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, pr: { sm: 6 } }}>
+                        根据 OCR 排除特征明确的桌面、签到和登录页面，并精简连续重复或内容基本被覆盖的动画切片；禁止跨页面回访合并。应用于 AI 总结与追问及 PDF 导出，字幕保持完整。文字不足或判断不明确时保留；仅凭 OCR 无法可靠区分图形变化。默认关闭，关闭后可重新导出全部切片。
+                      </Typography>
+                    </Box>
+                  </Stack>
+                </CardContent>
+              </Card>
+            </SettingsPanel>
+            <SettingsPanel id="tools" active={activeSection}>
               <Card sx={cardSx}>
                 <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
                   <Stack spacing={2}>
@@ -1968,7 +1909,7 @@ export default function SettingsPage() {
                       sx={{
                         display: "grid",
                         gap: 1.25,
-                        gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+                        gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "repeat(2, max-content)" },
                       }}
                     >
                       <Button
@@ -1989,10 +1930,10 @@ export default function SettingsPage() {
                   </Stack>
                 </CardContent>
               </Card>
-
               <Card sx={cardSx}>
                 <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
                   <Stack spacing={2}>
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ xs: "stretch", sm: "center" }} justifyContent="space-between">
                     <Box>
                       <Typography variant="h5">配置预览</Typography>
                       <Typography variant="body2" color="text.secondary">
@@ -2002,17 +1943,22 @@ export default function SettingsPage() {
 
                     <Button
                       variant="outlined"
+                      disabled={rawConfigLoading}
                       onClick={() => (rawConfig ? setRawConfig("") : void getRawConfig())}
-                      startIcon={<PreviewRoundedIcon />}
+                      startIcon={rawConfigLoading ? <CircularProgress size={16} color="inherit" /> : <PreviewRoundedIcon />}
+                      sx={{ flexShrink: 0 }}
                     >
-                      {rawConfig ? "隐藏原始配置" : "加载原始配置"}
+                      {rawConfigLoading ? "加载中…" : rawConfig ? "隐藏原始配置" : rawConfigError ? "重试加载" : "加载原始配置"}
                     </Button>
+                    </Stack>
+
+                    {rawConfigError && <Alert severity="error">{rawConfigError}</Alert>}
 
                     {rawConfig && parsedRawConfig && (
                       <Box
                         sx={{
                           p: 1,
-                          borderRadius: "20px",
+                          borderRadius: "12px",
                           border: "1px solid",
                           borderColor: "divider",
                           bgcolor: alpha(theme.palette.background.default, 0.72),
@@ -2029,39 +1975,27 @@ export default function SettingsPage() {
                     )}
 
                     {rawConfig && !parsedRawConfig && (
-                      <Alert severity="warning" sx={{ borderRadius: "18px" }}>
+                      <Alert severity="warning" sx={{ borderRadius: "10px" }}>
                         当前配置不是合法 JSON，无法渲染结构化预览。
                       </Alert>
                     )}
                   </Stack>
                 </CardContent>
               </Card>
-
-            </Stack>
-          </Box>
-        </Stack>
+            </SettingsPanel>
+        </SettingsShell>
 
         {showLogModal && <LogModal onClose={() => setShowLogModal(false)} />}
-        <Dialog open={openTour} onClose={() => setOpenTour(false)} fullWidth maxWidth="sm">
-          <DialogTitle>{steps[tourStep]?.title}</DialogTitle>
+        <CanvasTokenGuideDialog open={showTokenGuide} accountType={formData?.account_type}
+          onClose={() => setShowTokenGuide(false)}
+          onExited={() => tokenFieldRef.current?.querySelector("input")?.focus()} />
+        <Dialog open={openTour} onClose={() => setOpenTour(false)} fullWidth maxWidth="sm" aria-labelledby="settings-tour-title">
+          <DialogTitle id="settings-tour-title">{steps[tourStep]?.title}</DialogTitle>
           <DialogContent dividers>
             <Stack spacing={2}>
-              <Typography variant="body2" color="text.secondary">
-                {steps[tourStep]?.description}
-              </Typography>
-              {steps[tourStep]?.image ? (
-                <Box
-                  component="img"
-                  src={steps[tourStep].image}
-                  alt={steps[tourStep].title}
-                  sx={{
-                    width: "100%",
-                    borderRadius: "20px",
-                    border: "1px solid",
-                    borderColor: "divider",
-                  }}
-                />
-              ) : null}
+              {tourStep === 0 ? <CanvasTokenGuideContent accountType={formData?.account_type} /> : (
+                <Typography variant="body2" color="text.secondary">{steps[tourStep]?.description}</Typography>
+              )}
             </Stack>
           </DialogContent>
           <DialogActions sx={{ px: 3, py: 2 }}>

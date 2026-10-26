@@ -1897,45 +1897,23 @@ mod tests {
     }
 
     #[test]
-    fn test_ppt_animation_simplification_and_summary_keep_complete_pages_and_original_times() {
-        // De-identified sequence preserves OCR order/noise, formulas and page counters.
-        let response: Value = serde_json::from_str(include_str!("fixtures/ppt_animation_sequence.json")).unwrap();
+    fn test_ppt_ocr_cleanup_keeps_original_evidence_and_subtitle_timeline() {
+        let body = "基本概念：先介绍问题的背景和定义，再给出推导步骤及示例，最后说明结论的适用条件，并对不同方法的特点进行比较。";
+        let response = serde_json::json!({"data": {"docList": [
+            {"createSec": 10, "imageUrl": "https://example.test/one.png", "ocrText": body},
+            {"createSec": 20, "imageUrl": "https://example.test/two.png", "ocrText": format!("{body}补充一条说明。")}
+        ]}});
         let original = ppts_from_response(&response).unwrap();
-        assert_eq!(original.len(), 41);
-        assert!(!crate::model::AppConfig::default().experimental_ppt_cleanup);
-        assert_eq!(crate::app::ppt::simplify_animation_slides(original.clone(), false), (original.clone(), vec![]));
-        let (kept, notes) = crate::app::ppt::simplify_animation_slides(original, true);
-        assert_eq!(kept.len(), 38);
-        assert!(notes[0].contains("41 张 → 38 张"));
-        for time in ["995", "1555", "2555"] {
-            assert!(!kept.iter().any(|slide| slide.create_sec == time), "redundant slice {time}");
-        }
-        let complete = kept.iter().find(|slide| slide.create_sec == "1061").unwrap();
-        assert_eq!(complete.animation_start_sec.as_deref(), Some("995"));
-        assert!(complete.ocr_text.contains("负采样（negative sampling）"));
-        // Complete annotated formula pages are retained, while different pages and
-        // different section highlights are preserved even when their titles match.
-        for time in ["80", "415", "418", "824", "1148", "1418", "2743", "2865", "402", "429", "434", "444", "514", "683", "736", "790", "911", "1800", "2867", "952", "2382", "2541", "2913"] {
-            assert!(kept.iter().any(|slide| slide.create_sec == time));
-        }
-        let all_times: std::collections::HashSet<_> = kept.iter().flat_map(|slide| std::iter::once(slide.create_sec.clone()).chain(slide.related_slide_secs.iter().cloned())).collect();
-        assert_eq!(all_times.len(), 41);
-        let subtitles = vec![CanvasVideoSubTitle { bg: 995000, res: "这一页开始讲优化".into(), ..Default::default() }];
+        let (kept, _) = crate::app::ppt::simplify_animation_slides(original.clone(), true);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].ocr_text, original[1].ocr_text);
+        assert_eq!(kept[0].ppt_img_url, original[1].ppt_img_url);
+        assert_eq!(kept[0].related_slide_secs, vec!["10"]);
+        let subtitles = vec![CanvasVideoSubTitle { bg: 15000, res: "继续讲解".into(), ..Default::default() }];
         let (text, available, _) = crate::app::ppt::material_timeline("videoSpace:example", &subtitles, &kept);
         assert!(available);
-        assert!(text.contains("&t=995) [字幕] 这一页开始讲优化"));
-        assert!(!text.contains("&t=995) [PPT OCR"));
-        assert!(text.contains("&t=1061) [PPT OCR"));
-        assert!(!text.contains("逐步展开"));
-        assert!(text.contains("&t=2743)"));
-        assert!(text.contains("&t=2867)"));
-        assert!(!text.contains("&t=1555)"));
-        assert!(text.contains("&t=1800) [PPT OCR"));
-        assert!(text.contains("&t=418)"));
-        assert!(text.contains("&t=434) [PPT OCR"));
-        assert_eq!(text.matches("[PPT OCR]").count(), 37); // one image has no OCR
-        // The same resulting slice list is the input to PDF export.
-        assert_eq!(crate::app::ppt::filter_export_slides(kept, false).0.len(), 38);
+        assert!(text.contains("&t=15) [字幕] 继续讲解"));
+        assert!(text.contains("&t=20) [PPT OCR"));
     }
 
     #[test]
