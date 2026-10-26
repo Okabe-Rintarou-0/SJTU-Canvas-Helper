@@ -1,5 +1,4 @@
 use super::{constants::BASE_URL, file_parser, llm, Client};
-use ::bytes::Bytes;
 use reqwest::{cookie, multipart};
 use serde::de::DeserializeOwned;
 use std::{cmp::min, collections::HashSet, fs, io::Write, ops::Deref, path::Path, sync::Arc};
@@ -323,16 +322,6 @@ impl Client {
         .await?
         .error_for_status()?;
         Ok(())
-    }
-
-    pub async fn get_file_content(file: &File) -> Result<Bytes> {
-        let response = reqwest::Client::new()
-            .get(&file.url)
-            .send()
-            .await?
-            .error_for_status()?;
-        let bytes = response.bytes().await?;
-        Ok(bytes)
     }
 
     pub async fn download_file<F: Fn(ProgressPayload) + Send>(

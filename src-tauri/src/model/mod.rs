@@ -807,6 +807,15 @@ pub struct QRCodeScanResult {
     pub contents: Vec<String>,
 }
 
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+pub struct QRCodeScanReport {
+    pub results: Vec<QRCodeScanResult>,
+    pub total_files: usize,
+    pub image_files: usize,
+    pub scanned_images: usize,
+    pub failed_images: usize,
+}
+
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DiscussionTopic {
     pub id: i64,
