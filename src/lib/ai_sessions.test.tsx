@@ -4,7 +4,7 @@ import { useAISession } from "./ai_session_store";
 import { CanvasAgentSession } from "./canvas_agent_session";
 import { FileAISession } from "./file_ai_session";
 import { VideoSummarySession } from "./video_summary_session";
-import { readSummaryCache } from "./video_summary_cache";
+import { readSummaryCache, writeSummaryCache, summaryCacheKey, PPT_CLEANUP_POLICY } from "./video_summary_cache";
 import type { CanvasVideo, File } from "./model";
 import type { VideoSession } from "./video_library";
 import { videoSummaryOptions } from "./video_summary_config";
@@ -148,6 +148,26 @@ describe("file stream lifetime", () => {
 });
 
 describe("video summary lifetime", () => {
+  it("refreshes materials from an older PPT cleanup policy and reuses only the current policy", async () => {
+    const options = videoSummaryOptions();
+    writeSummaryCache({ key: summaryCacheKey(request.namespace, scopes, request.organization, options),
+      namespace: request.namespace, scopes, organization: request.organization, title: "旧总结",
+      text: "旧版清理后的资料", messages: [], coverage: "1/1", savedAt: "2026-01-01T00:00:00Z" });
+    mocks.invoke.mockImplementation(async (command) => command === "prepare_video_material" ? material : "新总结");
+    const session = new VideoSummarySession();
+    await session.start(request);
+    expect(session.getSnapshot().namespace).toBe(`account:course:${PPT_CLEANUP_POLICY}=0`);
+    expect(session.getSnapshot().text).toContain(material.text);
+    expect(session.getSnapshot().text).not.toContain("旧版清理后的资料");
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "prepare_video_material")).toHaveLength(1);
+    const count = mocks.invoke.mock.calls.length;
+    await session.start(request);
+    expect(mocks.invoke.mock.calls).toHaveLength(count);
+    await session.start({ ...request, cleanUpPpt: true });
+    expect(mocks.invoke).toHaveBeenCalledWith("prepare_video_material", expect.objectContaining({ cleanUpPpt: true }));
+    expect(session.getSnapshot().namespace).toBe(`account:course:${PPT_CLEANUP_POLICY}=1`);
+  });
+
   it("snapshots preferences, restores prepared notes for follow-ups, and bypasses caches when preferences change", async () => {
     const options = { ...videoSummaryOptions(), prompt: "详细推导公式" };
     const prepared = { sourceHash: "source", text: "压缩课堂笔记" };
