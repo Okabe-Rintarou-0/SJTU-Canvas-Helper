@@ -62,3 +62,130 @@ pub(super) fn client_for_cookie_scope(cookies: &str, scope: Url) -> Result<reqwe
         }))
         .build()?)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use httpmock::{Method::GET, MockServer};
+    use std::time::Duration;
+
+    fn scoped_client(server: &MockServer) -> reqwest::Client {
+        client_for_cookie_scope("session=synthetic-secret", Url::parse(&server.url("/app")).unwrap())
+            .unwrap()
+    }
+
+    async fn get(client: &reqwest::Client, url: &str) {
+        client.get(url).timeout(Duration::from_secs(5)).send().await.unwrap()
+            .error_for_status().unwrap();
+    }
+
+    #[tokio::test]
+    async fn saved_cookies_are_sent_only_inside_the_exact_origin_and_path_boundary() {
+        let origin = MockServer::start();
+        let foreign = MockServer::start();
+        let client = scoped_client(&origin);
+        for path in ["/app", "/app/", "/app/info"] {
+            let expected = origin.mock(|when, then| {
+                when.method(GET).path(path).header("cookie", "session=synthetic-secret");
+                then.status(200);
+            });
+            get(&client, &origin.url(path)).await;
+            expected.assert();
+        }
+        for path in ["/", "/outside", "/application", "/app-other"] {
+            let expected = origin.mock(|when, then| {
+                when.method(GET).path(path).header("cookie", "");
+                then.status(200);
+            });
+            get(&client, &origin.url(path)).await;
+            expected.assert();
+        }
+        let expected = foreign.mock(|when, then| {
+            when.method(GET).path("/app/info").header("cookie", "");
+            then.status(200);
+        });
+        get(&client, &foreign.url("/app/info")).await;
+        expected.assert();
+    }
+
+    #[tokio::test]
+    async fn redirects_clear_credentials_outside_scope_and_restore_only_at_the_admitted_origin() {
+        let origin = MockServer::start();
+        let foreign = MockServer::start();
+        let start = origin.mock(|when, then| {
+            when.method(GET).path("/app/start").header("cookie", "session=synthetic-secret");
+            then.status(302).header("location", "/outside");
+        });
+        let outside = origin.mock(|when, then| {
+            when.method(GET).path("/outside").header("cookie", "");
+            then.status(302).header("location", foreign.url("/app/hop"));
+        });
+        let hop = foreign.mock(|when, then| {
+            when.method(GET).path("/app/hop").header("cookie", "");
+            then.status(302).header("location", origin.url("/app/finish"));
+        });
+        let finish = origin.mock(|when, then| {
+            when.method(GET).path("/app/finish").header("cookie", "session=synthetic-secret");
+            then.status(200);
+        });
+        get(&scoped_client(&origin), &origin.url("/app/start")).await;
+        for expected in [&start, &outside, &hop, &finish] {
+            expected.assert();
+        }
+    }
+
+    #[tokio::test]
+    async fn broad_response_cookie_cannot_expand_scope_and_outside_responses_cannot_poison_it() {
+        let origin = MockServer::start();
+        let seed = origin.mock(|when, then| {
+            when.method(GET).path("/app/seed").header("cookie", "session=synthetic-secret");
+            then.status(302).header("set-cookie", "broad=inside-only; Path=/")
+                .header("location", "/outside");
+        });
+        let outside = origin.mock(|when, then| {
+            when.method(GET).path("/outside").header("cookie", "");
+            then.status(302).header("set-cookie", "session=poison; Path=/app")
+                .header("location", "/app/finish");
+        });
+        // Jar cookie order is unspecified, so verify the resulting values at the
+        // store boundary below as well as the empty header at the unsafe hop.
+        let finish = origin.mock(|when, then| {
+            when.method(GET).path("/app/finish");
+            then.status(200);
+        });
+        get(&scoped_client(&origin), &origin.url("/app/seed")).await;
+        seed.assert(); outside.assert(); finish.assert();
+
+        let scope = Url::parse(&origin.url("/app")).unwrap();
+        let jar = ScopedJar { jar: Jar::default(), scope: scope.clone() };
+        let good = HeaderValue::from_static("session=synthetic-secret; Path=/");
+        jar.set_cookies(&mut [&good].into_iter(), &scope);
+        let bad = HeaderValue::from_static("session=poison; Path=/");
+        jar.set_cookies(&mut [&bad].into_iter(), &Url::parse(&origin.url("/outside")).unwrap());
+        assert_eq!(jar.cookies(&scope).unwrap(), "session=synthetic-secret");
+        assert_eq!(jar.cookies(&Url::parse(&origin.url("/outside")).unwrap()).unwrap(), "");
+    }
+
+    #[tokio::test]
+    async fn scoped_clients_do_not_share_response_cookies() {
+        let origin = MockServer::start();
+        let first = client_for_cookie_scope("session=first", Url::parse(&origin.url("/app")).unwrap()).unwrap();
+        let second = client_for_cookie_scope("session=second", Url::parse(&origin.url("/app")).unwrap()).unwrap();
+        let seed = origin.mock(|when, then| {
+            when.method(GET).path("/app/seed").header("cookie", "session=first");
+            then.status(200).header("set-cookie", "session=rotated; Path=/app");
+        });
+        let first_read = origin.mock(|when, then| {
+            when.method(GET).path("/app/first").header("cookie", "session=rotated");
+            then.status(200);
+        });
+        let second_read = origin.mock(|when, then| {
+            when.method(GET).path("/app/second").header("cookie", "session=second");
+            then.status(200);
+        });
+        get(&first, &origin.url("/app/seed")).await;
+        get(&first, &origin.url("/app/first")).await;
+        get(&second, &origin.url("/app/second")).await;
+        seed.assert(); first_read.assert(); second_read.assert();
+    }
+}

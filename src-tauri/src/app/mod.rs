@@ -13,6 +13,7 @@ pub mod cache;
 mod constants;
 pub mod jbox;
 pub mod video;
+mod session;
 pub mod video_library;
 pub(crate) mod ppt;
 #[cfg(test)]
@@ -29,6 +30,8 @@ pub struct ConfigSnapshot {
 pub struct App {
     config_store: Option<config_store::ConfigStore>,
     client: Arc<Client>,
+    canvas_session: tokio::sync::Mutex<Option<Arc<session::CanvasSession>>>,
+    login_attempt: tokio::sync::Mutex<Option<session::LoginAttempt>>,
     current_account: RwLock<Account>,
     config: RwLock<AppConfig>,
     config_owner: tokio::sync::Mutex<Option<String>>,

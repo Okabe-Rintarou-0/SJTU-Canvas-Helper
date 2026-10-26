@@ -170,7 +170,7 @@ async fn proxy_video_request(
 }
 
 impl App {
-    fn store_ready(&self) -> Result<&ConfigStore> {
+    pub(super) fn store_ready(&self) -> Result<&ConfigStore> {
         let store = self.config_store.as_ref().ok_or(AppError::StaleConfigOwner)?;
         store.ensure_ready()?;
         Ok(store)
@@ -769,6 +769,8 @@ impl App {
         client.set_debug_mode(config.debug_mode);
 
         Self {
+            canvas_session: Default::default(),
+            login_attempt: Default::default(),
             config_store,
             client: Arc::new(client),
             current_account: RwLock::new(account_info.current_account),
@@ -2277,6 +2279,8 @@ mod live_proxy_tests {
         App::recover_account_transaction(directory).unwrap();
         let (account_info, config) = App::load_startup_configuration(directory).unwrap();
         let app = App {
+            canvas_session: Default::default(),
+            login_attempt: Default::default(),
             config_store: Some(store),
             client: Arc::new(Client::new_without_proxy("http://127.0.0.1", "", "", "", None)),
             current_account: RwLock::new(account_info.current_account),

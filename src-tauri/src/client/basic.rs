@@ -1689,3 +1689,26 @@ mod test {
         Ok(())
     }
 }
+
+// Offline regression helpers use the real reqwest Jar and JWT lock, but only
+// accept the loopback test endpoint supplied by app::session tests.
+#[cfg(test)]
+impl Client {
+    pub(crate) async fn session_test_auth_response(&self, url: &str) -> Result<()> {
+        let url = reqwest::Url::parse(url).unwrap();
+        assert_eq!(url.host_str(), Some("127.0.0.1"));
+        // Do not let the test runner's proxy environment turn a loopback
+        // fixture into an external request. The real session Jar is retained.
+        let client = reqwest::Client::builder().no_proxy().cookie_provider(Arc::clone(&self.jar)).build()?;
+        let token = client.get(url).send().await?.error_for_status()?.text().await?;
+        *self.token.write().await = token;
+        Ok(())
+    }
+
+    pub(crate) async fn session_test_state(&self, url: &str) -> (Option<String>, String) {
+        use reqwest::cookie::CookieStore;
+        let cookie = self.jar.cookies(&reqwest::Url::parse(url).unwrap())
+            .map(|value| value.to_str().unwrap().to_owned());
+        (cookie, self.token.read().await.clone())
+    }
+}

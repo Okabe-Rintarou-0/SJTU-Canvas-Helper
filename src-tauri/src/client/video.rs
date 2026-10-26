@@ -1296,15 +1296,9 @@ impl Client {
     }
 
     pub(crate) fn video_client_for_cookies(cookies: &str) -> Result<reqwest::Client> {
-        let jar = Arc::new(Jar::default());
-        let url = Url::parse(VIDEO_BASE_URL).unwrap();
-        for cookie in cookies.split(';').map(str::trim).filter(|value| !value.is_empty()) {
-            jar.add_cookie_str(cookie, &url);
-        }
-        Ok(reqwest::Client::builder()
-            .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36")
-            .cookie_provider(jar)
-            .build()?)
+        // Saved media credentials use the same fixed origin/path boundary as
+        // download snapshots, including every redirect in key/info requests.
+        super::media_auth::client_for_cookie_scope(cookies, Url::parse(VIDEO_BASE_URL).unwrap())
     }
 
     pub async fn get_oauth_consumer_key_for_cookies(&self, cookies: &str) -> Result<Option<String>> {
@@ -1751,6 +1745,16 @@ mod tests {
 
     use super::*;
     use reqwest::header::{HeaderMap, HeaderValue, ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE};
+
+    #[test]
+    fn saved_video_client_rejects_malformed_cookie_headers() {
+        // This exercises the production entry point, without sending a request.
+        // Cookie-scope HTTP behavior is covered at the shared factory boundary.
+        for invalid in ["missing-equals", "=value", "bad name=value", "session=bad\nvalue"] {
+            assert!(Client::video_client_for_cookies(invalid).is_err());
+        }
+        assert!(Client::video_client_for_cookies("session=synthetic; other=value").is_ok());
+    }
 
     #[test]
     fn test_live_list_keeps_upcoming_sections_and_requires_valid_times() {

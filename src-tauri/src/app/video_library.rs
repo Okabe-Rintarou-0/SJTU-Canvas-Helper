@@ -111,6 +111,7 @@ impl App {
     async fn recording_infos(
         &self,
         request: &RecordingRequest,
+        session: &super::session::CanvasSession,
         enrichment: bool,
     ) -> Result<Vec<VideoInfo>> {
         let mut infos = Vec::new();
@@ -119,11 +120,16 @@ impl App {
             if enrichment && candidate.source == VideoSource::Legacy {
                 continue;
             }
-            match self
-                .get_video_play_info(candidate.source, &candidate.video_id)
-                .await
-            {
+            self.ensure_config_owner(&session.owner).await?;
+            let login = session.prepare().await;
+            self.finish_session(session, login).await?;
+            let result = match candidate.source {
+                VideoSource::Canvas | VideoSource::VideoSpace => session.client.get_canvas_video_info(&candidate.video_id).await,
+                VideoSource::Legacy => session.client.get_legacy_video_info(&candidate.video_id).await,
+            };
+            match self.finish_session(session, result).await {
                 Ok(info) => infos.push(info),
+                Err(AppError::StaleConfigOwner) => return Err(AppError::StaleConfigOwner),
                 Err(e) => errors.push(e.to_string()),
             }
         }
@@ -141,28 +147,33 @@ impl App {
         &self,
         request: &RecordingRequest,
         prefer_before: bool,
+        session: &super::session::CanvasSession,
     ) -> Result<Vec<crate::model::CanvasVideoSubTitle>> {
         let mut errors = Vec::new();
-        for info in self.recording_infos(request, true).await? {
-            match self.client.get_subtitle(info.cour_id).await {
+        for info in self.recording_infos(request, session, true).await? {
+            let result = session.client.get_subtitle(info.cour_id).await;
+            match self.finish_session(session, result).await {
                 Ok(sub) => {
                     let lines = preferred_subtitles(sub, prefer_before);
                     if !lines.is_empty() {
                         return Ok(lines);
                     }
                 }
+                Err(AppError::StaleConfigOwner) => return Err(AppError::StaleConfigOwner),
                 Err(e) => errors.push(e.to_string()),
             }
         }
         Err(failure(format!("字幕不可用：{}", errors.join("；"))))
     }
 
-    async fn recording_slides_raw(&self, request: &RecordingRequest) -> Result<Vec<CanvasVideoPPT>> {
+    async fn recording_slides_raw(&self, request: &RecordingRequest, session: &super::session::CanvasSession) -> Result<Vec<CanvasVideoPPT>> {
         let mut errors = Vec::new();
-        for info in self.recording_infos(request, true).await? {
-            match self.client.get_ppt(info.cour_id).await {
+        for info in self.recording_infos(request, session, true).await? {
+            let result = session.client.get_ppt(info.cour_id).await;
+            match self.finish_session(session, result).await {
                 Ok(slides) if !slides.is_empty() => return Ok(slides),
                 Ok(_) => {}
+                Err(AppError::StaleConfigOwner) => return Err(AppError::StaleConfigOwner),
                 Err(e) => errors.push(e.to_string()),
             }
         }
@@ -170,6 +181,7 @@ impl App {
     }
 
     pub async fn prepare_video_material(&self, request: RecordingRequest, prefer_before: bool, include_ocr: bool, clean_up_ppt: Option<bool>) -> Result<VideoMaterial> {
+        let session = self.canvas_session().await?;
         let enabled = clean_up_ppt.unwrap_or(self.config.read().await.experimental_ppt_cleanup);
         let mut material = VideoMaterial {
             key: request.key.clone(),
@@ -181,9 +193,10 @@ impl App {
             ocr_available: false,
         };
         let (subtitles, slides) = tokio::join!(
-            self.recording_subtitle(&request, prefer_before),
-            async { if include_ocr { self.recording_slides_raw(&request).await } else { Ok(Vec::new()) } }
+            self.recording_subtitle(&request, prefer_before, &session),
+            async { if include_ocr { self.recording_slides_raw(&request, &session).await } else { Ok(Vec::new()) } }
         );
+        self.ensure_config_owner(&session.owner).await?;
         let lines = match subtitles {
                 Ok(lines) => {
                     material.subtitle_available = true;
@@ -204,6 +217,7 @@ impl App {
         }
         if untimed > 0 { material.warnings.push(format!("{}：{untimed} 张 PPT OCR 缺少有效时间，无法定位", request.title)); }
         material.text.push_str(&timeline);
+        self.ensure_config_owner(&session.owner).await?;
         Ok(material)
     }
 
@@ -234,6 +248,7 @@ impl App {
         all_tracks: bool,
         progress: Arc<dyn Fn(ExportProgress) + Send + Sync>,
     ) -> Result<ExportResult> {
+        let session = self.canvas_session().await?;
         let mut result = ExportResult {
             paths: vec![],
             warnings: vec![],
@@ -247,7 +262,7 @@ impl App {
                 let mut slides = Vec::new();
                 let enabled = self.config.read().await.experimental_ppt_cleanup;
                 for (request_index, request) in requests.iter().enumerate() {
-                    match self.recording_slides_raw(request).await {
+                    match self.recording_slides_raw(request, &session).await {
                         Ok(next) => {
                             let (mut next, notes) = super::ppt::clean_up_slides(next, enabled);
                             error_notes.extend(notes.iter().map(|note| format!("第 {} 小节：{note}", request_index + 1)));
@@ -266,9 +281,10 @@ impl App {
                     } else {
                         "（部分资料）"
                     };
+                    self.ensure_config_owner(&session.owner).await?;
                     let path = reserve_output(&directory, &format!("{name}{suffix}"), "pdf")?;
                     let report = progress.clone();
-                    if let Err(e) = self
+                    if let Err(e) = session
                         .client
                         .clone()
                         .download_ppt_pdf(&slides, &path.to_string_lossy(), move |p| report(ExportProgress { processed: p.processed + 1, total: p.total, stage: if p.processed + 1 >= p.total { "正在合并 PDF".into() } else { "正在下载 PPT 切片".into() } }))
@@ -283,9 +299,10 @@ impl App {
             "subtitle" | "reading" => {
                 let mut reading = String::new();
                 for (request_index, request) in requests.iter().enumerate() {
-                    match self.recording_subtitle(request, true).await {
+                    match self.recording_subtitle(request, true, &session).await {
                         Ok(lines) => {
                             if kind == "subtitle" {
+                                self.ensure_config_owner(&session.owner).await?;
                                 let path = reserve_output(&directory, &request.title, "srt")?;
                                 fs::write(&path, self.client.convert_to_srt(&lines)?)?;
                                 result.paths.push(path.to_string_lossy().into_owned());
@@ -307,6 +324,7 @@ impl App {
                     }
                 }
                 if kind == "reading" && !reading.is_empty() {
+                    self.ensure_config_owner(&session.owner).await?;
                     let path = reserve_output(&directory, &name, "txt")?;
                     fs::write(
                         &path,
@@ -320,7 +338,7 @@ impl App {
             }
             "video" => {
                 for (request_index, request) in requests.iter().enumerate() {
-                    let infos = self.recording_infos(request, false).await?;
+                    let infos = self.recording_infos(request, &session, false).await?;
                     let info = infos
                         .into_iter()
                         .find(|i| !i.video_play_response_vo_list.is_empty())
@@ -329,6 +347,7 @@ impl App {
                         if !all_tracks && index > 0 {
                             break;
                         }
+                        self.ensure_config_owner(&session.owner).await?;
                         let path = reserve_output(
                             &directory,
                             &format!("{} 机位{}", request.title, index + 1),
@@ -336,7 +355,7 @@ impl App {
                         )?;
                         let report = progress.clone();
                         let track_count = if all_tracks { info.video_play_response_vo_list.len() } else { 1 };
-                        match self
+                        match session
                             .client
                             .clone()
                             .download_video(track, &path.to_string_lossy(), move |p| report(ExportProgress { processed: p.processed, total: p.total, stage: format!("正在下载机位 {}/{track_count}", index + 1) }))
@@ -362,6 +381,7 @@ impl App {
             }
             _ => return Err(failure("未知资料类型")),
         }
+        self.ensure_config_owner(&session.owner).await?;
         if result.paths.is_empty() && !result.notes.is_empty() && result.warnings.is_empty() {
             return Err(failure(format!("没有可导出的 PPT 页面。{}；可关闭“导出 PPT 时去除无用页面”后重试", error_notes.join("；"))));
         }
@@ -381,6 +401,8 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let store = super::super::config_store::ConfigStore::open(directory.path()).unwrap();
         let app = App {
+            canvas_session: Default::default(),
+            login_attempt: Default::default(),
             config_store: Some(store),
             config_owner: tokio::sync::Mutex::new(Some("offline-test-owner".to_owned())),
             client: Arc::new(crate::client::Client::new_without_proxy(

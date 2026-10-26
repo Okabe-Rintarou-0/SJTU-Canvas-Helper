@@ -10,11 +10,13 @@ use crate::{
 // Apis for course video
 impl App {
     pub async fn get_uuid(&self) -> Result<Option<String>> {
-        self.client.get_uuid().await
+        let (owner, id, client) = self.begin_login_attempt().await?;
+        let result = super::session::authentication(client.get_uuid()).await;
+        self.finish_login_uuid(&owner, &id, result).await
     }
 
     pub async fn express_login(&self, uuid: &str) -> Result<Option<String>> {
-        self.client.express_login(uuid).await
+        self.express_login_attempt(uuid).await
     }
 
     pub async fn get_cookie(&self) -> String {
@@ -24,11 +26,11 @@ impl App {
     pub async fn login_video_website(&self) -> Result<()> {
         let snapshot = self.get_config_snapshot().await?;
         let cookie = format!("JAAuthCookie={}", snapshot.config.ja_auth_cookie);
-        let login_result = self.client.login_video_website(&cookie).await;
+        let login_result = super::session::authentication(self.client.login_video_website(&cookie)).await;
         self.ensure_config_owner(&snapshot.owner).await?;
         let cookies = login_result?.ok_or(AppError::LoginError)?;
         if cookies.trim().is_empty() { return Err(AppError::LoginError); }
-        let key_result = self.client.get_oauth_consumer_key_for_cookies(&cookies).await;
+        let key_result = super::session::authentication(self.client.get_oauth_consumer_key_for_cookies(&cookies)).await;
         self.ensure_config_owner(&snapshot.owner).await?;
         let consumer_key = key_result?.ok_or(AppError::LoginError)?;
         self.commit_video_login_result(&snapshot.owner, cookies, consumer_key).await
@@ -62,37 +64,39 @@ impl App {
     }
 
     pub async fn login_canvas_website(&self) -> Result<()> {
-        let cookie = self.get_cookie().await;
-        self.client.login_canvas_website(&cookie).await
+        let session = self.canvas_session().await?;
+        let result = session.refresh().await;
+        self.finish_session(&session, result).await
     }
 
     pub async fn check_extra_login_status(&self) -> Result<bool> {
-        let cookie = self.get_cookie().await;
-        if !self.client.check_extra_login_status(&cookie).await? {
-            return Ok(false);
-        }
-
-        match self.client.login_canvas_website(&cookie).await {
-            Ok(()) => Ok(true),
-            Err(AppError::LoginError) => Ok(false),
-            Err(error) => Err(error),
-        }
+        let session = self.canvas_session().await?;
+        let result = session.check().await;
+        self.finish_session(&session, result).await
     }
 
     pub async fn list_video_space_courses(&self) -> Result<Vec<Course>> {
-        self.client.list_video_space_courses().await
+        let session = self.authenticated_canvas_session().await?;
+        let result = session.client.list_video_space_courses().await;
+        self.finish_session(&session, result).await
     }
 
     pub async fn get_video_live_sessions(&self, canvas_course_id: Option<i64>, teaching_class_id: Option<i64>) -> Result<CanvasLiveList> {
-        self.client.get_video_live_sessions(canvas_course_id, teaching_class_id).await
+        let session = self.authenticated_canvas_session().await?;
+        let result = session.client.get_video_live_sessions(canvas_course_id, teaching_class_id).await;
+        self.finish_session(&session, result).await
     }
 
     pub async fn get_video_live_info(&self, course_id: &str, canvas_course_id: Option<i64>, teaching_class_id: Option<i64>) -> Result<CanvasLiveInfo> {
-        self.client.get_video_live_info(course_id, canvas_course_id, teaching_class_id).await
+        let session = self.authenticated_canvas_session().await?;
+        let result = session.client.get_video_live_info(course_id, canvas_course_id, teaching_class_id).await;
+        self.finish_session(&session, result).await
     }
 
     pub async fn get_video_space_videos(&self, teaching_class_id: i64) -> Result<Vec<CanvasVideo>> {
-        self.client.get_video_space_videos(teaching_class_id).await
+        let session = self.authenticated_canvas_session().await?;
+        let result = session.client.get_video_space_videos(teaching_class_id).await;
+        self.finish_session(&session, result).await
     }
 
     pub async fn get_legacy_videos(
@@ -102,9 +106,9 @@ impl App {
         term_name: &str,
         teacher_names: &[String],
     ) -> Result<Vec<CanvasVideo>> {
-        self.client
-            .get_legacy_videos(course_id, course_name, term_name, teacher_names)
-            .await
+        let session = self.authenticated_canvas_session().await?;
+        let result = session.client.get_legacy_videos(course_id, course_name, term_name, teacher_names).await;
+        self.finish_session(&session, result).await
     }
 
     pub async fn get_video_info(&self, video_id: i64) -> Result<VideoInfo> {
@@ -113,7 +117,7 @@ impl App {
         let mut owner = snapshot.owner;
         let mut consumer_key = snapshot.config.oauth_consumer_key.clone();
         if consumer_key.is_empty() {
-            let key_result = self.client.get_oauth_consumer_key_with_client(&client).await;
+            let key_result = super::session::authentication(self.client.get_oauth_consumer_key_with_client(&client)).await;
             self.ensure_config_owner(&owner).await?;
             consumer_key = key_result?.ok_or_else(|| {
                 AppError::VideoDownloadError("Legacy video authorization key is unavailable".to_string())
@@ -127,7 +131,9 @@ impl App {
     }
 
     pub async fn get_canvas_video_info(&self, video_id: &str) -> Result<VideoInfo> {
-        self.client.get_canvas_video_info(video_id).await
+        let session = self.authenticated_canvas_session().await?;
+        let result = session.client.get_canvas_video_info(video_id).await;
+        self.finish_session(&session, result).await
     }
 
     pub async fn get_video_play_info(
@@ -139,12 +145,18 @@ impl App {
             VideoSource::Canvas | VideoSource::VideoSpace => {
                 self.get_canvas_video_info(video_id).await
             }
-            VideoSource::Legacy => self.client.get_legacy_video_info(video_id).await,
+            VideoSource::Legacy => {
+                let session = self.authenticated_canvas_session().await?;
+                let result = session.client.get_legacy_video_info(video_id).await;
+                self.finish_session(&session, result).await
+            },
         }
     }
 
     pub async fn get_canvas_videos(&self, course_id: i64) -> Result<Vec<CanvasVideo>> {
-        self.client.get_canvas_videos(course_id).await
+        let session = self.authenticated_canvas_session().await?;
+        let result = session.client.get_canvas_videos(course_id).await;
+        self.finish_session(&session, result).await
     }
 
     pub async fn download_video<F: Fn(ProgressPayload) + Send + 'static>(
@@ -173,11 +185,15 @@ impl App {
         subject_id: i64,
         tecl_id: i64,
     ) -> Result<Option<VideoCourse>> {
-        self.client.get_video_course(subject_id, tecl_id).await
+        let session = self.authenticated_canvas_session().await?;
+        let result = session.client.get_video_course(subject_id, tecl_id).await;
+        self.finish_session(&session, result).await
     }
 
     pub async fn download_subtitle(&self, canvas_course_id: i64, save_path: &str) -> Result<()> {
-        let res = self.client.get_subtitle(canvas_course_id).await?;
+        let session = self.authenticated_canvas_session().await?;
+        let result = session.client.get_subtitle(canvas_course_id).await;
+        let res = self.finish_session(&session, result).await?;
         let sub_title = self.client.convert_to_srt(&res.before_assembly_list)?;
         fs::write(save_path, sub_title)?;
         Ok(())
@@ -189,17 +205,20 @@ impl App {
         save_path: &str,
         progress_handler: F,
     ) -> Result<Vec<String>> {
-        let res = self.client.get_ppt(canvas_course_id).await?;
+        let session = self.authenticated_canvas_session().await?;
+        let result = session.client.get_ppt(canvas_course_id).await;
+        let res = self.finish_session(&session, result).await?;
         let enabled = self.config.read().await.experimental_ppt_cleanup;
         let (res, notes) = super::ppt::clean_up_slides(res, enabled);
         if res.is_empty() {
             return Err(AppError::VideoDownloadError("没有可导出的 PPT 页面，可关闭“导出 PPT 时去除无用页面”后重试".into()));
         }
         for note in &notes { tracing::info!("{note}"); }
-        self.client
+        session.client
             .clone()
             .download_ppt_pdf(&res, save_path, progress_handler)
             .await?;
+        self.ensure_config_owner(&session.owner).await?;
         Ok(notes)
     }
 }
