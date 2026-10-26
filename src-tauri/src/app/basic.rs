@@ -26,7 +26,7 @@ use crate::{
     },
     error,
     model::*,
-    utils::{self, file::{checked_download_path, write_file_atomic, TempFile}},
+    utils::file::{checked_download_path, write_file_atomic, TempFile},
 };
 
 use super::{
