@@ -119,6 +119,11 @@ function PdfViewer({ currentDocument, blobUrl }: {
             height: container.clientHeight,
             width: Math.max(320, Math.floor(container.clientWidth - 32)),
         };
+        // A taller viewport can clamp scrollTop even without changing page sizes.
+        // Record that browser adjustment before its queued scroll event arrives.
+        if (next.height !== viewportRef.current.height) {
+            programmaticScrollRef.current = container.scrollTop;
+        }
         pagesTopRef.current = pagesTop;
         // A width change will replace page geometry on the next commit. Retain the
         // old logical position until that layout effect maps it to the new sizes.
@@ -176,7 +181,8 @@ function PdfViewer({ currentDocument, blobUrl }: {
         const onScroll = () => {
             // Ignore the queued event from our own jump: a newer link may already
             // be pending. A different scroll position reflects newer scroll intent.
-            if (programmaticScrollRef.current !== container.scrollTop) pendingPageRef.current = null;
+            const resized = container.clientHeight !== viewportRef.current.height;
+            if (!resized && programmaticScrollRef.current !== container.scrollTop) pendingPageRef.current = null;
             programmaticScrollRef.current = null;
             // Capture position without a layout read, even if zoom happens before RAF.
             viewportRef.current = { ...viewportRef.current, top: container.scrollTop - pagesTopRef.current };

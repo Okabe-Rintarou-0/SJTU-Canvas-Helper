@@ -309,6 +309,50 @@ describe("PdfRenderer bounded page lifecycle", () => {
     if (!manualCancel) expect(renderedPages()).toContain(100);
   });
 
+  it.each([
+    { manualCancel: false, measureFirst: false }, { manualCancel: true, measureFirst: false },
+    { manualCancel: false, measureFirst: true }, { manualCancel: true, measureFirst: true },
+  ])("preserves pending navigation through height-only clamping, unless manually cancelled (%o)", async ({ manualCancel, measureFirst }) => {
+    let resolveMiddle!: (page: PDFPageProxy) => void;
+    pdfMock.current = createPdf(100);
+    vi.mocked(pdfMock.current.getPage).mockImplementation(async (pageNumber) => {
+      if (pageNumber === 17) return new Promise((resolve) => { resolveMiddle = resolve; });
+      return { getViewport: () => ({ width: 100, height: 100 }) } as unknown as PDFPageProxy;
+    });
+    render(<PdfRenderer mainState={mainState()} />);
+    await waitFor(() => expect(pdfMock.current!.getPage).toHaveBeenCalledTimes(17));
+    const root = scrollRoot();
+    clampScrollToGeometry(root);
+    root.scrollTop = Number.MAX_SAFE_INTEGER;
+    fireEvent.scroll(root); flushFrames();
+    const oldTop = root.scrollTop;
+    act(() => pdfMock.documents[0].onItemClick?.({ pageIndex: 99, pageNumber: 100 }));
+    // Only height changes: width/page geometry remain identical. Browser scrollTop
+    // clamps without a scrollTop assignment by the user. Exercise both observer/scroll orders.
+    height = 900;
+    expect(width).toBe(800);
+    expect(root.scrollTop).toBe(oldTop - 300);
+    if (measureFirst) {
+      act(() => observers[observers.length - 1].callback([], {} as ResizeObserver));
+      flushFrames();
+      fireEvent.scroll(root); flushFrames();
+    } else {
+      fireEvent.scroll(root);
+      act(() => observers[observers.length - 1].callback([], {} as ResizeObserver));
+      flushFrames();
+    }
+    if (manualCancel) {
+      root.scrollTop -= 100;
+      fireEvent.scroll(root); flushFrames();
+    }
+    const beforeMetadata = root.scrollTop;
+    await act(async () => { resolveMiddle({ getViewport: () => ({ width: 100, height: 100 }) } as unknown as PDFPageProxy); });
+    const targetTop = 56 + 99 * 788;
+    const finalScrollMax = 56 + 100 * 768 + 99 * 20 - height;
+    expect(root.scrollTop).toBeCloseTo(manualCancel ? beforeMetadata : Math.min(targetTop, finalScrollMax));
+    if (!manualCancel) expect(renderedPages()).toContain(100);
+  });
+
   it("preserves the current logical page and within-page position on zoom and resize", async () => {
     render(<PdfRenderer mainState={mainState()} />);
     await waitFor(() => expect(pdfMock.current!.getPage).toHaveBeenCalledTimes(200));
