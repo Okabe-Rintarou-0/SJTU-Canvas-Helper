@@ -19,10 +19,6 @@ impl App {
         self.express_login_attempt(uuid).await
     }
 
-    pub async fn get_cookie(&self) -> String {
-        format!("JAAuthCookie={}", self.config.read().await.ja_auth_cookie)
-    }
-
     pub async fn login_video_website(&self) -> Result<()> {
         let snapshot = self.get_config_snapshot().await?;
         let cookie = format!("JAAuthCookie={}", snapshot.config.ja_auth_cookie);
