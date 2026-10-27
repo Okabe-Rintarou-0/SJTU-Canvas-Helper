@@ -1,8 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { cloneDeep } from "lodash";
-import { AppConfig, LOG_LEVEL_INFO } from "./model";
+import { AppConfig } from "./model";
 import { configSlice, configStore } from "./store";
-import { consoleLog } from "./utils";
 
 export const { updateConfig } = configSlice.actions;
 
@@ -12,7 +11,6 @@ let CONFIG: AppConfig | null = null;
 export async function getConfig(revalidate = false) {
   if (!CONFIG || revalidate) {
     CONFIG = (await invoke("get_config")) as AppConfig;
-    consoleLog(LOG_LEVEL_INFO, "get config", CONFIG);
     configStore.dispatch(updateConfig(cloneDeep(CONFIG)));
   }
   return CONFIG;
@@ -23,4 +21,12 @@ export async function saveConfig(config: AppConfig) {
   await invoke("save_config", { config });
   CONFIG = config;
   configStore.dispatch(updateConfig(cloneDeep(CONFIG)));
+}
+
+export async function listNetworkLogs() {
+  return (await invoke("list_network_logs")) as import("./model").NetworkRequestLog[];
+}
+
+export async function clearNetworkLogs() {
+  await invoke("clear_network_logs");
 }

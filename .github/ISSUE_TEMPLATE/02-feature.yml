@@ -1,0 +1,11 @@
+name: 功能建议
+description: 提出新功能、体验优化或文档改进建议。
+title: "[Feature] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 建议内容
+      description: 请说明希望增加或改进什么，以及在什么情况下会用到。
+    validations:
+      required: true

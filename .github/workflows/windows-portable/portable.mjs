@@ -1,16 +1,9 @@
 import fs from "fs-extra";
-import path from "path";
-import AdmZip from "adm-zip";
 import { getOctokit, context } from "@actions/github";
+import { createPortableArchive } from "./portable-archive.mjs";
 
 const target = process.argv.slice(2)[0];
 const tagTemplate = process.argv.slice(2)[1] ?? "v__VERSION__";
-
-const ARCH_MAP = {
-  "x86_64-pc-windows-msvc": "x64",
-  "i686-pc-windows-msvc": "x86",
-  "aarch64-pc-windows-msvc": "arm64",
-};
 
 // 打包绿色版/便携版 (only Windows)
 async function resolvePortable() {
@@ -19,28 +12,15 @@ async function resolvePortable() {
   const releaseDir = target
     ? `./src-tauri/target/${target}/release`
     : `./src-tauri/target/release`;
-  const configDir = path.join(releaseDir, ".config");
-
   if (!(await fs.pathExists(releaseDir))) {
     throw new Error("could not found the release dir");
   }
 
-  await fs.mkdir(configDir);
-  await fs.createFile(path.join(configDir, "PORTABLE"));
-
-  const configPath = "./src-tauri/tauri.conf.json";
-  const packageJson = await fs.readJson(configPath);
-  const { version, productName } = packageJson["package"];
-
-  const zip = new AdmZip();
-
-  zip.addLocalFile(path.join(releaseDir, `${productName}.exe`));
-  zip.addLocalFolder(configDir, ".config");
-
-  const zipFile = target
-    ? `SJTU.Canvas.Helper_${version}_${ARCH_MAP[target]}_portable.zip`
-    : `SJTU.Canvas.Helper_${version}_portable.zip`;
-  zip.writeZip(zipFile);
+  const { version, zipFile, zipPath } = await createPortableArchive({
+    target,
+    configPath: "./src-tauri/tauri.conf.json",
+    releaseDir,
+  });
 
   console.log("[INFO]: create portable zip successfully");
 
@@ -76,8 +56,11 @@ async function resolvePortable() {
     ...options,
     release_id: release.id,
     name: zipFile,
-    data: zip.toBuffer(),
+    data: await fs.readFile(zipPath),
   });
 }
 
-resolvePortable().catch(console.error);
+resolvePortable().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
