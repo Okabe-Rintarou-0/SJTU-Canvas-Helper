@@ -45,7 +45,7 @@
     "@types/react-highlight": "^0.12.8",
     "@types/react-syntax-highlighter": "^15.5.11",
     "antd": "^6.4.4",
-    "dayjs": "^1.11.10",
+    "dayjs": "^1.11.23",
     "docx-preview": "^0.3.7",
     "echarts": "^5.5.0",
     "echarts-for-react": "^3.0.5",
