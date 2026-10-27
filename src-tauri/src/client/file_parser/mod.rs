@@ -8,6 +8,8 @@ mod pdf;
 
 #[async_trait]
 pub trait FileParser: Send + Sync {
+    // async_trait adds #[must_use] to this boxed Future, which is already must-use.
+    #[allow(clippy::double_must_use)]
     async fn parse(&self, data: Bytes) -> Result<String>;
 }
 

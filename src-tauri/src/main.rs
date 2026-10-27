@@ -3,27 +3,25 @@
 
 use std::sync::Arc;
 
-use error::Result;
+use error::{AppError, Result};
 use model::{
     Account, AccountInfo, AnnualReport, AppConfig, Assignment, CalendarEvent, CanvasVideo, Colors,
-    Course, DiscussionTopic, File, Folder, FullDiscussion, LogLevel, ModuleItem, QRCodeScanResult,
-    RelationshipTopo, Subject, Submission, User, UserSubmissions, VideoAggregateParams,
-    VideoCourse, VideoInfo, VideoPlayInfo,
+    Course, DiscussionTopic, File, FileChatStreamChunkPayload, FileChatStreamDonePayload,
+    FileChatStreamErrorPayload, Folder, FullDiscussion, LLMChatMessage, LogLevel, ModuleItem,
+    NetworkRequestLog, QRCodeScanResult, QRCodeScanReport, RelationshipTopo, Submission, User, UserSubmissions,
+    VideoAggregateParams, VideoCourse, VideoInfo, VideoPlayInfo, VideoSource, CanvasLiveList, CanvasLiveInfo,
 };
-
-use dirs::config_dir;
+use serde::{Deserialize, Serialize};
 
 use tauri::{Emitter, Runtime, Window};
-use tracing::Level;
-use tracing_subscriber::{
-    fmt::{self, writer::MakeWriterExt},
-    layer::SubscriberExt,
-};
 
 use crate::app::App;
 mod app;
+mod canvas_agent;
 mod client;
+mod diagnostics;
 mod error;
+mod mcp;
 mod model;
 mod utils;
 
@@ -45,9 +43,171 @@ fn read_log_content() -> Result<String> {
 }
 
 #[tauri::command]
+fn read_diagnostic_report() -> String {
+    diagnostics::report()
+}
+
+#[tauri::command]
+fn save_diagnostic_report(path: String) -> Result<()> {
+    diagnostics::save_report(std::path::Path::new(&path))?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn open_log_directory() -> Result<()> {
+    let directory = diagnostics::directory()?;
+    APP.open_local_path(&directory.to_string_lossy())
+}
+
+#[tauri::command]
 async fn is_ffmpeg_installed() -> bool {
     App::is_ffmpeg_installed()
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserBalance {
+    pub available_balance: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub voucher_balance: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cash_balance: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeepSeekBalanceInfo {
+    #[serde(default)]
+    total_balance: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeepSeekBalanceResponse {
+    #[serde(default)]
+    balance_infos: Vec<DeepSeekBalanceInfo>,
+    #[serde(default, rename = "is_available")]
+    _is_available: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+struct MoonshotBalanceData {
+    available_balance: f64,
+    #[serde(default)]
+    voucher_balance: Option<f64>,
+    #[serde(default)]
+    cash_balance: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MoonshotBalanceResponse {
+    data: MoonshotBalanceData,
+}
+
+#[derive(Debug, Deserialize)]
+struct ZhipuBalanceData {
+    #[serde(alias = "availableBalance")]
+    available_balance: f64,
+    #[serde(alias = "voucherBalance", default)]
+    voucher_balance: Option<f64>,
+    #[serde(alias = "cashBalance", default)]
+    cash_balance: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ZhipuBalanceResponse {
+data: ZhipuBalanceData,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct MiniMaxBalanceData {
+    #[serde(default)]
+    #[serde(alias = "remain_count", alias = "remaining", alias = "available_balance")]
+    available_balance: f64,
+}
+
+#[derive(Debug, Deserialize)]
+struct MiniMaxBalanceResponse {
+    #[serde(default)]
+    data: Option<MiniMaxBalanceData>,
+}
+
+async fn check_deepseek_balance(cli: &reqwest::Client, base: &str, auth: &str) -> Result<UserBalance> {
+    let resp = cli
+        .get(format!("{}/user/balance", base))
+        .header("Authorization", auth)
+        .send()
+        .await?;
+    if !resp.status().is_success() {
+        return Err(AppError::LLMError("DeepSeek 余额查询失败，请检查 API Key。".into()));
+    }
+    let body: DeepSeekBalanceResponse = serde_json::from_str(&resp.text().await?)?;
+    let available: f64 = body.balance_infos
+        .iter()
+        .filter_map(|i| i.total_balance.parse::<f64>().ok())
+        .sum();
+    Ok(UserBalance {
+        available_balance: available,
+        voucher_balance: None,
+        cash_balance: None,
+    })
+}
+
+async fn check_moonshot_balance(cli: &reqwest::Client, base: &str, auth: &str) -> Result<UserBalance> {
+    let resp = cli
+        .get(format!("{}/users/me/balance", base))
+        .header("Authorization", auth)
+        .send()
+        .await?;
+    if !resp.status().is_success() {
+        return Err(AppError::LLMError("Kimi 余额查询失败，请检查 API Key。".into()));
+    }
+    let body: MoonshotBalanceResponse = serde_json::from_str(&resp.text().await?)?;
+    Ok(UserBalance {
+        available_balance: body.data.available_balance,
+        voucher_balance: body.data.voucher_balance,
+        cash_balance: body.data.cash_balance,
+    })
+}
+
+async fn check_zhipu_balance(cli: &reqwest::Client, api_key: &str) -> Result<UserBalance> {
+    let resp = cli
+        .get("https://www.bigmodel.cn/api/biz/account/query-customer-account-report")
+        .header("Authorization", api_key)
+        .header("Content-Type", "application/json")
+        .send()
+        .await?;
+    if !resp.status().is_success() {
+        return Err(AppError::LLMError("智谱余额查询失败，请检查 API Key。".into()));
+    }
+    let text = resp.text().await?;
+    tracing::info!("Zhipu balance request completed");
+    let body: ZhipuBalanceResponse = serde_json::from_str(&text)?;
+    Ok(UserBalance {
+        available_balance: body.data.available_balance,
+        voucher_balance: body.data.voucher_balance,
+        cash_balance: body.data.cash_balance,
+    })
+}
+
+async fn check_minimax_balance(cli: &reqwest::Client, auth: &str) -> Result<UserBalance> {
+    let resp = cli
+        .get("https://www.minimaxi.com/v1/api/openplatform/coding_plan/remains")
+        .header("Authorization", auth)
+        .header("Content-Type", "application/json")
+        .send()
+        .await?;
+            if !resp.status().is_success() {
+                return Err(AppError::LLMError("MiniMax 余额查询失败，请检查 API Key。".into()));
+            }
+            let text = resp.text().await?;
+            tracing::info!("MiniMax balance request completed");
+            let body: MiniMaxBalanceResponse = serde_json::from_str(&text)?;
+            let d = body.data.unwrap_or_default();
+            Ok(UserBalance {
+                available_balance: d.available_balance,
+                voucher_balance: None,
+                cash_balance: None,
+            })
+        }
 
 #[tauri::command]
 async fn run_video_aggregate<R: Runtime>(
@@ -140,6 +300,28 @@ async fn list_course_files(course_id: i64) -> Result<Vec<File>> {
 }
 
 #[tauri::command]
+async fn open_file_preview_window(
+    app: tauri::AppHandle,
+    file_id: i64,
+    title: String,
+) -> Result<()> {
+    let session_url = APP.get_file_preview_session_url(file_id).await?;
+    let url = session_url
+        .parse()
+        .map_err(|error| AppError::FilePreview(format!("Invalid preview URL: {error}")))?;
+    let label = format!("file-preview-{}", uuid::Uuid::new_v4());
+
+    tauri::WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::External(url))
+        .title(title)
+        .inner_size(1280.0, 820.0)
+        .min_inner_size(720.0, 480.0)
+        .center()
+        .build()
+        .map_err(|error| AppError::FilePreview(error.to_string()))?;
+    Ok(())
+}
+
+#[tauri::command]
 async fn list_course_images(course_id: i64) -> Result<Vec<File>> {
     APP.list_course_images(course_id).await
 }
@@ -155,6 +337,11 @@ async fn list_course_students(course_id: i64) -> Result<Vec<User>> {
 }
 
 #[tauri::command]
+async fn get_course_syllabus(course_id: i64) -> Result<Course> {
+    APP.get_course_syllabus(course_id).await
+}
+
+#[tauri::command]
 async fn list_course_assignments(course_id: i64) -> Result<Vec<Assignment>> {
     APP.list_course_assignments(course_id).await
 }
@@ -162,6 +349,11 @@ async fn list_course_assignments(course_id: i64) -> Result<Vec<Assignment>> {
 #[tauri::command]
 async fn filter_course_qrcode_images(course_id: i64) -> Result<Vec<QRCodeScanResult>> {
     APP.filter_course_qrcode_images(course_id).await
+}
+
+#[tauri::command]
+async fn scan_course_qrcodes(course_id: i64) -> Result<QRCodeScanReport> {
+    APP.scan_course_qrcodes(course_id).await
 }
 
 #[tauri::command]
@@ -186,6 +378,7 @@ async fn list_folder_folders(folder_id: i64) -> Result<Vec<Folder>> {
 
 #[tauri::command]
 async fn test_token(token: String) -> Result<User> {
+    diagnostics::protect_secret(&token);
     APP.test_token(&token).await
 }
 
@@ -197,6 +390,16 @@ async fn get_me() -> Result<User> {
 #[tauri::command]
 async fn get_config() -> AppConfig {
     APP.get_config().await
+}
+
+#[tauri::command]
+async fn list_network_logs() -> Vec<NetworkRequestLog> {
+    APP.list_network_logs().await
+}
+
+#[tauri::command]
+async fn clear_network_logs() {
+    APP.clear_network_logs().await
 }
 
 #[tauri::command]
@@ -215,8 +418,138 @@ async fn chat(prompt: String) -> Result<String> {
 }
 
 #[tauri::command]
+async fn canvas_agent_chat(
+    messages: Vec<LLMChatMessage>,
+    options: Option<canvas_agent::CanvasAgentOptions>,
+) -> Result<String> {
+    canvas_agent::chat(&messages, options).await
+}
+
+#[tauri::command]
+async fn check_balance(base_url: String, api_key: String, provider: String) -> Result<UserBalance> {
+    let cli = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(15))
+        .build()?;
+    let base = base_url.trim_end_matches('/');
+    let auth = format!("Bearer {}", api_key);
+
+    match provider.as_str() {
+        "deepseek" => check_deepseek_balance(&cli, base, &auth).await,
+        "moonshot" => check_moonshot_balance(&cli, base, &auth).await,
+        "zhipu" => check_zhipu_balance(&cli, &api_key).await,
+        "minimax" => check_minimax_balance(&cli, &auth).await,
+        _ => Err(AppError::LLMError(format!(
+            "Provider '{}' does not support balance query yet.",
+            provider
+        ))),
+    }
+}
+
+#[tauri::command]
 async fn explain_file(file: File) -> Result<String> {
     APP.explain_file(&file).await
+}
+
+#[tauri::command]
+async fn chat_with_file(file: File, messages: Vec<LLMChatMessage>) -> Result<String> {
+    APP.chat_with_file(&file, &messages).await
+}
+
+#[tauri::command]
+async fn start_file_chat_stream(
+    window: Window,
+    request_id: String,
+    file: File,
+    messages: Vec<LLMChatMessage>,
+) -> Result<()> {
+    tauri::async_runtime::spawn(async move {
+        let chunk_window = window.clone();
+        let request_id_for_chunk = request_id.clone();
+        let mut emit_chunk = move |chunk: String| {
+            let _ = chunk_window.emit(
+                "file_ai_chat://chunk",
+                FileChatStreamChunkPayload {
+                    request_id: request_id_for_chunk.clone(),
+                    chunk,
+                },
+            );
+        };
+
+        let result = APP
+            .chat_with_file_stream(&file, &messages, &mut emit_chunk)
+            .await;
+
+        match result {
+            Ok(content) => {
+                let _ = window.emit(
+                    "file_ai_chat://done",
+                    FileChatStreamDonePayload {
+                        request_id,
+                        content,
+                    },
+                );
+            }
+            Err(error) => {
+                let _ = window.emit(
+                    "file_ai_chat://error",
+                    FileChatStreamErrorPayload {
+                        request_id,
+                        error: error.to_string(),
+                    },
+                );
+            }
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
+async fn start_subtitle_chat_stream(
+    window: Window,
+    request_id: String,
+    canvas_course_id: i64,
+    messages: Vec<LLMChatMessage>,
+) -> Result<()> {
+    tauri::async_runtime::spawn(async move {
+        let chunk_window = window.clone();
+        let request_id_for_chunk = request_id.clone();
+        let mut emit_chunk = move |chunk: String| {
+            let _ = chunk_window.emit(
+                "video_ai_chat://chunk",
+                FileChatStreamChunkPayload {
+                    request_id: request_id_for_chunk.clone(),
+                    chunk,
+                },
+            );
+        };
+
+        let result = APP
+            .chat_with_subtitle_stream(canvas_course_id, &messages, &mut emit_chunk)
+            .await;
+
+        match result {
+            Ok(content) => {
+                let _ = window.emit(
+                    "video_ai_chat://done",
+                    FileChatStreamDonePayload {
+                        request_id,
+                        content,
+                    },
+                );
+            }
+            Err(error) => {
+                let _ = window.emit(
+                    "video_ai_chat://error",
+                    FileChatStreamErrorPayload {
+                        request_id,
+                        error: error.to_string(),
+                    },
+                );
+            }
+        }
+    });
+    Ok(())
 }
 
 #[tauri::command]
@@ -237,6 +570,11 @@ async fn open_course_file(name: String, course: Course, folder_path: String) -> 
 #[tauri::command]
 async fn open_my_file(name: String, folder_path: String) -> Result<()> {
     APP.open_my_file(&name, &folder_path).await
+}
+
+#[tauri::command]
+async fn open_local_path(path: String) -> Result<()> {
+    APP.open_local_path(&path)
 }
 
 #[tauri::command]
@@ -267,6 +605,18 @@ async fn delete_my_file(file: File, folder_path: String) -> Result<()> {
 #[tauri::command]
 async fn delete_file_with_name(name: String) -> Result<()> {
     APP.delete_file_with_name(&name).await
+}
+
+#[tauri::command]
+async fn delete_path_file(path: String) -> Result<()> {
+    std::fs::remove_file(path)?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn save_path_file(path: String, content: Vec<u8>) -> Result<()> {
+    std::fs::write(path, content)?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -312,6 +662,21 @@ async fn download_my_file<R: Runtime>(
 }
 
 #[tauri::command]
+async fn download_course_file_as_pdf(
+    file: File,
+    course: Course,
+    folder_path: String,
+) -> Result<()> {
+    APP.download_course_file_as_pdf(&file, &course, &folder_path)
+        .await
+}
+
+#[tauri::command]
+async fn download_my_file_as_pdf(file: File, folder_path: String) -> Result<()> {
+    APP.download_my_file_as_pdf(&file, &folder_path).await
+}
+
+#[tauri::command]
 async fn save_file_content(content: Vec<u8>, file_name: String) -> Result<()> {
     APP.save_file_content(&content, &file_name).await
 }
@@ -350,7 +715,8 @@ async fn get_colors() -> Result<Colors> {
 
 #[tauri::command]
 async fn save_config(config: AppConfig) -> Result<()> {
-    tracing::info!("Receive config: {:?}", config);
+    diagnostics::protect_config(&config);
+    tracing::info!("Saving application configuration");
     APP.save_config(config).await
 }
 
@@ -386,14 +752,14 @@ async fn update_grade(
     course_id: i64,
     assignment_id: i64,
     student_id: i64,
-    grade: String,
+    grade: Option<String>,
     comment: Option<String>,
 ) -> Result<()> {
     APP.update_grade(
         course_id,
         assignment_id,
         student_id,
-        &grade,
+        grade.as_deref(),
         comment.as_deref(),
     )
     .await
@@ -506,18 +872,49 @@ async fn login_video_website() -> Result<()> {
 }
 
 #[tauri::command]
-async fn get_subjects() -> Result<Vec<Subject>> {
-    APP.get_subjects().await
-}
-
-#[tauri::command]
 async fn get_canvas_videos(course_id: i64) -> Result<Vec<CanvasVideo>> {
     APP.get_canvas_videos(course_id).await
 }
 
 #[tauri::command]
+async fn get_video_live_sessions(canvas_course_id: Option<i64>, teaching_class_id: Option<i64>) -> Result<CanvasLiveList> {
+    APP.get_video_live_sessions(canvas_course_id, teaching_class_id).await
+}
+
+#[tauri::command]
+async fn get_video_live_info(course_id: String, canvas_course_id: Option<i64>, teaching_class_id: Option<i64>) -> Result<CanvasLiveInfo> {
+    APP.get_video_live_info(&course_id, canvas_course_id, teaching_class_id).await
+}
+
+#[tauri::command]
+async fn list_video_space_courses() -> Result<Vec<Course>> {
+    APP.list_video_space_courses().await
+}
+
+#[tauri::command]
+async fn get_video_space_videos(teaching_class_id: i64) -> Result<Vec<CanvasVideo>> {
+    APP.get_video_space_videos(teaching_class_id).await
+}
+
+#[tauri::command]
+async fn get_legacy_videos(
+    course_id: i64,
+    course_name: String,
+    term_name: String,
+    teacher_names: Vec<String>,
+) -> Result<Vec<CanvasVideo>> {
+    APP.get_legacy_videos(course_id, &course_name, &term_name, &teacher_names)
+        .await
+}
+
+#[tauri::command]
 async fn login_canvas_website() -> Result<()> {
     APP.login_canvas_website().await
+}
+
+#[tauri::command]
+async fn check_extra_login_status() -> Result<bool> {
+    APP.check_extra_login_status().await
 }
 
 #[tauri::command]
@@ -533,6 +930,11 @@ async fn get_video_info(video_id: i64) -> Result<VideoInfo> {
 #[tauri::command]
 async fn get_canvas_video_info(video_id: String) -> Result<VideoInfo> {
     APP.get_canvas_video_info(&video_id).await
+}
+
+#[tauri::command]
+async fn get_video_play_info(source: VideoSource, video_id: String) -> Result<VideoInfo> {
+    APP.get_video_play_info(source, &video_id).await
 }
 
 #[tauri::command]
@@ -564,6 +966,41 @@ async fn download_subtitle(canvas_course_id: i64, save_path: String) -> Result<(
 }
 
 #[tauri::command]
+async fn prepare_video_material(
+    request: app::video_library::RecordingRequest,
+    prefer_before: Option<bool>,
+    include_ocr: Option<bool>,
+    clean_up_ppt: Option<bool>,
+) -> Result<app::video_library::VideoMaterial> {
+    APP.prepare_video_material(request, prefer_before.unwrap_or(false), include_ocr.unwrap_or(true), clean_up_ppt).await
+}
+
+#[tauri::command]
+async fn chat_video_materials(text: String, messages: Vec<LLMChatMessage>, options: Option<model::VideoSummaryOptions>, prepared_context: Option<model::VideoPreparedContext>, on_chunk: tauri::ipc::Channel<String>, on_status: tauri::ipc::Channel<String>) -> Result<model::VideoChatResponse> {
+    let mut callback = move |chunk| { let _ = on_chunk.send(chunk); };
+    let mut status_callback = move |status| { let _ = on_status.send(status); };
+    APP.chat_video_materials(text, messages, options, prepared_context, Some(&mut callback), &mut status_callback).await
+}
+
+#[tauri::command]
+async fn export_video_materials(
+    requests: Vec<app::video_library::RecordingRequest>,
+    kind: String,
+    directory: String,
+    name: String,
+    all_tracks: bool,
+    on_progress: tauri::ipc::Channel<app::video_library::ExportProgress>,
+) -> Result<app::video_library::ExportResult> {
+    APP.export_video_materials(requests, kind, directory, name, all_tracks, Arc::new(move |progress| { let _ = on_progress.send(progress); }))
+        .await
+}
+
+#[tauri::command]
+fn create_video_export_directory(directory: String, course: String) -> Result<String> {
+    app::video_library::create_export_directory(&directory, &course)
+}
+
+#[tauri::command]
 async fn summarize_subtitle(canvas_course_id: i64) -> Result<String> {
     APP.summarize_subtitle(canvas_course_id).await
 }
@@ -572,10 +1009,10 @@ async fn summarize_subtitle(canvas_course_id: i64) -> Result<String> {
 async fn download_ppt<R: Runtime>(
     window: Window<R>,
     course_id: i64,
-    save_name: String,
-) -> Result<()> {
+    save_path: String,
+) -> Result<Vec<String>> {
     let window = Arc::new(window);
-    APP.download_ppt(course_id, &save_name, move |progress| {
+    APP.download_ppt(course_id, &save_path, move |progress| {
         let _ = window.clone().emit("ppt_download://progress", progress);
     })
     .await
@@ -590,6 +1027,18 @@ async fn login_jbox() -> Result<()> {
 #[tauri::command]
 async fn upload_file<R: Runtime>(window: Window<R>, file: File, save_dir: String) -> Result<()> {
     APP.upload_file(&file, &save_dir, |progress| {
+        let _ = window.emit("file_upload://progress", progress);
+    })
+    .await
+}
+
+#[tauri::command]
+async fn upload_file_as_pdf<R: Runtime>(
+    window: Window<R>,
+    file: File,
+    save_dir: String,
+) -> Result<()> {
+    APP.upload_file_as_pdf(&file, &save_dir, |progress| {
         let _ = window.emit("file_upload://progress", progress);
     })
     .await
@@ -634,30 +1083,42 @@ async fn list_external_module_items(course_id: i64) -> Result<Vec<ModuleItem>> {
     APP.list_external_module_items(course_id).await
 }
 
+#[tauri::command]
+async fn start_mcp_server() -> Result<bool> {
+    APP.start_mcp().await
+}
+
+#[tauri::command]
+async fn stop_mcp_server() {
+    APP.stop_mcp().await
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    // set up logger
-    let appender = tracing_appender::rolling::never(App::config_dir()?, "app.log");
-    let (non_blocking, _guard) = tracing_appender::non_blocking(appender);
-    let subscriber = tracing_subscriber::registry()
-        .with(
-            fmt::Layer::new()
-                .with_writer(std::io::stdout.with_max_level(Level::INFO))
-                .pretty(),
-        )
-        .with(fmt::Layer::new().with_writer(non_blocking.with_max_level(Level::INFO)));
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("Unable to set a tracing subscriber");
-    tracing::info!("log setup, path: {:?}", config_dir());
-
-    APP.init().await?;
+    let log_directory = App::config_dir().map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::env::temp_dir().join("SJTU-Canvas-Helper"));
+    diagnostics::init(log_directory);
+    if let Err(error) = APP.init().await {
+        tracing::error!(error = %error, "Application initialization failed");
+        return Err(error);
+    }
+    if APP.get_config().await.mcp_enabled {
+        if let Err(error) = APP.start_mcp().await {
+            tracing::error!(error = %error, "MCP initialization failed");
+            return Err(error);
+        }
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             read_log_content,
+            read_diagnostic_report,
+            save_diagnostic_report,
+            open_log_directory,
             console_log,
             is_ffmpeg_installed,
             run_video_aggregate,
@@ -668,17 +1129,20 @@ async fn main() -> Result<()> {
             read_account_info,
             list_accounts,
             list_courses,
+            get_course_syllabus,
             list_user_submissions,
             get_full_discussion,
             list_discussion_topics,
             sync_course_files,
             list_course_files,
+            open_file_preview_window,
             list_course_images,
             list_course_users,
             list_course_students,
             list_course_assignments,
             list_course_assignment_submissions,
             filter_course_qrcode_images,
+            scan_course_qrcodes,
             get_single_course_assignment_submission,
             export_excel,
             list_folder_files,
@@ -693,6 +1157,8 @@ async fn main() -> Result<()> {
             get_folder_by_id,
             get_colors,
             get_config,
+            list_network_logs,
+            clear_network_logs,
             get_raw_config,
             save_config,
             save_file_content,
@@ -700,14 +1166,19 @@ async fn main() -> Result<()> {
             open_my_file,
             open_file,
             open_save_dir,
+            open_local_path,
             open_config_dir,
             delete_file,
             delete_file_with_name,
+            delete_path_file,
+            save_path_file,
             delete_course_file,
             delete_my_file,
             download_file,
             download_course_file,
             download_my_file,
+            download_course_file_as_pdf,
+            download_my_file_as_pdf,
             check_path,
             export_users,
             update_grade,
@@ -724,30 +1195,62 @@ async fn main() -> Result<()> {
             // Apis for course video
             get_uuid,
             express_login,
-            get_subjects,
             get_canvas_videos,
+            get_video_live_sessions,
+            get_video_live_info,
+            list_video_space_courses,
+            get_video_space_videos,
+            get_legacy_videos,
             login_canvas_website,
+            check_extra_login_status,
             get_video_course,
             get_video_info,
             get_canvas_video_info,
+            get_video_play_info,
             download_video,
             login_video_website,
             prepare_proxy,
             stop_proxy,
             download_subtitle,
+            prepare_video_material,
+            chat_video_materials,
+            export_video_materials,
+            create_video_export_directory,
             download_ppt,
             list_external_module_items,
             // Apis for jbox
             login_jbox,
             upload_file,
+            upload_file_as_pdf,
             // Annual Report
             generate_annual_report,
             // LLM
             chat,
+            canvas_agent_chat,
+            check_balance,
             explain_file,
-            summarize_subtitle
+            chat_with_file,
+            start_file_chat_stream,
+            start_subtitle_chat_stream,
+            summarize_subtitle,
+            // MCP server
+            start_mcp_server,
+            stop_mcp_server
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                tracing::info!("App exiting, cleaning up MCP server");
+                let handle = std::thread::spawn(|| {
+                    let rt = tokio::runtime::Runtime::new().unwrap();
+                    rt.block_on(async {
+                        APP.stop_mcp().await;
+                        APP.stop_proxy().await;
+                    });
+                });
+                let _ = handle.join();
+            }
+        });
     Ok(())
 }

@@ -1,4 +1,5 @@
 [profile.ci]
+slow-timeout = { period = "30s", terminate-after = 4 }
 # Retry tests before failing them.
 retries = { backoff = "exponential", count = 2, delay = "2s" }
 # Do not cancel the test run on the first failure.
@@ -9,4 +10,13 @@ failure-output = "immediate-final"
 
 # save junit report
 [profile.ci.junit]
+path = "junit.xml"
+
+[profile.live]
+test-threads = 2
+slow-timeout = { period = "30s", terminate-after = 4 }
+fail-fast = false
+failure-output = "immediate-final"
+
+[profile.live.junit]
 path = "junit.xml"

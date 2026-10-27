@@ -8,16 +8,22 @@ use crate::{
 };
 pub mod annual;
 pub mod basic;
+mod qrcode;
 pub mod cache;
 mod constants;
 pub mod jbox;
 pub mod video;
+pub mod video_library;
+pub(crate) mod ppt;
+#[cfg(test)]
+mod ppt_audit;
 
 pub struct App {
     client: Arc<Client>,
     current_account: RwLock<Account>,
     config: RwLock<AppConfig>,
     handle: RwLock<Option<JoinHandle<()>>>,
+    mcp_handle: RwLock<Option<JoinHandle<()>>>,
     cache: Cache,
 }
 
@@ -122,15 +128,15 @@ mod test {
         let app = App::new();
         app.init().await?;
         app.login_video_website().await?;
-        let subjects = app.get_subjects().await?;
-        tracing::info!("{:?}", subjects);
-        let subject = &subjects[0];
-        let course = app
-            .get_video_course(subject.subject_id, subject.tecl_id)
-            .await?
-            .unwrap();
-        tracing::info!("{:?}", course);
-        let video = app.get_video_info(course.response_vo_list[0].id).await?;
+        let course_id = std::env::var("SJTU_CANVAS_TEST_COURSE_ID")
+            .expect("set SJTU_CANVAS_TEST_COURSE_ID")
+            .parse()
+            .expect("SJTU_CANVAS_TEST_COURSE_ID must be an integer");
+        let videos = app.get_legacy_videos(course_id, "", "", &[]).await?;
+        tracing::info!("{:?}", videos);
+        let video = app
+            .get_video_play_info(crate::model::VideoSource::Legacy, &videos[0].video_id)
+            .await?;
         tracing::info!("video = {:?}", video);
 
         app.download_video(

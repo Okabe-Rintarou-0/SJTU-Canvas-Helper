@@ -10,6 +10,7 @@ dev:
 
 lint:
 	cd $(TAURI_SRC_DIR) && cargo clippy --workspace --all-targets --all-features
+	yarn lint
 
 clean:
 	rm -rf $(TAURI_TARGET_DIR)

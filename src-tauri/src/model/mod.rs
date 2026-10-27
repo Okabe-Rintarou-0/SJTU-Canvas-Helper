@@ -1,5 +1,7 @@
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::HashMap;
+mod video_summary;
+pub use video_summary::*;
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Course {
@@ -18,6 +20,16 @@ pub struct Course {
     pub teachers: Vec<Teacher>,
     #[serde(default)]
     pub term: Term,
+    #[serde(default, deserialize_with = "deserialize_syllabus_body")]
+    pub syllabus_body: String,
+}
+
+// Canvas uses null as well as an omitted/empty string for an unpublished syllabus.
+fn deserialize_syllabus_body<'de, D>(deserializer: D) -> std::result::Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -63,6 +75,8 @@ pub struct File {
     pub mime_class: String,
     #[serde(default, rename = "content-type")]
     pub content_type: String,
+    #[serde(default)]
+    pub preview_url: Option<String>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -134,6 +148,16 @@ pub enum Theme {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LlmApiKeyEntry {
+    pub name: String,
+    pub key: String,
+    #[serde(default)]
+    pub base_url: String,
+    #[serde(default)]
+    pub model: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
     pub token: String,
@@ -145,6 +169,22 @@ pub struct AppConfig {
     pub serve_as_plaintext: String,
     #[serde(default)]
     pub llm_api_key: String,
+    #[serde(default)]
+    pub llm_base_url: String,
+    #[serde(default)]
+    pub llm_model: String,
+    #[serde(default)]
+    pub llm_temperature: Option<f32>,
+    #[serde(default)]
+    pub llm_api_keys: Vec<LlmApiKeyEntry>,
+    #[serde(default)]
+    pub llm_active_api_key: String,
+    #[serde(default = "default_video_summary_prompt")]
+    pub video_summary_prompt: String,
+    #[serde(default = "default_video_context_tokens")]
+    pub video_summary_context_tokens: u32,
+    #[serde(default = "default_video_output_tokens")]
+    pub video_summary_output_tokens: u32,
     #[serde(default)]
     pub ja_auth_cookie: String,
     #[serde(default)]
@@ -164,7 +204,21 @@ pub struct AppConfig {
     #[serde(default)]
     pub compact_mode: bool,
     #[serde(default)]
+    pub experimental_task_center_only: bool,
+    #[serde(default)]
+    pub experimental_ppt_cleanup: bool,
+    #[serde(default)]
     pub color_primary: Option<String>,
+    #[serde(default)]
+    pub mcp_enabled: bool,
+    #[serde(default = "default_mcp_port")]
+    pub mcp_port: u16,
+    #[serde(default)]
+    pub debug_mode: bool,
+}
+
+fn default_mcp_port() -> u16 {
+    3100
 }
 
 impl Default for AppConfig {
@@ -182,9 +236,22 @@ impl Default for AppConfig {
             course_assignment_file_bindings: Default::default(),
             show_alert_map: Default::default(),
             llm_api_key: Default::default(),
+            llm_base_url: Default::default(),
+            llm_model: Default::default(),
+            llm_temperature: Default::default(),
             theme: Default::default(),
             compact_mode: Default::default(),
+            experimental_task_center_only: false,
+            experimental_ppt_cleanup: false,
             color_primary: Default::default(),
+            mcp_enabled: Default::default(),
+            mcp_port: 3100,
+            debug_mode: Default::default(),
+            llm_api_keys: Default::default(),
+            llm_active_api_key: Default::default(),
+            video_summary_prompt: default_video_summary_prompt(),
+            video_summary_context_tokens: default_video_context_tokens(),
+            video_summary_output_tokens: default_video_output_tokens(),
         }
     }
 }
@@ -211,6 +278,30 @@ pub struct User {
     pub login_id: String,
     #[serde(default)]
     pub email: Option<String>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LLMChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FileChatStreamChunkPayload {
+    pub request_id: String,
+    pub chunk: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FileChatStreamDonePayload {
+    pub request_id: String,
+    pub content: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FileChatStreamErrorPayload {
+    pub request_id: String,
+    pub error: String,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -383,6 +474,10 @@ pub enum EnrollmentRole {
     TeacherEnrollment,
     ObserverEnrollment,
     DesignerEnrollment,
+    #[serde(alias = "临时学生")]
+    TemporaryStudentEnrollment,
+    #[serde(other)]
+    Other,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -420,25 +515,6 @@ pub struct PageInfo {
     pub page_show_count: i64,
     pub row_count: i64,
     pub row_begin: i64,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Subject {
-    pub subject_id: i64,
-    pub cspl_id: i64,
-    pub subject_name: String,
-    pub classroom_id: i64,
-    pub classroom_name: String,
-    pub user_id: i64,
-    pub user_name: String,
-    pub cour_times: i64,
-    pub subj_img_url: String,
-    pub tecl_id: i64,
-    pub tecl_name: String,
-    pub term_time: i64,
-    pub begin_year: i64,
-    pub end_year: i64,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -739,6 +815,15 @@ pub struct QRCodeScanResult {
     pub contents: Vec<String>,
 }
 
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+pub struct QRCodeScanReport {
+    pub results: Vec<QRCodeScanResult>,
+    pub total_files: usize,
+    pub image_files: usize,
+    pub scanned_images: usize,
+    pub failed_images: usize,
+}
+
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DiscussionTopic {
     pub id: i64,
@@ -923,52 +1008,71 @@ impl FoldersAndFiles {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CanvasVideoResponse {
-    pub code: String,
-    pub data: Option<CanvasVideoResponseBody>,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CanvasVideoResponseBody {
-    // pub page: CanvasVideoResponsePage,
-    pub records: Vec<CanvasVideo>,
-}
-
-// #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-// #[serde(rename_all = "camelCase")]
-// pub struct CanvasVideoResponsePage {
-//     pub page_index: i64,
-//     pub page_size: i64,
-//     pub page_count: i64,
-//     pub page_first: i64,
-//     pub page_last: i64,
-//     pub page_next: i64,
-//     pub page_prev: i64,
-//     pub page_show_begin: i64,
-//     pub page_show_end: i64,
-//     pub page_show_count: i64,
-//     pub row_count: i64,
-//     pub row_begin: i64,
-// }
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct CanvasVideo {
+    pub source: VideoSource,
     pub video_id: String,
     pub user_name: String,
     pub video_name: String,
     pub classroom_name: String,
     pub course_begin_time: String,
     pub course_end_time: String,
+    pub week_number: i64,
+    pub week_day: i64,
+    pub lesson_number: i64,
+    pub daily_lesson_number: i64,
+    pub playable: bool,
+    /// Raw transcript/PPT readiness hint from the list; None means unknown.
+    #[serde(default)]
+    pub ai_available: Option<bool>,
+    pub availability: String,
+    pub availability_label: String,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GetCanvasVideoInfoResponse {
-    pub code: String,
-    // pub desc: String,
-    pub data: VideoInfo,
+pub enum VideoSource {
+    #[default]
+    Canvas,
+    VideoSpace,
+    Legacy,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasLiveSession {
+    pub id: String,
+    pub teaching_class_id: i64,
+    pub title: String,
+    pub teacher_name: String,
+    pub classroom_name: String,
+    pub begin_time: String,
+    pub end_time: String,
+    pub start_time: i64,
+    pub finish_time: i64,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasLiveList {
+    pub sessions: Vec<CanvasLiveSession>,
+    pub server_time: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasLiveTrack {
+    pub name: String,
+    pub url: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasLiveInfo {
+    pub start_time: i64,
+    pub finish_time: i64,
+    pub server_time: i64,
+    pub tracks: Vec<CanvasLiveTrack>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -1036,6 +1140,12 @@ impl From<i32> for LogLevel {
 pub struct AnnualCourseStatistic {
     pub course_id: i64,
     pub course_name: String,
+    pub assignment_count: i32,
+    pub submitted_count: i32,
+    pub late_count: i32,
+    pub graded_count: i32,
+    pub total_points_possible: f64,
+    pub total_score: f64,
     pub submit_time_list: Vec<String>,
 }
 
@@ -1043,26 +1153,23 @@ pub struct AnnualCourseStatistic {
 #[serde(rename_all = "camelCase")]
 pub struct AnnualReport {
     pub year: i32,
+    pub active_day_count: i32,
+    pub first_submit_at: Option<String>,
+    pub last_submit_at: Option<String>,
     pub course_to_statistic: HashMap<i64, AnnualCourseStatistic>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CanvasVideoSubTitleResponse {
-    pub code: String,
-    pub data: Option<CanvasVideoSubTitleResponseBody>,
-    pub status: u64,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct CanvasVideoSubTitleResponseBody {
+    #[serde(default)]
     pub after_assembly_list: Vec<CanvasVideoSubTitle>,
+    #[serde(default)]
     pub before_assembly_list: Vec<CanvasVideoSubTitle>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct CanvasVideoSubTitle {
     // Begin
     pub bg: u64,
@@ -1082,17 +1189,15 @@ pub struct CanvasVideoSubTitle {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CanvasVideoPPTResponse {
-    pub code: String,
-    pub data: Option<Vec<CanvasVideoPPT>>,
-    pub status: u64,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct CanvasVideoPPT {
     pub create_sec: String,
     pub ocr: Vec<CanvasVideoPPTOcr>,
+    #[serde(default)]
+    pub ocr_text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub animation_start_sec: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub related_slide_secs: Vec<String>,
     pub ppt_img_url: Option<String>,
 }
 
@@ -1177,4 +1282,29 @@ pub struct Module {
     pub completed_at: Option<String>,
     pub publish_final_grade: Option<bool>,
     pub published: Option<bool>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DebugHttpHeader {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NetworkRequestLog {
+    pub id: String,
+    pub timestamp: String,
+    pub source: String,
+    pub method: String,
+    pub url: String,
+    pub status: Option<u16>,
+    pub ok: Option<bool>,
+    pub duration_ms: Option<u64>,
+    pub request_headers: Vec<DebugHttpHeader>,
+    pub response_headers: Vec<DebugHttpHeader>,
+    pub request_body: Option<String>,
+    pub request_body_truncated: bool,
+    pub response_body: Option<String>,
+    pub response_body_truncated: bool,
+    pub error: Option<String>,
 }

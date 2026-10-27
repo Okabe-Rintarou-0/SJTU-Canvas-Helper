@@ -5,9 +5,9 @@ use thiserror::Error;
 pub enum AppError {
     #[error("Network error: {0}")]
     Network(#[from] reqwest::Error),
-    #[error("Json deserialization error: {0}, object type: {1}, context: {2}")]
+    #[error("Json deserialization error, object type: {1}, context: {2}")]
     JsonDeserialize(serde_json::Error, String, String),
-    #[error("Json parse error: {0}")]
+    #[error("Json parse error, {}", crate::utils::json::error_context(.0))]
     JsonParse(#[from] serde_json::Error),
     #[error("I/O error: {0}")]
     IO(#[from] io::Error),
@@ -24,6 +24,10 @@ pub enum AppError {
     #[error("Function unsupported")]
     #[allow(dead_code)]
     FunctionUnsupported,
+    #[error("Document conversion failed: {0}")]
+    DocumentConversion(String),
+    #[error("File preview failed: {0}")]
+    FilePreview(String),
     #[error("Submission upload error: {0}")]
     SubmissionUpload(String),
     #[error("Join error: {0}")]
@@ -52,6 +56,8 @@ pub enum AppError {
     PDFOutputError(#[from] pdf_extract::OutputError),
     #[error("Docx reader error: {0}")]
     DocxReaderError(#[from] docx_rs::ReaderError),
+    #[error("LLM error: {0}")]
+    LLMError(String),
 }
 
 impl serde::Serialize for AppError {
@@ -59,7 +65,9 @@ impl serde::Serialize for AppError {
     where
         S: serde::ser::Serializer,
     {
-        serializer.serialize_str(self.to_string().as_ref())
+        let message = crate::diagnostics::sanitize_text(&self.to_string());
+        tracing::warn!(error = %message, "Application operation failed");
+        serializer.serialize_str(&message)
     }
 }
 

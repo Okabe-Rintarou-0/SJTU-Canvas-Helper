@@ -53,10 +53,11 @@ impl Client {
     }
 
     pub async fn get_user_space_info(&self, user_token: &str) -> Result<PersonalSpaceInfo> {
+        crate::diagnostics::protect_secret(user_token);
         let url = format!("{JBOX_USER_SPACE_URL}?user_token={user_token}");
         let info = self.post_request::<PersonalSpaceInfo, _>(&url, "").await?;
         if info.status != 0 {
-            tracing::error!("{}", info.message);
+            tracing::error!(status = info.status, "JBox user space request failed");
             return Err(AppError::JBoxError(info.message));
         }
         Ok(info)
@@ -171,22 +172,41 @@ impl Client {
         info: &JBoxLoginInfo,
         progress_handler: F,
     ) -> Result<()> {
-        // ensure directory exists
-        self.create_jbox_directory(save_dir, info).await?;
-
-        let save_path = Path::new(save_dir).join(&file.display_name);
         let response = self
             .get_request(&file.url, None::<&str>)
             .await?
             .error_for_status()?;
         let data = response.bytes().await?.to_vec();
+        self.upload_content(
+            &data,
+            &file.display_name,
+            &file.uuid,
+            save_dir,
+            info,
+            progress_handler,
+        )
+        .await
+    }
+
+    pub async fn upload_content<F: Fn(ProgressPayload) + Send>(
+        &self,
+        data: &[u8],
+        file_name: &str,
+        uuid: &str,
+        save_dir: &str,
+        info: &JBoxLoginInfo,
+        progress_handler: F,
+    ) -> Result<()> {
+        self.create_jbox_directory(save_dir, info).await?;
+
+        let save_path = Path::new(save_dir).join(file_name);
         let file_size = data.len();
         let chunk_count = self.compute_chunk_size(file_size);
         let ctx = self
             .start_chunk_upload(save_path.to_str().unwrap(), chunk_count, info)
             .await?;
         let mut payload = ProgressPayload {
-            uuid: file.uuid.clone(),
+            uuid: uuid.to_owned(),
             processed: 0,
             total: file_size as u64,
         };

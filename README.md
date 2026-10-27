@@ -1,11 +1,12 @@
-# SJTU Canvas Helper
-
-![](./images/logo.png)
-
-**还在为下载学生上传的大量压缩包而苦恼吗？**
+<div align="center">
+  <img src="images/logo.png" width="300px"/>
+  <h1>SJTU Canvas Helper</h1>
+  <p><b>还在为下载学生上传的大量压缩包而苦恼吗？</b></p>
+</div>
 
 SJTU Canvas 小帮手基于 [Tauri](https://tauri.app/) 开发，助您更便捷地使用交大 Canvas。
-参与讨论：[水源社区](https://shuiyuan.sjtu.edu.cn/t/topic/245275)。
+参与讨论：[水源社区](https://shuiyuan.sjtu.edu.cn/t/topic/245275)，[官网](https://okabe-rintarou-0.github.io/SJTU-Canvas-Helper/)。
+
 
 <div align="center">
   <img align="center" src="https://img.shields.io/badge/rust-1.75-blue" alt="">
@@ -16,18 +17,25 @@ SJTU Canvas 小帮手基于 [Tauri](https://tauri.app/) 开发，助您更便捷
 
 ## 安装指南
 
-![](./images/installation.png)
-
-### 基础安装
+| 操作系统类型 | 推荐下载（点击直接下载最新版） | 说明 |
+| :--- | :--- | :--- |
+| 🪟 **Windows 64 位** | [SJTU.Canvas.Helper_3.0.13_x64_en-US.msi](https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases/download/app-v3.0.13/SJTU.Canvas.Helper_3.0.13_x64_en-US.msi) | 首选，支持自动更新 |
+| 🪟 **Windows 32 位** | [SJTU.Canvas.Helper_3.0.13_x86_en-US.msi](https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases/download/app-v3.0.13/SJTU.Canvas.Helper_3.0.13_x86_en-US.msi) | 仅限老旧 32 位电脑 |
+| 🍎 **macOS Apple Silicon** | [SJTU.Canvas.Helper_3.0.13_aarch64.dmg](https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases/download/app-v3.0.13/SJTU.Canvas.Helper_3.0.13_aarch64.dmg) | M 系列芯片 |
+| 🍎 **macOS Intel** | [SJTU.Canvas.Helper_x64.app.tar.gz](https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases/download/app-v3.0.13/SJTU.Canvas.Helper_x64.app.tar.gz) | Intel 芯片 |
+| 🐧 **Linux Debian/Ubuntu** | [SJTU.Canvas.Helper_3.0.13_amd64.deb](https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases/download/app-v3.0.13/SJTU.Canvas.Helper_3.0.13_amd64.deb) | `dpkg` 安装 |
+| 🐧 **Linux RedHat/Fedora** | [SJTU.Canvas.Helper-3.0.13-1.x86_64.rpm](https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases/download/app-v3.0.13/SJTU.Canvas.Helper-3.0.13-1.x86_64.rpm) | `rpm` 安装 |
+| 🐧 **Linux 通用** | [SJTU.Canvas.Helper_3.0.13_amd64.AppImage](https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases/download/app-v3.0.13/SJTU.Canvas.Helper_3.0.13_amd64.AppImage) | 赋予权限后直接运行 |
 
 1. 前往 [Release](https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/releases) 页面下载并安装一次即可，后续主版本更新将自动拉取，无需重复下载
 
 2. **Windows 系统**：
    - 推荐下载 `.msi` 安装包，支持自动更新功能
-   - 也可选择免安装便携版：`SJTU.Canvas.Helper_v_x.x.x_x64_portable.zip`
+   - 也可选择免安装便携版：`SJTU.Canvas.Helper_3.0.13_x64_portable.zip`
 
 3. **MacOS 系统**：
-   - 下载对应版本安装包
+   - 下载对应版本安装包 
+   - 或打开终端（terminal）运行 `bash script/install_mac.sh` 自动下载安装（自动识别 Intel / Apple Silicon 芯片）
    - 若遇到打不开的问题，可参考 [在 Mac 上安全地打开 App](https://support.apple.com/zh-cn/102445)
    - 若显示已损坏，尝试执行以下命令：
      ```shell
@@ -43,9 +51,11 @@ SJTU Canvas 小帮手基于 [Tauri](https://tauri.app/) 开发，助您更便捷
 
 ### 首次配置
 
-安装完成后，请前往设置页面填写您的 `Canvas Token` 以及文件下载保存目录。
+安装完成后，前往 **系统设置 → 账号与连接**，选择账号类型，点击 **获取 Canvas Token** 查看创建步骤并打开对应的 Canvas 页面。将生成的 Token 填回输入框，设置下载保存目录，可点击 **测试 Canvas Token** 确认连接，完成后点击 **保存全部设置**。视频等功能所需的额外扫码登录也在此分类完成。
 
-![](./images/settings.png)
+主题和主色调位于 **界面偏好**，模型服务与课堂总结配置位于 **AI 与模型**，MCP、Debug 和实验性功能位于 **高级与实验**。切换分类会保留当前修改，**保存全部设置** 会保存各分类的修改。
+
+![系统设置中的账号与连接分类](./images/settings.png)
 
 ## 致谢
 
@@ -82,6 +92,8 @@ SJTU Canvas 小帮手基于 [Tauri](https://tauri.app/) 开发，助您更便捷
 + [x] 批改作业/修改作业 DDL
 + [x] 支持密院和本部 canvas 系统
 + [x] 视频下载/播放/字幕下载/截图抓取合成PDF
++ [x] 多 API Key 管理：支持添加多个 LLM 服务商 Key，自动识别提供商并拉取可用模型列表
++ [x] MCP Server：将 Canvas 数据能力通过标准 MCP 协议开放给 AI 客户端
 + [x] 自动更新 
 
 ### 文件下载/预览

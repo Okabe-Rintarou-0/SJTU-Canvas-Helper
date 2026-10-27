@@ -19,7 +19,7 @@
   },
   "productName": "SJTU Canvas Helper",
   "mainBinaryName": "SJTU Canvas Helper",
-  "version": "2.0.5",
+  "version": "3.0.13",
   "identifier": "com.okabe.sjtu.canvas",
   "plugins": {
     "updater": {
@@ -33,13 +33,15 @@
   },
   "app": {
     "security": {
-      "csp": "default-src 'self' http: https: data: blob: 'unsafe-eval' 'unsafe-inline'"
+      "csp": "default-src 'self' http: https: data: blob: 'unsafe-eval' 'unsafe-inline'; connect-src 'self' http: https: ws: wss: wss://jaccount.sjtu.edu.cn"
     },
     "windows": [
       {
         "title": "SJTU Canvas Helper",
         "width": 800,
         "height": 600,
+        "maximized": true,
+        "zoomHotkeysEnabled": false,
         "useHttpsScheme": false
       }
     ]
