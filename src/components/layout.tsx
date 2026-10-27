@@ -1,5 +1,4 @@
-﻿import { getVersion } from "@tauri-apps/api/app";
-import { open as openExternal } from "@tauri-apps/plugin-shell";
+import { getVersion } from "@tauri-apps/api/app";
 import ArticleRoundedIcon from "@mui/icons-material/ArticleRounded";
 import AssignmentRoundedIcon from "@mui/icons-material/AssignmentRounded";
 import AutoStoriesRoundedIcon from "@mui/icons-material/AutoStoriesRounded";
@@ -47,6 +46,7 @@ import AssignmentTurnedInRoundedIcon from "@mui/icons-material/AssignmentTurnedI
 import { useTasks } from "../lib/task_hooks";
 import { isTaskActive, taskManager } from "../lib/task_manager";
 import TaskPopover from "./task_popover";
+import LogModal from "./log_modal";
 
 const drawerWidth = 272;
 const collapsedDrawerWidth = 92;
@@ -84,7 +84,7 @@ const pageTitleMap: Record<string, string> = {
   debug: "Debug 控制台",
 };
 
-export default function BasicLayout({ children }: React.PropsWithChildren) {
+export default function BasicLayout({ children, active = true, contentKey }: React.PropsWithChildren<{ active?: boolean; contentKey?: string }>) {
   const tasks = useTasks();
   const activeTaskCount = tasks.filter(isTaskActive).length;
   const failedTaskCount = tasks.filter((task) => task.status === "failed").length;
@@ -103,10 +103,20 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
   const currentTitle = pageTitleMap[currentKey] || "Canvas";
   const [version, setVersion] = useState("");
   const [showChangeLog, setShowChangeLog] = useState(false);
+  const [showLogModal, setShowLogModal] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [messageApi, contextHolder] = useAppMessage();
   const { availableVersion, setAvailableVersion, previewOnly } = useUpdateNotice();
+
+  useEffect(() => {
+    if (!active) {
+      setMobileOpen(false);
+      setShowChangeLog(false);
+      setShowLogModal(false);
+      setTaskAnchor(null);
+    }
+  }, [active]);
 
   useEffect(() => {
     getVersion().then((value) => setVersion(value));
@@ -117,15 +127,6 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
       setMobileOpen(false);
     }
   }, [isDesktop, location.pathname]);
-
-  const handleOpenFeedback = async () => {
-    try {
-      await openExternal("mailto:923048992@sjtu.edu.cn");
-    } catch (error) {
-      console.error("open feedback mail failed", error);
-      messageApi.error("未能打开反馈邮箱，请确认系统已配置邮件客户端。");
-    }
-  };
 
   const effectiveDrawerWidth = useMemo(() => {
     if (!isDesktop) {
@@ -347,7 +348,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
             <Button onClick={() => setShowChangeLog(true)} size="small" sx={{ minWidth: 0, px: 1 }}>
               更新日志
             </Button>
-            <Button onClick={() => void handleOpenFeedback()} size="small" sx={{ minWidth: 0, px: 1 }}>
+            <Button onClick={() => setShowLogModal(true)} size="small" sx={{ minWidth: 0, px: 1 }}>
               反馈
             </Button>
           </Stack>
@@ -361,7 +362,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
 
       <Drawer
         variant={isDesktop ? "permanent" : "temporary"}
-        open={isDesktop ? true : mobileOpen}
+        open={active && (isDesktop || mobileOpen)}
         onClose={() => setMobileOpen(false)}
         ModalProps={{ keepMounted: true }}
         sx={{
@@ -405,7 +406,7 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
         ) : null}
 
         <Box
-          key={location.pathname}
+          key={contentKey ?? location.pathname}
           className="page-enter"
           sx={{
             p: { xs: 1.5, md: 2.5 },
@@ -421,11 +422,12 @@ export default function BasicLayout({ children }: React.PropsWithChildren) {
       </Box>
 
       <ChangeLogModal
-        open={showChangeLog}
+        open={active && showChangeLog}
         onCancel={() => setShowChangeLog(false)}
         onOk={() => setShowChangeLog(false)}
       />
-      {taskCenterEnabled && <TaskPopover anchorEl={taskAnchor} onClose={() => setTaskAnchor(null)} />}
+      {active && showLogModal && <LogModal onClose={() => setShowLogModal(false)} />}
+      {active && taskCenterEnabled && <TaskPopover anchorEl={taskAnchor} onClose={() => setTaskAnchor(null)} />}
     </Box>
   );
 }

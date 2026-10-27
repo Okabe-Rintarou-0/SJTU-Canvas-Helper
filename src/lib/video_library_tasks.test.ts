@@ -37,9 +37,11 @@ describe("batch video tasks", () => {
     expect(mocks.invoke).toHaveBeenCalledWith("open_local_path", { path: "D:/课程/subtitle.srt" });
   });
   it("exports only selected recordings and retains partial failures while other tasks finish", async () => {
+    const warning = "隐私课堂标题：第二小节缺少 PPT";
+    const note = "实验性过滤：第 2 张切片未导出";
     mocks.invoke.mockImplementation(async (command: string, args: { kind?: string }) => {
       if (command === "create_video_export_directory") return "D:/课程/课堂";
-      return { paths: ["D:/课程/课堂/result"], warnings: args.kind === "ppt" ? ["第二小节缺少 PPT"] : [] };
+      return { paths: ["D:/课程/课堂/result"], warnings: args.kind === "ppt" ? [warning] : [], notes: [note] };
     });
     const scope = { id: "session", title: "课堂（部分小节）", videos: [video] };
     expect(await enqueueVideoExports([scope], { video: true, ppt: true, subtitle: true, pptPerSession: true, tracks: "all" }, "D:/课程", "测试课程")).toBe(4);
@@ -48,7 +50,14 @@ describe("batch video tasks", () => {
     expect(calls).toHaveLength(4);
     expect(calls.every(([, args]) => args.requests.length === 1 && args.requests[0].key === "canvas:a")).toBe(true);
     expect(taskManager.getSnapshot().filter((task) => task.status === "succeeded")).toHaveLength(3);
-    expect(taskManager.getSnapshot().find((task) => task.kind === "ppt")).toMatchObject({ status: "failed", log: expect.stringContaining("已保存") });
+    const failed = taskManager.getSnapshot().find((task) => task.kind === "ppt");
+    expect(failed).toMatchObject({
+      status: "failed",
+      error: "Error: 部分资料未完成：已保存 1 个文件，1 项失败。请查看任务详情。",
+      log: `已保存：\nD:/课程/课堂/result\n${note}\n未完成：\n${warning}`,
+    });
+    expect(failed?.error).not.toContain("隐私课堂标题");
+    expect(failed?.error).not.toContain("D:/课程/课堂");
   });
   it("reports transfer progress and retains the chosen output directory", async () => {
     let reported = false;

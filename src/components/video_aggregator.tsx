@@ -97,7 +97,7 @@ export default function VideoAggregator() {
       ...formData,
       outputName: `${formData.outputName}.mp4`,
     };
-    consoleLog(LOG_LEVEL_INFO, "params: ", params);
+    consoleLog(LOG_LEVEL_INFO, "Starting video aggregation");
     if (!(await preCheckFfmpegState())) {
       return;
     }

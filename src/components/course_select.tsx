@@ -12,6 +12,7 @@ import { alpha, useTheme } from "@mui/material/styles";
 import { useMemo } from "react";
 
 import { Course } from "../lib/model";
+import { useWorkspacePopup } from "../lib/workspace_activity";
 
 export default function CourseSelect({
   courses,
@@ -54,9 +55,11 @@ export default function CourseSelect({
 
   const hasCourses = courses.length > 0;
   const theme = useTheme();
+  const popup = useWorkspacePopup();
 
   return (
     <Autocomplete
+      {...popup}
       fullWidth
       disabled={disabled || !hasCourses}
       options={formattedCourses}

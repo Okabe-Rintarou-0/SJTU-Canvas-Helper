@@ -67,6 +67,30 @@ fn ocr_evidence(slide: &CanvasVideoPPT) -> Option<String> {
 pub fn irrelevant_slide_reason(slide: &CanvasVideoPPT) -> Option<&'static str> {
     let full_text = slide.ocr_text.trim();
     if !full_text.is_empty() {
+        // Login forms have multiple distinctive controls. A Login button in a PDF
+        // reader or a Canvas tab during teaching is not evidence of a login page.
+        let compact: String = full_text
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .flat_map(char::to_lowercase)
+            .collect();
+        if ["非jaccount用户登录", "校内用户登录", "忘记密码", "password"]
+            .iter()
+            .all(|marker| compact.contains(marker))
+            && (compact.contains("canvas") || compact.contains("在线教学平台"))
+        {
+            return Some("Canvas 登录页面");
+        }
+        if compact.contains("jaccount")
+            && ["统一身份认证", "用户名", "密码", "登录"]
+                .iter()
+                .all(|marker| compact.contains(marker))
+            && ["验证码", "忘记密码", "记住我", "扫码登录"]
+                .iter()
+                .any(|marker| compact.contains(marker))
+        {
+            return Some("统一身份认证页面");
+        }
         // A browser tab titled 点名签到 also appears during teaching. Require the live
         // attendance controls and counts together, rather than trusting its keywords.
         if ["点名签到", "微信扫一扫", "应签", "已签", "结束签到"]
@@ -575,6 +599,111 @@ mod tests {
         assert_eq!(kept.len(), 3);
         assert_eq!(notes.len(), 2);
     }
+
+    const LESSON: &str = "基本概念：先介绍问题的背景和定义，再给出推导步骤及示例，最后说明结论的适用条件，并对不同方法的特点进行比较。";
+
+    fn text_slide(time: &str, text: &str) -> CanvasVideoPPT {
+        let mut result = slide(time, &[]);
+        result.ocr_text = text.into();
+        result
+    }
+
+    #[test]
+    fn login_forms_require_multiple_controls() {
+        let forms = vec![
+            text_slide(
+                "1",
+                "Canvas 非jAccount用户登录 校内用户登录 Password 忘记密码",
+            ),
+            text_slide("2", "jAccount 统一身份认证 用户名 密码 验证码 登录"),
+        ];
+        for form in &forms {
+            assert!(irrelevant_slide_reason(form).is_some());
+        }
+        let lesson = text_slide("3", &format!("{LESSON} Canvas 登录 用户名 密码"));
+        let mut input = forms;
+        input.push(lesson.clone());
+        assert_eq!(clean_up_slides(input, true).0, vec![lesson]);
+    }
+
+    #[test]
+    fn cleanup_merges_increments_and_near_duplicates_at_their_real_time() {
+        let original = text_slide("10", &format!("{LESSON} f(x)=1"));
+        for text in [
+            format!("{}新增一个完整的说明段落。", original.ocr_text),
+            original.ocr_text.replace("介绍", "介招") + "新增一个完整的说明段落。",
+            original.ocr_text.replace("介绍", "介招") + "。",
+            original.ocr_text.replace("(x)", "（x）"),
+        ] {
+            let complete = text_slide("20", &text);
+            let (kept, _) = clean_up_slides(vec![original.clone(), complete.clone()], true);
+            assert_eq!(kept.len(), 1);
+            assert_eq!(kept[0].ocr_text, complete.ocr_text);
+            assert_eq!(kept[0].create_sec, "20");
+            assert_eq!(kept[0].related_slide_secs, vec!["10"]);
+            let (timeline, _, _) = material_timeline("sample", &[], &kept);
+            assert!(timeline.contains("&t=20)"));
+            assert!(!timeline.contains("&t=10)"));
+        }
+    }
+
+    #[test]
+    fn cleanup_preserves_meaningful_content_changes() {
+        for (before, after) in [
+            ("参数20", "参数2"),
+            ("x=0.1", "x=01"),
+            ("f(x)", "f(y)"),
+            ("x₁", "x₂"),
+            ("a(b)", "ab"),
+            ("1/40", "2/40"),
+            ("必要前提", "不同结论"),
+        ] {
+            let a = text_slide("10", &format!("{LESSON}{before}"));
+            for addition in ["。", "新增一个完整的说明段落。"] {
+                let b = text_slide("20", &format!("{LESSON}{after}{addition}"));
+                assert_eq!(
+                    clean_up_slides(vec![a.clone(), b], true).0.len(),
+                    2,
+                    "{before} / {after}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn cleanup_does_not_accumulate_ocr_tolerance_across_a_group() {
+        let base = LESSON.repeat(2);
+        let a = text_slide("10", &base);
+        let mut changed: Vec<_> = base.chars().collect();
+        for c in changed.iter_mut().step_by(7).take(8) {
+            *c = '噪';
+        }
+        let b = text_slide(
+            "20",
+            &(changed.iter().collect::<String>() + "补充完整的说明段落。"),
+        );
+        for c in changed.iter_mut().skip(3).step_by(7).take(8) {
+            *c = '声';
+        }
+        let c = text_slide(
+            "30",
+            &(changed.iter().collect::<String>() + "补充完整的说明段落。再补充完整的说明段落。"),
+        );
+        assert_eq!(clean_up_slides(vec![b.clone(), c.clone()], true).0.len(), 1);
+        let (kept, _) = clean_up_slides(vec![a, b, c], true);
+        assert_eq!(kept.len(), 2);
+        assert_eq!(kept[0].create_sec, "20");
+        assert_eq!(kept[0].related_slide_secs, vec!["10"]);
+        assert_eq!(kept[1].create_sec, "30");
+    }
+
+    #[test]
+    fn cleanup_keeps_later_subsets() {
+        let complete = text_slide("10", &format!("{LESSON}补充完整的说明段落。"));
+        let reduced = text_slide("20", LESSON);
+        let input = vec![complete, reduced];
+        assert_eq!(clean_up_slides(input.clone(), true).0, input);
+    }
 }
 
 pub fn filter_export_slides(
@@ -600,132 +729,236 @@ pub fn filter_export_slides(
     (kept, notes)
 }
 
-fn animation_text(value: &str) -> (Vec<char>, Option<(u16, u16)>) {
-    static PAGE_NUMBER: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let pattern =
-        PAGE_NUMBER.get_or_init(|| regex::Regex::new(r"(\d{1,3})\s*/\s*(\d{1,3})\s*$").unwrap());
-    let value = value.trim();
-    let footer = pattern.captures(value).filter(|m| {
-        let preceding = &value[..m.get(0).unwrap().start()];
-        let tail: String = preceding
-            .chars()
-            .rev()
-            .take(60)
-            .collect::<String>()
-            .chars()
-            .rev()
-            .collect();
-        let lower = tail.to_lowercase();
-        // A trailing formula fraction is not a slide counter.
-        !preceding.trim_end().ends_with(['=', '+', '-', '∂'])
-            && (lower.contains("sjtu")
-                || lower.contains("copyright")
-                || preceding.trim_end().ends_with('第'))
-    });
-    let page = footer
-        .as_ref()
-        .and_then(|m| Some((m[1].parse().ok()?, m[2].parse().ok()?)));
-    let body = footer
-        .as_ref()
-        .map(|m| &value[..m.get(0).unwrap().start()])
-        .unwrap_or(value);
-    let text = body
-        .to_lowercase()
-        .chars()
+fn animation_text(body: &str) -> Vec<char> {
+    // Ignore spacing and bracket width, while preserving case, indices and bracket kinds.
+    body.chars()
+        .filter(|c| !c.is_whitespace())
         .map(|c| match c {
-            '∑' => 'σ',
-            '−' | '–' => '-',
-            '₀' | '⁰' => '0',
-            '₁' | '¹' => '1',
-            '₂' | '²' => '2',
-            '₃' | '³' => '3',
-            '₄' | '⁴' => '4',
-            '₅' | '⁵' => '5',
-            '₆' | '⁶' => '6',
-            '₇' | '⁷' => '7',
-            '₈' | '⁸' => '8',
-            '₉' | '⁹' => '9',
-            'ᵀ' => 't',
-            other => other,
+            '（' => '(',
+            '）' => ')',
+            '［' => '[',
+            '］' => ']',
+            '｛' => '{',
+            '｝' => '}',
+            _ => c,
         })
-        .filter(|c| !c.is_whitespace() && !".,，。:：;；'\"“”‘’()（）[]【】".contains(*c))
-        .collect();
-    (text, page)
-}
-
-/// Coverage of the older page in the newer page, preserving character order and math symbols.
-fn subsequence_length(old: &[char], new: &[char]) -> usize {
-    let mut row = vec![0; new.len() + 1];
-    for a in old {
-        let mut diagonal = 0;
-        for (index, b) in new.iter().enumerate() {
-            let above = row[index + 1];
-            row[index + 1] = if a == b {
-                diagonal + 1
-            } else {
-                row[index + 1].max(row[index])
-            };
-            diagonal = above;
-        }
-    }
-    row[new.len()]
+        .collect()
 }
 
 #[derive(Clone, Copy)]
 enum SlideRelation {
     Duplicate,
     NewMoreComplete,
-    OldMoreComplete,
 }
 
-fn ngram_coverage(old: &[char], new: &[char], size: usize) -> f64 {
-    let mut remaining = std::collections::HashMap::<Vec<char>, usize>::new();
-    for gram in new.windows(size) {
-        *remaining.entry(gram.to_vec()).or_default() += 1;
-    }
-    let mut matched = 0;
-    for gram in old.windows(size) {
-        if let Some(count) = remaining.get_mut(gram) {
-            if *count > 0 {
-                matched += 1;
-                *count -= 1;
-            }
-        }
-    }
-    matched as f64 / (old.len() - size + 1) as f64
+struct TextAlignment {
+    matched: Vec<(usize, usize)>,
+    edits: Vec<(std::ops::Range<usize>, std::ops::Range<usize>)>,
 }
 
-fn numbers_preserved(old: &str, new: &str) -> bool {
-    static NUMBERS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let regex = NUMBERS.get_or_init(|| {
-        regex::Regex::new(
-            r"\d+\s*/\s*\d+|[=<>≤≥]\s*[-−]?\d+(?:\.\d+)?(?:\s*/\s*\d+)?|\d+(?:\.\d+)?",
-        )
-        .unwrap()
-    });
-    let values = |text: &str| {
-        let mut counts = std::collections::HashMap::<String, usize>::new();
-        for value in regex.find_iter(text) {
-            let value: String = value
-                .as_str()
-                .chars()
-                .filter(|c| !c.is_whitespace())
-                .map(|c| if c == '−' { '-' } else { c })
-                .collect();
-            if value.contains('.')
-                || value.contains('/')
-                || value.chars().filter(|c| c.is_ascii_digit()).count() > 1
-                || value.starts_with(['=', '<', '>', '≤', '≥'])
-            {
-                *counts.entry(value).or_default() += 1;
-            }
+/// Keep the edit locations, not just a similarity score. Inputs are capped at 2000 chars.
+fn align_text(old: &[char], new: &[char]) -> TextAlignment {
+    let width = new.len() + 1;
+    let mut lengths = vec![0u16; (old.len() + 1) * width];
+    for (i, a) in old.iter().enumerate() {
+        for (j, b) in new.iter().enumerate() {
+            lengths[(i + 1) * width + j + 1] = if a == b {
+                lengths[i * width + j] + 1
+            } else {
+                lengths[i * width + j + 1].max(lengths[(i + 1) * width + j])
+            };
         }
-        counts
-    };
-    let new = values(new);
-    values(old)
+    }
+    let (mut i, mut j) = (old.len(), new.len());
+    let mut matched = Vec::new();
+    while i > 0 && j > 0 {
+        if old[i - 1] == new[j - 1] {
+            matched.push((i - 1, j - 1));
+            i -= 1;
+            j -= 1;
+        } else if lengths[(i - 1) * width + j] >= lengths[i * width + j - 1] {
+            i -= 1;
+        } else {
+            j -= 1;
+        }
+    }
+    matched.reverse();
+    let (mut x, mut y) = (0, 0);
+    let mut edits = Vec::new();
+    for &(i, j) in matched
         .iter()
-        .all(|(number, count)| new.get(number).copied().unwrap_or(0) >= *count)
+        .chain(std::iter::once(&(old.len(), new.len())))
+    {
+        if i > x || j > y {
+            edits.push((x..i, y..j));
+        }
+        x = i + 1;
+        y = j + 1;
+    }
+    TextAlignment { matched, edits }
+}
+
+fn math_operator(c: char) -> bool {
+    "=<>≤≥≠+−-*/∈∉∪∩⊆⊂∅".contains(c)
+}
+
+fn decimal_digit(c: char) -> bool {
+    if c.is_ascii_digit() {
+        return true;
+    }
+    if !c.is_numeric() {
+        return false;
+    }
+    static DECIMAL: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let regex = DECIMAL.get_or_init(|| regex::Regex::new(r"^\p{Decimal_Number}$").unwrap());
+    let mut encoded = [0; 4];
+    regex.is_match(c.encode_utf8(&mut encoded))
+}
+
+fn number_ranges(text: &[char]) -> Vec<std::ops::Range<usize>> {
+    let mut ranges = Vec::new();
+    let mut i = 0;
+    while i < text.len() {
+        if !decimal_digit(text[i]) {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < text.len() && decimal_digit(text[i]) {
+            i += 1;
+        }
+        if i + 1 < text.len() && text[i] == '.' && decimal_digit(text[i + 1]) {
+            i += 1;
+            while i < text.len() && decimal_digit(text[i]) {
+                i += 1;
+            }
+        }
+        ranges.push(start..i);
+    }
+    ranges
+}
+
+/// Protect actual local substitutions without interpreting an entire OCR page as one formula.
+fn aligned_edits_preserved(old: &[char], new: &[char], alignment: &TextAlignment) -> bool {
+    let mut mapping = vec![None; old.len()];
+    for &(i, j) in &alignment.matched {
+        mapping[i] = Some(j);
+    }
+    for (a, b) in &alignment.edits {
+        let removed = &old[a.clone()];
+        let inserted = &new[b.clone()];
+        // A lost phrase is substantive unless OCR merely put it elsewhere in the same page.
+        if removed.iter().filter(|c| c.is_alphanumeric()).count() >= 4
+            && !new.windows(removed.len()).any(|part| part == removed)
+        {
+            return false;
+        }
+        if !removed.is_empty() && !inserted.is_empty() && removed.len().max(inserted.len()) <= 8 {
+            let digit_edit = removed.iter().copied().any(decimal_digit)
+                && inserted.iter().copied().any(decimal_digit);
+            let operator_edit = removed.iter().copied().any(math_operator)
+                && inserted.iter().copied().any(math_operator);
+            let index_edit = removed.iter().any(|c| "₀₁₂₃₄₅₆₇₈₉⁰¹²³⁴⁵⁶⁷⁸⁹".contains(*c))
+                && inserted.iter().any(|c| "₀₁₂₃₄₅₆₇₈₉⁰¹²³⁴⁵⁶⁷⁸⁹".contains(*c));
+            let variable_edit = removed.len() == 1
+                && inserted.len() == 1
+                && removed[0].is_ascii_alphabetic()
+                && inserted[0].is_ascii_alphabetic()
+                && old[a.start.saturating_sub(3)..(a.end + 3).min(old.len())]
+                    .iter()
+                    .any(|c| math_operator(*c) || "()[]{}".contains(*c));
+            if digit_edit || operator_edit || index_edit || variable_edit {
+                return false;
+            }
+        }
+        // Inserting/removing a comparison sign inside an existing expression changes its meaning.
+        for (text, range) in [(old, a), (new, b)] {
+            if range.len() <= 3
+                && text[range.clone()]
+                    .iter()
+                    .any(|c| "=<>≤≥≠∈∉⊆⊂".contains(*c))
+                && range.start > 0
+                && range.end < text.len()
+                && text[range.start - 1].is_ascii()
+                && text[range.end].is_ascii()
+            {
+                return false;
+            }
+        }
+    }
+    for (open, close) in [('(', ')'), ('[', ']'), ('{', '}')] {
+        let removed = |c| {
+            alignment
+                .edits
+                .iter()
+                .any(|(a, _)| old[a.clone()].contains(&c))
+        };
+        if removed(open) && removed(close) {
+            return false;
+        }
+    }
+    let new_numbers = number_ranges(new);
+    for range in number_ranges(old) {
+        // Compare a number at the same aligned label, rather than using another
+        // occurrence of those digits elsewhere in a long added paragraph.
+        for (anchor, before) in [
+            (range.start.saturating_sub(2)..range.start, true),
+            (range.end..(range.end + 2).min(old.len()), false),
+        ] {
+            if anchor.len() != 2
+                || !old[anchor.clone()]
+                    .iter()
+                    .all(|c| c.is_alphanumeric() && !decimal_digit(*c))
+            {
+                continue;
+            }
+            let (Some(first), Some(last)) = (mapping[anchor.start], mapping[anchor.end - 1]) else {
+                continue;
+            };
+            if last != first + 1 {
+                continue;
+            }
+            if let Some(next) = new_numbers.iter().find(|r| {
+                if before {
+                    r.start == last + 1
+                } else {
+                    r.end == first
+                }
+            }) {
+                if new[next.clone()] != old[range.clone()] {
+                    return false;
+                }
+            }
+        }
+        let formula = range.start > 0 && math_operator(old[range.start - 1])
+            || old[range.clone()].contains(&'.')
+            || old.get(range.end) == Some(&'%');
+        let mapped: Vec<_> = mapping[range.clone()].iter().filter_map(|v| *v).collect();
+        if mapped.is_empty() {
+            if formula {
+                return false;
+            }
+            continue;
+        }
+        let containing: Vec<_> = new_numbers
+            .iter()
+            .filter(|r| mapped.iter().any(|j| r.contains(j)))
+            .collect();
+        if formula
+            && (mapped.len() != range.len()
+                || containing.len() != 1
+                || (range.start > 0
+                    && mapping[range.start - 1].is_some_and(|j| mapped[0] != j + 1))
+                || new[containing[0].clone()] != old[range.clone()]
+                || mapped
+                    .iter()
+                    .enumerate()
+                    .any(|(i, j)| *j != containing[0].start + i))
+        {
+            return false;
+        }
+    }
+    true
 }
 
 fn slide_relation(old: &CanvasVideoPPT, new: &CanvasVideoPPT) -> Option<SlideRelation> {
@@ -738,55 +971,58 @@ fn slide_relation(old: &CanvasVideoPPT, new: &CanvasVideoPPT) -> Option<SlideRel
     if new_time < old_time || (old.ppt_img_url.is_some() && new.ppt_img_url.is_none()) {
         return None;
     }
-    let (a, old_page) = animation_text(&old.ocr_text);
-    let (b, new_page) = animation_text(&new.ocr_text);
-    let same_page = old_page.is_some() && old_page == new_page;
-    if a.len().min(b.len()) < 45
-        || a.len().max(b.len()) > 2000
-        || a.iter().take(16).ne(b.iter().take(16))
-        || matches!((old_page, new_page), (Some(x), Some(y)) if x != y)
+    let a = animation_text(&old.ocr_text);
+    let b = animation_text(&new.ocr_text);
+    if a.len().min(b.len()) < 45 || a.len().max(b.len()) > 2000 {
+        return None;
+    }
+    if a == b {
+        return Some(SlideRelation::Duplicate);
+    }
+    if b.len() <= a.len() {
+        return None;
+    }
+    // A cheap upper bound avoids allocating an alignment for unrelated pages.
+    let mut available = std::collections::HashMap::<char, usize>::new();
+    for c in &b {
+        *available.entry(*c).or_default() += 1;
+    }
+    let possible = a
+        .iter()
+        .filter(|c| {
+            let count = available.entry(**c).or_default();
+            if *count == 0 {
+                false
+            } else {
+                *count -= 1;
+                true
+            }
+        })
+        .count();
+    if possible * 100 < a.len() * 90 {
+        return None;
+    }
+    let alignment = align_text(&a, &b);
+    let covered = alignment.matched.len();
+    // Near duplicates need high coverage in both directions, rather than a new
+    // paragraph. Increments may add much more text but must retain 90% of the old.
+    let near_duplicate = covered * 100 >= a.len().max(b.len()) * 95;
+    if covered * 100 < a.len() * 90
+        || (!near_duplicate
+            && covered != a.len()
+            && !alignment
+                .edits
+                .iter()
+                .any(|(a, b)| a.is_empty() && b.len() >= 8))
+        || !aligned_edits_preserved(&a, &b, &alignment)
     {
         return None;
     }
-    let preserved = numbers_preserved(&old.ocr_text, &new.ocr_text);
-    let reverse_preserved = numbers_preserved(&new.ocr_text, &old.ocr_text);
-    if a == b && preserved && reverse_preserved {
-        return Some(SlideRelation::Duplicate);
-    }
-    if same_page
-        && preserved
-        && reverse_preserved
-        && a.len().min(b.len()) * 100 >= a.len().max(b.len()) * 93
-        && ngram_coverage(&a, &b, 2) >= 0.97
-        && ngram_coverage(&b, &a, 2) >= 0.97
-        && ngram_coverage(&a, &b, 3) >= 0.94
-        && ngram_coverage(&b, &a, 3) >= 0.94
-    {
-        return Some(SlideRelation::Duplicate);
-    }
-    let covers = |partial: &[char], full: &[char]| {
-        if full.len() < partial.len() + 8 || full.len() * 10 < partial.len() * 11 {
-            return false;
-        }
-        let ordered = subsequence_length(partial, full);
-        if same_page {
-            // OCR often moves an existing formula's characters when annotations appear.
-            // Combine ordered evidence and counted local fragments rather than demanding
-            // one exact reading order. Both the slide number and title must agree.
-            ngram_coverage(partial, full, 2) >= 0.95
-                && ngram_coverage(partial, full, 3) >= 0.90
-                && ordered * 100 >= partial.len() * 70
-        } else {
-            ordered == partial.len()
-        }
-    };
-    if preserved && covers(&a, &b) {
-        return Some(SlideRelation::NewMoreComplete);
-    }
-    if reverse_preserved && covers(&b, &a) {
-        return Some(SlideRelation::OldMoreComplete);
-    }
-    None
+    Some(if near_duplicate {
+        SlideRelation::Duplicate
+    } else {
+        SlideRelation::NewMoreComplete
+    })
 }
 
 fn merge_slide_times(chosen: &mut CanvasVideoPPT, other: &CanvasVideoPPT) {
@@ -817,42 +1053,28 @@ pub fn simplify_animation_slides(
     let mut group_evidence: Vec<Vec<CanvasVideoPPT>> = Vec::new();
     let mut notes = Vec::new();
     for mut slide in slides {
-        let match_group = kept.last().and_then(|previous| {
-            let index = kept.len() - 1;
-            let relation = slide_relation(previous, &slide)?;
-            if !matches!(relation, SlideRelation::OldMoreComplete)
-                && group_evidence[index].iter().any(|source| {
-                    !matches!(
-                        slide_relation(source, &slide),
-                        Some(SlideRelation::Duplicate | SlideRelation::NewMoreComplete)
-                    )
-                })
-            {
-                return None;
-            }
-            Some((index, relation))
+        let match_group = group_evidence.last().and_then(|sources| {
+            // This includes the immediately preceding original slice. Only the
+            // latest contiguous group is eligible, and tolerance cannot accumulate.
+            sources
+                .iter()
+                .all(|source| slide_relation(source, &slide).is_some())
+                .then(|| kept.len() - 1)
         });
-        if let Some((index, relation)) = match_group {
+        if let Some(index) = match_group {
             group_evidence[index].push(slide.clone());
             let previous = &kept[index];
             let previous_time = previous.create_sec.clone();
             let incoming_time = slide.create_sec.clone();
-            match relation {
-                SlideRelation::Duplicate | SlideRelation::NewMoreComplete => {
-                    slide.animation_start_sec = Some(
-                        previous
-                            .animation_start_sec
-                            .as_ref()
-                            .unwrap_or(&previous.create_sec)
-                            .clone(),
-                    );
-                    merge_slide_times(&mut slide, previous);
-                    kept[index] = slide;
-                }
-                SlideRelation::OldMoreComplete => {
-                    merge_slide_times(&mut kept[index], &slide);
-                }
-            }
+            slide.animation_start_sec = Some(
+                previous
+                    .animation_start_sec
+                    .as_ref()
+                    .unwrap_or(&previous.create_sec)
+                    .clone(),
+            );
+            merge_slide_times(&mut slide, previous);
+            kept[index] = slide;
             notes.push(format!("实验性精简：合并 {previous_time} 与 {incoming_time} 的同页动画/重复切片，保留 {} 的完整画面及真实时间", kept[index].create_sec));
         } else {
             group_evidence.push(vec![slide.clone()]);

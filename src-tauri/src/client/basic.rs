@@ -1,5 +1,4 @@
 use super::{constants::BASE_URL, file_parser, llm, Client};
-use ::bytes::Bytes;
 use reqwest::{cookie, multipart};
 use serde::de::DeserializeOwned;
 use std::{cmp::min, collections::HashSet, fs, io::Write, ops::Deref, path::Path, sync::Arc};
@@ -325,16 +324,6 @@ impl Client {
         Ok(())
     }
 
-    pub async fn get_file_content(file: &File) -> Result<Bytes> {
-        let response = reqwest::Client::new()
-            .get(&file.url)
-            .send()
-            .await?
-            .error_for_status()?;
-        let bytes = response.bytes().await?;
-        Ok(bytes)
-    }
-
     pub async fn download_file<F: Fn(ProgressPayload) + Send>(
         &self,
         file: &File,
@@ -366,7 +355,7 @@ impl Client {
             file.write_all(&chunk)?;
         }
 
-        tracing::info!("File {:?} downloaded successfully!", path);
+        tracing::info!("File download completed");
         Ok(())
     }
 
@@ -546,7 +535,7 @@ impl Client {
     ) -> Result<Vec<File>> {
         let folders_and_files = self.get_folders_and_files(course.id, token).await?;
         let folders_map = &folders_and_files.folders_map;
-        tracing::info!("folders_map: {:?}", folders_map);
+        tracing::info!(folder_count = folders_map.len(), "Synchronizing course files");
         let files = folders_and_files
             .files
             .into_iter()
@@ -782,6 +771,19 @@ impl Client {
         let url = format!("{}/api/v1/users/self", self.base_url.read().await);
         let me = self.get_json_with_token(&url, None::<&str>, token).await?;
         Ok(me)
+    }
+
+    pub async fn test_credential(&self, token: &str) -> Result<User> {
+        // Use the same URL for dispatch and diagnostics if settings change during the request.
+        let url = format!("{}/api/v1/users/self", self.base_url.read().await);
+        let result = self.get_json_with_token(&url, None::<&str>, token).await;
+        tracing::info!(
+            operation = "credential_test",
+            endpoint = %crate::diagnostics::sanitize_url(&url),
+            success = result.is_ok(),
+            "Credential test completed"
+        );
+        result
     }
 
     async fn upload_submission_file_with(
@@ -1024,6 +1026,43 @@ mod mock_tests {
     }
 
     #[tokio::test]
+    async fn test_credential_uses_current_endpoint_and_preserves_http_errors() {
+        let first = MockServer::start();
+        let second = MockServer::start();
+        let user = crate::model::User {
+            id: 7,
+            ..Default::default()
+        };
+        let accepted = first.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/users/self")
+                .header("Authorization", "Bearer supplied-credential");
+            then.status(200)
+                .json_body(serde_json::to_value(&user).unwrap());
+        });
+        let rejected = second.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/users/self")
+                .header("Authorization", "Bearer supplied-credential");
+            then.status(401);
+        });
+        let client = create_test_client(&first.base_url());
+        assert_eq!(
+            client.test_credential("supplied-credential").await.unwrap().id,
+            7
+        );
+        client.set_base_url(second.base_url()).await;
+        let error = client
+            .test_credential("supplied-credential")
+            .await
+            .unwrap_err();
+        assert!(matches!(error, crate::error::AppError::Network(error)
+            if error.status() == Some(reqwest::StatusCode::UNAUTHORIZED)));
+        accepted.assert();
+        rejected.assert();
+    }
+
+    #[tokio::test]
     async fn test_get_file_preview_session_url_creates_web_session() {
         let server = MockServer::start();
         let token = "test_token_12345";
@@ -1253,6 +1292,69 @@ mod mock_tests {
     }
 
     #[tokio::test]
+    async fn test_get_course_syllabus_without_published_body() {
+        for body in [
+            json!({"id": 42, "syllabus_body": null}),
+            json!({"id": 42}),
+            json!({"id": 42, "syllabus_body": ""}),
+        ] {
+            let server = MockServer::start();
+            let mock = server.mock(|when, then| {
+                when.method(GET)
+                    .path("/api/v1/courses/42")
+                    .query_param("include[]", "syllabus_body");
+                then.status(200).json_body(body.clone());
+            });
+            let course = create_test_client(&server.base_url())
+                .get_course_syllabus(42, "test-token")
+                .await
+                .unwrap();
+            assert_eq!(course.id, 42);
+            assert!(course.syllabus_body.is_empty());
+            mock.assert();
+        }
+    }
+
+    #[tokio::test]
+    async fn test_list_submissions_paginates_without_live_canvas() {
+        let server = MockServer::start();
+        let mut pages = Vec::new();
+        for page in 1..=3 {
+            pages.push(server.mock(|when, then| {
+                when.method(GET)
+                    .path("/api/v1/courses/7/assignments/8/submissions")
+                    .header("Authorization", "Bearer test-token")
+                    .query_param("include[]", "submission_comments")
+                    .query_param("per_page", "100")
+                    .query_param("page", page.to_string());
+                let body = if page < 3 {
+                    json!([{"id": page, "assignment_id": 8, "user_id": 10,
+                        "late": false, "workflow_state": "submitted"}])
+                } else { json!([]) };
+                then.status(200).json_body(body);
+            }));
+        }
+        let submissions = create_test_client(&server.base_url())
+            .list_course_assignment_submissions(7, 8, "test-token").await.unwrap();
+        assert_eq!(submissions.iter().map(|item| item.id).collect::<Vec<_>>(), vec![1, 2]);
+        assert!(submissions.iter().all(|item| item.assignment_id == 8));
+        for page in pages { page.assert_hits(1); }
+    }
+
+    #[tokio::test]
+    async fn test_list_submissions_propagates_http_failure_without_live_canvas() {
+        let server = MockServer::start();
+        let denied = server.mock(|when, then| {
+            when.method(GET).path("/api/v1/courses/7/assignments/8/submissions");
+            then.status(401);
+        });
+        assert!(create_test_client(&server.base_url())
+            .list_course_assignment_submissions(7, 8, "test-token").await.is_err());
+        denied.assert_hits(1);
+    }
+
+
+    #[tokio::test]
     async fn test_update_grade_with_grade_and_comment() {
         let server = MockServer::start();
         let token = "test_token_12345";
@@ -1430,6 +1532,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[ignore = "requires a live Canvas token and network access"]
     async fn test_get_me() -> Result<()> {
         let token = get_token_from_env();
         assert!(!token.is_empty());
@@ -1441,6 +1544,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[ignore = "requires a live Canvas token and network access"]
     async fn test_list_courses() -> Result<()> {
         let token = get_token_from_env();
         assert!(!token.is_empty());
@@ -1462,6 +1566,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[ignore = "requires a live Canvas token and network access"]
     async fn test_list_assignments() -> Result<()> {
         tracing_subscriber::fmt::init();
         let token = get_token_from_env();
@@ -1487,6 +1592,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[ignore = "requires a live Canvas token and network access"]
     async fn test_list_users() -> Result<()> {
         let token = get_token_from_env();
         assert!(!token.is_empty());
@@ -1520,6 +1626,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[ignore = "requires a live Canvas token and network access"]
     async fn test_list_submissions() -> Result<()> {
         let token = get_token_from_env();
         assert!(!token.is_empty());
@@ -1547,6 +1654,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[ignore = "requires a live Canvas token and network access"]
     async fn test_list_colors() -> Result<()> {
         let token = get_token_from_env();
         assert!(!token.is_empty());

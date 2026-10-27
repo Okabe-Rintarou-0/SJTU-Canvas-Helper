@@ -1,5 +1,7 @@
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::HashMap;
+mod video_summary;
+pub use video_summary::*;
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Course {
@@ -18,8 +20,16 @@ pub struct Course {
     pub teachers: Vec<Teacher>,
     #[serde(default)]
     pub term: Term,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_syllabus_body")]
     pub syllabus_body: String,
+}
+
+// Canvas uses null as well as an omitted/empty string for an unpublished syllabus.
+fn deserialize_syllabus_body<'de, D>(deserializer: D) -> std::result::Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -169,6 +179,12 @@ pub struct AppConfig {
     pub llm_api_keys: Vec<LlmApiKeyEntry>,
     #[serde(default)]
     pub llm_active_api_key: String,
+    #[serde(default = "default_video_summary_prompt")]
+    pub video_summary_prompt: String,
+    #[serde(default = "default_video_context_tokens")]
+    pub video_summary_context_tokens: u32,
+    #[serde(default = "default_video_output_tokens")]
+    pub video_summary_output_tokens: u32,
     #[serde(default)]
     pub ja_auth_cookie: String,
     #[serde(default)]
@@ -233,6 +249,9 @@ impl Default for AppConfig {
             debug_mode: Default::default(),
             llm_api_keys: Default::default(),
             llm_active_api_key: Default::default(),
+            video_summary_prompt: default_video_summary_prompt(),
+            video_summary_context_tokens: default_video_context_tokens(),
+            video_summary_output_tokens: default_video_output_tokens(),
         }
     }
 }
@@ -796,6 +815,15 @@ pub struct QRCodeScanResult {
     pub contents: Vec<String>,
 }
 
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+pub struct QRCodeScanReport {
+    pub results: Vec<QRCodeScanResult>,
+    pub total_files: usize,
+    pub image_files: usize,
+    pub scanned_images: usize,
+    pub failed_images: usize,
+}
+
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DiscussionTopic {
     pub id: i64,
@@ -993,6 +1021,9 @@ pub struct CanvasVideo {
     pub lesson_number: i64,
     pub daily_lesson_number: i64,
     pub playable: bool,
+    /// Raw transcript/PPT readiness hint from the list; None means unknown.
+    #[serde(default)]
+    pub ai_available: Option<bool>,
     pub availability: String,
     pub availability_label: String,
 }
@@ -1004,6 +1035,44 @@ pub enum VideoSource {
     Canvas,
     VideoSpace,
     Legacy,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasLiveSession {
+    pub id: String,
+    pub teaching_class_id: i64,
+    pub title: String,
+    pub teacher_name: String,
+    pub classroom_name: String,
+    pub begin_time: String,
+    pub end_time: String,
+    pub start_time: i64,
+    pub finish_time: i64,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasLiveList {
+    pub sessions: Vec<CanvasLiveSession>,
+    pub server_time: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasLiveTrack {
+    pub name: String,
+    pub url: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasLiveInfo {
+    pub start_time: i64,
+    pub finish_time: i64,
+    pub server_time: i64,
+    pub tracks: Vec<CanvasLiveTrack>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]

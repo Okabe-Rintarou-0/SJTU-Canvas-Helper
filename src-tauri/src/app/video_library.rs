@@ -1,7 +1,7 @@
 use super::App;
 use crate::{
     error::{AppError, Result},
-    model::{CanvasVideo, CanvasVideoPPT, LLMChatMessage, VideoInfo, VideoSource},
+    model::{CanvasVideo, CanvasVideoPPT, LLMChatMessage, VideoInfo, VideoSource, VideoSummaryOptions, VideoPreparedContext, VideoChatResponse},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -211,10 +211,18 @@ impl App {
         &self,
         text: String,
         messages: Vec<LLMChatMessage>,
+        options: Option<VideoSummaryOptions>,
+        prepared_context: Option<VideoPreparedContext>,
         on_chunk: Option<&mut (dyn FnMut(String) + Send)>,
         on_status: &mut (dyn FnMut(String) + Send),
-    ) -> Result<String> {
-        self.client.chat_video_materials(&text, &messages, on_chunk, on_status).await
+    ) -> Result<VideoChatResponse> {
+        let options = match options {
+            Some(options) => options,
+            None => { let config = self.config.read().await; VideoSummaryOptions {
+                prompt: config.video_summary_prompt.clone(), context_tokens: config.video_summary_context_tokens,
+                output_tokens: config.video_summary_output_tokens } },
+        };
+        self.client.chat_video_materials(&text, &messages, &options, prepared_context, on_chunk, on_status).await
     }
 
     pub async fn export_video_materials(
@@ -231,18 +239,25 @@ impl App {
             warnings: vec![],
             notes: vec![],
         };
+        // Errors are logged when serialized; keep recording titles in user-facing exports only.
+        let mut error_notes = Vec::new();
+        let mut error_warnings = Vec::new();
         match kind.as_str() {
             "ppt" => {
                 let mut slides = Vec::new();
                 let enabled = self.config.read().await.experimental_ppt_cleanup;
-                for request in &requests {
+                for (request_index, request) in requests.iter().enumerate() {
                     match self.recording_slides_raw(request).await {
                         Ok(next) => {
                             let (mut next, notes) = super::ppt::clean_up_slides(next, enabled);
+                            error_notes.extend(notes.iter().map(|note| format!("第 {} 小节：{note}", request_index + 1)));
                             result.notes.extend(notes.into_iter().map(|note| format!("{}：{note}", request.title)));
                             slides.append(&mut next);
                         }
-                        Err(e) => result.warnings.push(format!("{}：{e}", request.title)),
+                        Err(e) => {
+                            error_warnings.push(format!("第 {} 小节：{e}", request_index + 1));
+                            result.warnings.push(format!("{}：{e}", request.title));
+                        }
                     }
                 }
                 if !slides.is_empty() {
@@ -267,7 +282,7 @@ impl App {
             }
             "subtitle" | "reading" => {
                 let mut reading = String::new();
-                for request in &requests {
+                for (request_index, request) in requests.iter().enumerate() {
                     match self.recording_subtitle(request, true).await {
                         Ok(lines) => {
                             if kind == "subtitle" {
@@ -285,7 +300,10 @@ impl App {
                                 }
                             }
                         }
-                        Err(e) => result.warnings.push(format!("{}：{e}", request.title)),
+                        Err(e) => {
+                            error_warnings.push(format!("第 {} 小节：{e}", request_index + 1));
+                            result.warnings.push(format!("{}：{e}", request.title));
+                        }
                     }
                 }
                 if kind == "reading" && !reading.is_empty() {
@@ -301,7 +319,7 @@ impl App {
                 }
             }
             "video" => {
-                for request in &requests {
+                for (request_index, request) in requests.iter().enumerate() {
                     let infos = self.recording_infos(request, false).await?;
                     let info = infos
                         .into_iter()
@@ -327,6 +345,11 @@ impl App {
                             Ok(_) => result.paths.push(path.to_string_lossy().into_owned()),
                             Err(e) => {
                                 let _ = fs::remove_file(&path);
+                                error_warnings.push(format!(
+                                    "第 {} 小节 机位{}：{e}",
+                                    request_index + 1,
+                                    index + 1
+                                ));
                                 result.warnings.push(format!(
                                     "{} 机位{}：{e}",
                                     request.title,
@@ -340,10 +363,10 @@ impl App {
             _ => return Err(failure("未知资料类型")),
         }
         if result.paths.is_empty() && !result.notes.is_empty() && result.warnings.is_empty() {
-            return Err(failure(format!("没有可导出的 PPT 页面。{}；可关闭“导出 PPT 时去除无用页面”后重试", result.notes.join("；"))));
+            return Err(failure(format!("没有可导出的 PPT 页面。{}；可关闭“导出 PPT 时去除无用页面”后重试", error_notes.join("；"))));
         }
         if result.paths.is_empty() {
-            return Err(failure(result.warnings.join("；")));
+            return Err(failure(error_warnings.join("；")));
         }
         Ok(result)
     }
@@ -352,6 +375,73 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn offline_app() -> App {
+        App {
+            client: Arc::new(crate::client::Client::new_without_proxy(
+                "http://127.0.0.1",
+                "",
+                "",
+                "",
+                None,
+            )),
+            current_account: Default::default(),
+            config: Default::default(),
+            handle: Default::default(),
+            mcp_handle: Default::default(),
+            cache: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn office_conversion_error_omits_filename() {
+        let file = crate::model::File {
+            display_name: "张同学_202612345_私人课程作业".into(),
+            ..Default::default()
+        };
+        let error = offline_app().convert_office_file_to_pdf(&file).await.unwrap_err();
+        assert!(matches!(&error, AppError::UnsupportedFileExtensionError(extension) if extension == "(missing)"));
+        assert!(!error.to_string().contains(&file.display_name));
+        assert!(!serde_json::to_string(&error).unwrap().contains(&file.display_name));
+    }
+
+    #[tokio::test]
+    async fn failed_exports_identify_sections_without_recording_titles() {
+        let app = offline_app();
+        let titles = ["张老师的私人课程", "李同学的私人课堂"];
+        for kind in ["ppt", "subtitle", "reading"] {
+            let requests = titles
+                .iter()
+                .map(|title| RecordingRequest {
+                    key: String::new(),
+                    title: (*title).into(),
+                    candidates: vec![],
+                })
+                .collect();
+            let error = app
+                .export_video_materials(
+                    requests,
+                    kind.into(),
+                    String::new(),
+                    "私人导出标题".into(),
+                    false,
+                    Arc::new(|_| {}),
+                )
+                .await
+                .err()
+                .expect("recordings without candidates must fail");
+            let raw = error.to_string();
+            let serialized = serde_json::to_string(&error).unwrap();
+            assert!(raw.contains("第 1 小节"));
+            assert!(raw.contains("第 2 小节"));
+            assert!(raw.contains("该录像来源不提供此资料"));
+            for title in titles {
+                assert!(!raw.contains(title));
+                assert!(!serialized.contains(title));
+            }
+        }
+    }
+
     #[test]
     fn after_assembly_is_preferred_with_before_fallback() {
         use crate::model::{CanvasVideoSubTitle, CanvasVideoSubTitleResponseBody};

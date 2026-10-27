@@ -1,12 +1,12 @@
 use crate::{
     error::{AppError, Result},
-    model::AppConfig,
+    model::{AppConfig, LLMChatMessage},
 };
 use futures::StreamExt;
 use rig::{
     agent::MultiTurnStreamItem,
     client::CompletionClient,
-    completion::Prompt,
+    completion::{AssistantContent, Completion, Message, Prompt},
     providers::openai,
     streaming::{StreamedAssistantContent, StreamingPrompt},
 };
@@ -97,6 +97,7 @@ fn is_deepseek_base_url(base_url: &str) -> bool {
 #[derive(Clone)]
 pub struct LlmSnapshot {
     pub client: openai::CompletionsClient,
+    pub base_url: String,
     pub model: String,
     pub temperature: Option<f32>,
 }
@@ -124,6 +125,7 @@ impl LlmRuntime {
             .map_err(|error| AppError::LLMError(error.to_string()))?;
         Ok(Some(LlmSnapshot {
             client,
+            base_url: config.base_url,
             model: config.model,
             temperature: config.temperature,
         }))
@@ -164,7 +166,8 @@ impl LlmRuntime {
         prompt: String,
         on_chunk: &mut (dyn FnMut(String) + Send),
     ) -> Result<String> {
-        self.chat_stream_with_progress(prompt, on_chunk, &mut |_| {}).await
+        self.chat_stream_with_progress(prompt, on_chunk, &mut |_| {})
+            .await
     }
 
     pub async fn chat_stream_with_progress(
@@ -191,20 +194,167 @@ impl LlmRuntime {
             match item.map_err(|error| AppError::LLMError(error.to_string()))? {
                 MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(text)) => {
                     if !text.text.is_empty() {
-                        if phase != "generating" { on_phase("generating"); phase = "generating"; }
+                        if phase != "generating" {
+                            on_phase("generating");
+                            phase = "generating";
+                        }
                         full_text.push_str(&text.text);
                         on_chunk(text.text);
                     }
                 }
-                MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Reasoning(_))
-                | MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::ReasoningDelta { .. }) => {
-                    if phase != "thinking" { on_phase("thinking"); phase = "thinking"; }
+                MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Reasoning(
+                    _,
+                ))
+                | MultiTurnStreamItem::StreamAssistantItem(
+                    StreamedAssistantContent::ReasoningDelta { .. },
+                ) => {
+                    if phase != "thinking" {
+                        on_phase("thinking");
+                        phase = "thinking";
+                    }
                 }
                 _ => continue,
             }
         }
 
         Ok(full_text.trim().to_string())
+    }
+}
+
+impl LlmSnapshot {
+    // A snapshot keeps endpoint/model/temperature consistent across compression and the final answer.
+    pub async fn chat_messages(
+        &self,
+        system: &str,
+        messages: &[LLMChatMessage],
+        max_tokens: usize,
+        on_chunk: Option<&mut (dyn FnMut(String) + Send)>,
+        on_status: &mut (dyn FnMut(String) + Send),
+    ) -> Result<String> {
+        let (last, history) = messages
+            .split_last()
+            .ok_or_else(|| AppError::LLMError("缺少本次问题".into()))?;
+        if last.role != "user"
+            || messages
+                .iter()
+                .any(|m| m.role != "user" && m.role != "assistant")
+        {
+            return Err(AppError::LLMError("课堂对话角色无效".into()));
+        }
+        let history: Vec<_> = history
+            .iter()
+            .map(|m| {
+                if m.role == "assistant" {
+                    Message::assistant(&m.content)
+                } else {
+                    Message::user(&m.content)
+                }
+            })
+            .collect();
+        let mut builder = self
+            .client
+            .agent(&self.model)
+            .preamble(system)
+            .max_tokens(max_tokens as u64);
+        if let Some(temperature) = self.temperature {
+            builder = builder.temperature(f64::from(temperature));
+        }
+        let agent = builder.build();
+        if let Some(callback) = on_chunk {
+            let mut stream = agent
+                .stream_prompt(&last.content)
+                .with_history(history)
+                .await;
+            let mut full_text = String::new();
+            let mut phase = "waiting";
+            while let Some(item) = stream.next().await {
+                match item.map_err(|error| AppError::LLMError(error.to_string()))? {
+                    MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(
+                        text,
+                    )) => {
+                        if !text.text.is_empty() {
+                            if phase != "generating" {
+                                on_status("正在生成正文".into());
+                                phase = "generating";
+                            }
+                            full_text.push_str(&text.text);
+                            callback(text.text);
+                        }
+                    }
+                    MultiTurnStreamItem::StreamAssistantItem(
+                        StreamedAssistantContent::Reasoning(_),
+                    )
+                    | MultiTurnStreamItem::StreamAssistantItem(
+                        StreamedAssistantContent::ReasoningDelta { .. },
+                    ) if phase != "thinking" => {
+                        on_status("正在思考".into());
+                        phase = "thinking";
+                    }
+                    _ => {}
+                }
+            }
+            Ok(full_text.trim().to_owned())
+        } else {
+            // Keep response metadata: prompt() discards finish_reason and returns an
+            // empty string when the provider only generated reasoning before its cap.
+            let response = agent
+                .completion(&last.content, history)
+                .await
+                .map_err(|error| AppError::LLMError(error.to_string()))?
+                .send()
+                .await
+                .map_err(|error| AppError::LLMError(error.to_string()))?;
+            let text = response
+                .choice
+                .iter()
+                .filter_map(|content| match content {
+                    AssistantContent::Text(text) => Some(text.text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+                .trim()
+                .to_owned();
+            let has_reasoning = response
+                .choice
+                .iter()
+                .any(|content| matches!(content, AssistantContent::Reasoning(_)));
+            let finish_reason = response
+                .raw_response
+                .choices
+                .first()
+                .map(|choice| choice.finish_reason.as_str())
+                .unwrap_or("unknown");
+            // Never cache a truncated note: lost citations or conditions can corrupt follow-ups.
+            if finish_reason == "length" {
+                let detail = if text.is_empty() && has_reasoning {
+                    "模型只返回了思考内容，尚未生成正文"
+                } else {
+                    "模型输出被截断"
+                };
+                let usage = response
+                    .raw_response
+                    .usage
+                    .as_ref()
+                    .and_then(|usage| usage.total_tokens.checked_sub(usage.prompt_tokens))
+                    .map(|tokens| format!("，已用 {tokens} tokens"))
+                    .unwrap_or_default();
+                return Err(AppError::LLMError(format!(
+                    "{detail}：已达到生成上限（finish_reason=length，输出上限 {max_tokens} tokens{usage}）。请在课堂 AI 总结设置中增加输出预留；推理模型的思考与正文共用该额度。"
+                )));
+            }
+            if text.is_empty() {
+                let detail = if has_reasoning {
+                    "模型只返回了思考内容，没有有效正文"
+                } else {
+                    "模型没有返回有效正文"
+                };
+                return Err(AppError::LLMError(format!(
+                    "{detail}（finish_reason={finish_reason}，输出上限 {max_tokens} tokens）。请重试或检查模型服务。"
+                )));
+            }
+            Ok(text)
+        }
     }
 }
 
@@ -337,6 +487,112 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn classroom_messages_preserve_system_and_history_roles_and_cap_output() {
+        let server = MockServer::start();
+        let request = server.mock(|when, then| {
+            when.method(POST).path("/chat/completions")
+                .body_contains("\"role\":\"system\"")
+                .body_contains("\"role\":\"assistant\"")
+                .body_contains("\"max_tokens\":512")
+                .body_contains("fixed classroom rules")
+                .body_contains("previous answer")
+                .body_contains("current question");
+            then.status(200).json_body(json!({ "id": "test", "object": "chat.completion", "created": 1,
+                "model": "test-model", "choices": [{ "index": 0, "message": { "role": "assistant", "content": "answer" }, "finish_reason": "stop" }] }));
+        });
+        let runtime = LlmRuntime::new(EffectiveLlmConfig::from_parts(
+            "key",
+            server.base_url(),
+            "test-model",
+            None,
+        ))
+        .unwrap();
+        let snapshot = runtime.snapshot().await.unwrap();
+        let messages = [
+            LLMChatMessage {
+                role: "user".into(),
+                content: "original material".into(),
+            },
+            LLMChatMessage {
+                role: "assistant".into(),
+                content: "previous answer".into(),
+            },
+            LLMChatMessage {
+                role: "user".into(),
+                content: "current question".into(),
+            },
+        ];
+        assert_eq!(
+            snapshot
+                .chat_messages("fixed classroom rules", &messages, 512, None, &mut |_| {})
+                .await
+                .unwrap(),
+            "answer"
+        );
+        request.assert();
+    }
+
+    #[tokio::test]
+    async fn classroom_nonstream_distinguishes_reasoning_from_text_and_reports_exhaustion() {
+        for (content, finish_reason, expected) in [
+            ("", "length", "尚未生成正文"),
+            ("未写完的笔记", "length", "模型输出被截断"),
+            ("", "stop", "没有有效正文"),
+            ("有效笔记", "stop", ""),
+        ] {
+            let server = MockServer::start();
+            let request = server.mock(|when, then| {
+                when.method(POST).path("/chat/completions");
+                then.status(200).json_body(json!({
+                    "id": "test", "object": "chat.completion", "created": 1, "model": "test-model",
+                    "choices": [{ "index": 0, "message": { "role": "assistant", "content": content,
+                        "reasoning_content": "不应出现在笔记中的思考内容" }, "finish_reason": finish_reason }],
+                    "usage": { "prompt_tokens": 100, "completion_tokens": 512, "total_tokens": 612 }
+                }));
+            });
+            let runtime = LlmRuntime::new(EffectiveLlmConfig::from_parts(
+                "key",
+                server.base_url(),
+                "test-model",
+                None,
+            ))
+            .unwrap();
+            let result = runtime
+                .snapshot()
+                .await
+                .unwrap()
+                .chat_messages(
+                    "fixed rules",
+                    &[LLMChatMessage {
+                        role: "user".into(),
+                        content: "压缩资料".into(),
+                    }],
+                    512,
+                    None,
+                    &mut |_| {},
+                )
+                .await;
+            if expected.is_empty() {
+                assert_eq!(result.unwrap(), "有效笔记");
+            } else {
+                let error = result.unwrap_err().to_string();
+                assert!(error.contains(expected), "{error}");
+                assert!(
+                    error.contains(&format!("finish_reason={finish_reason}")),
+                    "{error}"
+                );
+                assert!(error.contains("输出上限 512 tokens"), "{error}");
+                if finish_reason == "length" {
+                    assert!(error.contains("已用 512 tokens"), "{error}");
+                    assert!(error.contains("增加输出预留"), "{error}");
+                }
+                assert!(!error.contains("不应出现在笔记中的思考内容"));
+            }
+            request.assert_hits(1);
+        }
+    }
+
+    #[tokio::test]
     async fn runtime_stream_forwards_text_chunks() {
         let server = MockServer::start();
         let request = server.mock(|when, then| {
@@ -398,7 +654,11 @@ mod tests {
         let mut phases = Vec::new();
 
         let response = runtime
-            .chat_stream_with_progress("你好".to_string(), &mut |chunk| chunks.push(chunk), &mut |phase| phases.push(phase.to_owned()))
+            .chat_stream_with_progress(
+                "你好".to_string(),
+                &mut |chunk| chunks.push(chunk),
+                &mut |phase| phases.push(phase.to_owned()),
+            )
             .await
             .unwrap();
 

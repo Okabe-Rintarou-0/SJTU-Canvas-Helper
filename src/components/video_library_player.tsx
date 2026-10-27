@@ -1,13 +1,15 @@
+import WorkspaceSelect from "./workspace_select";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Alert, Box, Button, CircularProgress, Collapse, Card, CardContent, FormControlLabel, MenuItem, Slider, Stack, Switch, TextField, Typography } from "@mui/material";
+import { Alert, Box, Button, CircularProgress, Collapse, Card, CardContent, FormControlLabel, MenuItem, Slider, Stack, Switch, Typography } from "@mui/material";
 import Draggable from "react-draggable";
 import { surfaceCardSx } from "../lib/styles";
 import { getConfig } from "../lib/config";
 import { srtToVtt } from "../lib/utils";
-import { recordingKey, type VideoMaterial, type VideoSession } from "../lib/video_library";
+import { canSummarizeRecording, recordingKey, type VideoMaterial, type VideoSession } from "../lib/video_library";
 import { recordingRequest, resolveRecording, enqueueVideoTrack } from "../lib/video_library_tasks";
 import type { CanvasVideo, VideoPlayInfo } from "../lib/model";
+import { useMediaElement } from "../lib/media_element";
 
 function playbackURL(url: string, port: number, source: CanvasVideo["source"]): string {
   try {
@@ -42,8 +44,8 @@ export default function VideoLibraryPlayer({ session, initialKey, seconds = 0, s
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
-  const mainRef = useRef<HTMLVideoElement>(null);
-  const subRef = useRef<HTMLVideoElement>(null);
+  const { ref: mainRef, attach: attachMain } = useMediaElement();
+  const { ref: subRef, attach: attachSub } = useMediaElement();
   const overlayRef = useRef<HTMLDivElement>(null);
   const seek = useRef(seconds);
   const proxy = useRef<Promise<boolean>>();
@@ -66,6 +68,7 @@ export default function VideoLibraryPlayer({ session, initialKey, seconds = 0, s
     void (async () => {
       try {
         const [{ info, source }, config] = await Promise.all([resolveRecording(video), getConfig()]);
+        if (cancelled) return;
         const next = info.videoPlayResponseVoList.map((track) => playbackURL(track.rtmpUrlHdv, config.proxy_port, source));
         if (next.some((url) => url.startsWith(`http://localhost:${config.proxy_port}/`))) {
           proxy.current ??= invoke<boolean>("prepare_proxy");
@@ -85,7 +88,8 @@ export default function VideoLibraryPlayer({ session, initialKey, seconds = 0, s
     return () => { cancelled = true; if (objectURL) URL.revokeObjectURL(objectURL); };
   }, [video, retry]);
 
-  useEffect(() => () => { if (proxy.current) void proxy.current.then(() => invoke("stop_proxy")).catch(() => {}); }, []);
+  // The proxy is shared with classroom live playback; App stops it when exiting.
+  // Closing a recording must not stop a live player that is starting on the same port.
 
   useEffect(() => {
     const primary = mainRef.current;
@@ -104,7 +108,7 @@ export default function VideoLibraryPlayer({ session, initialKey, seconds = 0, s
       primary.removeEventListener("seeked", synchronize); primary.removeEventListener("ratechange", synchronize);
       sub.removeEventListener("loadedmetadata", loaded);
     };
-  }, [main, secondary, urls, sync]);
+  }, [main, secondary, urls, sync, mainRef, subRef]);
 
   const remember = () => {
     for (const [index, element] of [[main, mainRef.current], [secondary, subRef.current]] as const) {
@@ -141,7 +145,7 @@ export default function VideoLibraryPlayer({ session, initialKey, seconds = 0, s
           {error && <Alert severity="error" action={<Button onClick={() => setRetry((v) => v + 1)}>重试</Button>}>{error}</Alert>}
           <Box sx={{ bgcolor: "#000", aspectRatio: "16/9", position: "relative", overflow: "hidden", borderRadius: "8px" }}>
             {loading && <CircularProgress sx={{ position: "absolute", top: "45%", left: "48%" }} />}
-            {urls[main] && <video key={`${active}:${main}`} ref={mainRef} src={urls[main]} controls autoPlay
+            {urls[main] && <video key={`${active}:${main}`} ref={attachMain} src={urls[main]} controls autoPlay
               onLoadedMetadata={() => restore(mainRef.current, main)}
               onEnded={nextVideo} onError={() => setError("视频加载失败，请重试或切换机位")}
               style={{ width: "100%", height: "100%", objectFit: "contain" }}>
@@ -150,19 +154,19 @@ export default function VideoLibraryPlayer({ session, initialKey, seconds = 0, s
             {secondary >= 0 && urls[secondary] && <Draggable nodeRef={overlayRef} bounds="parent" handle=".video-drag-handle">
               <div ref={overlayRef} style={{ position: "absolute", top: 12, left: 12, width: `${size}%`, opacity, visibility: size === 0 ? "hidden" : "visible" }}>
                 <div className="video-drag-handle" style={{ background: "#222", color: "white", fontSize: 12, cursor: "move", padding: 3 }}>拖动副屏</div>
-                <video key={`${active}:${secondary}`} ref={subRef} src={urls[secondary]} onLoadedMetadata={() => restore(subRef.current, secondary)} muted controls style={{ width: "100%", display: "block" }} />
+                <video key={`${active}:${secondary}`} ref={attachSub} src={urls[secondary]} onLoadedMetadata={() => restore(subRef.current, secondary)} muted controls style={{ width: "100%", display: "block" }} />
               </div>
             </Draggable>}
           </Box>
           <Stack direction="row" flexWrap="wrap" gap={1} alignItems="center" sx={{ display: mini ? "none" : "flex" }}>
-            {urls.length > 0 && <TextField select size="small" label="主机位" value={main} sx={{ minWidth: 120 }} onChange={(e) => changeMain(+e.target.value)}>{urls.map((_, i) => <MenuItem key={i} value={i}>机位 {i + 1}</MenuItem>)}</TextField>}
-            {urls.length > 1 && <TextField select size="small" label="副屏" value={secondary} sx={{ minWidth: 120 }} onChange={(e) => { remember(); setSecondary(+e.target.value); }}>
+            {urls.length > 0 && <WorkspaceSelect size="small" label="主机位" value={main} sx={{ minWidth: 120 }} onChange={(e) => changeMain(+e.target.value)}>{urls.map((_, i) => <MenuItem key={i} value={i}>机位 {i + 1}</MenuItem>)}</WorkspaceSelect>}
+            {urls.length > 1 && <WorkspaceSelect size="small" label="副屏" value={secondary} sx={{ minWidth: 120 }} onChange={(e) => { remember(); setSecondary(+e.target.value); }}>
               <MenuItem value={-1}>关闭</MenuItem>{urls.map((_, i) => i !== main && <MenuItem key={i} value={i}>机位 {i + 1}</MenuItem>)}
-            </TextField>}
+            </WorkspaceSelect>}
             {secondary >= 0 && <Button onClick={() => changeMain(secondary)}>交换主副屏</Button>}
             {tracks[main] && <Button onClick={() => { enqueueVideoTrack(video, tracks[main], main); setDownloadNotice(`机位 ${main + 1} 已加入下载任务，可返回资料库查看进度`); }}>下载当前机位</Button>}
             <Button onClick={() => setSettings(!settings)}>播放设置</Button>
-            <Button onClick={onSummarize}>总结本堂课</Button>
+            <Button disabled={!session.videos.some(canSummarizeRecording)} onClick={onSummarize}>总结本堂课</Button>
           </Stack>
           {downloadNotice && <Alert severity="success" onClose={() => setDownloadNotice("")}>{downloadNotice}</Alert>}
           <Collapse in={settings && !mini}><Stack spacing={1}>

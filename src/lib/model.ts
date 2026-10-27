@@ -308,6 +308,9 @@ export interface AppConfig {
     llm_temperature: Option<number>;
     llm_api_keys: LlmApiKeyEntry[];
     llm_active_api_key: string;
+    video_summary_prompt?: string;
+    video_summary_context_tokens?: number;
+    video_summary_output_tokens?: number;
     theme: Theme;
     compact_mode: boolean;
     experimental_task_center_only?: boolean;
@@ -402,11 +405,38 @@ export interface CanvasVideo {
     lessonNumber: number;
     dailyLessonNumber: number;
     playable: boolean;
+    /** Raw transcript/PPT readiness hint; omitted/null means unknown. */
+    aiAvailable?: boolean | null;
     availability: "ready" | "repairing" | "unavailable";
     availabilityLabel: string;
 }
 
 export type VideoSource = "canvas" | "videoSpace" | "legacy";
+
+export interface CanvasLiveSession {
+    id: string;
+    teachingClassId: number;
+    title: string;
+    teacherName: string;
+    classroomName: string;
+    beginTime: string;
+    endTime: string;
+    startTime: number;
+    finishTime: number;
+    enabled: boolean;
+}
+
+export interface CanvasLiveList {
+    sessions: CanvasLiveSession[];
+    serverTime: number;
+}
+
+export interface CanvasLiveInfo {
+    startTime: number;
+    finishTime: number;
+    serverTime: number;
+    tracks: { name: string; url: string }[];
+}
 
 export interface Video {
     id: number;
@@ -511,6 +541,14 @@ export interface GradeStatus {
 export interface QRCodeScanResult {
     file: File,
     contents: string[];
+}
+
+export interface QRCodeScanReport {
+    results: QRCodeScanResult[];
+    total_files: number;
+    image_files: number;
+    scanned_images: number;
+    failed_images: number;
 }
 
 export interface DiscussionTopic {

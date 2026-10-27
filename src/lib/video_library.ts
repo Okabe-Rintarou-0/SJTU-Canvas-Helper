@@ -86,6 +86,11 @@ export interface VideoMaterial {
 
 export const hasVideoMaterial = (material: VideoMaterial) => material.subtitleAvailable || material.ocrAvailable === true;
 
+// Legacy sources cannot provide subtitle/OCR materials. Keep unknown modern list
+// statuses actionable so omitted fields do not falsely hide usable materials.
+export const canSummarizeRecording = (video: CanvasVideo) => [video, ...(video.alternatives ?? [])]
+  .some((candidate) => candidate.source !== "legacy" && candidate.aiAvailable !== false);
+
 export interface VideoExportOptions {
   video: boolean;
   ppt: boolean;

@@ -19,11 +19,12 @@ import {
   Attachment,
   File as FileModel,
   LOG_LEVEL_ERROR,
-  LogLevel,
   ModuleItem,
   Option
 } from "./model";
 import { AppMessageApi } from "./message";
+import { consoleLog, logDiagnostic } from "./diagnostics";
+export { consoleLog } from "./diagnostics";
 
 export function isMergableFileType(fileType: string): boolean {
   for (const ext of ["pptx", "pdf", "docx"]) {
@@ -341,31 +342,16 @@ export async function checkForUpdates(
       });
     await relaunch();
   } catch (error) {
+    logDiagnostic(LOG_LEVEL_ERROR, "frontend.updater.check_or_install", error);
     messageApi.destroy(messageKey);
     messageApi.error("🥹出现错误：" + error);
   } finally {
     try {
       await update?.close();
     } catch (error) {
-      console.debug("Failed to close updater resource", error);
+      logDiagnostic(LOG_LEVEL_ERROR, "frontend.updater.close", error);
     }
   }
-}
-
-export function consoleLog(logLevel: LogLevel, ...messages: any[]) {
-  const message = messages
-    .map((msg) => {
-      if (typeof msg === "object") {
-        return JSON.stringify(msg);
-      } else {
-        return String(msg);
-      }
-    })
-    .join(" ");
-
-  const context = new Error().stack?.split("\n")[1];
-  invoke("console_log", { logLevel, context, message });
-  console.log(message);
 }
 
 export function srtToVtt(srt: string) {

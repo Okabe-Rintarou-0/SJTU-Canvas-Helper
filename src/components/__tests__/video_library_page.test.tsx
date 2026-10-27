@@ -2,6 +2,9 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import VideoPage from "../../page/video";
+import { Link, MemoryRouter } from "react-router-dom";
+import RetainedVideoWorkspace from "../retained_video_workspace";
+import { videoSummarySession } from "../../lib/video_summary_session";
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), exports: vi.fn(), open: vi.fn(),
   centerOnly: undefined as boolean | undefined,
@@ -31,6 +34,7 @@ const videos = [
   { videoId: "c", courseBeginTime: "2026-09-29 14:00", courseEndTime: "2026-09-29 14:45" },
 ].map((video) => ({ ...video, source: "canvas", weekNumber: 4, videoName: `录像${video.videoId}`, userName: "教师", classroomName: "教室", playable: true, availability: "ready", availabilityLabel: "可播放" }));
 beforeEach(() => {
+  videoSummarySession.reset();
   vi.clearAllMocks(); localStorage.clear(); mocks.centerOnly = undefined;
   mocks.cleanUpPpt = false;
   mocks.open.mockResolvedValue("D:/导出"); mocks.exports.mockResolvedValue(2);
@@ -39,6 +43,7 @@ beforeEach(() => {
     if (command === "login_canvas_website") return;
     if (command === "list_video_space_courses" || command === "get_legacy_videos") return [];
     if (command === "get_canvas_videos") return videos;
+    if (command === "get_video_live_sessions") return { sessions: [], serverTime: Date.now() };
     if (command === "prepare_video_material") return { key: args!.request.key, title: args!.request.title, text: "字幕正文", subtitleAvailable: true, srt: "字幕", warnings: [] };
     if (command === "chat_video_materials") return "整堂课总结";
     throw new Error(command);
@@ -48,11 +53,107 @@ afterEach(cleanup);
 async function load() {
   const view = render(<VideoPage />);
   await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("list_video_space_courses"));
+  await waitFor(() => expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "选择测试课程" }));
   await screen.findByText("2 小节");
   return view;
 }
 describe("video library workflows", () => {
+  it("keeps the selected course, filters and current recording when visiting another page", async () => {
+    render(<MemoryRouter initialEntries={["/video"]}>
+      <Link to="/settings">去设置</Link><Link to="/video">回到视频</Link>
+      <RetainedVideoWorkspace>{(active) => <VideoPage active={active} />}</RetainedVideoWorkspace>
+    </MemoryRouter>);
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("list_video_space_courses"));
+    // A started request does not mean the merged course list has settled.
+    await waitFor(() => expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "选择测试课程" }));
+    await screen.findByText("2 小节");
+    fireEvent.click(within(screen.getByText("2026-09-28").closest("tr")!).getByRole("button", { name: "播放" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索课堂" }), { target: { value: "2026-09-28" } });
+    const player = screen.getByText("播放器内容");
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "get_canvas_videos")).toHaveLength(1);
+    await act(async () => { fireEvent.click(screen.getByRole("link", { name: "去设置" })); });
+    expect(player).toBeInTheDocument(); expect(player).not.toBeVisible();
+    await act(async () => { fireEvent.click(screen.getByRole("link", { name: "回到视频" })); });
+    expect(screen.getByRole("textbox", { name: "搜索课堂" })).toHaveValue("2026-09-28");
+    expect(screen.getByText("播放器内容")).toBe(player);
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "get_canvas_videos")).toHaveLength(1);
+  });
+  it("uses AI availability independently of playback without probing materials", async () => {
+    const original = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation((command, args) => command === "get_canvas_videos"
+      ? Promise.resolve(videos.map((video) => ({ ...video, playable: video.videoId !== "c", aiAvailable: video.videoId === "c" })))
+      : original(command, args));
+    await load();
+    const reads = mocks.invoke.mock.calls.length;
+    const unavailableDay = screen.getByText("2026-09-28").closest("tr")!;
+    expect(within(unavailableDay).getByRole("button", { name: "播放" })).toBeEnabled();
+    expect(within(unavailableDay).getByRole("button", { name: "AI 总结" })).toBeDisabled();
+    expect(within(screen.getByText("2026-09-29").closest("tr")!).getByRole("button", { name: "AI 总结" })).toBeEnabled();
+    expect(within(screen.getByText("2026-09-29").closest("tr")!).getByRole("button", { name: "播放" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: /展开日期 2026-09-28/ }));
+    const lesson = screen.getByRole("checkbox", { name: "选择小节 录像a" });
+    const row = lesson.closest("tr")!;
+    expect(within(row).getByRole("button", { name: "播放" })).toBeEnabled();
+    expect(within(row).getByRole("button", { name: "AI 总结" })).toBeDisabled();
+    fireEvent.click(within(row).getByRole("button", { name: "AI 总结" }));
+    expect(screen.queryByRole("button", { name: "开始总结" })).not.toBeInTheDocument();
+    fireEvent.click(lesson);
+    expect(screen.getByRole("button", { name: "AI 总结…" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("checkbox", { name: /选择日期 2026-09-29/ }));
+    expect(screen.getByRole("button", { name: "AI 总结…" })).toBeEnabled();
+    expect(mocks.invoke.mock.calls).toHaveLength(reads);
+    expect(mocks.invoke.mock.calls.some(([command]) => command === "prepare_video_material")).toBe(false);
+  });
+  it("keeps summary enabled when another source has AI materials even without playback", async () => {
+    const original = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation((command, args) => {
+      if (command === "get_canvas_videos") return Promise.resolve(videos.map((video) => ({ ...video, playable: false, aiAvailable: false,
+        alternatives: video.videoId === "a" ? [{ ...video, source: "videoSpace", playable: false, aiAvailable: true }] : [],
+      })));
+      return original(command, args);
+    });
+    await load();
+    const reads = mocks.invoke.mock.calls.length;
+    expect(within(screen.getByText("2026-09-28").closest("tr")!).getByRole("button", { name: "AI 总结" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: /展开日期 2026-09-28/ }));
+    const available = screen.getByRole("checkbox", { name: "选择小节 录像a" });
+    const unavailable = screen.getByRole("checkbox", { name: "选择小节 录像b" });
+    expect(within(available.closest("tr")!).getByRole("button", { name: "播放" })).toBeDisabled();
+    expect(within(available.closest("tr")!).getByRole("button", { name: "AI 总结" })).toBeEnabled();
+    expect(within(unavailable.closest("tr")!).getByRole("button", { name: "AI 总结" })).toBeDisabled();
+    fireEvent.click(available);
+    expect(screen.getByRole("button", { name: "AI 总结…" })).toBeEnabled();
+    fireEvent.click(unavailable);
+    fireEvent.click(available);
+    expect(screen.getByRole("button", { name: "AI 总结…" })).toBeDisabled();
+    expect(mocks.invoke.mock.calls).toHaveLength(reads);
+  });
+  it("restores an in-flight summary after navigation and completes caching without the page", async () => {
+    const view = await load();
+    let finish!: (value: string) => void;
+    let chunk!: (value: string) => void;
+    const original = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation((command, args) => {
+      if (command === "chat_video_materials") return new Promise<string>((resolve) => { finish = resolve; chunk = args.onChunk.onmessage; });
+      return original(command, args);
+    });
+    fireEvent.click(within(screen.getByText("2026-09-28").closest("tr")!).getByRole("button", { name: "AI 总结" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始总结" }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("chat_video_materials", expect.anything()));
+    view.unmount();
+    act(() => chunk("后台生成的内容"));
+    const returned = render(<VideoPage />);
+    expect(screen.getByTestId("chat")).toHaveTextContent("后台生成的内容");
+    expect(screen.getByRole("button", { name: "重新生成" })).toBeDisabled();
+    returned.unmount();
+    await act(async () => finish("离开页面后完成的总结"));
+    render(<VideoPage />);
+    expect(screen.getByTestId("chat")).toHaveTextContent("离开页面后完成的总结");
+    expect(screen.getByText(/已缓存到本地/)).toBeInTheDocument();
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "chat_video_materials")).toHaveLength(1);
+  });
   it("separates summary and material caches when animation simplification changes", async () => {
     const view = await load();
     const summarize = async () => {

@@ -8,6 +8,7 @@ use crate::{
 };
 pub mod annual;
 pub mod basic;
+mod qrcode;
 pub mod cache;
 mod constants;
 pub mod jbox;

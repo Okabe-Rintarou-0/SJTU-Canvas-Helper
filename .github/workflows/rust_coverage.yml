@@ -25,7 +25,7 @@ jobs:
           persist-credentials: false
 
       - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.99.0
         with:
           components: llvm-tools-preview
 
@@ -45,16 +45,14 @@ jobs:
       - name: Collect coverage (non-blocking)
         id: coverage
         shell: bash
-        env:
-          CANVAS_TOKEN: ${{ secrets.CANVAS_TOKEN }}
         run: |
           mkdir -p target/llvm-cov
           set +e
-          cargo llvm-cov --workspace --lcov --output-path target/llvm-cov/lcov.info \
+          cargo llvm-cov --locked --workspace --lcov --output-path target/llvm-cov/lcov.info \
             > target/llvm-cov/summary.txt 2>&1
           status=$?
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
-          exit 0
+          exit "$status"
 
       - name: Upload coverage artifacts
         if: always()

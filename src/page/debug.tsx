@@ -1,7 +1,7 @@
 ﻿import DeveloperBoardRoundedIcon from "@mui/icons-material/DeveloperBoardRounded";
 import ClearAllRoundedIcon from "@mui/icons-material/ClearAllRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
-import TerminalRoundedIcon from "@mui/icons-material/TerminalRounded";
+import SubjectRoundedIcon from "@mui/icons-material/SubjectRounded";
 import ExpandLessRoundedIcon from "@mui/icons-material/ExpandLessRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
@@ -207,19 +207,16 @@ function HeadersTable({ headers }: { headers: DebugHttpHeader[] }) {
 }
 
 
-function generateCurl(log: NetworkRequestLog) {
-  const parts = [`curl -X ${log.method} \\`];
-  parts.push(`  ${JSON.stringify(log.url)} \\`);
-  for (const h of log.request_headers) {
-    parts.push(`  -H ${JSON.stringify(`${h.name}: ${h.value}`)} \\`);
-  }
-  if (log.request_body) {
-    parts.push(`  -d ${JSON.stringify(log.request_body)}`);
-  } else {
-    const last = parts.pop() ?? "";
-    parts.push(last.replace(/ \\\$/, ""));
-  }
-  return parts.join("\n");
+function formatRequestSummary(log: NetworkRequestLog) {
+  return [
+    `请求 ID：${log.id}`,
+    `时间：${new Date(log.timestamp).toISOString()}`,
+    `方法：${log.method}`,
+    `地址：${log.url}`,
+    `状态：${formatStatus(log)}`,
+    `耗时：${formatDuration(log.duration_ms)}`,
+    "已去敏，仅用于排查，不能直接重放请求。",
+  ].join("\n");
 }
 export default function DebugPage() {
   const theme = useTheme();
@@ -289,11 +286,11 @@ export default function DebugPage() {
     }
   }, [messageApi]);
 
-  const handleCopyCurl = useCallback(
+  const handleCopySummary = useCallback(
     async (log: NetworkRequestLog) => {
       try {
-        await navigator.clipboard.writeText(generateCurl(log));
-        messageApi.success("已复制 Curl 命令");
+        await navigator.clipboard.writeText(formatRequestSummary(log));
+        messageApi.success("已复制脱敏请求摘要");
       } catch {
         messageApi.error("复制失败");
       }
@@ -305,7 +302,7 @@ export default function DebugPage() {
     async (log: NetworkRequestLog) => {
       try {
         await navigator.clipboard.writeText(log.url);
-        messageApi.success("已复制请求 URL");
+        messageApi.success("已复制脱敏 URL，地址中的占位符不能直接用于请求");
       } catch {
         messageApi.error("复制失败");
       }
@@ -321,7 +318,7 @@ export default function DebugPage() {
           chipLabel="Debug 控制台"
           chipIcon={<DeveloperBoardRoundedIcon />}
           title="Debug 控制台"
-          description="查看最近 1000 条网络请求，快速排查请求头、请求体和响应状态。"
+          description="查看最近 1000 条已脱敏的请求元数据，包括方法、地址、状态和耗时。请求和响应正文不记录。"
           aside={
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
               <Chip
@@ -347,14 +344,14 @@ export default function DebugPage() {
             <Stack spacing={2.25}>
               {!config?.debug_mode ? (
                 <Alert severity="info" sx={{ borderRadius: "18px" }}>
-                  请先在设置页面开启 Debug 模式，之后新的网络请求才会被记录到这里。
+                  请求元数据默认记录；Debug 模式仅控制侧栏入口。日常反馈可直接使用“日志与反馈”。
                 </Alert>
               ) : null}
 
               <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
                 <TextField
                   fullWidth
-                  placeholder="搜索 URL、Header、Body、错误信息"
+                  placeholder="搜索地址、来源、错误信息"
                   value={keyword}
                   onChange={(event) => setKeyword(event.target.value)}
                   InputProps={{
@@ -407,7 +404,7 @@ export default function DebugPage() {
                   <Typography variant="body2" color="text.secondary">
                     {keyword.trim()
                       ? "没有匹配到搜索结果，试试换个关键词。"
-                      : "开启 Debug 模式后执行一些操作，请求就会出现在这里。"}
+                      : "执行一些操作后点击刷新，即可查看近期请求。"}
                   </Typography>
                 </Stack>
               </CardContent>
@@ -468,6 +465,7 @@ export default function DebugPage() {
                       <IconButton
                         size="small"
                         onClick={() => void handleCopy(log)}
+                        aria-label="复制脱敏 URL"
                         sx={{
                           color: theme.palette.mode === "dark" ? alpha("#e2e8f0", 0.7) : "text.secondary",
                           width: 28,
@@ -481,7 +479,7 @@ export default function DebugPage() {
                       </IconButton>
                       <IconButton
                         size="small"
-                        onClick={() => void handleCopyCurl(log)}
+                        onClick={() => void handleCopySummary(log)}
                         sx={{
                           color: theme.palette.mode === "dark" ? alpha("#e2e8f0", 0.6) : "text.secondary",
                           bgcolor: alpha(theme.palette.primary.main, 0.06),
@@ -490,13 +488,15 @@ export default function DebugPage() {
                           height: 28,
                           "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.14) },
                         }}
-                        title="复制 Curl 命令"
+                        title="复制请求摘要"
+                        aria-label="复制请求摘要"
                       >
-                        <TerminalRoundedIcon sx={{ fontSize: 16 }} />
+                        <SubjectRoundedIcon sx={{ fontSize: 16 }} />
                       </IconButton>
                       <IconButton
                         size="small"
                         onClick={() => toggleExpand(log.id)}
+                        aria-label={collapsed[log.id] !== false ? "展开请求详情" : "收起请求详情"}
                         sx={{
                           color: theme.palette.mode === "dark" ? alpha("#e2e8f0", 0.7) : "text.secondary",
                           width: 28,
@@ -555,13 +555,13 @@ export default function DebugPage() {
                        <JsonBlock value={log.request_body} />
                        {log.request_body_truncated ? (
                          <Typography variant="caption" color="warning.main">
-                           请求体过长，当前仅展示前 1MB 预览。
+                           仅展示脱敏摘要，原始请求正文不记录。
                          </Typography>
                        ) : null}
                      </>
                    ) : (
                      <Typography variant="body2" color="text.secondary">
-                       无请求体
+                       不记录请求正文
                      </Typography>
                    )}
                  </Stack>
@@ -596,13 +596,13 @@ export default function DebugPage() {
                         })()}
                         {log.response_body_truncated ? (
                           <Typography variant="caption" color="warning.main">
-                            响应体过长，当前仅展示前 1MB 预览。
+                            仅展示脱敏摘要，原始响应正文不记录。
                           </Typography>
                         ) : null}
                       </>
                     ) : (
                       <Typography variant="body2" color="text.secondary">
-                        无响应体
+                        不记录响应正文
                       </Typography>
                     )}
                   </Stack>
@@ -611,11 +611,12 @@ export default function DebugPage() {
                   <Stack spacing={1}>
                     <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
                       <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                        Curl 命令
+                        请求摘要
                       </Typography>
                       <IconButton
                         size="small"
-                        onClick={() => void handleCopyCurl(log)}
+                        onClick={() => void handleCopySummary(log)}
+                        aria-label="复制请求摘要"
                         sx={{
                           color: theme.palette.mode === "dark" ? alpha("#e2e8f0", 0.7) : "text.secondary",
                           bgcolor: alpha(theme.palette.primary.main, 0.08),
@@ -642,7 +643,7 @@ export default function DebugPage() {
                       }}
                     >
                       <Box component="pre" sx={{ m: 0, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-                        {generateCurl(log)}
+                        {formatRequestSummary(log)}
                       </Box>
                     </Box>
                   </Stack>

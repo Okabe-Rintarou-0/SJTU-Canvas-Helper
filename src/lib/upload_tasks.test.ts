@@ -5,6 +5,7 @@ import type { File } from "./model";
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+vi.mock("./diagnostics", () => ({ logDiagnostic: vi.fn() }));
 const file = { uuid: "file-id", display_name: "讲义.docx", filename: "lecture.docx" } as File;
 
 describe("cloud upload tasks", () => {
@@ -48,7 +49,7 @@ describe("cloud upload tasks", () => {
     await vi.waitFor(() => expect(manager.getSnapshot()[0].status).toBe("failed"));
     expect(spec.kind).toBe("upload-pdf");
     expect(spec.name).toBe("讲义.pdf");
-    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+    expect(mocks.invoke.mock.calls.map(([command]) => command)).toEqual(["upload_file_as_pdf"]);
     expect(mocks.invoke).toHaveBeenCalledWith("upload_file_as_pdf", { file, saveDir: "课程 A" });
     expect(taskKindLabels.conversion).toBe("转换为 PDF 并下载");
   });
