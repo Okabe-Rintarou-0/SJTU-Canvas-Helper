@@ -72,7 +72,7 @@
     "react-markdown": "^10.1.0",
     "react-pdf": "7.5.0",
     "react-router-dom": "^7.11.0",
-    "react-syntax-highlighter": "^16.1.0",
+    "react-syntax-highlighter": "^16.1.2",
     "react-use-websocket": "3.0.0",
     "remark-gfm": "^4.0.0",
     "ts-md5": "^2.0.1",
