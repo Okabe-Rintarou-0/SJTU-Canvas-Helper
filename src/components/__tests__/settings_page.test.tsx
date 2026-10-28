@@ -104,6 +104,37 @@ it("keeps edits across categories and saves all categories together", async () =
   await waitFor(() => expect(screen.getByText("所有设置已同步")).toBeVisible());
 });
 
+it("applies a completed color selection once and saves the default color with other edits", async () => {
+  config.color_primary = "#336699";
+  await openSettings();
+  fireEvent.change(screen.getByLabelText("Canvas Token"), { target: { value: "draft-token" } });
+  section("界面偏好");
+  const picker = screen.getByLabelText("选择主色");
+  fireEvent.input(picker, { target: { value: "#ff0000" } });
+  fireEvent.input(picker, { target: { value: "#123456" } });
+  expect(mocks.dispatch).not.toHaveBeenCalled();
+  fireEvent.change(picker, { target: { value: "#123456" } });
+  expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ color_primary: "#123456", token: "draft-token" }));
+  fireEvent.click(screen.getByRole("button", { name: "恢复默认主色调" }));
+  expect(screen.getByLabelText("主色调")).toHaveValue("#00b96b");
+  expect(screen.getByText("修改尚未保存")).toBeVisible();
+  expect(mocks.saveConfig).not.toHaveBeenCalled();
+  save();
+  await waitFor(() => expect(mocks.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ color_primary: "#00b96b", token: "draft-token" })));
+  await waitFor(() => expect(screen.getByText("所有设置已同步")).toBeVisible());
+});
+
+it("restores the saved theme when leaving after an unsaved color reset", async () => {
+  config.color_primary = "#336699";
+  const { unmount } = render(<SettingsPage />);
+  await screen.findByRole("tab", { name: "界面偏好" });
+  section("界面偏好");
+  fireEvent.click(screen.getByRole("button", { name: "恢复默认主色调" }));
+  expect(mocks.dispatch).toHaveBeenLastCalledWith(expect.objectContaining({ color_primary: "#00b96b" }));
+  unmount();
+  expect(mocks.dispatch).toHaveBeenLastCalledWith(expect.objectContaining({ color_primary: "#336699" }));
+});
+
 it("returns to the invalid category when saving from another category", async () => {
   await openSettings();
   fireEvent.change(screen.getByLabelText("Canvas Token"), { target: { value: "" } });

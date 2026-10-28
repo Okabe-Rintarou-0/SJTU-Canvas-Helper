@@ -42,6 +42,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactJson from "react-json-view-ts";
 import BasicLayout from "../components/layout";
 import LogModal from "../components/log_modal";
+import PrimaryColorField, { DEFAULT_PRIMARY } from "../components/primary_color_field";
 import CanvasTokenGuideDialog, { CanvasTokenGuideContent } from "../components/canvas_token_guide";
 import { changeSessionAccount } from "../lib/account_sessions";
 import VideoSummarySettings from "../components/video_summary_settings";
@@ -61,7 +62,6 @@ import { consoleLog, savePathValidator } from "../lib/utils";
 
 type AccountMode = "create" | "select";
 
-const DEFAULT_PRIMARY = "#00b96b";
 const DEFAULT_PROXY_PORT = 3030;
 const MIN_LLM_TEMPERATURE = 0;
 const MAX_LLM_TEMPERATURE = 2;
@@ -387,6 +387,7 @@ export default function SettingsPage() {
         if (!prev) {
           return prev;
         }
+        if (Object.is(prev[key], value)) return prev;
         const next = { ...prev, [key]: value };
         if (key === "theme" || key === "color_primary" || key === "compact_mode" || key === "debug_mode") {
           dispatch(updateConfig(next));
@@ -395,6 +396,11 @@ export default function SettingsPage() {
       });
     },
     [dispatch]
+  );
+
+  const handlePrimaryColorChange = useCallback(
+    (value: string) => updateField("color_primary", value),
+    [updateField]
   );
 
   // Auto-save debug_mode immediately on toggle
@@ -1123,52 +1129,9 @@ export default function SettingsPage() {
                         <MenuItem value="dark">深色主题</MenuItem>
                       </TextField>
 
-                      <TextField size="small" fullWidth
-                        label="主色调"
-                        name="color_primary"
+                      <PrimaryColorField
                         value={formData?.color_primary ?? DEFAULT_PRIMARY}
-                        onChange={(event) =>
-                          updateField("color_primary", event.target.value)
-                        }
-                        placeholder="#00b96b"
-                        helperText="支持输入 Hex 颜色值。"
-                        InputProps={{
-                          startAdornment: (
-                            <InputAdornment position="start">
-                              <Box
-                                sx={{
-                                  width: 18,
-                                  height: 18,
-                                  borderRadius: "6px",
-                                  bgcolor:
-                                    formData?.color_primary || DEFAULT_PRIMARY,
-                                  border: "1px solid",
-                                  borderColor: "divider",
-                                }}
-                              />
-                            </InputAdornment>
-                          ),
-                          endAdornment: (
-                            <InputAdornment position="end">
-                              <input
-                                aria-label="选择主色"
-                                type="color"
-                                value={formData?.color_primary ?? DEFAULT_PRIMARY}
-                                onChange={(event) =>
-                                  updateField("color_primary", event.target.value)
-                                }
-                                style={{
-                                  width: 28,
-                                  height: 28,
-                                  padding: 0,
-                                  border: "none",
-                                  background: "transparent",
-                                  cursor: "pointer",
-                                }}
-                              />
-                            </InputAdornment>
-                          ),
-                        }}
+                        onChange={handlePrimaryColorChange}
                       />
                     </Box>
 
