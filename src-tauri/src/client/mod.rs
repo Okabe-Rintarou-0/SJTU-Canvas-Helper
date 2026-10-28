@@ -14,6 +14,7 @@ mod file_parser;
 pub mod jbox;
 mod llm;
 pub mod video;
+mod video_auth;
 pub mod video_library;
 
 pub struct Client {
@@ -21,6 +22,7 @@ pub struct Client {
     jar: Arc<Jar>,
     base_url: RwLock<String>,
     token: RwLock<String>,
+    video_auth: tokio::sync::Mutex<video_auth::VideoAuth>,
     llm_cli: LlmRuntime,
     file_parser: file_parser::GenericFileParser,
     debug_store: debug::NetworkDebugStore,

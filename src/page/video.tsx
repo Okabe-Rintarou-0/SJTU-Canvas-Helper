@@ -36,9 +36,9 @@ import { surfaceCardSx } from "../lib/styles";
 
 const isPlayable = (video: CanvasVideo) => video.playable || !!video.alternatives?.some((v) => v.playable);
 const hasSubtitleSource = (video: CanvasVideo) => [video, ...(video.alternatives ?? [])].some((v) => v.source !== "legacy");
-function withTimeout<T>(promise: Promise<T>): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, timeout = 30_000): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = window.setTimeout(() => reject(new Error("请求超时，请刷新重试")), 30_000);
+    const timer = window.setTimeout(() => reject(new Error("请求超时，请刷新重试")), timeout);
     promise.then((value) => { clearTimeout(timer); resolve(value); }, (error) => { clearTimeout(timer); reject(error); });
   });
 }
@@ -118,7 +118,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   useEffect(() => {
     let cancelled = false;
     setLogin("checking");
-    void withTimeout(invoke("login_canvas_website")).then(() => { if (!cancelled) setLogin("ready"); })
+    void withTimeout(invoke("login_canvas_website"), 90_000).then(() => { if (!cancelled) setLogin("ready"); })
       .catch(() => { if (!cancelled) setLogin("required"); });
     return () => { cancelled = true; };
   }, [refresh]);
@@ -286,7 +286,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
               </Stack>
             </Stack>
             {login === "checking" && <LinearProgress aria-label="检查视频登录" />}
-            {login === "required" && <Alert severity="info" action={<Button component={RouterLink} to="/settings">前往设置</Button>}>视频功能需要额外扫码登录。完成后点击刷新重试。</Alert>}
+            {login === "required" && <Alert severity="info" action={<Button component={RouterLink} to="/settings">前往设置</Button>}>Canvas Token 登录失败，额外登录态也不可用。请检查 Token，或前往设置扫码登录后刷新重试。</Alert>}
             {courseLoading && <Typography variant="caption" color="text.secondary">正在同步视频空间课程，已有课程可直接选择。</Typography>}
             {courseError && <Alert severity="warning">视频空间课程读取失败：{courseError}。其他来源仍可使用。</Alert>}
             <Stack direction="row" gap={1} flexWrap="wrap">

@@ -37,8 +37,9 @@ impl App {
     }
 
     pub async fn login_canvas_website(&self) -> Result<()> {
-        let cookie = self.get_cookie().await;
-        self.client.login_canvas_website(&cookie).await
+        let config = self.config.read().await.clone();
+        self.client.configure_video_auth(&config.token, &config.ja_auth_cookie, false).await;
+        self.client.login_classroom_video().await
     }
 
     pub async fn check_extra_login_status(&self) -> Result<bool> {

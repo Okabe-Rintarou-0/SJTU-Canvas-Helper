@@ -59,6 +59,19 @@ async function load() {
   return view;
 }
 describe("video library workflows", () => {
+  it("shows recovery steps only when Token login and extra login both fail", async () => {
+    const original = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation((command, args) => command === "login_canvas_website"
+      ? Promise.reject(new Error("both authentication methods failed")) : original(command, args));
+    render(<MemoryRouter><VideoPage /></MemoryRouter>);
+    expect(await screen.findByText(/Canvas Token 登录失败，额外登录态也不可用/)).toBeVisible();
+    expect(screen.getByRole("link", { name: "前往设置" })).toHaveAttribute("href", "/settings");
+    expect(mocks.invoke.mock.calls.some(([command]) => command === "list_video_space_courses")).toBe(false);
+    mocks.invoke.mockImplementation(original);
+    fireEvent.click(screen.getByRole("button", { name: "刷新" }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("list_video_space_courses"));
+    expect(screen.queryByText(/Canvas Token 登录失败，额外登录态也不可用/)).not.toBeInTheDocument();
+  });
   it("keeps the selected course, filters and current recording when visiting another page", async () => {
     render(<MemoryRouter initialEntries={["/video"]}>
       <Link to="/settings">去设置</Link><Link to="/video">回到视频</Link>

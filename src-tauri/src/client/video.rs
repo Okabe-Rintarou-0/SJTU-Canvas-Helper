@@ -665,7 +665,7 @@ fn jwt_token_from_location(location: &str) -> Option<String> {
         .unwrap_or(fragment);
     query.split('&').find_map(|pair| {
         let (key, value) = pair.split_once('=')?;
-        (key == "jwt_token")
+        (key == "jwt_token" && !value.is_empty())
             .then(|| {
                 urlencoding::decode(value)
                     .ok()
@@ -853,15 +853,30 @@ impl Client {
     }
 
     async fn get_video_space_token(&self) -> Result<String> {
-        self.get_video_space_token_from_url(VIDEO_SPACE_LAUNCH_URL)
-            .await
+        self.authenticated_video_launch(VIDEO_SPACE_LAUNCH_URL).await
     }
 
+    pub async fn login_classroom_video(&self) -> Result<()> {
+        let token = self.get_video_space_token().await?;
+        *self.token.write().await = token;
+        Ok(())
+    }
+
+    #[cfg(test)]
     async fn get_video_space_token_from_url(&self, launch_url: &str) -> Result<String> {
         let client = reqwest::Client::builder()
             .redirect(Policy::none())
             .cookie_provider(self.jar.clone())
             .build()?;
+        self.follow_video_launch(&client, launch_url).await
+    }
+
+    pub(super) async fn follow_video_launch(&self, client: &reqwest::Client, launch_url: &str) -> Result<String> {
+        tokio::time::timeout(std::time::Duration::from_secs(20), self.follow_video_launch_inner(client, launch_url))
+            .await.map_err(|_| AppError::LoginError)?
+    }
+
+    async fn follow_video_launch_inner(&self, client: &reqwest::Client, launch_url: &str) -> Result<String> {
         let mut request = client.get(launch_url);
         for _ in 0..16 {
             let response = request.send().await?.error_for_status()?;
@@ -978,20 +993,11 @@ impl Client {
             .map_err(|error| AppError::VideoDownloadError(format!("Invalid launch URL: {error}")))
     }
 
-    async fn get_launch_form_for_canvas_course_id(
-        &self,
-        course_id: i64,
-        tool_id: i64,
-    ) -> Result<(String, HashMap<String, String>)> {
-        let url = format!("https://oc.sjtu.edu.cn/courses/{course_id}/external_tools/{tool_id}");
-        self.get_launch_form_from_url(&url).await
-    }
-
     async fn get_launch_form_from_url(
         &self,
         url: &str,
     ) -> Result<(String, HashMap<String, String>)> {
-        let response = self.cli.get(url).send().await?.error_for_status()?;
+        let response = self.video_browser_client().await.get(url).send().await?.error_for_status()?;
         let response_url = response.url().clone();
         let body = response.text().await?;
         let document = Document::from(body.as_str());
@@ -1008,50 +1014,14 @@ impl Client {
             .map_err(|error| {
                 AppError::VideoDownloadError(format!("Invalid Canvas tabs URL: {error}"))
             })?;
-        let response = self.cli.get(url).send().await?.error_for_status()?;
+        let response = self.video_browser_client().await.get(url).send().await?.error_for_status()?;
         let value: Value = serde_json::from_slice(&response.bytes().await?)?;
         Ok(external_tool_urls_from_tabs(&value, &base_url))
     }
 
     async fn get_video_launch_token(&self, course_id: i64) -> Result<String> {
-        let (action, data) = self
-            .get_launch_form_for_canvas_course_id(course_id, CANVAS_VIDEO_TOOL_ID)
-            .await?;
-        let resp = self
-            .cli
-            .post(action)
-            .form(&data)
-            .send()
-            .await?
-            .error_for_status()?;
-
-        let response_url = resp.url().clone();
-        let body = resp.text().await?;
-        let document = Document::from(body.as_str());
-        let (action, data) = self.get_form_submission_from_doc(document)?;
-        let action = self.resolve_form_action(&response_url, &action)?;
-
-        let client = reqwest::Client::builder()
-            .redirect(Policy::none())
-            .cookie_provider(self.jar.clone())
-            .build()?;
-        let resp = client.post(&action).form(&data).send().await?;
-
-        let location = resp
-            .headers()
-            .get("location")
-            .ok_or_else(|| AppError::VideoDownloadError("Launch redirect not found".to_string()))?
-            .to_str()?;
-        let location = Url::parse(&action)
-            .map_err(|error| AppError::VideoDownloadError(format!("Invalid launch URL: {error}")))?
-            .join(location)
-            .map_err(|error| {
-                AppError::VideoDownloadError(format!("Invalid redirect URL: {error}"))
-            })?
-            .to_string();
-        jwt_token_from_location(&location).ok_or_else(|| {
-            AppError::VideoDownloadError("JWT token not found in launch redirect".to_string())
-        })
+        let url = format!("https://oc.sjtu.edu.cn/courses/{course_id}/external_tools/{CANVAS_VIDEO_TOOL_ID}");
+        self.authenticated_video_launch(&url).await
     }
 
     async fn get_teaching_class_id_token(&self, course_id: i64) -> Result<(i64, String)> {
@@ -1116,10 +1086,7 @@ impl Client {
 
     async fn get_legacy_canvas_course_id(&self, course_id: i64) -> Result<Option<String>> {
         let tool_urls = self.get_course_external_tool_urls(course_id).await?;
-        let client = reqwest::Client::builder()
-            .redirect(Policy::none())
-            .cookie_provider(self.jar.clone())
-            .build()?;
+        let client = self.video_browser_client().await;
         for tool_url in tool_urls {
             let Ok((action, data)) = self.get_launch_form_from_url(&tool_url).await else {
                 continue;

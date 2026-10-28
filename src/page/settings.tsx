@@ -1052,7 +1052,7 @@ export default function SettingsPage() {
                             额外扫码登录
                           </Typography>
                           <Typography variant="body2" color="text.secondary">
-                            视频等功能需要额外登录态，未连接时可在下方扫码登录。
+                            课堂视频优先使用 Canvas Token 登录，失败时回退到额外登录态；其他需要额外登录的功能也可在下方扫码连接。
                           </Typography>
                         </Box>
 

@@ -272,6 +272,7 @@ impl App {
         crate::diagnostics::protect_config(&config);
         let base_url = Self::get_base_url(&config.account_type);
         self.client.set_base_url(base_url).await;
+        self.client.configure_video_auth(&config.token, &config.ja_auth_cookie, true).await;
         Self::apply_llm_config(&config, &self.client).await?;
         self.client.set_debug_mode(config.debug_mode);
         *self.config.write().await = config;
@@ -332,6 +333,7 @@ impl App {
 
     pub async fn init(&self) -> Result<()> {
         let mut config = self.get_config().await;
+        self.client.configure_video_auth(&config.token, &config.ja_auth_cookie, false).await;
         let cookies = &config.video_cookies;
         if !cookies.is_empty() {
             tracing::info!("Restoring saved video login");
@@ -1093,6 +1095,7 @@ impl App {
         }
         Self::apply_llm_config(&config, &self.client).await?;
         self.client.set_debug_mode(config.debug_mode);
+        self.client.configure_video_auth(&config.token, &config.ja_auth_cookie, false).await;
         let was_enabled = self.update_runtime_config(config).await.mcp_enabled;
         let is_enabled = self.config.read().await.mcp_enabled;
         if was_enabled != is_enabled {
