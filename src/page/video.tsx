@@ -43,6 +43,12 @@ function withTimeout<T>(promise: Promise<T>): Promise<T> {
   });
 }
 
+// Keep progress updates local so they do not interrupt course selection.
+function VideoDownloadTasks() {
+  const tasks = useTasks();
+  return <VideoLibraryTasks tasks={tasks.filter((task) => task.source === "video")} />;
+}
+
 export default function VideoPage({ active = true }: { active?: boolean }) {
   const canvas = useCourses();
   const centerOnly = useConfigSelector((state) => state.config.data?.experimental_task_center_only === true);
@@ -98,7 +104,6 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
       setCacheListOpen(false); setAggregator(false); setTrackDownload(undefined);
     }
   }, [active]);
-  const tasks = useTasks();
   const [messageApi, contextHolder] = useAppMessage();
   const sessions = useMemo(() => groupVideoSessions(videos), [videos]);
   const dateGroups = useMemo(() => groupSessionsByDate(sessions.map((session) => ({ session }))), [sessions]);
@@ -348,7 +353,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
           </Stack>
         </CardContent>
       </Card>
-      {!centerOnly && <Box><VideoLibraryTasks tasks={tasks.filter((task) => task.source === "video")} /></Box>}
+      {!centerOnly && <Box><VideoDownloadTasks /></Box>}
     </Stack>
     <Menu anchorEl={toolsAnchor} open={active && !!toolsAnchor} onClose={() => setToolsAnchor(null)}><MenuItem onClick={() => { setAggregator(true); setToolsAnchor(null); }}>视频合成工具</MenuItem></Menu>
     <Dialog open={active && !!downloadScopes} onClose={() => { if (!exporting) setDownloadScopes(undefined); }} fullWidth maxWidth="sm">

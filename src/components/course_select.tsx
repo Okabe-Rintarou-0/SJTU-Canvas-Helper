@@ -68,19 +68,19 @@ export default function CourseSelect({
       getOptionLabel={(option) => option.name}
       isOptionEqualToValue={(option, currentValue) => option.id === currentValue.id}
       noOptionsText="暂无可用课程"
-      PaperComponent={(props) => (
-        <Paper
-          {...props}
-          sx={{
+      slots={{ paper: Paper }}
+      slotProps={{
+        paper: {
+          sx: {
             mt: 1,
             borderRadius: "14px",
             border: "1px solid",
             borderColor: "divider",
             boxShadow: "0 12px 32px rgba(15, 23, 42, 0.1)",
             overflow: "hidden",
-          }}
-        />
-      )}
+          },
+        },
+      }}
       renderOption={(props, option) => {
         const isTA = option.enrollments?.some(
           (enrollment) => enrollment.role === "TaEnrollment"
