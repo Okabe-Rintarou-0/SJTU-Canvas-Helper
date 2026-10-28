@@ -7,12 +7,12 @@ import RetainedVideoWorkspace from "../retained_video_workspace";
 import { resetVideoWorkspace } from "../../lib/video_workspace";
 import type { CanvasLiveInfo, CanvasLiveSession } from "../../lib/model";
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn(), supported: true, instances: [] as {
+const mocks = vi.hoisted(() => ({ invoke: vi.fn(), port: 3030, supported: true, instances: [] as {
   url: string; config: Record<string, unknown>; element?: HTMLVideoElement; destroy: ReturnType<typeof vi.fn>; stopLoad: ReturnType<typeof vi.fn>;
   onError?: (event: string, data: { fatal: boolean }) => void; liveSyncPosition: number;
 }[] }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
-vi.mock("../../lib/config", () => ({ getConfig: async () => ({ proxy_port: 3030 }) }));
+vi.mock("../../lib/config", () => ({ getConfig: async () => ({ proxy_port: mocks.port }) }));
 vi.mock("hls.js", () => ({ default: class {
   static Events = { ERROR: "error" };
   static isSupported() { return mocks.supported; }
@@ -29,7 +29,7 @@ const info: CanvasLiveInfo = { startTime: 100, finishTime: 30_100, serverTime: 1
   { name: "课件", url: "https://mss2.sjtu.edu.cn/live/b.m3u8?auth_key=xyz" },
 ] };
 beforeEach(() => {
-  vi.clearAllMocks(); mocks.instances.length = 0; mocks.supported = true;
+  vi.clearAllMocks(); mocks.instances.length = 0; mocks.supported = true; mocks.port = 3030;
   Object.defineProperty(document, "pictureInPictureElement", { configurable: true, get: () => null });
   mocks.invoke.mockImplementation(async (command: string) => command === "get_video_live_info" ? info : true);
   vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
@@ -42,6 +42,24 @@ afterEach(() => {
 });
 const props = { session, canvasCourseId: 10, onClose: () => {} };
 describe("live player lifecycle", () => {
+  it("offers port settings for proxy startup failures and reconnects on the saved port", async () => {
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "prepare_proxy") return false;
+      return info;
+    });
+    render(<MemoryRouter><VideoLivePlayer {...props} /></MemoryRouter>);
+    expect(await screen.findByRole("link", { name: "配置播放代理端口" })).toHaveAttribute("href", "/settings?focus=proxy-port");
+    expect(screen.getByText("播放代理端口 3030 无法使用，请更换端口后重试。")).toBeVisible();
+    expect(screen.getByText("播放代理启动检查未通过", { exact: false })).not.toBeVisible();
+    expect(screen.getAllByRole("button", { name: "重新连接" })).toHaveLength(1);
+    expect(mocks.instances).toHaveLength(0);
+    mocks.port = 3031;
+    mocks.invoke.mockImplementation(async (command: string) => command === "get_video_live_info" ? info : true);
+    fireEvent.click(screen.getByRole("button", { name: "重新连接" }));
+    await waitFor(() => expect(mocks.instances).toHaveLength(1));
+    expect(mocks.instances[0].url).toContain("http://localhost:3031/canvas-stream/");
+    expect(screen.queryByRole("link", { name: "配置播放代理端口" })).not.toBeInTheDocument();
+  });
   it("keeps the media and HLS connection through navigation, releasing them on account reset", async () => {
     render(<MemoryRouter initialEntries={["/video"]}>
       <Link to="/settings">离开视频</Link><Link to="/video">返回视频</Link>

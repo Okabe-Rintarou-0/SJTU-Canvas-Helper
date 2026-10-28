@@ -6,6 +6,7 @@ import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import { Box, Button, Chip, Stack, Tab, Tabs, Typography } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import { useLayoutEffect, useRef, type PropsWithChildren } from "react";
 import { WorkspaceHero } from "./workspace_hero";
 import { surfaceCardSx } from "../lib/styles";
@@ -65,7 +66,8 @@ export default function SettingsShell({ active, onSectionChange, dirty, onSave, 
         description="管理账号连接、界面偏好与 AI 服务。切换分类会保留当前修改。"
         aside={
           <Stack direction="row" spacing={1.5} alignItems="center" useFlexGap flexWrap="wrap">
-            <Chip size="small" variant="outlined" color={dirty ? "warning" : "default"}
+            <Chip size="small" variant={dirty ? "filled" : "outlined"} color={dirty ? "warning" : "default"}
+              sx={{ fontWeight: dirty ? 700 : 400 }}
               label={dirty ? "有未保存的修改" : "已与本地配置同步"} role="status" />
             <Button variant="contained" startIcon={<SaveRoundedIcon />} onClick={onSave}>保存全部设置</Button>
           </Stack>
@@ -83,9 +85,12 @@ export default function SettingsShell({ active, onSectionChange, dirty, onSave, 
       </Box>
       <Box sx={{ minWidth: 0 }}>{children}</Box>
       <Stack direction="row" spacing={1.5} justifyContent="space-between" alignItems="center"
-        sx={{ ...surfaceCardSx, position: "sticky", bottom: 0, zIndex: 3, px: 2, py: 1.25, bgcolor: "background.paper" }}>
-        <Typography variant="body2" color="text.secondary" role="status">{dirty ? "修改尚未保存" : "所有设置已同步"}</Typography>
-        <Button variant="contained" startIcon={<SaveRoundedIcon />} onClick={onSave}>保存全部设置</Button>
+        sx={{ ...surfaceCardSx, position: "sticky", bottom: 0, zIndex: 3, px: 2, py: 1.25,
+          bgcolor: "background.paper",
+          backgroundImage: (theme) => dirty ? `linear-gradient(${alpha(theme.palette.warning.main, 0.14)}, ${alpha(theme.palette.warning.main, 0.14)})` : "none",
+          borderColor: dirty ? "warning.main" : "divider", borderWidth: dirty ? 2 : 1 }}>
+        <Typography variant="body2" color={dirty ? "text.primary" : "text.secondary"} fontWeight={dirty ? 700 : 400} role="status">{dirty ? "修改尚未保存" : "所有设置已同步"}</Typography>
+        <Button variant="contained" color={dirty ? "warning" : "primary"} startIcon={<SaveRoundedIcon />} onClick={onSave}>保存全部设置</Button>
       </Stack>
     </Stack>
   );

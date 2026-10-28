@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { PropsWithChildren } from "react";
 import SettingsPage from "../../page/settings";
 import type { AppConfig } from "../../lib/model";
+import { MemoryRouter } from "react-router-dom";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(), getConfig: vi.fn(), saveConfig: vi.fn(), dispatch: vi.fn(), open: vi.fn(),
@@ -51,11 +52,55 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 async function openSettings() {
-  render(<SettingsPage />);
+  render(<MemoryRouter><SettingsPage /></MemoryRouter>);
   await screen.findByRole("tab", { name: "账号与连接" });
 }
 function section(name: string) { fireEvent.click(screen.getByRole("tab", { name })); }
 function save() { fireEvent.click(screen.getAllByRole("button", { name: "保存全部设置" })[0]); }
+
+it("keeps the footer save status across categories and failed saves, then clears it on success", async () => {
+  await openSettings();
+  fireEvent.change(screen.getByLabelText("Canvas Token"), { target: { value: "updated-token" } });
+  const reminder = screen.getByText("修改尚未保存");
+  section("高级与实验");
+  expect(reminder).toBeVisible();
+  mocks.saveConfig.mockRejectedValueOnce("保存失败");
+  save();
+  await waitFor(() => expect(mocks.message.error).toHaveBeenCalledWith("保存失败"));
+  expect(reminder).toBeVisible();
+  save();
+  await waitFor(() => expect(screen.queryByText("修改尚未保存")).not.toBeInTheDocument());
+  expect(screen.getByText("所有设置已同步")).toBeVisible();
+});
+
+it("opens and focuses the playback proxy setting from a playback error link", async () => {
+  render(<MemoryRouter initialEntries={["/settings?focus=proxy-port"]}><SettingsPage /></MemoryRouter>);
+  const port = await screen.findByLabelText("播放代理端口");
+  expect(port).toBeVisible();
+  expect(screen.getByRole("tab", { name: "高级与实验" })).toHaveAttribute("aria-selected", "true");
+  await waitFor(() => expect(port).toHaveFocus());
+  expect(port).toHaveValue(3030);
+  fireEvent.change(port, { target: { value: "3031" } });
+  save();
+  await waitFor(() => expect(mocks.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ proxy_port: 3031 })));
+});
+
+it("rejects empty, out-of-range and fractional playback ports before saving", async () => {
+  await openSettings();
+  section("高级与实验");
+  const port = screen.getByLabelText("播放代理端口");
+  for (const value of ["", "0", "-1", "65536", "3030.5"]) {
+    fireEvent.change(port, { target: { value } });
+    section("工具与诊断");
+    save();
+    await waitFor(() => expect(screen.getByRole("tab", { name: "高级与实验" })).toHaveAttribute("aria-selected", "true"));
+    expect(screen.getByText("请输入 1–65535 之间的整数端口。")).toBeVisible();
+    expect(mocks.saveConfig).not.toHaveBeenCalled();
+  }
+  fireEvent.change(port, { target: { value: "65535" } });
+  save();
+  await waitFor(() => expect(mocks.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ proxy_port: 65535 })));
+});
 
 it("opens token instructions for the selected Canvas and returns to the draft", async () => {
   await openSettings();
@@ -80,7 +125,7 @@ it("opens token instructions for the selected Canvas and returns to the draft", 
 
 it("uses the same token instructions in first-run onboarding", async () => {
   config.token = "";
-  render(<SettingsPage />);
+  render(<MemoryRouter><SettingsPage /></MemoryRouter>);
   const tour = within(await screen.findByRole("dialog", { name: "填写您的 Canvas Token" }));
   expect(tour.getByText("点击“创建新访问许可证”")).toBeVisible();
   expect(tour.getByRole("link", { name: "打开 Canvas 个人设置" })).toHaveAttribute("href", "https://oc.sjtu.edu.cn/profile/settings");
@@ -126,7 +171,7 @@ it("applies a completed color selection once and saves the default color with ot
 
 it("restores the saved theme when leaving after an unsaved color reset", async () => {
   config.color_primary = "#336699";
-  const { unmount } = render(<SettingsPage />);
+  const { unmount } = render(<MemoryRouter><SettingsPage /></MemoryRouter>);
   await screen.findByRole("tab", { name: "界面偏好" });
   section("界面偏好");
   fireEvent.click(screen.getByRole("button", { name: "恢复默认主色调" }));

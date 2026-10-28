@@ -39,6 +39,7 @@ import { surfaceCardSx } from "../lib/styles";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import ReactJson from "react-json-view-ts";
 import BasicLayout from "../components/layout";
 import LogModal from "../components/log_modal";
@@ -253,11 +254,14 @@ function InlineQRCodePanel({
 
 export default function SettingsPage() {
   const theme = useTheme();
-  const [activeSection, setActiveSection] = useState<SettingsSection>("account");
+  const location = useLocation();
+  const focusProxyPort = new URLSearchParams(location.search).get("focus") === "proxy-port";
+  const [activeSection, setActiveSection] = useState<SettingsSection>(focusProxyPort ? "advanced" : "account");
   const dispatch = useConfigDispatch();
   const [messageApi, contextHolder] = useAppMessage();
   const tokenFieldRef = useRef<HTMLDivElement>(null);
   const savePathFieldRef = useRef<HTMLDivElement>(null);
+  const proxyPortFieldRef = useRef<HTMLInputElement>(null);
   const latestFormDataRef = useRef<AppConfig | null>(null);
   const initialSnapshotRef = useRef<string>("");
   const [accounts, setAccounts] = useState<string[]>([]);
@@ -352,6 +356,18 @@ export default function SettingsPage() {
   }, [formData, initialSnapshot]);
 
   const loading = !formData;
+  const proxyPortError = formData && (!Number.isInteger(formData.proxy_port) || formData.proxy_port < 1 || formData.proxy_port > 65535)
+    ? "请输入 1–65535 之间的整数端口。" : "";
+
+  useEffect(() => {
+    if (focusProxyPort) setActiveSection("advanced");
+  }, [focusProxyPort]);
+
+  useEffect(() => {
+    if (!loading && activeSection === "advanced" && (focusProxyPort || proxyPortError)) {
+      proxyPortFieldRef.current?.focus();
+    }
+  }, [loading, activeSection, focusProxyPort, proxyPortError]);
 
   const mcpConnectionText = useMemo(() => {
     if (!formData?.token) return "// 请先配置 Canvas Token 并保存";
@@ -484,7 +500,7 @@ export default function SettingsPage() {
         experimental_ppt_cleanup: config.experimental_ppt_cleanup ?? false,
         mcp_enabled: config.mcp_enabled ?? false,
         mcp_port: config.mcp_port || 3100,
-        proxy_port: config.proxy_port === 0 ? DEFAULT_PROXY_PORT : config.proxy_port,
+        proxy_port: config.proxy_port || DEFAULT_PROXY_PORT,
         llm_api_keys: config.llm_api_keys ?? [],
         llm_active_api_key: config.llm_active_api_key ?? "",
         video_summary_prompt: videoSummaryOptions(config).prompt,
@@ -605,6 +621,13 @@ export default function SettingsPage() {
     const summaryError = videoSummaryOptionsError(videoSummaryOptions(formData));
     if (summaryError) { setActiveSection("ai"); messageApi.error(summaryError); return; }
 
+    if (proxyPortError) {
+      setActiveSection("advanced");
+      messageApi.error(proxyPortError);
+      proxyPortFieldRef.current?.focus();
+      return;
+    }
+
     try {
       await saveConfig(formData);
       setInitialSnapshot(JSON.stringify(formData));
@@ -615,7 +638,7 @@ export default function SettingsPage() {
     } catch (e) {
       messageApi.error(e as string);
     }
-  }, [formData, messageApi, rawConfig, validateForm]);
+  }, [formData, messageApi, rawConfig, validateForm, proxyPortError]);
 
   const handleTestToken = async () => {
     const token = formData?.token ?? "";
@@ -1620,8 +1643,19 @@ export default function SettingsPage() {
                   <Stack spacing={2.5}>
                     <Box>
                       <Typography variant="h5">高级选项</Typography>
-                      <Typography variant="body2" color="text.secondary">配置文件打开方式、开发调试与 MCP 服务。</Typography>
+                      <Typography variant="body2" color="text.secondary">播放代理端口、开发调试与 MCP 服务。</Typography>
                     </Box>
+                    <TextField size="small" fullWidth
+                      label="播放代理端口"
+                      name="proxy_port"
+                      type="number"
+                      inputRef={proxyPortFieldRef}
+                      value={formData?.proxy_port === 0 ? "" : formData?.proxy_port ?? DEFAULT_PROXY_PORT}
+                      onChange={(event) => updateField("proxy_port", Number(event.target.value))}
+                      error={Boolean(proxyPortError)}
+                      helperText={proxyPortError || "默认 3030。端口被占用或无法使用时可更换；保存后重新打开视频或重新连接直播，无需重启应用。"}
+                      inputProps={{ min: 1, max: 65535, step: 1 }}
+                    />
                     <Box
                       sx={{
                         display: "grid",

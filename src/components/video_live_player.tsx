@@ -7,6 +7,8 @@ import { getConfig } from "../lib/config";
 import { livePlaybackURL, liveRequest } from "../lib/video_live";
 import { exitVideoPictureInPicture, isVideoInPictureInPicture, restoreVideoPictureInPicture } from "../lib/video_picture_in_picture";
 import type { CanvasLiveInfo, CanvasLiveSession } from "../lib/model";
+import { PlaybackProxyError, preparePlaybackProxy } from "../lib/playback_proxy";
+import PlaybackProxyAlert from "./playback_proxy_alert";
 
 const LIVE_BUFFER_SECONDS = 30;
 
@@ -28,6 +30,7 @@ export default function VideoLivePlayer({ session, nextSession, canvasCourseId, 
   const [retry, setRetry] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [proxyError, setProxyError] = useState<PlaybackProxyError>();
   const [retrying, setRetrying] = useState(false);
   const [ended, setEnded] = useState(false);
   const [needsPlay, setNeedsPlay] = useState(false);
@@ -79,7 +82,7 @@ export default function VideoLivePlayer({ session, nextSession, canvasCourseId, 
     let cancelled = false;
     let timer: number | undefined;
     let attempts = 0;
-    setLoading(true); setError(""); setRetrying(false); setEnded(false); setNeedsPlay(false); setNeedsPip(false);
+    setLoading(true); setError(""); setProxyError(undefined); setRetrying(false); setEnded(false); setNeedsPlay(false); setNeedsPip(false);
     // Retain the media element while the next lesson is loading.
     const load = async () => {
       try {
@@ -91,7 +94,7 @@ export default function VideoLivePlayer({ session, nextSession, canvasCourseId, 
         // Validate all media origins before starting the proxy.
         next.tracks.forEach((item) => livePlaybackURL(item.url, config.proxy_port));
         if (!next.tracks.length) throw new Error("当前教室暂无可用直播机位");
-        if (!await liveRequest(invoke<boolean>("prepare_proxy"))) throw new Error("直播播放代理未能启动，请重试");
+        await liveRequest(preparePlaybackProxy(config.proxy_port));
         if (cancelled) return;
         const camera = Math.max(0, next.tracks.findIndex((item) => item.name === selectedCamera.current));
         setTrack(camera); selectedCamera.current = next.tracks[camera].name;
@@ -100,10 +103,10 @@ export default function VideoLivePlayer({ session, nextSession, canvasCourseId, 
       } catch (e) {
         if (cancelled) return;
         // The service may open the next stream a little after its scheduled start.
-        if (continuing && attempts < 5) {
+        if (continuing && attempts < 5 && !(e instanceof PlaybackProxyError)) {
           setError("下一节直播暂未就绪，正在自动重试。"); setRetrying(true);
           timer = window.setTimeout(() => void load(), Math.min(30_000, 2000 * 2 ** attempts++));
-        } else { setError(String(e)); setRetrying(false); setLoading(false); }
+        } else { setError(String(e)); setProxyError(e instanceof PlaybackProxyError ? e : undefined); setRetrying(false); setLoading(false); }
       }
     };
     void load();
@@ -207,7 +210,9 @@ export default function VideoLivePlayer({ session, nextSession, canvasCourseId, 
       <Button size="small" onClick={onClose}>关闭直播</Button>
     </Stack>
     {ended && <Alert severity="info">{nextSession ? "本节直播已结束，等待下一节自动接续。" : "本节直播已结束，可刷新录像列表查看回放。"}</Alert>}
-    {!ended && error && <Alert severity={retrying ? "warning" : "error"}>{error}</Alert>}
+    {!ended && error && (proxyError
+      ? <PlaybackProxyAlert error={proxyError} onRetry={() => setRetry((value) => value + 1)} retryLabel="重新连接" />
+      : <Alert severity={retrying ? "warning" : "error"}>{error}</Alert>)}
     {!ended && loading && <LinearProgress aria-label="正在连接直播" />}
     <Box hidden={ended && !nextSession} sx={{ bgcolor: "#000", borderRadius: "8px", overflow: "hidden" }}>
       <video ref={media} controls playsInline aria-label="课堂直播播放器"
@@ -216,7 +221,7 @@ export default function VideoLivePlayer({ session, nextSession, canvasCourseId, 
         onPause={(event) => {
           if (!sourceChanging.current && !event.currentTarget.ended && !event.currentTarget.error) wantsPlayback.current = false;
         }}
-        onError={() => { setError("直播无法播放，请重新连接或切换机位。"); setLoading(false); }}
+        onError={() => { setProxyError(undefined); setError("直播无法播放，请重新连接或切换机位。"); setLoading(false); }}
         style={{ width: "100%", maxHeight: "65vh", display: "block", aspectRatio: "16 / 9" }} />
     </Box>
     {!ended && <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
@@ -228,7 +233,7 @@ export default function VideoLivePlayer({ session, nextSession, canvasCourseId, 
         {info.tracks.map((item, index) => <MenuItem key={index} value={index}>{item.name}</MenuItem>)}
       </WorkspaceSelect>}
       <Button size="small" disabled={!info || !!error} onClick={goLive}>回到直播</Button>
-      <Button size="small" onClick={() => setRetry((value) => value + 1)}>重新连接</Button>
+      {!proxyError && <Button size="small" onClick={() => setRetry((value) => value + 1)}>重新连接</Button>}
       {needsPlay && <Button size="small" onClick={() => { wantsPlayback.current = true; play(); }}>继续播放</Button>}
       {needsPip && <Button size="small" onClick={restorePictureInPicture}>恢复画中画</Button>}
     </Stack>}

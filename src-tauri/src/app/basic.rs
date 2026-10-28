@@ -457,7 +457,12 @@ impl App {
             .or(canvas_stream_proxy)
             .or(ready_check);
         let (_, server) = warp::serve(routes).try_bind_ephemeral(([127, 0, 0, 1], proxy_port))
-            .map_err(|_| AppError::VideoDownloadError(format!("播放代理端口 {proxy_port} 无法使用，请检查端口是否被占用")))?;
+            .map_err(|error| {
+                tracing::warn!(proxy_port, error = ?error, "Could not bind playback proxy");
+                AppError::VideoDownloadError(format!(
+                    "播放代理无法绑定 127.0.0.1:{proxy_port}：{error}。端口可能被其他程序绑定（包括未监听的连接），或被系统限制；请前往「设置 → 高级与实验 → 播放代理端口」更换端口，保存后返回重试"
+                ))
+            })?;
         *proxy_handle = Some(tokio::spawn(server));
         let ready = self.wait_proxy_ready(proxy_port).await;
         if !matches!(ready, Ok(true)) {
@@ -518,6 +523,23 @@ impl App {
 
     pub async fn get_config(&self) -> AppConfig {
         self.config.read().await.clone()
+    }
+
+    async fn update_runtime_config(&self, config: AppConfig) -> AppConfig {
+        // Use the same lock order as startup so it cannot reuse a listener on the old port.
+        let mut proxy_handle = self.handle.write().await;
+        let mut current = self.config.write().await;
+        let port_changed = current.proxy_port != config.proxy_port;
+        let previous = std::mem::replace(&mut *current, config);
+        drop(current);
+        if port_changed {
+            if let Some(handle) = proxy_handle.take() {
+                handle.abort();
+                // Release the socket before a player retries on the new port.
+                let _ = handle.await;
+            }
+        }
+        previous
     }
 
     pub async fn get_raw_config(&self) -> Result<String> {
@@ -1056,6 +1078,9 @@ impl App {
     }
 
     pub async fn save_config(&self, config: AppConfig) -> Result<()> {
+        if config.proxy_port == 0 {
+            return Err(AppError::VideoDownloadError("播放代理端口必须为 1–65535 之间的整数，请前往「设置 → 高级与实验 → 播放代理端口」修改".into()));
+        }
         crate::model::VideoSummaryOptions { prompt: config.video_summary_prompt.clone(),
             context_tokens: config.video_summary_context_tokens, output_tokens: config.video_summary_output_tokens }.validate()?;
         crate::diagnostics::protect_config(&config);
@@ -1068,8 +1093,7 @@ impl App {
         }
         Self::apply_llm_config(&config, &self.client).await?;
         self.client.set_debug_mode(config.debug_mode);
-        let was_enabled = self.config.read().await.mcp_enabled;
-        *self.config.write().await = config;
+        let was_enabled = self.update_runtime_config(config).await.mcp_enabled;
         let is_enabled = self.config.read().await.mcp_enabled;
         if was_enabled != is_enabled {
             if is_enabled {
@@ -1617,6 +1641,52 @@ try {{
 #[cfg(test)]
 mod live_proxy_tests {
     use super::*;
+
+    fn proxy_app(port: u16) -> App {
+        App {
+            client: Arc::new(Client::new_without_proxy("http://127.0.0.1", "", "", "", None)),
+            current_account: Default::default(),
+            config: RwLock::new(AppConfig { proxy_port: port, ..Default::default() }),
+            handle: Default::default(), mcp_handle: Default::default(), cache: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn changing_proxy_port_releases_old_listener_and_retries_a_conflict() {
+        let app = proxy_app(0);
+        // Port zero is only used here to ask the OS for an available test port.
+        let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let old_port = probe.local_addr().unwrap().port();
+        drop(probe);
+        app.config.write().await.proxy_port = old_port;
+        assert!(app.prepare_proxy().await.unwrap());
+        let original_task = app.handle.read().await.as_ref().unwrap().id();
+        app.update_runtime_config(app.get_config().await).await;
+        assert_eq!(app.handle.read().await.as_ref().unwrap().id(), original_task);
+
+        let conflict = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let new_port = conflict.local_addr().unwrap().port();
+        let mut config = app.get_config().await;
+        config.proxy_port = new_port;
+        app.update_runtime_config(config).await;
+        assert!(app.handle.read().await.is_none());
+        let _released = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, old_port)).unwrap();
+        let error = app.prepare_proxy().await.unwrap_err().to_string();
+        assert!(error.contains(&format!("127.0.0.1:{new_port}")));
+        assert!(error.contains("设置 → 高级与实验 → 播放代理端口"));
+        assert!(app.handle.read().await.is_none());
+        drop(conflict);
+        assert!(app.prepare_proxy().await.unwrap());
+        app.stop_proxy().await;
+    }
+
+    #[tokio::test]
+    async fn saving_zero_proxy_port_is_rejected_before_writing_config() {
+        let app = proxy_app(3030);
+        let error = app.save_config(AppConfig { proxy_port: 0, ..Default::default() }).await.unwrap_err();
+        assert!(error.to_string().contains("1–65535"));
+        assert_eq!(app.get_config().await.proxy_port, 3030);
+    }
 
     #[test]
     fn live_playlist_rewrites_segments_variants_keys_and_maps() {
