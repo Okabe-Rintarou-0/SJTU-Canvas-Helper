@@ -297,7 +297,6 @@ export function ChangeLogModal({
   onOk: () => void;
 }) {
   const theme = useTheme();
-  const latest = changeLogs[0];
 
   return (
     <Dialog open={open} onClose={onCancel} fullWidth maxWidth="md">
@@ -323,42 +322,11 @@ export function ChangeLogModal({
           <Typography variant="h4" sx={{ fontWeight: 600 }}>
             更新日志
           </Typography>
-          <Typography variant="body2" color="text.secondary">
-            按时间线记录 Canvas Helper 的功能演进、修复与体验改进。
-          </Typography>
         </Stack>
       </DialogTitle>
 
       <DialogContent sx={{ pt: 2, px: 3, pb: 1 }}>
         <Stack spacing={1.5}>
-          <Box
-            sx={{
-              p: 2,
-              borderRadius: "14px",
-              border: "1px solid",
-              borderColor: alpha(theme.palette.primary.main, 0.25),
-              bgcolor: alpha(theme.palette.primary.main, 0.06),
-            }}
-          >
-            <Stack spacing={0.75}>
-              <Stack direction="row" spacing={1.25} alignItems="baseline" flexWrap="wrap" useFlexGap>
-                <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                  最新 {latest.version}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {latest.date}
-                </Typography>
-              </Stack>
-              <Stack component="ul" spacing={0.5} sx={{ m: 0, pl: 2.5 }}>
-                {latest.items.slice(0, 3).map((item, index) => (
-                  <Typography key={index} component="li" variant="body2" sx={{ lineHeight: 1.7 }}>
-                    {typeof item === "string" ? item : item}
-                  </Typography>
-                ))}
-              </Stack>
-            </Stack>
-          </Box>
-
           {changeLogs.map((log, index) => (
             <Card
               key={`${log.version}-${log.date}`}
