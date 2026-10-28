@@ -48,7 +48,7 @@ import VideoSummarySettings from "../components/video_summary_settings";
 import { videoSummaryOptions, videoSummaryOptionsError } from "../lib/video_summary_config";
 import SettingsShell, { SettingsPanel, type SettingsSection } from "../components/settings_shell";
 import { LoginAlert } from "../components/login_alert";
-import { getConfig, saveConfig, updateConfig } from "../lib/config";
+import { ConfigReadFailure, getConfig, isConfigOwnerCurrent, saveConfig, StaleConfigSessionError, updateConfig } from "../lib/config";
 import { useConfigDispatch, useQRCode } from "../lib/hooks";
 import {
   DEFAULT_LLM_BASE_URL,
@@ -56,8 +56,9 @@ import {
   normalizeLlmConfigForSettings,
 } from "../lib/llm_config";
 import { useAppMessage } from "../lib/message";
-import { AccountInfo, AppConfig, LOG_LEVEL_INFO, User } from "../lib/model";
-import { consoleLog, savePathValidator } from "../lib/utils";
+import { AccountInfo, AppConfig, User } from "../lib/model";
+import { currentSession, invalidateSession, isSessionCurrent, subscribeSession } from "../lib/session";
+import { savePathValidator } from "../lib/utils";
 
 type AccountMode = "create" | "select";
 
@@ -260,6 +261,11 @@ export default function SettingsPage() {
   const savePathFieldRef = useRef<HTMLDivElement>(null);
   const latestFormDataRef = useRef<AppConfig | null>(null);
   const initialSnapshotRef = useRef<string>("");
+  // Guards initConfig against out-of-order completion: rapid account switches
+  // each re-read the config, and only the newest read may publish its result.
+  const initConfigRef = useRef(0);
+  const settingsMountedRef = useRef(true);
+  const extraCheckRef = useRef(0);
   const [accounts, setAccounts] = useState<string[]>([]);
   const [openTour, setOpenTour] = useState<boolean>(false);
   const [tourStep, setTourStep] = useState(0);
@@ -384,7 +390,7 @@ export default function SettingsPage() {
   const updateField = useCallback(
     <K extends keyof AppConfig>(key: K, value: AppConfig[K]) => {
       setFormData((prev) => {
-        if (!prev) {
+        if (!prev || !isConfigOwnerCurrent(prev)) {
           return prev;
         }
         const next = { ...prev, [key]: value };
@@ -397,6 +403,15 @@ export default function SettingsPage() {
     [dispatch]
   );
 
+  const acceptSavedOwner = useCallback((submitted: AppConfig, saved: AppConfig) => {
+    setFormData((current) => {
+      if (!current || !isConfigOwnerCurrent(saved) || current.__config_owner !== submitted.__config_owner) {
+        return current;
+      }
+      return { ...current, __config_owner: saved.__config_owner };
+    });
+  }, []);
+
   // Auto-save debug_mode immediately on toggle
   const prevDebugModeRef = useRef(formData?.debug_mode);
   useEffect(() => {
@@ -404,13 +419,19 @@ export default function SettingsPage() {
     if (prevDebugModeRef.current !== undefined && prevDebugModeRef.current !== formData.debug_mode) {
       prevDebugModeRef.current = formData.debug_mode;
       saveConfig(formData).then(
-        () => messageApi.success(formData.debug_mode ? "Debug 模式已开启" : "Debug 模式已关闭"),
-        (e) => messageApi.error("保存失败：" + e)
+        (saved) => {
+          acceptSavedOwner(formData, saved);
+          messageApi.success(formData.debug_mode ? "Debug 模式已开启" : "Debug 模式已关闭");
+        },
+        (e) => {
+          if (e instanceof StaleConfigSessionError) return;
+          messageApi.error("保存失败：" + e);
+        }
       );
     } else {
       prevDebugModeRef.current = formData.debug_mode;
     }
-  }, [formData?.debug_mode, formData, messageApi]);
+  }, [formData?.debug_mode, formData, messageApi, acceptSavedOwner]);
 
   const handleLlmTemperatureChange = useCallback(
     (rawValue: string) => {
@@ -436,29 +457,49 @@ export default function SettingsPage() {
 
   const checkExtraLoginStatus = useCallback(
     async (silent = false) => {
+      const generation = ++extraCheckRef.current;
+      let config: AppConfig | undefined;
       setCheckingExtraLogin(true);
-      consoleLog(LOG_LEVEL_INFO, "check_extra_login_status");
       try {
+        config = await getConfig();
+        if (generation !== extraCheckRef.current || !isConfigOwnerCurrent(config)) return false;
+        const session = currentSession();
         const ok = (await invoke("check_extra_login_status")) as boolean;
+        if (generation !== extraCheckRef.current || !isSessionCurrent(session) || !isConfigOwnerCurrent(config)) return false;
         setExtraLoginReady(ok);
         if (!ok && !silent) {
           messageApi.warning("当前额外登录态不可用，请重新扫码。");
         }
-        consoleLog(LOG_LEVEL_INFO, "check_extra_login_status", ok);
         return ok;
       } catch (error) {
-        consoleLog(LOG_LEVEL_INFO, "check_extra_login_status", error);
+        if (generation !== extraCheckRef.current || error instanceof StaleConfigSessionError || (config && !isConfigOwnerCurrent(config))) return false;
         setExtraLoginReady(false);
         if (!silent) {
-          messageApi.warning(`额外登录态检查失败：${error}`);
+          messageApi.warning("额外登录态检查失败，请重试。");
         }
         return false;
       } finally {
-        setCheckingExtraLogin(false);
+        if (generation === extraCheckRef.current && (!config || isConfigOwnerCurrent(config))) {
+          setCheckingExtraLogin(false);
+        }
       }
     },
     [messageApi]
   );
+
+  useEffect(() => subscribeSession(() => {
+    setCheckingExtraLogin(false);
+    setExtraLoginReady(false);
+  }), []);
+
+  useEffect(() => {
+    settingsMountedRef.current = true;
+    return () => {
+      settingsMountedRef.current = false;
+      initConfigRef.current += 1;
+      extraCheckRef.current += 1;
+    };
+  }, []);
 
   const initAccounts = async () => {
     const nextAccounts = (await invoke("list_accounts")) as string[];
@@ -466,10 +507,20 @@ export default function SettingsPage() {
   };
 
   const initConfig = async () => {
+    if (!settingsMountedRef.current) return;
+    const generation = ++initConfigRef.current;
+    let observedSession = currentSession();
+    let observedConfig: AppConfig | undefined;
     try {
-      await initAccounts();
+      const nextAccounts = (await invoke("list_accounts")) as string[];
       const config = await getConfig(true);
+      observedSession = currentSession();
+      observedConfig = config;
       const accountInfo = (await invoke("read_account_info")) as AccountInfo;
+      if (!settingsMountedRef.current || generation !== initConfigRef.current || !isSessionCurrent(observedSession) || !isConfigOwnerCurrent(config)) {
+        // A newer switch already started; its result is the current account.
+        return;
+      }
       const normalizedConfig = normalizeLlmConfigForSettings({
         ...config,
         theme: config.theme ?? "light",
@@ -486,6 +537,7 @@ export default function SettingsPage() {
         video_summary_output_tokens: videoSummaryOptions(config).outputTokens,
       });
 
+      setAccounts(nextAccounts);
       setCurrentAccount(accountInfo.current_account);
       setFormData(normalizedConfig);
       setInitialSnapshot(JSON.stringify(normalizedConfig));
@@ -498,6 +550,12 @@ export default function SettingsPage() {
         setTourStep(0);
       }
     } catch (e) {
+      if (!settingsMountedRef.current || generation !== initConfigRef.current || e instanceof StaleConfigSessionError) return;
+      if (e instanceof ConfigReadFailure) {
+        if (isSessionCurrent(e.failureSession)) messageApi.error(e.message);
+        return;
+      }
+      if (!isSessionCurrent(observedSession) || (observedConfig && !isConfigOwnerCurrent(observedConfig))) return;
       messageApi.error(`初始化时发生错误：${e}`);
     }
   };
@@ -534,7 +592,7 @@ export default function SettingsPage() {
         initialConfig.color_primary !== latestConfig.color_primary ||
         initialConfig.compact_mode !== latestConfig.compact_mode;
 
-      if (visualChanged) {
+      if (visualChanged && isConfigOwnerCurrent(initialConfig) && isConfigOwnerCurrent(latestConfig)) {
         dispatch(updateConfig(initialConfig));
       }
     };
@@ -600,16 +658,18 @@ export default function SettingsPage() {
     if (summaryError) { setActiveSection("ai"); messageApi.error(summaryError); return; }
 
     try {
-      await saveConfig(formData);
-      setInitialSnapshot(JSON.stringify(formData));
+      const saved = await saveConfig(formData);
+      acceptSavedOwner(formData, saved);
+      setInitialSnapshot(JSON.stringify(saved));
       messageApi.success("保存成功！");
       if (rawConfig) {
         await getRawConfig();
       }
     } catch (e) {
+      if (e instanceof StaleConfigSessionError) return;
       messageApi.error(e as string);
     }
-  }, [formData, messageApi, rawConfig, validateForm]);
+  }, [formData, messageApi, rawConfig, validateForm, acceptSavedOwner]);
 
   const handleTestToken = async () => {
     const token = formData?.token ?? "";
@@ -709,8 +769,11 @@ export default function SettingsPage() {
 
   const handleSwitchAccount = async (account: string) => {
     try {
-      await changeSessionAccount(() => invoke("switch_account", { account }));
-      await initConfig();
+      await changeSessionAccount(async () => {
+        invalidateSession();
+        try { await invoke("switch_account", { account }); }
+        finally { invalidateSession(); }
+      }, initConfig);
     } catch (e) {
       messageApi.error(`切换账号失败：${e}`);
     }
@@ -718,8 +781,11 @@ export default function SettingsPage() {
 
   const handleDeleteAccount = useCallback(async () => {
     try {
-      await changeSessionAccount(() => invoke("delete_account", { account: currentAccount }));
-      await initConfig();
+      await changeSessionAccount(async () => {
+        invalidateSession();
+        try { await invoke("delete_account", { account: currentAccount }); }
+        finally { invalidateSession(); }
+      }, initConfig);
       messageApi.success("删除账号成功！");
     } catch (e) {
       messageApi.error(`删除账号失败：${e}`);
@@ -1057,6 +1123,7 @@ export default function SettingsPage() {
                         <InlineQRCodePanel
                           onScanSuccess={() => {
                             messageApi.success("扫码登录成功，已保存额外登录态。", 0.8);
+                            void initConfig();
                             checkExtraLoginStatus(true);
                           }}
                         />
@@ -1219,8 +1286,10 @@ export default function SettingsPage() {
                             setEditingBaseUrl(null);
                             setEditingModel(null);
                             try {
-                              await saveConfig(next);
+                              const saved = await saveConfig(next);
+                              acceptSavedOwner(next, saved);
                             } catch (e) {
+                              if (e instanceof StaleConfigSessionError) return;
                               messageApi.error(e as string);
                             }
                           }}
@@ -1289,7 +1358,7 @@ export default function SettingsPage() {
                                       const newActive = formData.llm_active_api_key === entry.name ? editingName.trim() : formData.llm_active_api_key;
                                       const next = { ...formData, llm_api_keys: updated, llm_active_api_key: newActive };
                                       setFormData(next);
-                                      try { await saveConfig(next); } catch (e) { messageApi.error(e as string); }
+                                      try { const saved = await saveConfig(next); acceptSavedOwner(next, saved); } catch (e) { if (!(e instanceof StaleConfigSessionError)) messageApi.error(e as string); }
                                     }}
                                     placeholder="Key 名称"
                                     autoComplete="off"
@@ -1310,7 +1379,7 @@ export default function SettingsPage() {
                                       );
                                       const next = { ...formData, llm_api_keys: updated, llm_api_key: keyVal };
                                       setFormData(next);
-                                      try { await saveConfig(next); } catch (e) { messageApi.error(e as string); }
+                                      try { const saved = await saveConfig(next); acceptSavedOwner(next, saved); } catch (e) { if (!(e instanceof StaleConfigSessionError)) messageApi.error(e as string); }
                                     }}
                                     placeholder="sk-…"
                                     autoComplete="off"
@@ -1355,7 +1424,7 @@ export default function SettingsPage() {
                                         ...(val ? { llm_base_url: val } : {}),
                                       };
                                       setFormData(next);
-                                      try { await saveConfig(next); } catch (e) { messageApi.error(e as string); }
+                                      try { const saved = await saveConfig(next); acceptSavedOwner(next, saved); } catch (e) { if (!(e instanceof StaleConfigSessionError)) messageApi.error(e as string); }
                                     }}
                                     placeholder={formData?.llm_base_url || DEFAULT_LLM_BASE_URL}
                                     autoComplete="off"
@@ -1385,7 +1454,7 @@ export default function SettingsPage() {
                                       );
                                       const next = { ...formData, llm_api_keys: updated, ...(val ? { llm_model: val } : {}) };
                                       setFormData(next);
-                                      try { await saveConfig(next); } catch (e) { messageApi.error(e as string); }
+                                      try { const saved = await saveConfig(next); acceptSavedOwner(next, saved); } catch (e) { if (!(e instanceof StaleConfigSessionError)) messageApi.error(e as string); }
                                     }}
                                     renderInput={(params) => (
                                       <TextField
@@ -1606,9 +1675,11 @@ export default function SettingsPage() {
                             setNewKeyModel("");
                             setShowAddKeyDialog(false);
                             try {
-                              await saveConfig(next);
+                              const saved = await saveConfig(next);
+                              acceptSavedOwner(next, saved);
                               messageApi.success(`已添加 API Key「${name}」。`);
                             } catch (e) {
+                              if (e instanceof StaleConfigSessionError) return;
                               messageApi.error(e as string);
                             }
                           }}

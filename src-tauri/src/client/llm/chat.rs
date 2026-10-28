@@ -137,6 +137,14 @@ impl LlmRuntime {
         Ok(())
     }
 
+    pub async fn snapshot_state(&self) -> Option<LlmSnapshot> {
+        self.state.read().await.clone()
+    }
+
+    pub async fn restore_snapshot(&self, snapshot: Option<LlmSnapshot>) {
+        *self.state.write().await = snapshot;
+    }
+
     pub async fn snapshot(&self) -> Result<LlmSnapshot> {
         self.state
             .read()

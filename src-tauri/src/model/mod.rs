@@ -77,6 +77,20 @@ pub struct File {
     pub content_type: String,
     #[serde(default)]
     pub preview_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_type: Option<String>,
+}
+
+impl File {
+    pub fn expected_download_size(&self) -> Option<u64> {
+        // The frontend's external-link adapter uses size=0 for unknown length.
+        // A Canvas API file with size=0 is instead an explicitly empty file.
+        if self.size == 0 && self.external_type.as_deref() == Some("File") {
+            None
+        } else {
+            Some(self.size)
+        }
+    }
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -147,7 +161,7 @@ pub enum Theme {
     Dark,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct LlmApiKeyEntry {
     pub name: String,
     pub key: String,
@@ -157,7 +171,7 @@ pub struct LlmApiKeyEntry {
     pub model: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
     pub token: String,
@@ -641,7 +655,7 @@ pub struct PersonalSpaceInfo {
     pub message: String,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JBoxLoginInfo {
     #[serde(default)]
     pub library_id: String,
@@ -1307,4 +1321,31 @@ pub struct NetworkRequestLog {
     pub response_body: Option<String>,
     pub response_body_truncated: bool,
     pub error: Option<String>,
+}
+
+impl std::fmt::Debug for LlmApiKeyEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LlmApiKeyEntry")
+            .field("key_configured", &!self.key.is_empty())
+            .finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for AppConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AppConfig")
+            .field("account_type", &self.account_type)
+            .field("token_configured", &!self.token.is_empty())
+            .field("llm_key_count", &self.llm_api_keys.len())
+            .field("debug_mode", &self.debug_mode)
+            .finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for JBoxLoginInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("JBoxLoginInfo")
+            .field("access_token_configured", &!self.access_token.is_empty())
+            .finish_non_exhaustive()
+    }
 }

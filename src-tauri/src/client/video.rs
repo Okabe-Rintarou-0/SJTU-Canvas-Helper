@@ -724,11 +724,6 @@ fn get_cookie_value(cookies: &str, name: &str) -> Option<String> {
 // Apis here are for course video
 // We take references from: https://github.com/prcwcy/sjtu-canvas-video-download/blob/master/sjtu_canvas_video.py
 impl Client {
-    pub fn init_cookie(&self, cookie: &str) {
-        self.jar
-            .add_cookie_str(cookie, &Url::parse(VIDEO_BASE_URL).unwrap());
-    }
-
     // The extra login flow may bounce across jAccount and my.sjtu domains,
     // so we attach the cookie to both hosts before probing protected pages.
     fn attach_ja_auth_cookie(&self, cookie: &str) {
@@ -791,7 +786,6 @@ impl Client {
         }
         if let Some(cookies) = login_jar.cookies(&Url::parse(VIDEO_BASE_URL).unwrap()) {
             if let Ok(cookies) = cookies.to_str() {
-                self.init_cookie(cookies);
                 return Ok(Some(cookies.to_owned()));
             }
         }
@@ -858,44 +852,46 @@ impl Client {
     }
 
     async fn get_video_space_token_from_url(&self, launch_url: &str) -> Result<String> {
-        let client = reqwest::Client::builder()
-            .redirect(Policy::none())
-            .cookie_provider(self.jar.clone())
-            .build()?;
-        let mut request = client.get(launch_url);
-        for _ in 0..16 {
-            let response = request.send().await?.error_for_status()?;
-            let base = response.url().clone();
-            if base.domain() == Some("jaccount.sjtu.edu.cn") {
-                return Err(AppError::LoginError);
-            }
-            if let Some(location) = response.headers().get("location") {
-                let next = base
-                    .join(location.to_str()?)
-                    .map_err(|_| AppError::LoginError)?;
-                if let Some(token) = jwt_token_from_location(next.as_str()) {
+        super::authentication(async {
+            let client = reqwest::Client::builder()
+                .redirect(Policy::none())
+                .cookie_provider(self.jar.clone())
+                .build()?;
+            let mut request = client.get(launch_url);
+            for _ in 0..16 {
+                let response = request.send().await?.error_for_status()?;
+                let base = response.url().clone();
+                if base.domain() == Some("jaccount.sjtu.edu.cn") {
+                    return Err(AppError::LoginError);
+                }
+                if let Some(location) = response.headers().get("location") {
+                    let next = base
+                        .join(location.to_str()?)
+                        .map_err(|_| AppError::LoginError)?;
+                    if let Some(token) = jwt_token_from_location(next.as_str()) {
+                        return Ok(token);
+                    }
+                    request = client.get(next);
+                    continue;
+                }
+                let body = response.text().await?;
+                let document = Document::from(body.as_str());
+                let embedded_token = document
+                    .find(Name("iframe"))
+                    .filter_map(|node| node.attr("src"))
+                    .find_map(jwt_token_from_location);
+                if let Some(token) = embedded_token {
                     return Ok(token);
                 }
-                request = client.get(next);
-                continue;
+                let (action, data) = self.get_form_submission_from_doc(document)?;
+                request = client
+                    .post(self.resolve_form_action(&base, &action)?)
+                    .form(&data);
             }
-            let body = response.text().await?;
-            let document = Document::from(body.as_str());
-            let embedded_token = document
-                .find(Name("iframe"))
-                .filter_map(|node| node.attr("src"))
-                .find_map(jwt_token_from_location);
-            if let Some(token) = embedded_token {
-                return Ok(token);
-            }
-            let (action, data) = self.get_form_submission_from_doc(document)?;
-            request = client
-                .post(self.resolve_form_action(&base, &action)?)
-                .form(&data);
-        }
-        Err(AppError::VideoDownloadError(
-            "Video space login did not finish".into(),
-        ))
+            Err(AppError::VideoDownloadError(
+                "Video space login did not finish".into(),
+            ))
+        }).await
     }
 
     pub async fn list_video_space_courses(&self) -> Result<Vec<Course>> {
@@ -1055,24 +1051,26 @@ impl Client {
     }
 
     async fn get_teaching_class_id_token(&self, course_id: i64) -> Result<(i64, String)> {
-        let token = self.get_video_launch_token(course_id).await?;
-        let url = format!("{RESOURCE_MANAGE_BASE_URL}/lms/launch-context");
-        let response = self
-            .cli
-            .get(url)
-            .header("jwt-token", &token)
-            .header(REFERER, RESOURCE_MANAGE_UI_URL)
-            .send()
-            .await?
-            .error_for_status()?;
-        let value: Value = serde_json::from_slice(&response.bytes().await?)?;
-        let data = api_data(&value)?;
-        let teaching_class_id = value_as_i64(
-            data.get("canvasRecord")
-                .and_then(|record| record.get("teachingClassId")),
-        )
-        .ok_or_else(|| AppError::VideoDownloadError("Teaching class id is missing".to_string()))?;
-        Ok((teaching_class_id, token))
+        super::authentication(async {
+            let token = self.get_video_launch_token(course_id).await?;
+            let url = format!("{RESOURCE_MANAGE_BASE_URL}/lms/launch-context");
+            let response = self
+                .cli
+                .get(url)
+                .header("jwt-token", &token)
+                .header(REFERER, RESOURCE_MANAGE_UI_URL)
+                .send()
+                .await?
+                .error_for_status()?;
+            let value: Value = serde_json::from_slice(&response.bytes().await?)?;
+            let data = api_data(&value)?;
+            let teaching_class_id = value_as_i64(
+                data.get("canvasRecord")
+                    .and_then(|record| record.get("teachingClassId")),
+            )
+            .ok_or_else(|| AppError::VideoDownloadError("Teaching class id is missing".to_string()))?;
+            Ok((teaching_class_id, token))
+        }).await
     }
 
     pub async fn get_canvas_videos(&self, course_id: i64) -> Result<Vec<CanvasVideo>> {
@@ -1301,22 +1299,30 @@ impl Client {
         canvas_videos_from_response(&value, source)
     }
 
-    pub async fn get_oauth_consumer_key(&self) -> Result<Option<String>> {
-        let resp = self.get_request(VIDEO_OAUTH_KEY_URL, None::<&str>).await?;
+    pub(crate) fn video_client_for_cookies(cookies: &str) -> Result<reqwest::Client> {
+        // Saved media credentials use the same fixed origin/path boundary as
+        // download snapshots, including every redirect in key/info requests.
+        super::media_auth::client_for_cookie_scope(cookies, Url::parse(VIDEO_BASE_URL).unwrap())
+    }
+
+    pub async fn get_oauth_consumer_key_for_cookies(&self, cookies: &str) -> Result<Option<String>> {
+        let client = Self::video_client_for_cookies(cookies)?;
+        self.get_oauth_consumer_key_with_client(&client).await
+    }
+
+    pub(crate) async fn get_oauth_consumer_key_with_client(&self, client: &reqwest::Client) -> Result<Option<String>> {
+        let request = client.get(VIDEO_OAUTH_KEY_URL).build()?;
+        let resp = self.debug_store.send(client, request).await?;
         let body = resp.text().await?;
         let document = Document::from(body.as_str());
-
-        let Some(meta) = document
-            .find(Name("meta"))
-            .find(|n: &Node| n.attr("id").unwrap_or_default() == "xForSecName")
-        else {
+        let Some(meta) = document.find(Name("meta")).find(|n: &Node| n.attr("id").unwrap_or_default() == "xForSecName") else {
             return Ok(None);
         };
         let Some(v) = meta.attr("vaule") else {
             return Ok(None);
         };
-        let bytes = &STANDARD.decode(v)?;
-        Ok(Some(format!("{}", String::from_utf8_lossy(bytes))))
+        let bytes = STANDARD.decode(v)?;
+        Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
     }
 
     pub async fn get_video_course(
@@ -1361,7 +1367,7 @@ impl Client {
     }
 
     async fn get_download_video_metadata(&self, url: &str) -> Result<(u64, bool)> {
-        let resp = self.download_video_partial(url, 0, 0).await?;
+        let resp = self.download_video_partial(url, 0, 0).await?.error_for_status().map_err(reqwest::Error::without_url)?;
         tracing::info!(status = resp.status().as_u16(), "Video download metadata received");
         Ok(parse_download_probe(resp.status(), resp.headers()))
     }
@@ -1372,7 +1378,6 @@ impl Client {
         save_path: &str,
         progress_handler: F,
     ) -> Result<()> {
-        let output_file = Arc::new(Mutex::new(File::create(save_path)?));
         let url = &video.rtmp_url_hdv;
         let (size, supports_range) = self.get_download_video_metadata(url).await?;
         let payload = ProgressPayload {
@@ -1405,6 +1410,7 @@ impl Client {
                 return Err(AppError::VideoDownloadError(save_path.to_owned()));
             }
 
+            let output_file = Arc::new(Mutex::new(File::create(save_path)?));
             let progress_handler = Arc::new(Mutex::new(progress_handler));
             let payload = Arc::new(Mutex::new(payload));
             let mut current_offset = 0;
@@ -1422,6 +1428,7 @@ impl Client {
             return Ok(());
         }
 
+        let output_file = Arc::new(Mutex::new(File::create(save_path)?));
         let progress_handler = Arc::new(Mutex::new(progress_handler));
         let payload = Arc::new(Mutex::new(payload));
 
@@ -1497,10 +1504,11 @@ impl Client {
         video_info_from_response(&value)
     }
 
-    pub async fn get_video_info(
+    pub(crate) async fn get_video_info_with_client(
         &self,
         video_id: i64,
         oauth_consumer_key: &str,
+        client: &reqwest::Client,
     ) -> Result<VideoInfo> {
         let mut form_data = HashMap::new();
         let oauth_nonce = self.get_oauth_nonce();
@@ -1513,8 +1521,7 @@ impl Client {
         form_data.insert(OAUTH_RANDOM_P1, OAUTH_RANDOM_P1_VAL);
         form_data.insert(OAUTH_RANDOM_P2, OAUTH_RANDOM_P2_VAL);
 
-        let response = self
-            .cli
+        let response = client
             .post(VIDEO_INFO_URL)
             .form(&form_data)
             .header(ACCEPT, "application/json")
@@ -1742,6 +1749,16 @@ mod tests {
 
     use super::*;
     use reqwest::header::{HeaderMap, HeaderValue, ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE};
+
+    #[test]
+    fn saved_video_client_rejects_malformed_cookie_headers() {
+        // This exercises the production entry point, without sending a request.
+        // Cookie-scope HTTP behavior is covered at the shared factory boundary.
+        for invalid in ["missing-equals", "=value", "bad name=value", "session=bad\nvalue"] {
+            assert!(Client::video_client_for_cookies(invalid).is_err());
+        }
+        assert!(Client::video_client_for_cookies("session=synthetic; other=value").is_ok());
+    }
 
     #[test]
     fn test_live_list_keeps_upcoming_sections_and_requires_valid_times() {
@@ -2100,8 +2117,8 @@ mod tests {
         sso.assert();
     }
 
+    #[ignore = "Live service: requires explicit credentials/network opt-in"]
     #[tokio::test]
-    #[ignore = "requires the live SJTU authentication service"]
     async fn test_get_uuid() -> Result<()> {
         let cli = Client::default();
         let uuid = cli.get_uuid().await?;

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { PropsWithChildren } from "react";
 import SyllabusPage from "../../page/syllabus";
 import type { Course } from "../../lib/model";
+import { invalidateSession } from "../../lib/session";
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), log: vi.fn(), initialCourse: 1 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
@@ -24,10 +25,18 @@ vi.mock("../../lib/hooks", async () => {
 const course = (syllabus_body = ""): Course => ({ id: 1, syllabus_body } as Course);
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.invoke.mockReset();
   mocks.initialCourse = 1;
   mocks.invoke.mockResolvedValue(course());
 });
 afterEach(cleanup);
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
 
 it("shows a helpful failure with retry, keeps diagnostics out of the page and clears errors after success", async () => {
   const technical = "Json deserialization error, object type: sjtu_canvas_helper::model::Course, reason: invalid_type";
@@ -75,4 +84,35 @@ it("ignores a previous course's late error and clears content when selection is 
   fireEvent.change(screen.getByRole("combobox", { name: "课程" }), { target: { value: "-1" } });
   expect(screen.getByText("请先选择课程")).toBeVisible();
   expect(screen.queryByText("课程二的大纲")).not.toBeInTheDocument();
+});
+
+it.each(["resolve", "reject"])("ignores a previous account session's late %s with the same course selected", async (completion) => {
+  const old = deferred<Course>();
+  mocks.invoke.mockReturnValueOnce(old.promise).mockResolvedValueOnce(course("<p>当前账号的大纲</p>"));
+  render(<SyllabusPage />);
+  await waitFor(() => expect(mocks.invoke).toHaveBeenCalledTimes(1));
+  // The mocked selection deliberately remains 1: ownership must not depend on a course change.
+  act(() => invalidateSession());
+  expect(await screen.findByText("当前账号的大纲")).toBeVisible();
+  expect(mocks.invoke).toHaveBeenNthCalledWith(2, "get_course_syllabus", { courseId: 1 });
+  await act(async () => {
+    if (completion === "resolve") old.resolve(course("<p>旧账号的大纲</p>"));
+    else old.reject(new Error("old account syllabus failed"));
+  });
+  expect(screen.getByText("当前账号的大纲")).toBeVisible();
+  expect(screen.queryByText("旧账号的大纲")).not.toBeInTheDocument();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(mocks.log).not.toHaveBeenCalled();
+});
+
+it("clears displayed syllabus as soon as the account session expires", async () => {
+  const current = deferred<Course>();
+  mocks.invoke.mockResolvedValueOnce(course("<p>旧账号可见资料</p>")).mockReturnValueOnce(current.promise);
+  render(<SyllabusPage />);
+  await screen.findByText("旧账号可见资料");
+  act(() => invalidateSession());
+  expect(screen.queryByText("旧账号可见资料")).not.toBeInTheDocument();
+  await waitFor(() => expect(mocks.invoke).toHaveBeenCalledTimes(2));
+  await act(async () => current.resolve(course("<p>当前账号可见资料</p>")));
+  expect(screen.getByText("当前账号可见资料")).toBeVisible();
 });

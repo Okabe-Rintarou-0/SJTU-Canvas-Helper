@@ -8,20 +8,24 @@ pub mod ai;
 pub mod annual;
 pub mod basic;
 mod common;
+pub(crate) use common::authentication;
 pub mod constants;
 mod debug;
 mod file_parser;
 pub mod jbox;
 mod llm;
+mod media_auth;
 pub mod video;
 pub mod video_library;
 
 pub struct Client {
     cli: reqwest::Client,
+    canvas_cli: reqwest::Client,
+    download_cli: reqwest::Client,
     jar: Arc<Jar>,
     base_url: RwLock<String>,
     token: RwLock<String>,
     llm_cli: LlmRuntime,
     file_parser: file_parser::GenericFileParser,
-    debug_store: debug::NetworkDebugStore,
+    debug_store: Arc<debug::NetworkDebugStore>,
 }
