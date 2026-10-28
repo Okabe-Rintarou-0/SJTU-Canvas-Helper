@@ -10,6 +10,7 @@ pub mod basic;
 mod common;
 pub mod constants;
 mod debug;
+mod download_ranges;
 mod file_parser;
 pub mod jbox;
 mod llm;

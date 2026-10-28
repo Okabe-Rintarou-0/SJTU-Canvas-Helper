@@ -17,7 +17,7 @@ use std::{
 };
 use tauri::{Emitter, Runtime, Window};
 use tokio::{io::AsyncReadExt, process::Command as TokioCommand};
-use tokio::{sync::RwLock, task::JoinSet};
+use tokio::sync::RwLock;
 use uuid::Uuid;
 use warp::filters::query::raw as query_raw;
 use warp::{hyper::Response, Filter};
@@ -29,7 +29,7 @@ use crate::{
     },
     error,
     model::*,
-    utils::{self, file::TempFile},
+    utils,
 };
 
 use super::{
@@ -754,62 +754,6 @@ impl App {
     pub async fn list_course_images(&self, course_id: i64) -> Result<Vec<File>> {
         let token = self.config.read().await.token.clone();
         self.client.list_course_images(course_id, &token).await
-    }
-
-    async fn filter_course_qrcode_images_inner(
-        file: File,
-        save_dir: String,
-    ) -> Result<QRCodeScanResult> {
-        let mut scan_result = QRCodeScanResult {
-            file: file.clone(),
-            contents: vec![],
-        };
-        let supported_formats = ["jpg", "jpeg", "png"];
-        let ext = file.display_name.split('.').next_back().unwrap_or_default();
-        if !supported_formats.contains(&ext) {
-            return Ok(scan_result);
-        }
-        let content = Client::get_file_content(&file).await?;
-        let mut tmp_file = TempFile::with_extension(&save_dir, ext)?;
-        tmp_file.write_all(&content)?;
-
-        let tmp_path = tmp_file.path();
-        let img = image::open(tmp_path)?;
-        let decoder = bardecoder::default_decoder();
-
-        let results = decoder.decode(&img);
-        for content in results.into_iter().flatten() {
-            scan_result.contents.push(content);
-        }
-        Ok(scan_result)
-    }
-
-    pub async fn filter_course_qrcode_images(
-        &self,
-        course_id: i64,
-    ) -> Result<Vec<QRCodeScanResult>> {
-        let images = self.list_course_images(course_id).await?;
-        let mut tasks = JoinSet::new();
-        let mut results = vec![];
-        let save_dir = self.config.read().await.save_path.clone();
-        for image in images.into_iter() {
-            tasks.spawn(Self::filter_course_qrcode_images_inner(
-                image,
-                save_dir.clone(),
-            ));
-        }
-        while let Some(res) = tasks.join_next().await {
-            let result = res?;
-            match result {
-                Ok(scan_result) => {
-                    if !scan_result.contents.is_empty() {
-                        results.push(scan_result);
-                    }
-                }
-                Err(err) => tracing::error!(error = %err, "Background file download failed"),
-            }
-        }
-        Ok(results)
     }
 
     pub async fn list_course_users(&self, course_id: i64) -> Result<Vec<User>> {
