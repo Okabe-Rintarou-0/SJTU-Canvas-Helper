@@ -94,6 +94,13 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
 
+      # tauri-action writes latest.json in this job's workspace. Logs are optional;
+      # keep the existing per-platform update publication if enrichment fails.
+      - name: Add cumulative update changelog
+        continue-on-error: true
+        run: |
+          node --test script/prepare-update-manifest.node-test.mjs
+          node script/prepare-update-manifest.mjs latest.json
       # GitHub now rejects GITHUB_TOKEN for updating (PATCH) an existing release
       # with 403 "Resource not accessible by integration". Uploading the updater
       # manifest as an asset (POST) is still allowed, so we replace the release's
