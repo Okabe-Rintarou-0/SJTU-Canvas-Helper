@@ -10,6 +10,20 @@ import styles from "../css/markdown.module.css";
 import { decodeBase64Data } from "../lib/utils";
 import RendererShell from "./renderer_shell";
 
+// React treats these renderers as component types; keep their identity across renders.
+const markdownComponents = {
+  code({ className, children, node: _node, ...props }: any) {
+    const match = /language-(\w+)/.exec(className || "");
+    return match ? (
+      <SyntaxHighlighter style={dracula} PreTag="div" language={match[1]} {...props}>
+        {String(children).replace(/\n$/, "")}
+      </SyntaxHighlighter>
+    ) : (
+      <code className={className} {...props}>{children}</code>
+    );
+  },
+};
+
 export default function MarkdownRenderer({
   mainState: { currentDocument },
 }: DocRendererProps) {
@@ -31,26 +45,7 @@ export default function MarkdownRenderer({
       <Box className={`${styles.markdownContainer} ${styles.markdown}`}>
         <Markdown
           remarkPlugins={[remarkGfm]}
-          components={{
-            code({ className, children, ...props }: any) {
-              const match = /language-(\w+)/.exec(className || "");
-
-              return match ? (
-                <SyntaxHighlighter
-                  style={dracula}
-                  PreTag="div"
-                  language={match[1]}
-                  {...props}
-                >
-                  {String(children).replace(/\n$/, "")}
-                </SyntaxHighlighter>
-              ) : (
-                <code className={className} {...props}>
-                  {children}
-                </code>
-              );
-            },
-          }}
+          components={markdownComponents}
         >
           {data}
         </Markdown>

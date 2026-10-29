@@ -52,6 +52,15 @@ export default function ArchiveRenderer({
   const [treeData, setTreeData] = useState<ArchiveTreeNode | undefined>();
   const [fileMap, setFileMap] = useState<Map<string, any> | undefined>();
   const [selectedDoc, setSelectedDoc] = useState<IDocument | undefined>();
+  const selectedViewer = useMemo(() => selectedDoc ? (
+    <DocViewer
+      key={selectedDoc.uri}
+      config={{ header: { disableHeader: true, disableFileName: true, retainURLParams: true } }}
+      pluginRenderers={ArchiveSupportedRenderers}
+      documents={[selectedDoc]}
+      style={{ height: "100%" }}
+    />
+  ) : null, [selectedDoc]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | undefined>();
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
@@ -431,19 +440,7 @@ export default function ArchiveRenderer({
               <Divider />
               <Box sx={{ flex: 1, minHeight: 0 }}>
                 {selectedDoc ? (
-                  <DocViewer
-                    key={selectedDoc.uri}
-                    config={{
-                      header: {
-                        disableHeader: true,
-                        disableFileName: true,
-                        retainURLParams: true,
-                      },
-                    }}
-                    pluginRenderers={ArchiveSupportedRenderers}
-                    documents={[selectedDoc]}
-                    style={{ height: "100%" }}
-                  />
+                  selectedViewer
                 ) : (
                   <Box
                     sx={{

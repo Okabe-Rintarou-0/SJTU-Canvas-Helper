@@ -433,16 +433,11 @@ export default function FilesPage() {
     return containsKeyword && downloadable;
   };
 
-  const noSelectedMergeFiles =
+  const supportedMergeFiles = useMemo(() =>
     (selectedEntries.filter(isFile) as File[]).filter((file) =>
       isMergableFileType(file.display_name)
-    ).length < 2;
-
-  const getSupportedMergeFiles = () => {
-    return (selectedEntries as File[]).filter((file) =>
-      isMergableFileType(file.display_name)
-    );
-  };
+    ), [selectedEntries]);
+  const noSelectedMergeFiles = supportedMergeFiles.length < 2;
 
   const filteredEntries = useMemo(
     () =>
@@ -486,7 +481,7 @@ export default function FilesPage() {
           mergePDFs(orderedFiles);
         }}
         handleCancel={() => setOpenFileOrderSelectModal(false)}
-        files={getSupportedMergeFiles()}
+        files={supportedMergeFiles}
       />
 
       <FileAIChatModal
@@ -590,7 +585,7 @@ export default function FilesPage() {
               >
                 {section === COURSE_FILES ? (
                   <CourseSelect
-                    onChange={(courseId) => setSelectedCourseId(courseId)}
+                    onChange={setSelectedCourseId}
                     disabled={operating}
                     courses={courses.data}
                     value={selectedCourseId > 0 ? selectedCourseId : undefined}

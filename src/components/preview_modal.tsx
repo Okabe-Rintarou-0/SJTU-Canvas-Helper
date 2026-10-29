@@ -15,7 +15,7 @@ import {
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
-import { CSSProperties, ReactNode, useEffect, useMemo, useState } from "react";
+import { CSSProperties, ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { File } from "../lib/model";
 import {
@@ -111,6 +111,8 @@ export default function PreviewModal({
   const [previews, setPreviews] = useState<ResolvedPreview[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const cancelPreviewRef = useRef(handleCancelPreview);
+  useLayoutEffect(() => { cancelPreviewRef.current = handleCancelPreview; }, [handleCancelPreview]);
 
   useEffect(() => {
     if (!open || files.length === 0) {
@@ -128,7 +130,7 @@ export default function PreviewModal({
         );
         if (!cancelled) {
           if (nextPreviews.some((preview) => preview.kind === "window")) {
-            handleCancelPreview?.();
+            cancelPreviewRef.current?.();
           } else {
             setPreviews(nextPreviews);
           }
@@ -147,7 +149,7 @@ export default function PreviewModal({
     return () => {
       cancelled = true;
     };
-  }, [files, handleCancelPreview, open]);
+  }, [files, open]);
 
   const docs = useMemo(
     () =>

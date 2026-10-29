@@ -1,5 +1,5 @@
 import WorkspaceSelect from "../components/workspace_select";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Link as RouterLink } from "react-router-dom";
@@ -15,13 +15,12 @@ import { alpha } from "@mui/material/styles";
 import BasicLayout from "../components/layout";
 import CourseSelect from "../components/course_select";
 import VideoTrackDownloads from "../components/video_track_downloads";
-import VideoLibraryTasks from "../components/video_library_tasks";
+import { VideoLibraryTaskQueue } from "../components/video_library_tasks";
 import VideoAggregator from "../components/video_aggregator";
 import VideoLibraryPlayer from "../components/video_library_player";
 import VideoLivePanel from "../components/video_live_panel";
 import FileAIChatModal from "../components/file_ai_chat_modal";
 import { useCourses, useConfigSelector } from "../lib/hooks";
-import { useTasks } from "../lib/task_hooks";
 import { useAppMessage } from "../lib/message";
 import { compareVideoCourses, loadVideoCourse, mergeVideoCourses } from "../lib/video_courses";
 import { canSummarizeRecording, groupVideoSessions, groupSessionsByDate, parseVideoCitation, formatVideoTimestamp, recordingKey, recordingTime, selectedSessionScopes, toggleRecordings, type VideoExportOptions, type VideoSession } from "../lib/video_library";
@@ -98,7 +97,6 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
       setCacheListOpen(false); setAggregator(false); setTrackDownload(undefined);
     }
   }, [active]);
-  const tasks = useTasks();
   const [messageApi, contextHolder] = useAppMessage();
   const sessions = useMemo(() => groupVideoSessions(videos), [videos]);
   const dateGroups = useMemo(() => groupSessionsByDate(sessions.map((session) => ({ session }))), [sessions]);
@@ -154,10 +152,10 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   const chatSessionId = chatMessages[0]?.id;
   useEffect(() => { if (active && (!playerMini || chatOpen)) workspaceRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }); }, [active, player?.nonce, playerMini, chatOpen, chatSessionId]);
 
-  const changeCourse = (id: number) => {
+  const changeCourse = useCallback((id: number) => {
     setCourseId(id === -1 ? undefined : id); setVideos([]); setSelected(new Set()); setExpanded(new Map());
     setQuery(""); setStatus("all"); setPlayer(undefined); setLoadError(""); videoSummarySession.clearMaterials();
-  };
+  }, []);
   const play = (session: VideoSession, key?: string, seconds = 0) => {
     if (!player) setPlayerMini(false);
     const video = key ? session.videos.find((v) => recordingKey(v) === key) : session.videos.find(isPlayable);
@@ -348,7 +346,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
           </Stack>
         </CardContent>
       </Card>
-      {!centerOnly && <Box><VideoLibraryTasks tasks={tasks.filter((task) => task.source === "video")} /></Box>}
+      {!centerOnly && <Box><VideoLibraryTaskQueue /></Box>}
     </Stack>
     <Menu anchorEl={toolsAnchor} open={active && !!toolsAnchor} onClose={() => setToolsAnchor(null)}><MenuItem onClick={() => { setAggregator(true); setToolsAnchor(null); }}>视频合成工具</MenuItem></Menu>
     <Dialog open={active && !!downloadScopes} onClose={() => { if (!exporting) setDownloadScopes(undefined); }} fullWidth maxWidth="sm">

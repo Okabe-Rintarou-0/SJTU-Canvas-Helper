@@ -1,8 +1,9 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import FilesPage from "../../page/files";
 import { fileAISession } from "../../lib/file_ai_session";
+import type { DraggableItem } from "../../lib/model";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(), listen: vi.fn(), noop: vi.fn(), empty: [],
@@ -23,14 +24,37 @@ vi.mock("../../lib/hooks", () => ({
 }));
 vi.mock("../../lib/message", () => ({ useAppMessage: () => [mocks.messages] }));
 vi.mock("../../lib/utils", () => ({ formatDate: (value: string) => value, formatSize: () => "20 B", getFileIcon: () => null,
-  isMergableFileType: () => false, consoleLog: vi.fn(), scrollToTop: vi.fn() }));
+  isMergableFileType: (name: string) => name.endsWith(".pdf"), consoleLog: vi.fn(), scrollToTop: vi.fn() }));
 vi.mock("../layout", () => ({ default: ({ children }: { children: ReactNode }) => <>{children}</> }));
 vi.mock("../page_task_lists", () => ({ default: ({ children }: { children: ReactNode }) => <>{children}</> }));
 vi.mock("../course_select", () => ({ default: () => null }));
 vi.mock("../file_download_table", () => ({ default: () => null }));
-vi.mock("../file_order_select_modal", () => ({ default: () => null }));
+vi.mock("../draggable_list", () => ({ default: ({ items, onDragEnd }: { items: DraggableItem[]; onDragEnd: (items: DraggableItem[]) => void }) => <div>
+  <span data-testid="merge-order">{items.map((item) => item.content).join(",")}</span>
+  <button onClick={() => onDragEnd([...items].reverse())}>调换顺序</button>
+</div> }));
 
 afterEach(() => { cleanup(); fileAISession.reset(); vi.restoreAllMocks(); });
+
+it("keeps the user's PDF merge order across unrelated file page updates", () => {
+  mocks.files.push({ ...mocks.files[0], id: 13, key: "second", uuid: "second", display_name: "第二份.pdf" });
+  mocks.noop.mockClear();
+  try {
+    const view = render(<FilesPage />);
+    for (const name of ["作业.pdf", "第二份.pdf"]) {
+      fireEvent.click(within(screen.getByText(name).closest("tr")!).getByRole("checkbox"));
+    }
+    fireEvent.click(screen.getByRole("button", { name: "合并 Word/PDF/PPTX" }));
+    fireEvent.click(screen.getByRole("button", { name: "调换顺序" }));
+    expect(screen.getByTestId("merge-order")).toHaveTextContent("第二份.pdf,作业.pdf");
+    view.rerender(<FilesPage />);
+    expect(screen.getByTestId("merge-order")).toHaveTextContent("第二份.pdf,作业.pdf");
+    fireEvent.click(screen.getByRole("button", { name: "确认顺序" }));
+    expect(mocks.noop).toHaveBeenCalledWith([mocks.files[1], mocks.files[0]]);
+  } finally {
+    mocks.files.pop();
+  }
+}, 15_000);
 
 it("restores the real file conversation after leaving, including chunks received in the background", async () => {
   Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: vi.fn() });
