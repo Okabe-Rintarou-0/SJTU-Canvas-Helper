@@ -413,7 +413,9 @@ mod tests {
         fn new() -> Self {
             let p = std::env::temp_dir().join(format!("canvas-downloads-{}", uuid::Uuid::new_v4()));
             fs::create_dir_all(&p).unwrap();
-            Self(p)
+            // macOS temp directories may have symlink ancestors such as /var.
+            // Resolve the fixture root before exercising the no-symlink policy.
+            Self(fs::canonicalize(p).unwrap())
         }
     }
     impl Drop for Temp {

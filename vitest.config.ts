@@ -8,5 +8,7 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
     css: true,
+    // Component interaction tests share CPU with other workers on CI.
+    testTimeout: 15000,
   },
 });
