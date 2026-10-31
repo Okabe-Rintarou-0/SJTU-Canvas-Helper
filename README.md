@@ -51,9 +51,11 @@ SJTU Canvas 小帮手基于 [Tauri](https://tauri.app/) 开发，助您更便捷
 
 ### 首次配置
 
-安装完成后，请前往设置页面填写您的 `Canvas Token` 以及文件下载保存目录。
+安装完成后，前往 **系统设置 → 账号与连接**，选择账号类型，点击 **获取 Canvas Token** 查看创建步骤并打开对应的 Canvas 页面。将生成的 Token 填回输入框，设置下载保存目录，可点击 **测试 Canvas Token** 确认连接，完成后点击 **保存全部设置**。课堂视频优先使用 Canvas Token 换取网页会话并完成 LTI 鉴权，失败时自动回退到额外登录态；需要时可在此分类扫码登录后返回视频页刷新。该流程参考了 [Dela 的 Canvas 登录实现](https://github.com/Chang-Yo/Dela/blob/6f4c808620aaccb131284aecccd7513448af5a2a/src/main/canvas/api.ts)。
 
-![](./images/settings.png)
+主题和主色调位于 **界面偏好**，模型服务与课堂总结配置位于 **AI 与模型**，MCP、Debug 和实验性功能位于 **高级与实验**。切换分类会保留当前修改，**保存全部设置** 会保存各分类的修改。
+
+![系统设置中的账号与连接分类](./images/settings.png)
 
 ## 致谢
 
@@ -70,7 +72,7 @@ SJTU Canvas 小帮手基于 [Tauri](https://tauri.app/) 开发，助您更便捷
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/pangbo13"><img src="https://avatars.githubusercontent.com/u/51732678?v=4?s=100" width="100px;" alt="PangBo"/><br /><sub><b>PangBo</b></sub></a><br /><a href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/commits?author=pangbo13" title="Code">💻</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/wytili"><img src="https://avatars.githubusercontent.com/u/61528682?v=4?s=100" width="100px;" alt="Yiting Wang"/><br /><sub><b>Yiting Wang</b></sub></a><br /><a href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/commits?author=wytili" title="Code">💻</a></td>
       <td align="center" valign="top" width="14.28%"><a href="http://blog.a-stable.com"><img src="https://avatars.githubusercontent.com/u/66514911?v=4?s=100" width="100px;" alt="Yuxuan Sun"/><br /><sub><b>Yuxuan Sun</b></sub></a><br /><a href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/commits?author=definfo" title="Code">💻</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/yingyx"><img src="https://avatars.githubusercontent.com/u/191231288?v=4?s=100" width="100px;" alt="Yuxuan Ying"/><br /><sub><b>Yuxuan Ying</b></sub></a><br /><a href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/commits?author=yingyx" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/yingyx"><img src="https://avatars.githubusercontent.com/u/191231288?v=4?s=100" width="100px;" alt="Yuxuan Ying"/><br /><sub><b>Yuxuan Ying</b></sub></a><br /><a href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/commits?author=yingyx" title="Code">💻</a><a href="#maintenance-yingyx" title="Maintenance">🚧</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://young-lord.github.io"><img src="https://avatars.githubusercontent.com/u/51789698?v=4?s=100" width="100px;" alt="LY"/><br /><sub><b>LY</b></sub></a><br /><a href="https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper/commits?author=young-lord" title="Code">💻</a></td>
     </tr>
   </tbody>

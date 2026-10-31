@@ -14,145 +14,9 @@ import {
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 
-const changeLogs = [{
-  version: "v3.0.13",
-  date: "2026/10/1",
-  items: [
-    "视频中心全面升级：更新界面，支持多小节播放、导出与 AI 总结，优化选择和下载操作；AI 总结接入 PPT OCR 信息，结合字幕整理课堂内容。",
-    "新增实验性 PPT 页面清理功能：减少桌面、签到和连续重复或动画切片，应用于 AI 总结与 PDF 导出。默认关闭，可在「系统设置 → 实验性功能」开启「导出 PPT 时去除无用页面」，点击「保存实验性功能」后生效。",
-    "新增实验性任务中心入口：可用左下角任务中心替代各页任务列表。默认关闭，可在「系统设置 → 实验性功能」开启「使用任务中心替代页面任务列表」，点击「保存实验性功能」后生效。",
-    "统一 AI 模型配置，支持迁移旧配置，新增「交大致远一号」预设。",
-    "文件管理新增「转换为 PDF 后下载」和「转换为 PDF 后上传」操作，可将支持的文件转换为 PDF 后下载到本地或上传云盘。",
-    "修复同一学期的视频课程因中英文课程名或教师显示名不同而重复出现的问题：优先按课程代码合并 Canvas 与视频空间中的同一课程。",
-    "文件预览接入 Canvas 增强在线预览，使用独立窗口查看 Word、PPT 和 PDF；在线预览不可用时，PPT 与 PDF 可回退到本地预览。",
-    "修复界面缩放仅作用于内容区的问题：Ctrl/Command + 加号或减号可统一缩放内容、侧边栏和弹窗；滚轮保持正常滚动。",
-    "各位国庆快乐",
-  ],
-}, {
-  version: "v3.0.12",
-  date: "2026/9/28",
-  items: [
-    "课程录像来源更齐全：可在同一处选择新版 Canvas、视频空间和旧版课堂视频。",
-    "课堂视频播放更稳定，支持新版 Canvas 直播；暂不可播放或没有字幕时会显示提示。",
-    "启动时会自动检查更新；发现新版本会弹窗并在左下角提示，可选择稍后、跳过此版本或永不提醒。",
-  ],
-}, {
-  version: "v3.0.11",
-  date: "2026/9/5",
-  items: [
-    "适配 Canvas 课堂视频服务更新，修复部分课堂录像无法加载或播放的问题。",
-    "录像按上课顺序排列；暂无回放或字幕时会显示提示。",
-  ],
-}, {
-  version: "v3.0.10",
-  date: "2026/8/23",
-  items: [
-    "修复课程列表因未知角色（如「临时学生」）反序列化失败的问题：新增临时学生角色识别与未知角色兜底处理，任意角色不再导致课程加载报错。",
-  ],
-}, {
-  version: "v3.0.9",
-  date: "2026/8/22",
-  items: [
-    "界面全面改版：小清新 + 简约风格，精简冗余元素堆砌，信息层级更清晰，上手更快。",
-    "新增轻量动效：页面切换、侧边栏与工作台头部错峰入场，卡片悬浮抬升，按钮按压反馈。",
-    "侧边栏、工作台头部与文件管理页视觉统一简化，移除冗余标签与嵌套边框。",
-    "对话框、卡片等组件圆角与阴影统一收窄，降低视觉噪音。",
-  ],
-}, {
-  version: "v3.0.8",
-  date: "2026/7/2",
-  items: [
-    "修复预览 modal 中点击评论输入框导致上方 renderer 消失的问题（稳定 files 数组引用，移除 viewer useMemo 多余依赖）。",
-    "修复全局键盘监听在输入框中按 Space 键误关闭预览的问题。",
-    "Canvas API 更新：update_grade 改用 PUT /submissions/:user_id，参数改为 submission[posted_grade] 和 comment[text_comment]。",
-  ]
-}, {
-  version: "v3.0.7",
-  date: "2026/7/2",
-  items: [
-    "新增 CodeRenderer 文件内搜索功能（Ctrl+F），支持匹配高亮与上下导航。",
-    "新增 AudioRenderer，支持 mp3/ogg/wav/flac/aac/m4a/wma 音频预览。",
-    "CodeRenderer 大文件虚拟滚动（5000+ 行），仅渲染可见行，避免卡顿。",
-    "大文件跳过语法高亮时，提供「显示语法高亮」按钮可按需开启。",
-    "修复 ArchiveRenderer 中 onSelect 缺少 try/catch 和 FileReader 超时保护。",
-    "ArchiveRenderer 目录树使用 useMemo 缓存，减少非树状态变化时的重渲染。",
-    "ArchiveRenderer 文件列表显示文件大小。",
-    "修复 ArchiveRenderer 中视频播放控件被父容器裁剪的问题（flex 布局）。",
-    "Files 页面文件名下方显示文件大小。",
-    "新增 formatSize 工具函数，统一文件大小格式化。",
-    "修复：update_grade 评论时传空 grade 导致 Canvas API 报错，grade 改为可选参数。",
-    "新增前端测试框架 (vitest + testing-library)，首个 CodeRenderer 测试覆盖。",
-    "新增 Rust update_grade mock 测试 (httpmock)，覆盖 grade + comment / 仅 grade / 仅 comment / 空 body / API 报错五种场景。",
-    "CI 补全前端测试步骤。",
-  ]
-}, {
-  version: "v3.0.6",
-  date: "2026/6/21",
-  items: [
-    "新增教学大纲（Syllabus）页面，支持查看课程教学大纲内容。",
-    "新增 Windows 一键安装脚本 (script/install.bat)。",
-    "新增 macOS 一键安装脚本 (script/install_mac.sh)。",
-    "新增前端 ESLint + Husky 代码规范与提交检查。",
-    "新增 CONTRIBUTING.md 贡献指南。",
-    "新增前端 CI (ESLint + TypeScript 类型检查)。",
-    "版本升级脚本 (bump_version.py) 同步更新 README 与安装脚本版本号。",
-    "README 下载表格新增 OS 图标，优化排版与说明文字。",
-  ]
-},
-{
-  version: "v3.0.5",
-  date: "2026/6/15",
-  items: [
-    "优化和修复 UI bug"
-  ]
-},
-{
-  version: "v3.0.4",
-  date: "2026/6/14",
-  items: [
-    "新增 Canvas Agent：AI 对话式操作，支持通过自然语言查询课程、作业、文件等。",
-    "新增网络请求调试面板 (Debug Page)，支持请求日志查看与 JSON 响应结构化展示。",
-    "Debug Page：响应体预览上限从 16KB 提升至 1MB。",
-    "修复 PDF Worker 加载失败的问题 (ERR_CONNECTION_REFUSED)。",
-  ],
-},
+import releaseChangeLogs from "../lib/change_logs.json";
 
-{
-  version: "v3.0.3",
-  date: "2026/6/12",
-  items: [
-    "新增多 API Key 管理：支持添加、命名、切换、删除多个 LLM API Key，每个 Key 绑定独立的 Base URL 和 Model。",
-    "新增 16 个主流服务商预设（DeepSeek / OpenAI / Kimi / Anthropic / 智谱 / 百度 / 通义 / 腾讯 / 豆包 / xAI / Groq / Perplexity / Mistral / Cohere / Ollama），一键填入 Base URL。",
-    "Model 字段改为 Autocomplete，打开时自动从 `{base_url}/models` 拉取可用模型列表（带 `Bearer` 鉴权），支持搜索与自由输入。",
-    "新增 24 个 MCP 工具，覆盖课程、作业、文件、文件夹、用户、讨论、日历、提交、AI 对话等全部后端能力。",
-    "新增 MCP Server 开关与端口设置页面，可在设置 → 高级选项内启用/停用，默认关闭。",
-    "修复 MCP 端口描述未跟随设置动态变化的问题。",
-    "修复 API Key 编辑卡片中未编辑字段的 onBlur 误清除数据的问题。",
-    "编辑 API Key 信息（名称 / Key / Base URL / Model）后自动保存配置。",
-    "Settings 页面新增一键复制 MCP 连接配置，附带中文 Prompt 引导 AI 客户端自动连接。",
-    "修复 AI 对话流式超时问题：LLM 客户端超时从 60s 提升到 600s。",
-    "升级 Rust 工具链至 1.96.0 以兼容 rmcp 依赖链，同步更新 bytes 至 1.9。",
-  ],
-},
-{
-  version: "v3.0.1",
-  date: "2026/4/15",
-  items: [
-    "修复 release 版本中二维码登录 WebSocket 连接被 CSP 拦截的问题，恢复 `wss://jaccount.sjtu.edu.cn` 连接。",
-    "优化小窗口模式下的侧边栏显示：调整抽屉宽度、补齐背景层并改进滚动行为，避免内容穿透和布局挤压。",
-  ],
-},
-{
-  version: "v3.0.0",
-  date: "2026/4/5",
-  items: [
-    "全局界面全面迁移到 MUI，重做了布局、侧边栏、设置页与主要工作台页面，支持更统一的主题切换与产品化视觉。",
-    "文件、作业、评分册、讨论区、视频、成员导出、年度总结、二维码等核心页面完成重构，信息架构与交互体验大幅优化。",
-    "文档预览系统整体升级：统一 renderer 风格，新增 MOV 预览，重做 PDF/CSV 渲染，并优化压缩包、图片、Markdown、Notebook 等文件体验。",
-    "视频与额外登录链路持续修复，包括二维码登录、字幕/PPT 导出、主副屏播放、视频合并与下载稳定性等关键能力。",
-    "测试、发布与工程配置同步增强，补充 Rust 覆盖率工作流、修复多项跨平台问题，并完善 release 构建与桌面端运行表现。",
-  ],
-},
+const changeLogs = [...releaseChangeLogs,
 { version: "v2.0.5", date: "2025/12/6", items: ["修复 pdf 渲染"] },
 { version: "v2.0.3", date: "2025/10/18", items: ["修复字幕下载", "支持外部文件"] },
 { version: "v2.0.2", date: "2025/10/15", items: ["修复作业评分"] },
@@ -297,7 +161,6 @@ export function ChangeLogModal({
   onOk: () => void;
 }) {
   const theme = useTheme();
-  const latest = changeLogs[0];
 
   return (
     <Dialog open={open} onClose={onCancel} fullWidth maxWidth="md">
@@ -323,42 +186,11 @@ export function ChangeLogModal({
           <Typography variant="h4" sx={{ fontWeight: 600 }}>
             更新日志
           </Typography>
-          <Typography variant="body2" color="text.secondary">
-            按时间线记录 Canvas Helper 的功能演进、修复与体验改进。
-          </Typography>
         </Stack>
       </DialogTitle>
 
       <DialogContent sx={{ pt: 2, px: 3, pb: 1 }}>
         <Stack spacing={1.5}>
-          <Box
-            sx={{
-              p: 2,
-              borderRadius: "14px",
-              border: "1px solid",
-              borderColor: alpha(theme.palette.primary.main, 0.25),
-              bgcolor: alpha(theme.palette.primary.main, 0.06),
-            }}
-          >
-            <Stack spacing={0.75}>
-              <Stack direction="row" spacing={1.25} alignItems="baseline" flexWrap="wrap" useFlexGap>
-                <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                  最新 {latest.version}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {latest.date}
-                </Typography>
-              </Stack>
-              <Stack component="ul" spacing={0.5} sx={{ m: 0, pl: 2.5 }}>
-                {latest.items.slice(0, 3).map((item, index) => (
-                  <Typography key={index} component="li" variant="body2" sx={{ lineHeight: 1.7 }}>
-                    {typeof item === "string" ? item : item}
-                  </Typography>
-                ))}
-              </Stack>
-            </Stack>
-          </Box>
-
           {changeLogs.map((log, index) => (
             <Card
               key={`${log.version}-${log.date}`}

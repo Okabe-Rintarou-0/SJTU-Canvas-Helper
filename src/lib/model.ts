@@ -543,6 +543,14 @@ export interface QRCodeScanResult {
     contents: string[];
 }
 
+export interface QRCodeScanReport {
+    results: QRCodeScanResult[];
+    total_files: number;
+    image_files: number;
+    scanned_images: number;
+    failed_images: number;
+}
+
 export interface DiscussionTopic {
     id: number;
     title: string;

@@ -63,6 +63,10 @@ make version <new_version>
 
 这会自动更新 `package.json`、`Cargo.toml`、`tauri.conf.json`、`website/` 中的版本号。
 
+发布前，请在 `src/lib/change_logs.json` 顶部添加对应版本的更新内容（`version`、`date`、`items`），并保留已有条目。此文件同时用于应用内更新日志和启动更新提示；后者会展示已安装版本之后、目标版本及之前的累积内容。
+
+发布工作流沿用各平台原有的构建与上传步骤，仅在上传前将日志补充到 `latest.json` 的 `changelog` 字段；下载地址、签名与平台条目保持不变。日志缺失、格式错误或补充步骤失败时继续发布原清单，应用会回退显示发布说明。可运行 `node --test script/prepare-update-manifest.node-test.mjs` 验证发布数据。
+
 ## Pull Request
 
 1. 确保代码通过 lint 和类型检查

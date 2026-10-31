@@ -1,5 +1,4 @@
 use super::{constants::BASE_URL, file_parser, llm, Client};
-use ::bytes::Bytes;
 use reqwest::{cookie, multipart};
 use serde::de::DeserializeOwned;
 use std::{cmp::min, collections::HashSet, fs, io::Write, ops::Deref, path::Path, sync::Arc};
@@ -54,6 +53,7 @@ impl Client {
             jar,
             base_url,
             token,
+            video_auth: Default::default(),
             llm_cli,
             file_parser,
             debug_store: super::debug::NetworkDebugStore::new(false),
@@ -97,6 +97,7 @@ impl Client {
             jar,
             base_url,
             token,
+            video_auth: Default::default(),
             llm_cli,
             file_parser,
             debug_store: super::debug::NetworkDebugStore::new(false),
@@ -323,16 +324,6 @@ impl Client {
         .await?
         .error_for_status()?;
         Ok(())
-    }
-
-    pub async fn get_file_content(file: &File) -> Result<Bytes> {
-        let response = reqwest::Client::new()
-            .get(&file.url)
-            .send()
-            .await?
-            .error_for_status()?;
-        let bytes = response.bytes().await?;
-        Ok(bytes)
     }
 
     pub async fn download_file<F: Fn(ProgressPayload) + Send>(
@@ -1300,6 +1291,30 @@ mod mock_tests {
         assert_eq!(course.teachers[0].display_name, "Dr. Einstein");
 
         mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_get_course_syllabus_without_published_body() {
+        for body in [
+            json!({"id": 42, "syllabus_body": null}),
+            json!({"id": 42}),
+            json!({"id": 42, "syllabus_body": ""}),
+        ] {
+            let server = MockServer::start();
+            let mock = server.mock(|when, then| {
+                when.method(GET)
+                    .path("/api/v1/courses/42")
+                    .query_param("include[]", "syllabus_body");
+                then.status(200).json_body(body.clone());
+            });
+            let course = create_test_client(&server.base_url())
+                .get_course_syllabus(42, "test-token")
+                .await
+                .unwrap();
+            assert_eq!(course.id, 42);
+            assert!(course.syllabus_body.is_empty());
+            mock.assert();
+        }
     }
 
     #[tokio::test]

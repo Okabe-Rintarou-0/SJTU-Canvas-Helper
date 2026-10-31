@@ -15,7 +15,7 @@ import {
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
-import { CSSProperties, ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { CSSProperties, ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { File } from "../lib/model";
 import {
@@ -134,7 +134,7 @@ export default function PreviewModal({
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const cancelPreviewRef = useRef(handleCancelPreview);
-  useEffect(() => {
+  useLayoutEffect(() => {
     cancelPreviewRef.current = handleCancelPreview;
   }, [handleCancelPreview]);
 

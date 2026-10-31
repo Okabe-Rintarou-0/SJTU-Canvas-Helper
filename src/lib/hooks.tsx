@@ -506,12 +506,7 @@ export function useData<T>(command: string, shouldFetch: boolean, args?: any) {
   };
 }
 
-export function useCourseSyllabus(courseId?: number) {
-  const [args, setArgs] = useState<any>({ courseId });
-  useEffect(() => { setArgs({ courseId }); }, [courseId]);
-  const shouldFetch = courseId != undefined && courseId > 0;
-  return useData<Course>("get_course_syllabus", shouldFetch, args);
-}
+export { useCourseSyllabus } from "./course_syllabus";
 
 export function useCourses() {
   const courses = useData<Course[]>("list_courses", true);
@@ -524,14 +519,13 @@ export function useCourses() {
 
 export function useTAOrTeacherCourses() {
   const courses = useData<Course[]>("list_courses", true);
-  let data = courses.data ?? (EMPTY_ARRAY as Course[]);
-  data = data.filter((course) =>
+  const data = useMemo(() => (courses.data ?? (EMPTY_ARRAY as Course[])).filter((course) =>
     course.enrollments.find(
       (enrollment) =>
         enrollment.role === "TaEnrollment" ||
         enrollment.role === "TeacherEnrollment"
     )
-  );
+  ), [courses.data]);
   return {
     ...courses,
     data,

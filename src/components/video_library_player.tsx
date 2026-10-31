@@ -10,6 +10,8 @@ import { canSummarizeRecording, recordingKey, type VideoMaterial, type VideoSess
 import { recordingRequest, resolveRecording, enqueueVideoTrack } from "../lib/video_library_tasks";
 import type { CanvasVideo, VideoPlayInfo } from "../lib/model";
 import { useMediaElement } from "../lib/media_element";
+import { PlaybackProxyError, preparePlaybackProxy } from "../lib/playback_proxy";
+import PlaybackProxyAlert from "./playback_proxy_alert";
 
 function playbackURL(url: string, port: number, source: CanvasVideo["source"]): string {
   try {
@@ -43,12 +45,12 @@ export default function VideoLibraryPlayer({ session, initialKey, seconds = 0, s
   const [subtitle, setSubtitle] = useState<string>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [proxyError, setProxyError] = useState<PlaybackProxyError>();
   const [retry, setRetry] = useState(0);
   const { ref: mainRef, attach: attachMain } = useMediaElement();
   const { ref: subRef, attach: attachSub } = useMediaElement();
   const overlayRef = useRef<HTMLDivElement>(null);
   const seek = useRef(seconds);
-  const proxy = useRef<Promise<boolean>>();
   const video = session.videos.find((v) => recordingKey(v) === active)!;
 
   useEffect(() => {
@@ -64,15 +66,14 @@ export default function VideoLibraryPlayer({ session, initialKey, seconds = 0, s
   useEffect(() => {
     let cancelled = false;
     let objectURL: string | undefined;
-    setLoading(true); setError(""); setDownloadNotice(""); setTracks([]); setUrls([]); setSubtitle(undefined); setMain(0); setSecondary(-1);
+    setLoading(true); setError(""); setProxyError(undefined); setDownloadNotice(""); setTracks([]); setUrls([]); setSubtitle(undefined); setMain(0); setSecondary(-1);
     void (async () => {
       try {
         const [{ info, source }, config] = await Promise.all([resolveRecording(video), getConfig()]);
         if (cancelled) return;
         const next = info.videoPlayResponseVoList.map((track) => playbackURL(track.rtmpUrlHdv, config.proxy_port, source));
         if (next.some((url) => url.startsWith(`http://localhost:${config.proxy_port}/`))) {
-          proxy.current ??= invoke<boolean>("prepare_proxy");
-          if (!await proxy.current) { proxy.current = undefined; throw new Error("播放代理未能启动，请重试"); }
+          await preparePlaybackProxy(config.proxy_port);
         }
         if (cancelled) return;
         setUrls(next); setTracks(info.videoPlayResponseVoList); setLoading(false);
@@ -83,7 +84,7 @@ export default function VideoLibraryPlayer({ session, initialKey, seconds = 0, s
             setSubtitle(objectURL);
           }
         } catch { /* Subtitle availability does not prevent playback. */ }
-      } catch (e) { if (!cancelled) { setError(String(e)); setLoading(false); proxy.current = undefined; } }
+      } catch (e) { if (!cancelled) { setError(String(e)); setProxyError(e instanceof PlaybackProxyError ? e : undefined); setLoading(false); } }
     })();
     return () => { cancelled = true; if (objectURL) URL.revokeObjectURL(objectURL); };
   }, [video, retry]);
@@ -142,12 +143,14 @@ export default function VideoLibraryPlayer({ session, initialKey, seconds = 0, s
     <CardContent sx={{ pt: 0, p: mini ? 1 : 2 }}>
       <Box sx={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 2 }}>
         <Stack spacing={1.5} sx={{ minWidth: 0 }}>
-          {error && <Alert severity="error" action={<Button onClick={() => setRetry((v) => v + 1)}>重试</Button>}>{error}</Alert>}
+          {error && (proxyError
+            ? <PlaybackProxyAlert error={proxyError} onRetry={() => setRetry((v) => v + 1)} />
+            : <Alert severity="error" action={<Button onClick={() => setRetry((v) => v + 1)}>重试</Button>}>{error}</Alert>)}
           <Box sx={{ bgcolor: "#000", aspectRatio: "16/9", position: "relative", overflow: "hidden", borderRadius: "8px" }}>
             {loading && <CircularProgress sx={{ position: "absolute", top: "45%", left: "48%" }} />}
             {urls[main] && <video key={`${active}:${main}`} ref={attachMain} src={urls[main]} controls autoPlay
               onLoadedMetadata={() => restore(mainRef.current, main)}
-              onEnded={nextVideo} onError={() => setError("视频加载失败，请重试或切换机位")}
+              onEnded={nextVideo} onError={() => { setProxyError(undefined); setError("视频加载失败，请重试或切换机位"); }}
               style={{ width: "100%", height: "100%", objectFit: "contain" }}>
               {subtitle && <track key={subtitle} kind="subtitles" label="中文字幕" srcLang="zh" src={subtitle} default />}
             </video>}

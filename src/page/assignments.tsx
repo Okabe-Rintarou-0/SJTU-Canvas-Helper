@@ -33,7 +33,7 @@ import {
   Typography,
 } from "@mui/material";
 import dayjs from "dayjs";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import CourseSelect from "../components/course_select";
@@ -195,13 +195,13 @@ export default function AssignmentsPage() {
     }
   };
 
-  const handleCourseSelect = (courseId: number) => {
+  const handleCourseSelect = useCallback((courseId: number) => {
     const selectedCourse = courses.data.find((course) => course.id === courseId);
     if (!selectedCourse) {
       return;
     }
     setSelectedCourseId(courseId);
-  };
+  }, [courses.data, setSelectedCourseId]);
 
   useAutoLoadCourse(
     (courseId) => {
@@ -492,7 +492,7 @@ export default function AssignmentsPage() {
               }}
             >
               <CourseSelect
-                onChange={(courseId) => void handleCourseSelect(courseId)}
+                onChange={handleCourseSelect}
                 disabled={operating}
                 courses={courses.data}
                 value={selectedCourseId === -1 ? undefined : selectedCourseId}

@@ -5,24 +5,29 @@ import VideoPage from "../../page/video";
 import { Link, MemoryRouter } from "react-router-dom";
 import RetainedVideoWorkspace from "../retained_video_workspace";
 import { videoSummarySession } from "../../lib/video_summary_session";
+import { taskManager } from "../../lib/task_manager";
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), exports: vi.fn(), open: vi.fn(),
   centerOnly: undefined as boolean | undefined,
   cleanUpPpt: false,
+  realCourseSelect: false,
   courses: [{ id: 10, name: "测试课程", course_code: "TEST", teachers: [], term: { id: 1, name: "2026-2027 秋" }, enrollments: [] }],
   messages: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke, Channel: class { onmessage = () => {}; } }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.open }));
 vi.mock("../../lib/hooks", () => ({ useConfigSelector: (selector: (state: unknown) => unknown) => selector({ config: { data: { experimental_task_center_only: mocks.centerOnly, experimental_ppt_cleanup: mocks.cleanUpPpt } } }), useCourses: () => ({ data: mocks.courses, mutate: vi.fn() }) }));
-vi.mock("../../lib/task_hooks", () => ({ useTasks: () => [] }));
 vi.mock("../../lib/message", () => ({ useAppMessage: () => [mocks.messages, null] }));
 vi.mock("../../lib/video_library_tasks", () => ({
   enqueueVideoExports: mocks.exports,
   recordingRequest: (video: { videoId: string }, title: string) => ({ key: `canvas:${video.videoId}`, title, candidates: [video] }),
 }));
 vi.mock("../layout", () => ({ default: ({ children }: { children: ReactNode }) => <>{children}</> }));
-vi.mock("../course_select", () => ({ default: ({ onChange }: { onChange: (id: number) => void }) => <button onClick={() => onChange(10)}>选择测试课程</button> }));
+vi.mock("../course_select", async (importOriginal) => {
+  const { default: CourseSelect } = await importOriginal<typeof import("../course_select")>();
+  return { default: (props: Parameters<typeof CourseSelect>[0]) => mocks.realCourseSelect
+    ? <CourseSelect {...props} /> : <button onClick={() => props.onChange?.(10)}>选择测试课程</button> };
+});
 vi.mock("../task_popover", () => ({ default: () => <div data-testid="task-center" /> }));
 vi.mock("../video_aggregator", () => ({ default: () => <div>合成工具内容</div> }));
 vi.mock("../video_library_player", () => ({ default: () => <div>播放器内容</div> }));
@@ -37,6 +42,7 @@ beforeEach(() => {
   videoSummarySession.reset();
   vi.clearAllMocks(); localStorage.clear(); mocks.centerOnly = undefined;
   mocks.cleanUpPpt = false;
+  mocks.realCourseSelect = false;
   mocks.open.mockResolvedValue("D:/导出"); mocks.exports.mockResolvedValue(2);
   mocks.invoke.mockImplementation(async (command: string, args?: { request: { key: string; title: string } }) => {
     if (command === "read_account_info") return { current_account: "test-account", all_accounts: [] };
@@ -59,6 +65,54 @@ async function load() {
   return view;
 }
 describe("video library workflows", () => {
+  it("updates download progress without resetting an unselected course list", async () => {
+    mocks.realCourseSelect = true;
+    const originalCourses = mocks.courses;
+    mocks.courses = Array.from({ length: 40 }, (_, index) => ({
+      ...originalCourses[0], id: 10 + index, name: `测试课程 ${index + 1}`,
+    }));
+    let finish!: () => void;
+    const job = new Promise<void>((resolve) => { finish = resolve; });
+    taskManager.enqueue({ id: "course-scroll", name: "测试下载", kind: "video", source: "video",
+      event: { channel: "video_download://progress", id: "course-scroll" }, run: () => job });
+    const view = render(<VideoPage />);
+    try {
+      await waitFor(() => expect(screen.getByPlaceholderText("请选择或搜索课程…")).toBeEnabled());
+      await waitFor(() => expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled());
+      fireEvent.mouseDown(screen.getByPlaceholderText("请选择或搜索课程…"));
+      const list = screen.getByRole("listbox");
+      list.scrollTop = 480;
+      fireEvent.scroll(list);
+      for (const progress of [10, 20, 30]) {
+        act(() => taskManager.progress("video_download://progress", "course-scroll", progress, 100));
+        expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", String(progress));
+        expect(screen.getByRole("listbox")).toBe(list);
+        expect(list.scrollTop).toBe(480);
+      }
+      fireEvent.click(within(list).getByRole("option", { name: /测试课程 40/ }));
+      await screen.findByText("2 小节");
+      expect(mocks.invoke).toHaveBeenCalledWith("get_canvas_videos", { courseId: 49 });
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    } finally {
+      view.unmount();
+      await act(async () => { finish(); await job; });
+      taskManager.remove("course-scroll");
+      mocks.courses = originalCourses;
+    }
+  }, 15_000);
+  it("shows recovery steps only when Token login and extra login both fail", async () => {
+    const original = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation((command, args) => command === "login_canvas_website"
+      ? Promise.reject(new Error("both authentication methods failed")) : original(command, args));
+    render(<MemoryRouter><VideoPage /></MemoryRouter>);
+    expect(await screen.findByText(/Canvas Token 登录失败，额外登录态也不可用/)).toBeVisible();
+    expect(screen.getByRole("link", { name: "前往设置" })).toHaveAttribute("href", "/settings");
+    expect(mocks.invoke.mock.calls.some(([command]) => command === "list_video_space_courses")).toBe(false);
+    mocks.invoke.mockImplementation(original);
+    fireEvent.click(screen.getByRole("button", { name: "刷新" }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("list_video_space_courses"));
+    expect(screen.queryByText(/Canvas Token 登录失败，额外登录态也不可用/)).not.toBeInTheDocument();
+  });
   it("keeps the selected course, filters and current recording when visiting another page", async () => {
     render(<MemoryRouter initialEntries={["/video"]}>
       <Link to="/settings">去设置</Link><Link to="/video">回到视频</Link>

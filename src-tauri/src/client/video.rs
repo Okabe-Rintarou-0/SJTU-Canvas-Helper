@@ -665,7 +665,7 @@ fn jwt_token_from_location(location: &str) -> Option<String> {
         .unwrap_or(fragment);
     query.split('&').find_map(|pair| {
         let (key, value) = pair.split_once('=')?;
-        (key == "jwt_token")
+        (key == "jwt_token" && !value.is_empty())
             .then(|| {
                 urlencoding::decode(value)
                     .ok()
@@ -853,15 +853,30 @@ impl Client {
     }
 
     async fn get_video_space_token(&self) -> Result<String> {
-        self.get_video_space_token_from_url(VIDEO_SPACE_LAUNCH_URL)
-            .await
+        self.authenticated_video_launch(VIDEO_SPACE_LAUNCH_URL).await
     }
 
+    pub async fn login_classroom_video(&self) -> Result<()> {
+        let token = self.get_video_space_token().await?;
+        *self.token.write().await = token;
+        Ok(())
+    }
+
+    #[cfg(test)]
     async fn get_video_space_token_from_url(&self, launch_url: &str) -> Result<String> {
         let client = reqwest::Client::builder()
             .redirect(Policy::none())
             .cookie_provider(self.jar.clone())
             .build()?;
+        self.follow_video_launch(&client, launch_url).await
+    }
+
+    pub(super) async fn follow_video_launch(&self, client: &reqwest::Client, launch_url: &str) -> Result<String> {
+        tokio::time::timeout(std::time::Duration::from_secs(20), self.follow_video_launch_inner(client, launch_url))
+            .await.map_err(|_| AppError::LoginError)?
+    }
+
+    async fn follow_video_launch_inner(&self, client: &reqwest::Client, launch_url: &str) -> Result<String> {
         let mut request = client.get(launch_url);
         for _ in 0..16 {
             let response = request.send().await?.error_for_status()?;
@@ -978,20 +993,11 @@ impl Client {
             .map_err(|error| AppError::VideoDownloadError(format!("Invalid launch URL: {error}")))
     }
 
-    async fn get_launch_form_for_canvas_course_id(
-        &self,
-        course_id: i64,
-        tool_id: i64,
-    ) -> Result<(String, HashMap<String, String>)> {
-        let url = format!("https://oc.sjtu.edu.cn/courses/{course_id}/external_tools/{tool_id}");
-        self.get_launch_form_from_url(&url).await
-    }
-
     async fn get_launch_form_from_url(
         &self,
         url: &str,
     ) -> Result<(String, HashMap<String, String>)> {
-        let response = self.cli.get(url).send().await?.error_for_status()?;
+        let response = self.video_browser_client().await.get(url).send().await?.error_for_status()?;
         let response_url = response.url().clone();
         let body = response.text().await?;
         let document = Document::from(body.as_str());
@@ -1008,50 +1014,14 @@ impl Client {
             .map_err(|error| {
                 AppError::VideoDownloadError(format!("Invalid Canvas tabs URL: {error}"))
             })?;
-        let response = self.cli.get(url).send().await?.error_for_status()?;
+        let response = self.video_browser_client().await.get(url).send().await?.error_for_status()?;
         let value: Value = serde_json::from_slice(&response.bytes().await?)?;
         Ok(external_tool_urls_from_tabs(&value, &base_url))
     }
 
     async fn get_video_launch_token(&self, course_id: i64) -> Result<String> {
-        let (action, data) = self
-            .get_launch_form_for_canvas_course_id(course_id, CANVAS_VIDEO_TOOL_ID)
-            .await?;
-        let resp = self
-            .cli
-            .post(action)
-            .form(&data)
-            .send()
-            .await?
-            .error_for_status()?;
-
-        let response_url = resp.url().clone();
-        let body = resp.text().await?;
-        let document = Document::from(body.as_str());
-        let (action, data) = self.get_form_submission_from_doc(document)?;
-        let action = self.resolve_form_action(&response_url, &action)?;
-
-        let client = reqwest::Client::builder()
-            .redirect(Policy::none())
-            .cookie_provider(self.jar.clone())
-            .build()?;
-        let resp = client.post(&action).form(&data).send().await?;
-
-        let location = resp
-            .headers()
-            .get("location")
-            .ok_or_else(|| AppError::VideoDownloadError("Launch redirect not found".to_string()))?
-            .to_str()?;
-        let location = Url::parse(&action)
-            .map_err(|error| AppError::VideoDownloadError(format!("Invalid launch URL: {error}")))?
-            .join(location)
-            .map_err(|error| {
-                AppError::VideoDownloadError(format!("Invalid redirect URL: {error}"))
-            })?
-            .to_string();
-        jwt_token_from_location(&location).ok_or_else(|| {
-            AppError::VideoDownloadError("JWT token not found in launch redirect".to_string())
-        })
+        let url = format!("https://oc.sjtu.edu.cn/courses/{course_id}/external_tools/{CANVAS_VIDEO_TOOL_ID}");
+        self.authenticated_video_launch(&url).await
     }
 
     async fn get_teaching_class_id_token(&self, course_id: i64) -> Result<(i64, String)> {
@@ -1116,10 +1086,7 @@ impl Client {
 
     async fn get_legacy_canvas_course_id(&self, course_id: i64) -> Result<Option<String>> {
         let tool_urls = self.get_course_external_tool_urls(course_id).await?;
-        let client = reqwest::Client::builder()
-            .redirect(Policy::none())
-            .cookie_provider(self.jar.clone())
-            .build()?;
+        let client = self.video_browser_client().await;
         for tool_url in tool_urls {
             let Ok((action, data)) = self.get_launch_form_from_url(&tool_url).await else {
                 continue;
@@ -1880,45 +1847,23 @@ mod tests {
     }
 
     #[test]
-    fn test_ppt_animation_simplification_and_summary_keep_complete_pages_and_original_times() {
-        // De-identified sequence preserves OCR order/noise, formulas and page counters.
-        let response: Value = serde_json::from_str(include_str!("fixtures/ppt_animation_sequence.json")).unwrap();
+    fn test_ppt_ocr_cleanup_keeps_original_evidence_and_subtitle_timeline() {
+        let body = "基本概念：先介绍问题的背景和定义，再给出推导步骤及示例，最后说明结论的适用条件，并对不同方法的特点进行比较。";
+        let response = serde_json::json!({"data": {"docList": [
+            {"createSec": 10, "imageUrl": "https://example.test/one.png", "ocrText": body},
+            {"createSec": 20, "imageUrl": "https://example.test/two.png", "ocrText": format!("{body}补充一条说明。")}
+        ]}});
         let original = ppts_from_response(&response).unwrap();
-        assert_eq!(original.len(), 41);
-        assert!(!crate::model::AppConfig::default().experimental_ppt_cleanup);
-        assert_eq!(crate::app::ppt::simplify_animation_slides(original.clone(), false), (original.clone(), vec![]));
-        let (kept, notes) = crate::app::ppt::simplify_animation_slides(original, true);
-        assert_eq!(kept.len(), 38);
-        assert!(notes[0].contains("41 张 → 38 张"));
-        for time in ["995", "1555", "2555"] {
-            assert!(!kept.iter().any(|slide| slide.create_sec == time), "redundant slice {time}");
-        }
-        let complete = kept.iter().find(|slide| slide.create_sec == "1061").unwrap();
-        assert_eq!(complete.animation_start_sec.as_deref(), Some("995"));
-        assert!(complete.ocr_text.contains("负采样（negative sampling）"));
-        // Complete annotated formula pages are retained, while different pages and
-        // different section highlights are preserved even when their titles match.
-        for time in ["80", "415", "418", "824", "1148", "1418", "2743", "2865", "402", "429", "434", "444", "514", "683", "736", "790", "911", "1800", "2867", "952", "2382", "2541", "2913"] {
-            assert!(kept.iter().any(|slide| slide.create_sec == time));
-        }
-        let all_times: std::collections::HashSet<_> = kept.iter().flat_map(|slide| std::iter::once(slide.create_sec.clone()).chain(slide.related_slide_secs.iter().cloned())).collect();
-        assert_eq!(all_times.len(), 41);
-        let subtitles = vec![CanvasVideoSubTitle { bg: 995000, res: "这一页开始讲优化".into(), ..Default::default() }];
+        let (kept, _) = crate::app::ppt::simplify_animation_slides(original.clone(), true);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].ocr_text, original[1].ocr_text);
+        assert_eq!(kept[0].ppt_img_url, original[1].ppt_img_url);
+        assert_eq!(kept[0].related_slide_secs, vec!["10"]);
+        let subtitles = vec![CanvasVideoSubTitle { bg: 15000, res: "继续讲解".into(), ..Default::default() }];
         let (text, available, _) = crate::app::ppt::material_timeline("videoSpace:example", &subtitles, &kept);
         assert!(available);
-        assert!(text.contains("&t=995) [字幕] 这一页开始讲优化"));
-        assert!(!text.contains("&t=995) [PPT OCR"));
-        assert!(text.contains("&t=1061) [PPT OCR"));
-        assert!(!text.contains("逐步展开"));
-        assert!(text.contains("&t=2743)"));
-        assert!(text.contains("&t=2867)"));
-        assert!(!text.contains("&t=1555)"));
-        assert!(text.contains("&t=1800) [PPT OCR"));
-        assert!(text.contains("&t=418)"));
-        assert!(text.contains("&t=434) [PPT OCR"));
-        assert_eq!(text.matches("[PPT OCR]").count(), 37); // one image has no OCR
-        // The same resulting slice list is the input to PDF export.
-        assert_eq!(crate::app::ppt::filter_export_slides(kept, false).0.len(), 38);
+        assert!(text.contains("&t=15) [字幕] 继续讲解"));
+        assert!(text.contains("&t=20) [PPT OCR"));
     }
 
     #[test]

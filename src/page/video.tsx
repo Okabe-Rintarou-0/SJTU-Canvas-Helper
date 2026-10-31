@@ -1,5 +1,5 @@
 import WorkspaceSelect from "../components/workspace_select";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Link as RouterLink } from "react-router-dom";
@@ -15,18 +15,17 @@ import { alpha } from "@mui/material/styles";
 import BasicLayout from "../components/layout";
 import CourseSelect from "../components/course_select";
 import VideoTrackDownloads from "../components/video_track_downloads";
-import VideoLibraryTasks from "../components/video_library_tasks";
+import { VideoLibraryTaskQueue } from "../components/video_library_tasks";
 import VideoAggregator from "../components/video_aggregator";
 import VideoLibraryPlayer from "../components/video_library_player";
 import VideoLivePanel from "../components/video_live_panel";
 import FileAIChatModal from "../components/file_ai_chat_modal";
 import { useCourses, useConfigSelector } from "../lib/hooks";
-import { useTasks } from "../lib/task_hooks";
 import { useAppMessage } from "../lib/message";
 import { compareVideoCourses, loadVideoCourse, mergeVideoCourses } from "../lib/video_courses";
 import { canSummarizeRecording, groupVideoSessions, groupSessionsByDate, parseVideoCitation, formatVideoTimestamp, recordingKey, recordingTime, selectedSessionScopes, toggleRecordings, type VideoExportOptions, type VideoSession } from "../lib/video_library";
 import { enqueueVideoExports, saveRecordingMaterial } from "../lib/video_library_tasks";
-import { readSummaryCache, summaryCacheKey, withSummaryModelIdentity, type VideoSummaryCache } from "../lib/video_summary_cache";
+import { readSummaryCache, summaryCacheKey, withSummaryModelIdentity, PPT_CLEANUP_POLICY, type VideoSummaryCache } from "../lib/video_summary_cache";
 import type { AccountInfo, CanvasVideo, Course } from "../lib/model";
 import { useAISession } from "../lib/ai_session_store";
 import { videoSummarySession } from "../lib/video_summary_session";
@@ -36,9 +35,9 @@ import { surfaceCardSx } from "../lib/styles";
 
 const isPlayable = (video: CanvasVideo) => video.playable || !!video.alternatives?.some((v) => v.playable);
 const hasSubtitleSource = (video: CanvasVideo) => [video, ...(video.alternatives ?? [])].some((v) => v.source !== "legacy");
-function withTimeout<T>(promise: Promise<T>): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, timeout = 30_000): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = window.setTimeout(() => reject(new Error("请求超时，请刷新重试")), 30_000);
+    const timer = window.setTimeout(() => reject(new Error("请求超时，请刷新重试")), timeout);
     promise.then((value) => { clearTimeout(timer); resolve(value); }, (error) => { clearTimeout(timer); reject(error); });
   });
 }
@@ -67,7 +66,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   const courses = useMemo(() => mergeVideoCourses(canvas.data, space), [canvas.data, space]);
   const [courseId, setCourseId] = useState<number>();
   const selectedCourse = courses.find((course) => course.id === courseId);
-  const cacheNamespace = account && selectedCourse ? `${JSON.stringify([account, selectedCourse.canvasId, selectedCourse.teachingClassId, selectedCourse.name, selectedCourse.term.name, modelIdentity])}:ppt-cleanup-v3=${Number(pptCleanupEnabled)}` : "";
+  const cacheNamespace = account && selectedCourse ? `${JSON.stringify([account, selectedCourse.canvasId, selectedCourse.teachingClassId, selectedCourse.name, selectedCourse.term.name, modelIdentity])}:${PPT_CLEANUP_POLICY}=${Number(pptCleanupEnabled)}` : "";
   const courseSummaries = cachedSummaries.filter((entry) => entry.namespace === cacheNamespace);
   const [login, setLogin] = useState<"checking" | "ready" | "required">("checking");
   const [refresh, setRefresh] = useState(0);
@@ -98,7 +97,6 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
       setCacheListOpen(false); setAggregator(false); setTrackDownload(undefined);
     }
   }, [active]);
-  const tasks = useTasks();
   const [messageApi, contextHolder] = useAppMessage();
   const sessions = useMemo(() => groupVideoSessions(videos), [videos]);
   const dateGroups = useMemo(() => groupSessionsByDate(sessions.map((session) => ({ session }))), [sessions]);
@@ -118,7 +116,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   useEffect(() => {
     let cancelled = false;
     setLogin("checking");
-    void withTimeout(invoke("login_canvas_website")).then(() => { if (!cancelled) setLogin("ready"); })
+    void withTimeout(invoke("login_canvas_website"), 90_000).then(() => { if (!cancelled) setLogin("ready"); })
       .catch(() => { if (!cancelled) setLogin("required"); });
     return () => { cancelled = true; };
   }, [refresh]);
@@ -154,10 +152,10 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   const chatSessionId = chatMessages[0]?.id;
   useEffect(() => { if (active && (!playerMini || chatOpen)) workspaceRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }); }, [active, player?.nonce, playerMini, chatOpen, chatSessionId]);
 
-  const changeCourse = (id: number) => {
+  const changeCourse = useCallback((id: number) => {
     setCourseId(id === -1 ? undefined : id); setVideos([]); setSelected(new Set()); setExpanded(new Map());
     setQuery(""); setStatus("all"); setPlayer(undefined); setLoadError(""); videoSummarySession.clearMaterials();
-  };
+  }, []);
   const play = (session: VideoSession, key?: string, seconds = 0) => {
     if (!player) setPlayerMini(false);
     const video = key ? session.videos.find((v) => recordingKey(v) === key) : session.videos.find(isPlayable);
@@ -286,7 +284,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
               </Stack>
             </Stack>
             {login === "checking" && <LinearProgress aria-label="检查视频登录" />}
-            {login === "required" && <Alert severity="info" action={<Button component={RouterLink} to="/settings">前往设置</Button>}>视频功能需要额外扫码登录。完成后点击刷新重试。</Alert>}
+            {login === "required" && <Alert severity="info" action={<Button component={RouterLink} to="/settings">前往设置</Button>}>Canvas Token 登录失败，额外登录态也不可用。请检查 Token，或前往设置扫码登录后刷新重试。</Alert>}
             {courseLoading && <Typography variant="caption" color="text.secondary">正在同步视频空间课程，已有课程可直接选择。</Typography>}
             {courseError && <Alert severity="warning">视频空间课程读取失败：{courseError}。其他来源仍可使用。</Alert>}
             <Stack direction="row" gap={1} flexWrap="wrap">
@@ -348,7 +346,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
           </Stack>
         </CardContent>
       </Card>
-      {!centerOnly && <Box><VideoLibraryTasks tasks={tasks.filter((task) => task.source === "video")} /></Box>}
+      {!centerOnly && <Box><VideoLibraryTaskQueue /></Box>}
     </Stack>
     <Menu anchorEl={toolsAnchor} open={active && !!toolsAnchor} onClose={() => setToolsAnchor(null)}><MenuItem onClick={() => { setAggregator(true); setToolsAnchor(null); }}>视频合成工具</MenuItem></Menu>
     <Dialog open={active && !!downloadScopes} onClose={() => { if (!exporting) setDownloadScopes(undefined); }} fullWidth maxWidth="sm">

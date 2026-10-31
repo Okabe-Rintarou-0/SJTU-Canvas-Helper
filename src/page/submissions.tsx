@@ -530,7 +530,7 @@ export default function SubmissionsPage() {
               }}
             >
               <CourseSelect
-                onChange={(courseId) => setSelectedCourseId(courseId)}
+                onChange={setSelectedCourseId}
                 disabled={operating}
                 courses={courses.data}
                 value={selectedCourseId === -1 ? undefined : selectedCourseId}

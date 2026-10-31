@@ -6,13 +6,14 @@ import { Link, MemoryRouter } from "react-router-dom";
 import RetainedVideoWorkspace from "../retained_video_workspace";
 import type { CanvasVideo } from "../../lib/model";
 
-const mocks = vi.hoisted(() => ({ download: vi.fn(), resolve: vi.fn() }));
+const mocks = vi.hoisted(() => ({ download: vi.fn(), resolve: vi.fn(), port: 9999 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => ({ srt: "" })) }));
-vi.mock("../../lib/config", () => ({ getConfig: async () => ({ proxy_port: 9999 }) }));
+vi.mock("../../lib/config", () => ({ getConfig: async () => ({ proxy_port: mocks.port }) }));
 vi.mock("../../lib/video_library_tasks", () => ({ resolveRecording: mocks.resolve, recordingRequest: () => ({}), enqueueVideoTrack: mocks.download }));
 const recording = { source: "canvas", videoId: "a", videoName: "第一节", courseBeginTime: "2026-09-28 08:00", playable: true } as CanvasVideo;
 const tracks = [{ id: 1, rtmpUrlHdv: "https://example.test/one.mp4" }, { id: 2, rtmpUrlHdv: "https://example.test/two.mp4" }];
 beforeEach(() => {
+  mocks.port = 9999;
   vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
   vi.mocked(invoke).mockImplementation(async () => ({ srt: "" }) as never);
   mocks.resolve.mockResolvedValue({ source: "canvas", info: { videoPlayResponseVoList: tracks } });
@@ -25,6 +26,32 @@ async function load() {
   await screen.findByRole("button", { name: "下载当前机位" });
 }
 describe("video player compatibility", () => {
+  it("guides proxy failures to port settings and retries with the updated port", async () => {
+    mocks.resolve.mockResolvedValue({ source: "canvas", info: { videoPlayResponseVoList: [
+      { id: 1, rtmpUrlHdv: "https://videos.sjtu.edu.cn/vod/a.mp4" },
+    ] } });
+    vi.mocked(invoke).mockImplementation(async (command: string) => {
+      if (command === "prepare_proxy") throw new Error("Failed to download video 播放代理无法绑定 127.0.0.1:9999：error creating server listener (os error 10013)");
+      return { srt: "" } as never;
+    });
+    render(<MemoryRouter><VideoLibraryPlayer session={{ id: "a", title: "课堂", videos: [recording] }} initialKey="canvas:a" onClose={() => {}} onSummarize={() => {}} /></MemoryRouter>);
+    expect(await screen.findByRole("link", { name: "配置播放代理端口" })).toHaveAttribute("href", "/settings?focus=proxy-port");
+    expect(screen.getByText("播放代理端口 9999 无法使用，请更换端口后重试。")).toBeVisible();
+    expect(screen.getByText(/Error: Failed to download video/)).not.toBeVisible();
+    expect(screen.queryByText(/请前往「设置/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("技术详情"));
+    expect(screen.getByText(/os error 10013/)).toBeVisible();
+    mocks.port = 3031;
+    vi.mocked(invoke).mockImplementation(async (command: string) => command === "prepare_proxy" ? true as never : { srt: "" } as never);
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    await screen.findByRole("button", { name: "下载当前机位" });
+    expect(document.querySelector("video")).toHaveAttribute("src", "http://localhost:3031/canvas-vod/a.mp4");
+    expect(screen.queryByRole("link", { name: "配置播放代理端口" })).not.toBeInTheDocument();
+    expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "prepare_proxy")).toHaveLength(2);
+    fireEvent.error(document.querySelector("video")!);
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    await waitFor(() => expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "prepare_proxy")).toHaveLength(3));
+  });
   it("explicitly releases media when closed, without stopping the shared proxy", async () => {
     const view = render(<VideoLibraryPlayer session={{ id: "a", title: "课堂", videos: [recording] }} initialKey="canvas:a" onClose={() => {}} onSummarize={() => {}} />);
     await screen.findByRole("button", { name: "下载当前机位" });

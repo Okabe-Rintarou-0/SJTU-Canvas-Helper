@@ -11,20 +11,66 @@ const list: CanvasLiveList = { serverTime: now, sessions: [
   { id: "live", teachingClassId: 2, title: "课程", teacherName: "老师", classroomName: "教室", beginTime: "2026-10-12 13:55", endTime: "2026-10-12 14:50", startTime: now - 60_000, finishTime: now + 600_000, enabled: true },
   { id: "next", teachingClassId: 2, title: "课程", teacherName: "老师", classroomName: "教室", beginTime: "2026-10-12 14:50", endTime: "2026-10-12 15:45", startTime: now + 600_000, finishTime: now + 1200_000, enabled: true },
 ] };
-beforeEach(() => { vi.clearAllMocks(); mocks.invoke.mockResolvedValue(list); });
+beforeEach(() => { vi.clearAllMocks(); mocks.invoke.mockImplementation(async () => ({ ...list, serverTime: Date.now() })); });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 describe("live course panel", () => {
-  it("pauses list polling off-page while keeping the live player mounted", async () => {
+  it("keeps following the live schedule off-page and pauses polling after closing", async () => {
     vi.useFakeTimers();
     let view!: ReturnType<typeof render>;
     await act(async () => { view = render(<VideoLivePanel canvasCourseId={10} refresh={0} playback="live" onPlay={() => {}} />); });
     fireEvent.click(screen.getAllByRole("button", { name: "观看直播" })[0]);
     const player = screen.getByTestId("live-player");
     view.rerender(<VideoLivePanel visible={false} canvasCourseId={10} refresh={0} playback="live" onPlay={() => {}} />);
-    await act(async () => { vi.advanceTimersByTime(120_000); });
-    expect(mocks.invoke).toHaveBeenCalledOnce(); expect(screen.getByTestId("live-player")).toBe(player);
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    expect(mocks.invoke).toHaveBeenCalledTimes(3); expect(screen.getByTestId("live-player")).toBe(player);
     await act(async () => { view.rerender(<VideoLivePanel visible canvasCourseId={10} refresh={0} playback="live" onPlay={() => {}} />); });
-    expect(mocks.invoke).toHaveBeenCalledTimes(2); expect(screen.getByTestId("live-player")).toBe(player);
+    expect(mocks.invoke).toHaveBeenCalledTimes(3); expect(screen.getByTestId("live-player")).toBe(player);
+    fireEvent.click(screen.getByRole("button", { name: "关闭直播" }));
+    view.rerender(<VideoLivePanel visible={false} canvasCourseId={10} refresh={0} playback="live" onPlay={() => {}} />);
+    await act(async () => { vi.advanceTimersByTime(120_000); });
+    expect(mocks.invoke).toHaveBeenCalledTimes(3);
+  });
+  it("waits through the break and follows the next lesson off-page without remounting", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(now);
+    const schedule = [
+      { ...list.sessions[0], finishTime: now + 2000 },
+      { ...list.sessions[1], startTime: now + 4000, finishTime: now + 8000 },
+    ];
+    mocks.invoke.mockResolvedValue({ sessions: schedule, serverTime: now });
+    let view!: ReturnType<typeof render>;
+    await act(async () => { view = render(<VideoLivePanel canvasCourseId={10} refresh={0} playback="live" onPlay={() => {}} />); });
+    fireEvent.click(screen.getAllByRole("button", { name: "观看直播" })[0]);
+    const player = screen.getByTestId("live-player");
+    view.rerender(<VideoLivePanel visible={false} canvasCourseId={10} refresh={0} playback="live" onPlay={() => {}} />);
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    expect(player).toHaveTextContent("直播 live");
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    expect(screen.getByTestId("live-player")).toBe(player);
+    expect(player).toHaveTextContent("直播 next");
+  });
+  it("does not reopen a closed live player when the next lesson starts", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(now);
+    mocks.invoke.mockResolvedValue({ sessions: [
+      { ...list.sessions[0], finishTime: now + 2000 },
+      { ...list.sessions[1], startTime: now + 4000, finishTime: now + 8000 },
+    ], serverTime: now });
+    await act(async () => { render(<VideoLivePanel canvasCourseId={10} refresh={0} playback="live" onPlay={() => {}} />); });
+    fireEvent.click(screen.getAllByRole("button", { name: "观看直播" })[0]);
+    fireEvent.click(screen.getByRole("button", { name: "关闭直播" }));
+    await act(async () => { vi.advanceTimersByTime(5000); });
+    expect(screen.queryByTestId("live-player")).not.toBeInTheDocument();
+  });
+  it("stops background polling after the day's final lesson", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(now);
+    mocks.invoke.mockResolvedValue({ sessions: [{ ...list.sessions[0], finishTime: now + 2000 }], serverTime: now });
+    let view!: ReturnType<typeof render>;
+    await act(async () => { view = render(<VideoLivePanel canvasCourseId={10} refresh={0} playback="live" onPlay={() => {}} />); });
+    fireEvent.click(screen.getByRole("button", { name: "观看直播" }));
+    view.rerender(<VideoLivePanel visible={false} canvasCourseId={10} refresh={0} playback="live" onPlay={() => {}} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    const calls = mocks.invoke.mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    expect(mocks.invoke).toHaveBeenCalledTimes(calls);
   });
   it("shows live and upcoming sections and prevents playing an upcoming section", async () => {
     const onPlay = vi.fn();
