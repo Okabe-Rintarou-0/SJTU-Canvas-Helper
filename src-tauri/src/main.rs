@@ -38,6 +38,37 @@ async fn app_data(account: String, request: app::data::DataRequest) -> std::resu
 }
 
 #[tauri::command]
+async fn get_video_subtitle_versions(request: app::video_library::RecordingRequest) -> Result<app::video_library::VideoSubtitleVersions> {
+    APP.get_video_subtitle_versions(request).await
+}
+
+#[tauri::command]
+async fn inspect_video_recording(request: app::video_library::RecordingRequest) -> Result<app::video_library::VideoRecordingStatus> {
+    APP.inspect_video_recording(request).await
+}
+
+#[tauri::command]
+async fn proofread_video_subtitles(
+    request: app::video_library::RecordingRequest,
+    on_status: tauri::ipc::Channel<String>,
+) -> Result<app::video_library::ProofreadVideoResult> {
+    APP.proofread_video_subtitles(request, &move |status| { let _ = on_status.send(status); }).await
+}
+
+#[tauri::command]
+async fn reset_video_subtitle_proofread(request: app::video_library::RecordingRequest) -> Result<app::video_library::VideoMaterial> {
+    APP.reset_video_subtitle_proofread(request).await
+}
+
+#[tauri::command]
+async fn transcribe_video_material(
+    request: app::video_library::RecordingRequest,
+    on_status: tauri::ipc::Channel<String>,
+) -> Result<app::video_library::VideoMaterial> {
+    APP.transcribe_video_material(request, &move |status| { let _ = on_status.send(status); }).await
+}
+
+#[tauri::command]
 async fn generate_annual_report(year: i32) -> Result<AnnualReport> {
     APP.generate_annual_report(year).await
 }
@@ -1143,6 +1174,11 @@ async fn main() -> Result<()> {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
+            get_video_subtitle_versions,
+            inspect_video_recording,
+            proofread_video_subtitles,
+            reset_video_subtitle_proofread,
+            transcribe_video_material,
             app_data,
             read_log_content,
             read_diagnostic_report,

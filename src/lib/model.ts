@@ -309,6 +309,7 @@ export interface AppConfig {
     llm_api_keys: LlmApiKeyEntry[];
     llm_active_api_key: string;
     video_summary_prompt?: string;
+    experimental_video_topics?: boolean;
     video_summary_context_tokens?: number;
     video_summary_output_tokens?: number;
     theme: Theme;

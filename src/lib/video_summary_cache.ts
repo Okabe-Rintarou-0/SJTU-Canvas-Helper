@@ -3,6 +3,7 @@ import type { CanvasVideo } from "./model";
 import { recordingKey, type VideoSession } from "./video_library";
 import { videoSummaryOptions, videoSummaryOptionsError, type VideoSummaryOptions } from "./video_summary_config";
 import { currentDataAccount, defineDataCollection } from "./app_data";
+import { validSummarySources, type VideoSummarySource } from "./video_summary_sources";
 
 export interface VideoPreparedContext { sourceHash: string; text: string }
 export interface VideoChatResponse { content: string; preparedContext?: VideoPreparedContext | null }
@@ -16,9 +17,12 @@ export interface VideoSummaryCache {
   messages: FileAIChatMessage[];
   text: string;
   coverage: string;
+  sources?: VideoSummarySource[];
   savedAt: string;
   summaryOptions?: VideoSummaryOptions;
   preparedContext?: VideoPreparedContext;
+  transcribeMissing?: boolean;
+  generateTopics?: boolean;
 }
 // Rebuild contexts with concise chronological OCR evidence, without processing metadata.
 const STORAGE_KEY = "video-material-summaries-v7";
@@ -32,9 +36,9 @@ function isRecording(value: unknown, depth = 0): value is CanvasVideo {
     && (v.alternatives === undefined || (depth < 2 && Array.isArray(v.alternatives) && v.alternatives.every((item) => isRecording(item, depth + 1))));
 }
 
-export function summaryCacheKey(namespace: string, scopes: VideoSession[], organization: string, options = videoSummaryOptions()) {
+export function summaryCacheKey(namespace: string, scopes: VideoSession[], organization: string, options = videoSummaryOptions(), transcribeMissing = true) {
   const groups = scopes.map((scope) => scope.videos.map((v) => `${recordingKey(v)}:${v.courseBeginTime}:${v.courseEndTime}`).sort());
-  return JSON.stringify(["prompt-v1", namespace, organization, options.prompt.trim(), options.contextTokens, options.outputTokens,
+  return JSON.stringify([transcribeMissing ? "canvas-optimized-transcript-v1" : "canvas-existing-material-v1", namespace, organization, options.prompt.trim(), options.contextTokens, options.outputTokens,
     organization === "combined" ? groups.flat().sort() : groups.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))]);
 }
 
@@ -56,6 +60,9 @@ export function isSummaryCache(value: unknown): value is VideoSummaryCache {
     return typeof item.key === "string" && typeof item.namespace === "string" && typeof item.text === "string" && typeof item.title === "string" && typeof item.coverage === "string" && typeof item.savedAt === "string" && ["combined", "sessions"].includes(item.organization)
       && (item.summaryOptions === undefined || (typeof item.summaryOptions?.prompt === "string" && !videoSummaryOptionsError(item.summaryOptions)))
       && (item.preparedContext === undefined || (typeof item.preparedContext?.sourceHash === "string" && typeof item.preparedContext?.text === "string"))
+      && (item.transcribeMissing === undefined || typeof item.transcribeMissing === "boolean")
+      && (item.generateTopics === undefined || typeof item.generateTopics === "boolean")
+      && (item.sources === undefined || validSummarySources(item.sources))
       && Array.isArray(item.messages) && item.messages.every((m: FileAIChatMessage) => m && typeof m.content === "string" && typeof m.id === "string" && typeof m.createdAt === "string" && ["user", "assistant"].includes(m.role))
       && Array.isArray(item.scopes) && item.scopes.length > 0 && item.scopes.every((s: VideoSession) => s && typeof s.id === "string" && typeof s.title === "string" && Array.isArray(s.videos) && s.videos.length > 0 && s.videos.every((v) => isRecording(v)));
 }

@@ -75,6 +75,8 @@ describe("video summary history", () => {
   });
   it("separates course/model, recording sets, organization and preferences", () => {
     const key = summaryCacheKey("a", scopes, "combined");
+    expect(summaryCacheKey("a", scopes, "combined", undefined, true)).toBe(key);
+    expect(summaryCacheKey("a", scopes, "combined", undefined, false)).not.toBe(key);
     expect(summaryCacheKey("b", scopes, "combined")).not.toBe(key);
     expect(summaryCacheKey("a", scopes, "sessions")).not.toBe(key);
     expect(summaryCacheKey("a", [{ ...scopes[0], videos: [{ ...scopes[0].videos[0], videoId: "b" }] }], "combined")).not.toBe(key);

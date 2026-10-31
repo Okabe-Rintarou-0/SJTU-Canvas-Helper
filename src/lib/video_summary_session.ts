@@ -6,8 +6,10 @@ import { hasVideoMaterial, recordingKey, type VideoMaterial, type VideoSession }
 import { recordingRequest } from "./video_library_tasks";
 import { deleteSummaryCache, readSummaryCache, summaryCacheKey, writeSummaryCache, PPT_CLEANUP_POLICY, type VideoSummaryCache, type VideoPreparedContext, type VideoChatResponse } from "./video_summary_cache";
 import { videoSummaryOptions, type VideoSummaryOptions } from "./video_summary_config";
-
+import { summaryBody, summaryTopics, videoTopicIndex } from "./video_topics";
 import { currentDataAccount } from "./app_data";
+import { sourceCoverage, summarySource, type VideoSummarySource } from "./video_summary_sources";
+import { summaryScopeInstructions, type SummaryScopeSection } from "./video_summary_prompt";
 
 interface SummaryState {
   open: boolean;
@@ -17,6 +19,7 @@ interface SummaryState {
   loading: boolean;
   progress: string;
   coverage: string;
+  sources?: VideoSummarySource[];
   input: string;
   text: string;
   namespace: string;
@@ -25,6 +28,7 @@ interface SummaryState {
   cacheNotice: string;
   summaryOptions: VideoSummaryOptions;
   preparedContext?: VideoPreparedContext;
+  transcribeMissing: boolean;
 }
 
 interface SummaryRequest {
@@ -35,11 +39,13 @@ interface SummaryRequest {
   cleanUpPpt: boolean;
   force?: boolean;
   summaryOptions?: VideoSummaryOptions;
+  transcribeMissing?: boolean;
+  generateTopics?: boolean;
 }
 
-function withTimeout<T>(promise: Promise<T>): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, milliseconds = 45_000): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = window.setTimeout(() => reject(new Error("请求超时，请刷新重试")), 30_000);
+    const timer = window.setTimeout(() => reject(new Error("请求超时，请刷新重试")), milliseconds);
     promise.then((value) => { clearTimeout(timer); resolve(value); }, (error) => { clearTimeout(timer); reject(error); });
   });
 }
@@ -47,10 +53,12 @@ function withTimeout<T>(promise: Promise<T>): Promise<T> {
 export class VideoSummarySession extends AISessionStore<SummaryState> {
   private materialCache = new Map<string, VideoMaterial>();
   private storageAccount?: string;
+  private topicSaveFailed = false;
+  private missingTopics = 0;
 
   constructor() {
     super(() => ({ open: false, title: "", scopes: [], messages: [], loading: false, progress: "", coverage: "",
-      input: "", text: "", namespace: "", organization: "sessions", cacheNotice: "", summaryOptions: videoSummaryOptions() }));
+      input: "", text: "", namespace: "", organization: "sessions", cacheNotice: "", summaryOptions: videoSummaryOptions(), transcribeMissing: true }));
   }
 
   clearMaterials = () => { this.materialCache.clear(); };
@@ -65,8 +73,9 @@ export class VideoSummarySession extends AISessionStore<SummaryState> {
     this.storageAccount = account;
     this.generation++;
     this.update({ cacheEntry: { ...entry, scopes }, namespace: entry.namespace, title: entry.title, scopes,
-      messages: entry.messages, organization: entry.organization, text: entry.text, coverage: entry.coverage,
+      messages: entry.messages, organization: entry.organization, text: entry.text, coverage: entry.coverage, sources: entry.sources,
       summaryOptions: entry.summaryOptions ?? videoSummaryOptions(), preparedContext: entry.preparedContext,
+      transcribeMissing: entry.transcribeMissing !== false,
       input: "", open: true, progress: "", cacheNotice: `已读取本地历史 · ${new Date(entry.savedAt).toLocaleString("zh-CN")}` });
   };
 
@@ -92,42 +101,62 @@ export class VideoSummarySession extends AISessionStore<SummaryState> {
       : "本次结果保留在当前应用会话中，未能保存到应用数据目录" });
   }
 
-  private async requestChat(messages: LLMChatMessage[], history: CanvasAgentChatMessage[], generation: number, prefix = "") {
+  private async requestChat(messages: LLMChatMessage[], history: CanvasAgentChatMessage[], generation: number, prefix = "", initial?: { sections: SummaryScopeSection[]; topicWriteKeys: Set<string> }) {
     const response = aiMessage("assistant", prefix, { pending: true });
     let content = "";
     const onChunk = new Channel<string>();
     onChunk.onmessage = (chunk) => {
       if (generation !== this.generation || !this.state.loading) return;
       content += chunk;
-      this.update({ progress: "正在生成正文", messages: [...history, { ...response, content: prefix + content }] });
+      this.update({ progress: "正在生成正文", messages: [...history, { ...response, content: prefix + (initial ? summaryBody(content) : content) }] });
     };
     const onStatus = new Channel<string>();
     onStatus.onmessage = (progress) => {
       if (generation === this.generation && this.state.loading) this.update({ progress });
     };
-    const result = await invoke<VideoChatResponse | string>("chat_video_materials", { text: this.state.text, messages,
+    // The optional topic task never changes the complete summary scope.
+    const scopeInstruction = initial ? summaryScopeInstructions(initial.sections, initial.topicWriteKeys.size > 0) : "";
+    const outgoing = scopeInstruction ? messages.map((message, index) => index === messages.length - 1 ? { ...message, content: `${message.content}\n${scopeInstruction}` } : message) : messages;
+    const result = await invoke<VideoChatResponse | string>("chat_video_materials", { text: this.state.text, messages: outgoing,
       options: this.state.summaryOptions, preparedContext: this.state.preparedContext, onChunk, onStatus });
     // Accept older backends during development/hot reload; current backend returns preparation metadata.
     const reply = typeof result === "string" ? { content: result } : result;
     if (!reply.content.trim()) throw new Error("模型未返回有效正文，请重试");
     if (generation === this.generation) this.update({ preparedContext: reply.preparedContext ?? undefined });
-    return reply.content;
+    const body = initial ? summaryBody(reply.content) : reply.content;
+    if (!body.trim()) throw new Error("模型未返回有效总结正文，请重试");
+    if (initial && generation === this.generation) {
+      const topics = summaryTopics(reply.content, initial.topicWriteKeys);
+      this.missingTopics = initial.topicWriteKeys.size - Object.keys(topics).length;
+      if (this.storageAccount) {
+        try {
+          const collection = videoTopicIndex.forAccount(this.storageAccount);
+          for (const [key, topic] of Object.entries(topics)) {
+            if (generation !== this.generation) break;
+            await collection.set(key, { topic, sourceHash: this.state.preparedContext?.sourceHash ?? "summary", policy: "summary-topics-v1" });
+          }
+        } catch { if (generation === this.generation) this.topicSaveFailed = true; }
+      }
+    }
+    return body;
   }
 
-  start = async ({ scopes, organization, namespace, title, cleanUpPpt, force = false, summaryOptions = videoSummaryOptions() }: SummaryRequest) => {
+  start = async ({ scopes, organization, namespace, title, cleanUpPpt, force = false, summaryOptions = videoSummaryOptions(), transcribeMissing = true, generateTopics = false }: SummaryRequest) => {
     if (isAccountTransitioning() || this.state.loading || !scopes.length) return;
     namespace = namespace.replace(/:ppt-(?:animation|cleanup)(?:-v\d+)?=[01]$/, `:${PPT_CLEANUP_POLICY}=${Number(cleanUpPpt)}`);
     summaryOptions = { ...summaryOptions, prompt: summaryOptions.prompt.trim() || videoSummaryOptions().prompt };
-    const key = summaryCacheKey(namespace, scopes, organization, summaryOptions);
+    const key = summaryCacheKey(namespace, scopes, organization, summaryOptions, transcribeMissing);
     if (force) this.clearMaterials();
     const generation = ++this.generation;
+    this.topicSaveFailed = false;
+    this.missingTopics = 0;
     const prompt = organization === "sessions"
-      ? `请逐堂总结所选课堂，每堂课内综合所有小节的字幕与 PPT OCR。\n课堂总结要求：\n${summaryOptions.prompt}`
-      : `请综合总结全部所选小节的字幕与 PPT OCR。\n课堂总结要求：\n${summaryOptions.prompt}`;
-    const opening = aiMessage("user", prompt);
+      ? `请逐堂总结所选课堂，每堂课内综合所有小节的字幕、音视频转录与 PPT OCR。\n课堂总结要求：\n${summaryOptions.prompt}`
+      : `请综合总结全部所选小节的字幕、音视频转录与 PPT OCR。\n课堂总结要求：\n${summaryOptions.prompt}`;
+    const opening = aiMessage("user", `总结所选 ${scopes.reduce((count, scope) => count + scope.videos.length, 0)} 小节`);
     this.update({ cacheEntry: undefined, namespace, cacheNotice: "", title, scopes, organization,
-      summaryOptions, preparedContext: undefined,
-      messages: [opening], coverage: "", text: "", input: "", loading: true, open: true, progress: "正在准备资料" });
+      summaryOptions, transcribeMissing, preparedContext: undefined,
+      messages: [opening], coverage: "", sources: undefined, text: "", input: "", loading: true, open: true, progress: "正在准备资料" });
     try {
       this.storageAccount = await currentDataAccount();
       if (generation !== this.generation) return;
@@ -146,30 +175,53 @@ export class VideoSummarySession extends AISessionStore<SummaryState> {
       for (const [index, entry] of entries.entries()) {
         if (generation !== this.generation) return;
         this.update({ progress: `正在读取字幕与 PPT OCR ${index + 1}/${entries.length}` });
-        const materialKey = `${namespace}:${recordingKey(entry.video)}:${PPT_CLEANUP_POLICY}=${cleanUpPpt}`;
+        const materialKey = `${namespace}:${recordingKey(entry.video)}:${PPT_CLEANUP_POLICY}=${cleanUpPpt}:transcribe=${transcribeMissing}`;
         let material = this.materialCache.get(materialKey);
         if (!material) {
           try { material = await withTimeout(invoke<VideoMaterial>("prepare_video_material", { request: recordingRequest(entry.video, entry.title), cleanUpPpt })); }
           catch (e) { material = { key: recordingKey(entry.video), title: entry.title, text: "", srt: "", subtitleAvailable: false, warnings: [`${entry.title}：${e}`] }; }
           if (generation !== this.generation) return;
+          if (transcribeMissing && !material.subtitleAvailable && !material.transcriptAvailable && [entry.video, ...(entry.video.alternatives ?? [])].some((v) => v.playable)) {
+            const onStatus = new Channel<string>();
+            onStatus.onmessage = (status) => {
+              if (generation === this.generation) this.update({ progress: `${status} ${index + 1}/${entries.length}` });
+            };
+            try {
+              const transcript = await withTimeout(invoke<VideoMaterial>("transcribe_video_material", { request: recordingRequest(entry.video, entry.title), onStatus }), 35 * 60_000);
+              if (generation !== this.generation) return;
+              if (transcript.transcriptAvailable) material = { ...material, text: `${material.text}\n${transcript.text}`, transcriptAvailable: true, warnings:[...material.warnings,...(transcript.warnings ?? [])] };
+            } catch (e) {
+              if (generation !== this.generation) return;
+              material.warnings.push(`${entry.title}：音频转录失败：${e}`);
+            }
+          }
           if (hasVideoMaterial(material) && !material.warnings.length) this.materialCache.set(materialKey, material);
         }
-        materials.push(material);
+        materials.push({ ...material, key: recordingKey(entry.video), title: entry.title });
       }
       if (generation !== this.generation) return;
       const available = materials.filter(hasVideoMaterial);
-      const warnings = materials.flatMap((item) => item.warnings);
-      const report = `${materials.filter((item) => item.subtitleAvailable).length}/${entries.length} 小节字幕可用；${materials.filter((item) => item.ocrAvailable).length}/${entries.length} 小节 PPT OCR 可用${warnings.length ? `；资料提示：${warnings.join("；")}` : ""}${available.length < entries.length ? `；未覆盖小节：${materials.filter((item) => !hasVideoMaterial(item)).map((item) => item.title).join("；")}` : "；覆盖全部所选小节"}`;
-      this.update({ coverage: report });
-      if (!available.length) throw new Error("所选小节均无可用字幕或 PPT OCR，无法生成总结");
-      const text = `${report}\n\n${available.map((item) => item.text).join("\n\n")}`;
+      const sources = materials.map(summarySource);
+      const report = sourceCoverage(sources);
+      this.update({ coverage: report, sources });
+      if (!available.length) throw new Error("所选小节均无可用字幕、音视频转录或 PPT OCR，无法生成总结");
+      // Bind every material block to its recording. Diagnostics are UI state,
+      // not classroom evidence to be reproduced in the summary.
+      const text = `${report}\n\n${materials.map((item, index) => `## 小节 ${index + 1} · ${entries[index].video.courseBeginTime} · 标识 ${item.key}\n${hasVideoMaterial(item) ? item.text : "未获取到授课资料，未纳入本次总结；不得推测其内容或主题。"}`).join("\n\n")}`;
       this.update({ text, progress: "正在准备总结" });
-      const result = await this.requestChat([{ role: "user", content: prompt }], [opening], generation, `${report}\n\n`);
+      const topicEntries = generateTopics ? entries.filter((_, index) => hasVideoMaterial(materials[index])) : [];
       if (generation !== this.generation) return;
-      const messages = [opening, aiMessage("assistant", `${report}\n\n${result}`)];
+      const result = await this.requestChat([{ role: "user", content: prompt }], [opening], generation, "", {
+        sections: entries.map(({ video }, index) => ({ key: recordingKey(video), time: video.courseBeginTime, included: hasVideoMaterial(materials[index]) })),
+        topicWriteKeys: new Set(topicEntries.map(({ video }) => recordingKey(video))),
+      });
+      if (generation !== this.generation) return;
+      const messages = [opening, aiMessage("assistant", result)];
       this.update({ messages });
-      await this.persist({ key, namespace, title, scopes, organization, messages, text, coverage: report,
-        summaryOptions, preparedContext: this.state.preparedContext, savedAt: new Date().toISOString() }, generation);
+      await this.persist({ key, namespace, title, scopes, organization, messages, text, coverage: report, sources,
+        summaryOptions, transcribeMissing, generateTopics, preparedContext: this.state.preparedContext, savedAt: new Date().toISOString() }, generation);
+      if (generation === this.generation && this.topicSaveFailed) this.update({ cacheNotice: `${this.state.cacheNotice}；课程主题保存失败` });
+      else if (generation === this.generation && this.missingTopics) this.update({ cacheNotice: `${this.state.cacheNotice}；${this.missingTopics} 小节未生成课堂主题` });
     } catch (e) {
       if (generation === this.generation) this.update({ messages: [opening, aiMessage("assistant", `总结失败：${e}`, { error: true })] });
     } finally {

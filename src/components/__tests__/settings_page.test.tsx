@@ -304,3 +304,15 @@ it("can switch existing accounts and recover an unavailable extra login", async 
   await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("switch_account", { account: "Study" }));
   expect(mocks.changeAccount).toHaveBeenCalled();
 }, 15000);
+
+it("defaults recording topics off and saves the experiment setting", async () => {
+  await openSettings();
+  section("高级与实验");
+  const toggle = screen.getByRole("switch", { name: "生成课堂主题" });
+  expect(toggle).not.toBeChecked();
+  fireEvent.click(toggle);
+  save();
+  await waitFor(() => expect(mocks.saveConfig).toHaveBeenCalledWith(expect.objectContaining({
+    experimental_video_topics: true,
+  })));
+});

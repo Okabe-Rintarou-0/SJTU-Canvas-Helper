@@ -122,7 +122,7 @@ export default function AppDataSettings({ active }: { active: boolean }) {
       <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />}><Typography>管理已保存的 AI 内容</Typography></AccordionSummary>
       <AccordionDetails><Stack spacing={2}>
       <Typography variant="subtitle1">视频总结历史</Typography>
-      <Typography variant="body2" color="text.secondary">总结包含原始资料和完整追问上下文。</Typography>
+      <Typography variant="body2" color="text.secondary">总结包含原始资料和完整追问上下文。精校字幕等成果可在对应视频中查看。</Typography>
       {!histories.length && <Typography color="text.secondary">当前账号暂无已保存的视频总结。</Typography>}
       {histories.map((entry) => <Stack key={entry.key} direction="row" spacing={1} alignItems="center">
         <Box sx={{ flex: 1, minWidth: 0 }}><Typography sx={{ overflowWrap: "anywhere" }}>{entry.title}</Typography>
@@ -132,7 +132,7 @@ export default function AppDataSettings({ active }: { active: boolean }) {
         <Button color="error" disabled={blocked} onClick={() => setAction({ entry })}>删除</Button>
       </Stack>)}
       <Box><Button color="error" disabled={blocked || !overview?.categories.some((c) => c.category === "history" && c.files > 0)} onClick={() => setAction({ category: "history" })}>删除全部 AI 内容</Button>
-        <Typography variant="caption" display="block" color="text.secondary">删除当前账号的全部总结等保存内容，无法撤销。</Typography></Box>
+        <Typography variant="caption" display="block" color="text.secondary">删除当前账号的全部总结、转写、精校字幕等保存内容，无法撤销。</Typography></Box>
       </Stack></AccordionDetails></Accordion>
     </Stack></CardContent></Card>
     <Dialog open={!!action} onClose={() => setAction(undefined)} maxWidth="sm" fullWidth>
@@ -140,7 +140,7 @@ export default function AppDataSettings({ active }: { active: boolean }) {
       <DialogContent><Typography sx={{ overflowWrap: "anywhere" }}>
         {action && ("directory" in action ? `将全部账号的应用数据迁移到 ${action.directory}。完成后立即使用新目录，原目录保留为副本。`
           : "entry" in action ? `删除“${action.entry.title}”的总结和追问上下文？此操作无法撤销。`
-            : action.category === "cache" ? "清理当前账号的缓存？所需资料将重新获取，AI 总结和应用记录会保留。" : "删除当前账号的全部 AI 总结等保存内容？此操作无法撤销。")}
+            : action.category === "cache" ? "清理当前账号的缓存？所需资料将重新获取，AI 总结、精校字幕和应用记录会保留。" : "删除当前账号的全部 AI 总结、转写、精校字幕等保存内容？此操作无法撤销。")}
       </Typography></DialogContent>
       <DialogActions><Button onClick={() => setAction(undefined)}>取消</Button><Button color={action && "directory" in action ? "primary" : "error"} disabled={blocked} onClick={() => void confirm()}>确认操作</Button></DialogActions>
     </Dialog>

@@ -501,6 +501,7 @@ export default function SettingsPage() {
         compact_mode: config.compact_mode ?? false,
         experimental_task_center_only: config.experimental_task_center_only ?? false,
         experimental_ppt_cleanup: config.experimental_ppt_cleanup ?? false,
+        experimental_video_topics: config.experimental_video_topics ?? false,
         mcp_enabled: config.mcp_enabled ?? false,
         mcp_port: config.mcp_port || 3100,
         proxy_port: config.proxy_port || DEFAULT_PROXY_PORT,
@@ -1020,7 +1021,7 @@ export default function SettingsPage() {
                             额外扫码登录
                           </Typography>
                           <Typography variant="body2" color="text.secondary">
-                            课堂视频优先使用 Canvas Token 登录，失败时回退到额外登录态；其他需要额外登录的功能也可在下方扫码连接。
+                            扫码登录用于交大云盘上传、课堂音频转录，以及课堂视频的备用登录。
                           </Typography>
                         </Box>
 
@@ -1804,6 +1805,10 @@ export default function SettingsPage() {
                       <Typography variant="body2" color="text.secondary">
                         默认关闭，保存后生效。
                       </Typography>
+                    </Box>
+                    <Box>
+                      <FormControlLabel label="生成课堂主题" control={<Switch size="small" checked={formData?.experimental_video_topics ?? false} onChange={(event) => updateField("experimental_video_topics", event.target.checked)} />} />
+                      <Typography variant="body2" color="text.secondary">精校或总结时生成主题，并更新已有主题。</Typography>
                     </Box>
                     <Box>
                       <FormControlLabel

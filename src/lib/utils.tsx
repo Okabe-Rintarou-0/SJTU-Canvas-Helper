@@ -354,17 +354,7 @@ export async function checkForUpdates(
   }
 }
 
-export function srtToVtt(srt: string) {
-  return (
-    "WEBVTT\n\n" +
-    srt
-      .replace(
-        /(\d+)\n(\d{2}:\d{2}:\d{2}),(\d{3}) --> (\d{2}:\d{2}:\d{2}),(\d{3})/g,
-        "$1\n$2.$3 --> $4.$5"
-      )
-      .replace(/\r/g, "")
-  );
-}
+export { srtToVtt } from "./subtitle_format";
 
 function detectExternalType(item: ModuleItem) {
   const supportedExt = [".pdf", ".doc", ".docx", ".pptx", ".txt", ".zip", ".7z", ".tar"];

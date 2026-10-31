@@ -59,7 +59,7 @@ export function LoginAlert({
                   使用手机扫码登录
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  登录后即可使用依赖额外登录态的视频等功能。
+                  用于交大云盘上传、课堂音频转录，以及课堂视频的备用登录。
                 </Typography>
               </Box>
             </Stack>

@@ -1,6 +1,3 @@
-import VideoSummaryScope from "../components/video_summary_scope";
-import { subscribeAppData } from "../lib/app_data";
-import { downloadCourseContext, downloadDirectory, type DownloadCourse } from "../lib/downloads";
 import WorkspaceSelect from "../components/workspace_select";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -21,6 +18,8 @@ import { VideoLibraryTaskQueue } from "../components/video_library_tasks";
 import VideoAggregator from "../components/video_aggregator";
 import VideoLibraryPlayer from "../components/video_library_player";
 import VideoLivePanel from "../components/video_live_panel";
+import VideoSummarySources from "../components/video_summary_sources";
+import VideoSummaryScope from "../components/video_summary_scope";
 import FileAIChatModal from "../components/file_ai_chat_modal";
 import { useCourses, useConfigSelector } from "../lib/hooks";
 import { useAppMessage } from "../lib/message";
@@ -34,6 +33,10 @@ import { videoSummarySession } from "../lib/video_summary_session";
 import { videoSummaryOptions } from "../lib/video_summary_config";
 import { DEFAULT_LLM_BASE_URL, DEFAULT_LLM_MODEL } from "../lib/llm_config";
 import { surfaceCardSx } from "../lib/styles";
+import { subscribeAppData } from "../lib/app_data";
+import { inspectSummaryScope, type SummaryPreflight } from "../lib/video_summary_preflight";
+import { readVideoTopics, recordingTopic, validVideoTopic } from "../lib/video_topics";
+import { downloadCourseContext, downloadDirectory, type DownloadCourse } from "../lib/downloads";
 
 const isPlayable = (video: CanvasVideo) => video.playable || !!video.alternatives?.some((v) => v.playable);
 const hasSubtitleSource = (video: CanvasVideo) => [video, ...(video.alternatives ?? [])].some((v) => v.source !== "legacy");
@@ -48,7 +51,32 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   const canvas = useCourses();
   const centerOnly = useConfigSelector((state) => state.config.data?.experimental_task_center_only === true);
   const pptCleanupEnabled = useConfigSelector((state) => state.config.data?.experimental_ppt_cleanup === true);
+  const generateTopics = useConfigSelector((state) => state.config.data?.experimental_video_topics === true);
+  const [refresh, setRefresh] = useState(0);
   const [account, setAccount] = useState<string>();
+  const [topicState, setTopicState] = useState<{ owner?: string; values: Record<string, string> }>({ values: {} });
+  const [topicError, setTopicError] = useState("");
+  const topics = useMemo(() => topicState.owner === account ? topicState.values : {}, [topicState, account]);
+  const updateTopic = useCallback((key: string, topic: string) => {
+    if (account && validVideoTopic(topic)) setTopicState((previous) => ({ owner: account, values: { ...(previous.owner === account ? previous.values : {}), [key]: topic } }));
+  }, [account]);
+  useEffect(() => {
+    if (!account) return;
+    let cancelled = false;
+    let revision = 0;
+    const load = async () => {
+      const current = ++revision;
+      try {
+        const values = await readVideoTopics(account);
+        if (!cancelled && current === revision) { setTopicState({ owner: account, values }); setTopicError(""); }
+      } catch { if (!cancelled && current === revision) setTopicError("课程主题读取失败，可刷新重试"); }
+    };
+    void load();
+    const unsubscribe = subscribeAppData((change) => {
+      if (change.account === account && (!change.collection || change.collection === "video-recording-topics")) void load();
+    });
+    return () => { cancelled = true; unsubscribe(); };
+  }, [account, refresh]);
   const aiConfig = useConfigSelector((state) => state.config.data);
   const summaryOptions = videoSummaryOptions(aiConfig ?? undefined);
   const activeLlm = aiConfig?.llm_api_keys?.find((entry) => entry.name === aiConfig.llm_active_api_key);
@@ -91,7 +119,6 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   const cacheNamespace = account && selectedCourse ? `${JSON.stringify([account, selectedCourse.canvasId, selectedCourse.teachingClassId, selectedCourse.name, selectedCourse.term.name, modelIdentity])}:${PPT_CLEANUP_POLICY}=${Number(pptCleanupEnabled)}` : "";
   const courseSummaries = cachedSummaries.filter((entry) => entry.namespace === cacheNamespace);
   const [login, setLogin] = useState<"checking" | "ready" | "required">("checking");
-  const [refresh, setRefresh] = useState(0);
   const [courseLoading, setCourseLoading] = useState(false);
   const [courseError, setCourseError] = useState("");
   const [videos, setVideos] = useState<CanvasVideo[]>([]);
@@ -110,6 +137,19 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   const [player, setPlayer] = useState<{ session: VideoSession; key: string; seconds: number; nonce: string; course?: DownloadCourse }>();
   const [aiScopes, setAiScopes] = useState<VideoSession[]>();
   const [aiOrganization, setAiOrganization] = useState("sessions");
+  const [aiTranscribe, setAiTranscribe] = useState(true);
+  const [preflight, setPreflight] = useState<SummaryPreflight>();
+  const [preflightRevision, setPreflightRevision] = useState(0);
+  useEffect(() => {
+    if (!aiScopes) return;
+    let cancelled = false;
+    setPreflight(undefined);
+    void inspectSummaryScope(aiScopes).then((status) => { if (!cancelled) setPreflight(status); });
+    return () => { cancelled = true; };
+  }, [aiScopes, preflightRevision]);
+  const offerTranscription = !!preflight?.needsTranscription && !preflight.unknown;
+
+  const summaryDialogCache = aiScopes && cachedSummaries.find((entry) => entry.key === summaryCacheKey(cacheNamespace, aiScopes, aiOrganization, summaryOptions, aiTranscribe));
   useEffect(() => {
     if (!active) {
       setToolsAnchor(null);
@@ -123,11 +163,11 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   const scopes = useMemo(() => selectedSessionScopes(sessions, selected), [sessions, selected]);
   const visible = useMemo(() => sessions.flatMap((session) => {
     const matching = session.videos.filter((video) => {
-      const matchesQuery = `${session.title} ${video.videoName} ${video.courseBeginTime}`.toLowerCase().includes(query.trim().toLowerCase());
+      const matchesQuery = `${session.title} ${video.videoName} ${video.courseBeginTime} ${recordingTopic(video, topics) ?? ""}`.toLowerCase().includes(query.trim().toLowerCase());
       return matchesQuery && (status === "all" || (status === "ready" ? isPlayable(video) : !isPlayable(video)));
     });
     return matching.length ? [{ session, matching }] : [];
-  }), [sessions, query, status]);
+  }), [sessions, query, status, topics]);
   const visibleDates = useMemo(() => groupSessionsByDate(visible), [visible]);
   const visibleVideos = visible.flatMap((item) => item.matching);
   const visibleKeys = new Set(visibleVideos.map(recordingKey));
@@ -216,20 +256,18 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   };
   const restoreSummary = (entry: VideoSummaryCache, currentScopes = entry.scopes) => {
     videoSummarySession.restore(entry, currentScopes, account);
-    setAiOrganization(entry.organization); setAiScopes(undefined); setCacheListOpen(false);
+    setAiOrganization(entry.organization); setAiTranscribe(entry.transcribeMissing !== false); setAiScopes(undefined); setCacheListOpen(false);
   };
   const summarize = (next: VideoSession[]) => {
     if (chatLoading) { setChatOpen(true); messageApi.info("请等待当前总结完成后再切换范围"); return; }
     const organization = next.length > 1 ? "sessions" : "combined";
-    const cached = cacheNamespace && cachedSummaries.find((entry) => entry.key === summaryCacheKey(cacheNamespace, next, organization, summaryOptions));
-    if (cached) { restoreSummary(cached, next); return; }
-    setAiScopes(next); setAiOrganization(organization);
+    setAiScopes(next); setAiOrganization(organization); setAiTranscribe(true);
   };
-  const startSummary = async (force = false, requested = aiScopes, organization = aiOrganization, namespace = cacheNamespace, titleOverride?: string) => {
+  const startSummary = async (force = false, requested = aiScopes, organization = aiOrganization, namespace = cacheNamespace, titleOverride?: string, transcribeMissing = aiTranscribe) => {
     if (!requested || videoSummarySession.getSnapshot().loading) return;
     setAiScopes(undefined);
     namespace = withSummaryModelIdentity(namespace, modelIdentity);
-    await videoSummarySession.start({ scopes: requested, organization, namespace, force, cleanUpPpt: pptCleanupEnabled, summaryOptions,
+    await videoSummarySession.start({ scopes: requested, organization, namespace, force, cleanUpPpt: pptCleanupEnabled, summaryOptions, transcribeMissing, generateTopics,
       title: titleOverride ?? `${selectedCourse?.name ?? "课程"} · ${requested.reduce((n, s) => n + s.videos.length, 0)} 小节` });
   };
   const sendMessage = async (content: string) => {
@@ -250,8 +288,8 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
     <Button size="small" sx={{ minWidth: 64 }} disabled={!scope.videos.some(canSummarizeRecording)} onClick={() => summarize([scope])}>AI 总结</Button>
   </Stack></TableCell>;
   const chatPanel = <FileAIChatModal embedded loadingLabel={chatProgress || "等待模型回复"} open={chatOpen} title={`${chatTitle} · ${chatScope.map((scope) => scope.title).join("；")}`} messages={chatMessages} loading={chatLoading} onClose={() => setChatOpen(false)} onSend={sendMessage} input={summary.input} onInputChange={(input) => videoSummarySession.update({ input })}
-      dialogTitle="AI 课堂总结" dialogDescription={chatProgress || coverage || "围绕所选课堂字幕与 PPT OCR 继续追问。会话范围固定，不受列表勾选变化影响。"}
-      contextLabel="会话范围" emptyText="正在读取所选小节资料" inputPlaceholder="继续追问知识点、作业或通知…" footerIdleText="依据本次会话的字幕与 PPT OCR；点击引用可跳转到对应小节和 PPT 时间。"
+      dialogTitle="AI 课堂总结" dialogDescription={chatProgress || ""}
+      contextLabel="会话范围" emptyText="正在读取所选小节资料" inputPlaceholder="继续追问知识点、作业或通知…" footerIdleText="点击时间引用可跳转录像"
       markdownComponents={{ a: ({ href, children }) => {
         const citation = parseVideoCitation(href);
         if (!citation || citation.seconds === undefined) return <span>{children}</span>;
@@ -261,9 +299,21 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
         }} title="跳转到此小节的对应时间">{formatVideoTimestamp(citation.seconds)}</a>;
       } }} />
 
+  const learningPanels = <Box ref={workspaceRef} sx={{ scrollMarginTop: 16, display: "grid", gridTemplateColumns: player && !playerMini && chatOpen ? { xs: "minmax(0, 1fr)", md: "minmax(0, 1.2fr) minmax(340px, 1fr)" } : "minmax(0, 1fr)", gap: 2, alignItems: "start" }}>
+        {player && <VideoLibraryPlayer course={player.course} topics={topics} onTopicChange={updateTopic} onMiniChange={setPlayerMini} session={player.session} initialKey={player.key} seconds={player.seconds} seekRequest={player.nonce} onClose={() => setPlayer(undefined)} onSummarize={(video) => summarize([{ ...player.session, id: recordingKey(video), title: `${player.session.title} · ${video.courseBeginTime?.slice(11, 16) || video.videoName}`, videos: [video] }])} />}
+        {chatOpen && <Card sx={{ ...surfaceCardSx, minWidth: 0 }}><Stack direction="row" gap={1} flexWrap="wrap" alignItems="center" sx={{ px: 2, pt: 1 }}>
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="body2">{cacheNotice}</Typography>
+            <VideoSummarySources sources={summary.sources} legacyCoverage={coverage} />
+          </Box>
+          <Button disabled={chatLoading || !chatScope.length} onClick={() => void startSummary(true, chatScope, summary.organization, summary.namespace, chatTitle, summary.transcribeMissing)}>重新生成</Button>
+          <Button disabled={chatLoading || !summary.cacheEntry} onClick={() => { void videoSummarySession.deleteCache().then((deleted) => { if (!deleted) messageApi.error("删除历史失败"); }); }}>删除历史</Button>
+          <Button onClick={() => setChatOpen(false)}>收起总结</Button>
+        </Stack>{chatPanel}</Card>}
+      </Box>;
+
   return <BasicLayout active={active} contentKey="video-workspace">
     {contextHolder}
-    {historyError && <Alert severity="warning">{historyError}</Alert>}
     <Stack spacing={2} sx={{ width: "100%" }}>
       <WorkspaceHero
         chipLabel="视频管理"
@@ -283,15 +333,9 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
         }
       />
       {selectedCourse && login === "ready" && <VideoLivePanel visible={active} key={selectedCourse.id} canvasCourseId={selectedCourse.canvasId} teachingClassId={selectedCourse.teachingClassId} refresh={refresh} playback={playback} onPlay={() => { setPlayer(undefined); setPlayback("live"); }} />}
-      {(player || chatOpen) && <Box ref={workspaceRef} sx={{ scrollMarginTop: 16, display: "grid", gridTemplateColumns: player && !playerMini && chatOpen ? { xs: "minmax(0, 1fr)", md: "minmax(0, 1.2fr) minmax(340px, 1fr)" } : "minmax(0, 1fr)", gap: 2, alignItems: "start" }}>
-        {player && <VideoLibraryPlayer course={player.course} onMiniChange={setPlayerMini} session={player.session} initialKey={player.key} seconds={player.seconds} seekRequest={player.nonce} onClose={() => setPlayer(undefined)} onSummarize={() => summarize([player.session])} />}
-        {chatOpen && <Card sx={{ ...surfaceCardSx, minWidth: 0 }}><Stack direction="row" gap={1} flexWrap="wrap" alignItems="center" sx={{ px: 2, pt: 1 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>{cacheNotice} · 本会话上下文 {summary.summaryOptions.contextTokens.toLocaleString("zh-CN")} / 输出上限 {summary.summaryOptions.outputTokens.toLocaleString("zh-CN")} tokens · 追问沿用本会话设置，重新生成使用当前设置</Typography>
-          <Button disabled={chatLoading || !chatScope.length} onClick={() => void startSummary(true, chatScope, summary.organization, summary.namespace, chatTitle)}>重新生成</Button>
-          <Button disabled={chatLoading || !summary.cacheEntry} onClick={() => { void videoSummarySession.deleteCache().then((deleted) => { if (!deleted) messageApi.error("删除历史失败"); }); }}>删除历史</Button>
-          <Button onClick={() => setChatOpen(false)}>收起总结</Button>
-        </Stack>{chatPanel}</Card>}
-      </Box>}
+      {historyError && <Alert severity="warning">{historyError}</Alert>}
+          {topicError && <Alert severity="warning">{topicError}</Alert>}
+      {(player || chatOpen) && learningPanels}
       <Card sx={{ ...surfaceCardSx, overflow: "visible" }}>
         <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
           <Stack spacing={2}>
@@ -299,7 +343,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
               <Box>
                 <Typography variant="h6" sx={{ fontWeight: 700 }}>课堂录像</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  {selectedCourse ? `${sessions.length} 堂课 · ${videos.length} 小节，支持整堂课或跨课堂勾选。` : "选择课程后，展开课堂查看小节录像。"}
+                  {selectedCourse ? `${sessions.length} 堂课 · ${videos.length} 小节` : "选择课程后，展开课堂查看小节录像。"}
                 </Typography>
               </Box>
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -313,7 +357,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
             {courseLoading && <Typography variant="caption" color="text.secondary">正在同步视频空间课程，已有课程可直接选择。</Typography>}
             {courseError && <Alert severity="warning">视频空间课程读取失败：{courseError}。其他来源仍可使用。</Alert>}
             <Stack direction="row" gap={1} flexWrap="wrap">
-              <TextField size="small" placeholder="搜索日期、课堂或小节" inputProps={{ "aria-label": "搜索课堂" }} value={query} onChange={(e) => setQuery(e.target.value)} sx={{ flex: 1, minWidth: 180 }} />
+              <TextField size="small" placeholder="搜索日期或课程主题" inputProps={{ "aria-label": "搜索课堂" }} value={query} onChange={(e) => setQuery(e.target.value)} sx={{ flex: 1, minWidth: 180 }} />
               <WorkspaceSelect size="small" label="录像状态" value={status} onChange={(e) => setStatus(e.target.value)} sx={{ minWidth: 140 }}>
                 <MenuItem value="all">全部状态</MenuItem><MenuItem value="ready">可播放</MenuItem><MenuItem value="unavailable">暂不可播放</MenuItem>
               </WorkspaceSelect>
@@ -325,7 +369,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
               <Table size="small" sx={{ "& .MuiTableCell-root": { px: { xs: 0.75, sm: 2 } }, "& .MuiTableCell-paddingCheckbox": { px: 0 } }} aria-label="课堂资料库">
                 <TableHead><TableRow sx={{ bgcolor: (theme) => alpha(theme.palette.primary.main, 0.05) }}>
                   <TableCell padding="checkbox">{check(visibleVideos, "全选当前筛选结果")}</TableCell>
-                  <TableCell>日期 / 小节</TableCell><TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>来源</TableCell><TableCell align="right">操作</TableCell>
+                  <TableCell>日期 / 小节</TableCell>{generateTopics && <TableCell>课堂主题</TableCell>}<TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>来源</TableCell><TableCell align="right">操作</TableCell>
                 </TableRow></TableHead>
                 <TableBody>
                   {visibleDates.map((day) => {
@@ -343,6 +387,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
                             <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap"><Button color="inherit" size="small" sx={{ p: 0, fontSize: "1rem", fontWeight: 700, color: "text.primary", textAlign: "left" }} onClick={() => toggleExpanded(dayScope.id, dayExpanded)}>{[...new Set(allDayVideos.flatMap((v) => [v, ...(v.alternatives ?? [])]).map((v) => v.weekNumber).filter((week) => week > 0))].map((week) => `第 ${week} 周`).join(" / ") || "周次待确认"}{weekday ? ` · ${weekday}` : ""}</Button><Typography variant="caption" color="text.secondary">{dateLabel}</Typography><Chip size="small" variant="outlined" label={`${allDayVideos.length} 小节`} />{dayVideos.length < allDayVideos.length && <Typography variant="caption" color="text.secondary">筛选命中 {dayVideos.length} 小节</Typography>}</Stack>
                           </Stack>
                         </TableCell>
+                        {generateTopics && <TableCell><Typography variant="body2">{dayExpanded ? "" : [...new Set(allDayVideos.map((video) => recordingTopic(video, topics)).filter(Boolean))].join("；") || "—"}</Typography></TableCell>}
                         <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}><Typography variant="caption" color="text.secondary">{sourceNames(allDayVideos)}</Typography></TableCell>
                         {rowActions(dayScope)}
                       </TableRow>
@@ -355,12 +400,13 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
                             </Box>
                           </Stack>
                         </TableCell>
+                        {generateTopics && <TableCell><Typography variant="body2">{recordingTopic(video, topics) || "—"}</Typography></TableCell>}
                         <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}><Typography variant="caption">{sourceNames([video])}</Typography></TableCell>
                         {rowActions({ ...dayScope, title: `${day.title}（第 ${allDayVideos.indexOf(video) + 1} 小节）`, videos: [video] }, dayScope, recordingKey(video))}
                       </TableRow>)}
                     </Fragment>;
                   })}
-                  {!visible.length && <TableRow><TableCell colSpan={4} sx={{ textAlign: "center", py: 7, color: "text.secondary" }}>{loading ? "正在读取课堂录像…" : !selectedCourse ? "选择课程，查看课堂录像和资料" : videos.length ? "没有匹配的课堂，请调整搜索或筛选" : "本课程暂无课堂录像"}</TableCell></TableRow>}
+                  {!visible.length && <TableRow><TableCell colSpan={generateTopics ? 5 : 4} sx={{ textAlign: "center", py: 7, color: "text.secondary" }}>{loading ? "正在读取课堂录像…" : !selectedCourse ? "选择课程，查看课堂录像和资料" : videos.length ? "没有匹配的课堂，请调整搜索或筛选" : "本课程暂无课堂录像"}</TableCell></TableRow>}
                 </TableBody>
               </Table>
             </Box>
@@ -378,23 +424,23 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
       <DialogTitle>{singleDownload ? "下载小节资料" : `下载 ${downloadScopes?.length} 堂课 · ${downloadCount} 小节`}</DialogTitle>
       <DialogContent><Stack spacing={2} sx={{ pt: 1 }}>
         <Typography variant="body2" color="text.secondary">{downloadScopes?.map((s) => s.title).join("；")}</Typography>
-        <Stack direction="row" flexWrap="wrap">{([ ["video", "视频"], ["ppt", "PPT 切片 PDF"], ["subtitle", "字幕"] ] as const).map(([key, label]) => <FormControlLabel key={key} label={label} control={<Checkbox checked={exportOptions[key]} onChange={(_, checked) => setExportOptions((previous) => ({ ...previous, [key]: checked }))} />} />)}</Stack>
+        <Stack direction="row" flexWrap="wrap">{([ ["video", "视频"], ["ppt", "PPT PDF"], ["subtitle", "字幕"] ] as const).map(([key, label]) => <FormControlLabel key={key} label={label} control={<Checkbox checked={exportOptions[key]} onChange={(_, checked) => setExportOptions((previous) => ({ ...previous, [key]: checked }))} />} />)}</Stack>
         {exportOptions.video && <Stack spacing={1}>
           <Typography variant="subtitle2">视频</Typography>
           <WorkspaceSelect label="视频机位" size="small" value={exportOptions.tracks} onChange={(e) => setExportOptions((p) => ({ ...p, tracks: e.target.value as "all" | "first" }))}><MenuItem value="all">全部可用机位</MenuItem><MenuItem value="first">仅首个机位</MenuItem></WorkspaceSelect>
           <Typography variant="caption" color="text.secondary">每个机位保存为独立视频文件。</Typography>
         </Stack>}
         {exportOptions.ppt && <Stack spacing={1}>
-          <Typography variant="subtitle2">PPT 切片 PDF</Typography>
-          {canMergePpt ? <WorkspaceSelect label="PPT 输出" size="small" value={exportOptions.pptPerSession ? "session" : "section"} onChange={(e) => setExportOptions((p) => ({ ...p, pptPerSession: e.target.value === "session" }))}><MenuItem value="session">每堂课合并一个 PDF（仅包含所选小节）</MenuItem><MenuItem value="section">每小节一个 PDF</MenuItem></WorkspaceSelect> : <Typography variant="body2">{singleDownload ? "本小节的 PPT 切片保存为一个 PDF。" : "每堂课仅选中一个小节，各自保存为一个 PDF。"}</Typography>}
-          {pptCleanupEnabled && <Alert severity="info">已开启“导出 PPT 时去除无用页面”：排除明确的桌面和签到页面，连续重复或增量切片保留完整画面；不合并中途切页后再次出现的页面。此实验性设置也用于 AI 总结与追问，处理记录保存在任务日志中，关闭后可导出全部切片。</Alert>}
+          <Typography variant="subtitle2">PPT PDF</Typography>
+          {canMergePpt ? <WorkspaceSelect label="PPT 输出" size="small" value={exportOptions.pptPerSession ? "session" : "section"} onChange={(e) => setExportOptions((p) => ({ ...p, pptPerSession: e.target.value === "session" }))}><MenuItem value="session">每堂课一个 PDF</MenuItem><MenuItem value="section">每小节一个 PDF</MenuItem></WorkspaceSelect> : <Typography variant="body2">{singleDownload ? "一个 PDF。" : "每小节一个 PDF。"}</Typography>}
+          {pptCleanupEnabled && <Alert severity="info">已开启 PPT 页面清理，可在设置中关闭。</Alert>}
         </Stack>}
         {exportOptions.subtitle && <Stack spacing={1}>
           <Typography variant="subtitle2">字幕</Typography>
-          <Typography variant="body2">{singleDownload ? "保存本小节的 SRT 字幕和阅读文本。" : "每小节独立 SRT，同时生成每堂课所选小节的阅读文本。"}阅读文本中的时间点属于各自小节。</Typography>
+          <Typography variant="body2">{singleDownload ? "SRT 字幕和阅读文本。" : "每小节一个 SRT，每堂课一份阅读文本。"}</Typography>
           {singleDownload && <Typography variant="caption" color="text.secondary">另存为仅保存 SRT，可自定义文件名和位置。</Typography>}
         </Stack>}
-        <Typography variant="caption" color="text.secondary">按“学期 → 课程 → 资料类型 → 课堂”归档，同名文件自动编号；缺失资料在任务结果中列出。</Typography>
+        <Typography variant="caption" color="text.secondary">所选根目录下按“学期 → 课程 → 资料类型 → 课堂”归档，同名文件自动编号。缺失资料见任务结果。</Typography>
         {(exportOptions.ppt || exportOptions.subtitle) && downloadScopes?.some((s) => s.videos.some((v) => !hasSubtitleSource(v))) && <Alert severity="info">部分来源仅提供视频，PPT 和字幕可能不可用；其他资料会继续导出。</Alert>}
       </Stack></DialogContent>
       <DialogActions sx={{ flexWrap: "wrap", gap: 1 }}>
@@ -407,10 +453,22 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
       <DialogTitle>总结所选 {aiScopes?.reduce((n, s) => n + s.videos.length, 0)} 小节</DialogTitle>
       <DialogContent><Stack spacing={2} sx={{ pt: 1 }}>
         <Typography variant="body2">{aiScopes?.map((s) => s.title).join("；")}</Typography>
-        <Typography variant="body2" color="text.secondary">结合字幕与 PPT OCR，按各自时间点组织资料；OCR 可能仅含关键词。缺失资料会明确标注，引用可跳转到对应视频时间。成功结果保存到本地应用数据，重新生成会重新读取资料。</Typography>
-        <WorkspaceSelect size="small" label="结果组织" value={aiOrganization} onChange={(e) => setAiOrganization(e.target.value)}><MenuItem value="sessions">逐堂总结，堂内综合各小节</MenuItem><MenuItem value="combined">综合所有所选小节</MenuItem></WorkspaceSelect>
+        {!preflight && <Stack direction="row" gap={1} alignItems="center"><CircularProgress size={16} /><Typography variant="body2" color="text.secondary">正在检查字幕…</Typography></Stack>}
+        {preflight && preflight.missing > 0 && <Alert severity="info">
+          {preflight.missing} 小节暂无字幕。{offerTranscription ? "可将课堂音频转成文字后总结。" : preflight.savedTranscripts ? "总结将使用已保存的转录文字。" : "将使用已有资料总结。"}
+          {offerTranscription && <Typography variant="caption" display="block">转录文字仅用于总结，不添加播放字幕。</Typography>}
+        </Alert>}
+        {!!preflight?.unknown && <Alert severity="warning" action={<Button onClick={() => setPreflightRevision((value) => value + 1)}>重试</Button>}>{preflight.unknown} 小节的字幕状态检查失败。</Alert>}
+        {offerTranscription && <Box component="details" sx={{ fontSize: 13, color: "text.secondary", "& summary": { cursor: "pointer" } }}><summary>音频转录要求</summary>需在设置中扫码登录，并在电脑上安装 FFmpeg。</Box>}
+        {(aiScopes?.length ?? 0) > 1 && <WorkspaceSelect size="small" label="结果组织" value={aiOrganization} onChange={(e) => setAiOrganization(e.target.value)}><MenuItem value="sessions">逐堂总结</MenuItem><MenuItem value="combined">合并总结</MenuItem></WorkspaceSelect>}
+        {summaryDialogCache && <Typography variant="caption" color="text.secondary">已有总结 · {new Date(summaryDialogCache.savedAt).toLocaleString("zh-CN")}</Typography>}
       </Stack></DialogContent>
-      <DialogActions><Button onClick={() => setAiScopes(undefined)}>取消</Button><Button variant="contained" onClick={() => void startSummary()}>开始总结</Button></DialogActions>
+      <DialogActions sx={{ flexWrap: "wrap", gap: 1 }}>
+        <Button onClick={() => setAiScopes(undefined)}>取消</Button>
+        {summaryDialogCache && <Button disabled={!preflight} onClick={() => void startSummary(true, aiScopes, aiOrganization, cacheNamespace, undefined, offerTranscription || !preflight?.unknown)}>{offerTranscription ? "转录音频后重新总结" : "重新生成"}</Button>}
+        {offerTranscription && !summaryDialogCache && <Button onClick={() => void startSummary(false, aiScopes, aiOrganization, cacheNamespace, undefined, false)}>仅用现有资料总结</Button>}
+        <Button variant="contained" disabled={!preflight && !summaryDialogCache} onClick={() => void startSummary(false, aiScopes, aiOrganization, cacheNamespace, undefined, summaryDialogCache ? aiTranscribe : !preflight?.unknown)}>{summaryDialogCache ? "查看总结" : offerTranscription ? "转录音频后总结" : "开始总结"}</Button>
+      </DialogActions>
     </Dialog>
     <Dialog open={active && cacheListOpen} onClose={() => setCacheListOpen(false)} fullWidth maxWidth="sm">
       <DialogTitle>本课程的已保存总结</DialogTitle>

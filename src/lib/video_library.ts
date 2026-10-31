@@ -81,15 +81,46 @@ export interface VideoMaterial {
   warnings: string[];
   srt: string;
   subtitleAvailable: boolean;
+  summarySubtitleAvailable?: boolean;
   ocrAvailable?: boolean;
+  transcriptAvailable?: boolean;
+  proofreadAvailable?: boolean;
+  subtitleSource?: "canvas" | "canvasAi" | "local" | null;
 }
 
-export const hasVideoMaterial = (material: VideoMaterial) => material.subtitleAvailable || material.ocrAvailable === true;
+export interface SubtitleProofreadResult {
+  material: VideoMaterial;
+  track?: VideoSubtitleTrack;
+  report: {
+    model: string;
+    lineCount: number;
+    changedLines: number;
+    batches: number;
+    elapsedMs: number;
+    promptTokens: number;
+    completionTokens: number;
+    cached: boolean;
+    displayCues?: number;
+    excludeFromSummary?: { id: number; reason: "chatter" }[];
+    topic?: string | null;
+  };
+}
 
-// Legacy sources cannot provide subtitle/OCR materials. Keep unknown modern list
-// statuses actionable so omitted fields do not falsely hide usable materials.
+export interface VideoSubtitleTrack {
+  source: "canvas" | "canvasAi" | "local";
+  srt: string;
+  fullSrt: string;
+  chatterCount: number;
+}
+export interface VideoSubtitleVersions { tracks: VideoSubtitleTrack[]; warnings: string[] }
+export interface VideoRecordingStatus { subtitleAvailable: boolean; transcriptAvailable: boolean }
+
+export const hasVideoMaterial = (material: VideoMaterial) => (material.subtitleAvailable && material.summarySubtitleAvailable !== false) || material.ocrAvailable === true || material.transcriptAvailable === true;
+
+// Any playable source can supply the shared audio; only modern sources expose
+// Canvas transcript/PPT readiness hints.
 export const canSummarizeRecording = (video: CanvasVideo) => [video, ...(video.alternatives ?? [])]
-  .some((candidate) => candidate.source !== "legacy" && candidate.aiAvailable !== false);
+  .some((candidate) => candidate.playable || (candidate.source !== "legacy" && candidate.aiAvailable !== false));
 
 export interface VideoExportOptions {
   video: boolean;

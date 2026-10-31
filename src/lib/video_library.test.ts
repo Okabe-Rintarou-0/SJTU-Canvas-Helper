@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canSummarizeRecording, formatVideoTimestamp, groupVideoSessions, groupSessionsByDate, parseVideoCitation, recordingKey, recordingTime, selectedSessionScopes, toggleRecordings } from "./video_library";
+import { canSummarizeRecording, hasVideoMaterial, formatVideoTimestamp, groupVideoSessions, groupSessionsByDate, parseVideoCitation, recordingKey, recordingTime, selectedSessionScopes, toggleRecordings } from "./video_library";
 import type { CanvasVideo } from "./model";
 
 export function recording(id: string, start = "2026-09-28 08:00", end = "2026-09-28 08:45", overrides: Partial<CanvasVideo> = {}): CanvasVideo {
@@ -37,16 +37,22 @@ describe("classroom grouping", () => {
   });
 });
 describe("selection and scope", () => {
-  it("uses AI list hints across modern sources without mistaking unknown status or legacy playback for material availability", () => {
-    expect(canSummarizeRecording(recording("a", undefined, undefined, { aiAvailable: false }))).toBe(false);
+  it("allows audio from any playable source and uses readiness hints only for modern sources", () => {
+    expect(canSummarizeRecording(recording("a", undefined, undefined, { aiAvailable: false }))).toBe(true);
+    expect(canSummarizeRecording(recording("a", undefined, undefined, { aiAvailable: false, playable: false }))).toBe(false);
     expect(canSummarizeRecording(recording("a", undefined, undefined, { playable: false, aiAvailable: true }))).toBe(true);
     expect(canSummarizeRecording(recording("a", undefined, undefined, { aiAvailable: null }))).toBe(true);
     expect(canSummarizeRecording(recording("a"))).toBe(true);
     const legacy = recording("old", undefined, undefined, { source: "legacy" });
-    expect(canSummarizeRecording(legacy)).toBe(false);
-    expect(canSummarizeRecording(recording("a", undefined, undefined, { aiAvailable: false, alternatives: [legacy] }))).toBe(false);
+    expect(canSummarizeRecording(legacy)).toBe(true);
+    expect(canSummarizeRecording(recording("a", undefined, undefined, { aiAvailable: false, playable: false, alternatives: [legacy] }))).toBe(true);
     const alternate = recording("space", undefined, undefined, { source: "videoSpace", aiAvailable: true });
     expect(canSummarizeRecording(recording("a", undefined, undefined, { aiAvailable: false, alternatives: [alternate] }))).toBe(true);
+  });
+  it("accepts untimed transcripts as summary material without claiming subtitle availability", () => {
+    expect(hasVideoMaterial({ key: "canvas:a", title: "课", text: "原文", warnings: [], srt: "", subtitleAvailable: false, transcriptAvailable: true })).toBe(true);
+    expect(hasVideoMaterial({ key: "canvas:a", title: "课", text: "", warnings: [], srt: "字幕仍保留", subtitleAvailable: true, summarySubtitleAvailable: false })).toBe(false);
+    expect(hasVideoMaterial({ key: "canvas:a", title: "课", text: "PPT", warnings: [], srt: "字幕仍保留", subtitleAvailable: true, summarySubtitleAvailable: false, ocrAvailable: true })).toBe(true);
   });
   it("toggles a class without affecting hidden selections and marks partial scopes", () => {
     const a = recording("a"); const b = recording("b", "2026-09-28 08:55", "2026-09-28 09:40");

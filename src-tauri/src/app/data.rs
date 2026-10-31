@@ -484,11 +484,15 @@ impl App {
                 .map_err(|e| e.to_string())?;
             return Ok(Value::Null);
         }
+        let clear_ai = matches!(&request, DataRequest::Clear { category: Category::History, collection } if collection.as_deref().is_none_or(|name| name == "video-subtitle-proofreads" || name == "video-transcripts"));
         let result = tokio::task::spawn_blocking(move || {
             execute_request(config, &expected_account, request).map_err(|e| e.to_string())
         })
         .await
         .map_err(|e| e.to_string())?;
+        if result.is_ok() && clear_ai {
+            self.client.clear_video_ai_memory().await;
+        }
         result
     }
 }

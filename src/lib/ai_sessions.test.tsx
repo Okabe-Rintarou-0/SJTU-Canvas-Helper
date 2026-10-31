@@ -31,7 +31,7 @@ const file = { id: 12, display_name: "作业.pdf" } as File;
 const scopes = [{ id: "class", title: "第一堂课", videos: [{ source: "canvas", videoId: "a", videoName: "录像",
   playable: true, courseBeginTime: "2026-10-08 08:00", courseEndTime: "2026-10-08 08:45" }] }] as VideoSession[];
 const material = { key: "a", title: "第一堂课", text: "课堂资料", srt: "字幕", subtitleAvailable: true, warnings: [] };
-const request = { scopes, organization: "combined", namespace: "account:course:ppt-cleanup-v3=0", title: "课堂总结", cleanUpPpt: false };
+const request = { scopes, organization: "combined", namespace: "account:course:ppt-cleanup-v3=0", title: "课堂总结", cleanUpPpt: false, generateTopics: true };
 
 beforeEach(() => {
   vi.resetAllMocks(); dataMock.reset(); localStorage.clear(); handlers.clear(); unlisteners.length = 0;
@@ -151,9 +151,157 @@ describe("file stream lifetime", () => {
 });
 
 describe("video summary lifetime", () => {
+  it("defaults topic generation off without losing summary scope or changing saved topics", async () => {
+    const { videoTopicIndex, readVideoTopics } = await import("./video_topics");
+    await videoTopicIndex.forAccount("Default").set("canvas:a", { topic: "已有主题", sourceHash: "old", policy: "v7" });
+    mocks.invoke.mockImplementation(async (command) => command === "prepare_video_material" ? material
+      : '总结正文。<video-topics>[{"key":"canvas:a","topic":"不应保存"}]</video-topics>');
+    const session = new VideoSummarySession();
+    await session.start({ ...request, generateTopics: undefined });
+    const chat = mocks.invoke.mock.calls.find(([command]) => command === "chat_video_materials")![1];
+    expect(chat.messages[0].content).toContain("canvas:a");
+    expect(chat.messages[0].content).not.toContain("video-topics");
+    expect(await readVideoTopics("Default")).toEqual({ "canvas:a": "已有主题" });
+    const messages = session.getSnapshot().messages;
+    expect(messages[messages.length - 1]?.content).toBe("总结正文。");
+    expect(session.getSnapshot().cacheEntry?.generateTopics).toBe(false);
+  });
+
+  it.each([
+    { known: ["a"], firstTopic: "替换第一节主题", secondTopic: "第二节主题" },
+    { known: ["a", "b"], firstTopic: "替换第一节主题", secondTopic: "第二节主题" },
+    { known: [], firstTopic: "替换第一节主题", secondTopic: "第二节主题" },
+  ])("summarizes both available sections regardless of existing topics ($known)", async ({ known, firstTopic, secondTopic }) => {
+    const { readVideoTopics, videoTopicIndex } = await import("./video_topics");
+    for (const key of known) await videoTopicIndex.forAccount("Default").set(`canvas:${key}`, { topic: key === "a" ? "第一节已有主题" : "第二节已有主题", sourceHash: "old", policy: "v7" });
+    const first = { ...scopes[0].videos[0], courseBeginTime: "2026-10-30 13:55:00" };
+    const second = { ...first, videoId: "b", courseBeginTime: "2026-10-30 14:50:20" };
+    mocks.invoke.mockImplementation(async (command, args) => command === "prepare_video_material"
+      ? { ...material, text: args.request.key === "a" ? "第一节课堂内容" : "第二节课堂内容" }
+      : '两节总结。<video-topics>[{"key":"canvas:a","topic":"替换第一节主题"},{"key":"canvas:b","topic":"第二节主题"}]</video-topics>');
+    const session = new VideoSummarySession();
+    await session.start({ ...request, scopes: [{ ...scopes[0], videos: [first, second] }] });
+    const chat = mocks.invoke.mock.calls.find(([command]) => command === "chat_video_materials")![1];
+    for (const expected of ["canvas:a", "canvas:b", "2026-10-30 13:55:00", "2026-10-30 14:50:20"]) {
+      expect(chat.messages[0].content).toContain(expected);
+    }
+    expect(chat.text).toContain("第一节课堂内容");
+    expect(chat.text).toContain("第二节课堂内容");
+    expect(await readVideoTopics("Default")).toEqual({ "canvas:a": firstTopic, "canvas:b": secondTopic });
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "chat_video_materials")).toHaveLength(1);
+  });
+
+  it("keeps per-section failures out of classroom evidence and only assigns topics to available material", async () => {
+    const second = { ...scopes[0].videos[0], videoId: "b", courseBeginTime: "2026-10-08 08:55" };
+    mocks.invoke.mockImplementation(async (command, args) => {
+      if (command === "prepare_video_material") return args.request.key === "a" ? material
+        : { ...material, key: "canvas:b", text: "", srt: "", subtitleAvailable: false, warnings: ["private technical failure"] };
+      if (command === "transcribe_video_material") throw new Error("audio request failed");
+      return '总结正文。<video-topics>[{"key":"canvas:a","topic":"CNN：池化"},{"key":"canvas:b","topic":"不应猜测的主题"}]</video-topics>';
+    });
+    const session = new VideoSummarySession();
+    await session.start({ ...request, scopes: [{ ...scopes[0], videos: [scopes[0].videos[0], second] }] });
+    const state = session.getSnapshot();
+    expect(state.coverage).toBe("已覆盖 1 / 2 小节");
+    expect(state.sources?.map((item) => item.included)).toEqual([true, false]);
+    expect(state.text).not.toContain("private technical failure");
+    expect(state.text).not.toContain("audio request failed");
+    expect(state.messages[0].content).toBe("总结所选 2 小节");
+    const { readVideoTopics } = await import("./video_topics");
+    expect(await readVideoTopics("Default")).toEqual({ "canvas:a": "CNN：池化" });
+    expect(state.cacheEntry?.sources).toEqual(state.sources);
+  });
+
+  it("overwrites an existing topic when generation is enabled", async () => {
+    const { readVideoTopics, videoTopicIndex } = await import("./video_topics");
+    await videoTopicIndex.forAccount("Default").set("canvas:a", { topic: "CNN：输出尺寸、池化", sourceHash: "original", policy: "v7" });
+    mocks.invoke.mockImplementation(async (command) => command === "prepare_video_material" ? material
+      : '总结正文。<video-topics>[{"key":"canvas:a","topic":"替换主题"}]</video-topics>');
+    await new VideoSummarySession().start(request);
+    expect(await readVideoTopics("Default")).toEqual({ "canvas:a": "替换主题" });
+    const chat = mocks.invoke.mock.calls.find(([command]) => command === "chat_video_materials")![1];
+    expect(chat.messages[0].content).toContain("video-topics");
+  });
+
+  it("updates a topic created while the summary request was in flight when generation is enabled", async () => {
+    const { readVideoTopics, videoTopicIndex } = await import("./video_topics");
+    mocks.invoke.mockImplementation(async (command) => {
+      if (command === "prepare_video_material") return material;
+      await videoTopicIndex.forAccount("Default").set("canvas:a", { topic: "LR：分析、项目集", sourceHash: "proofread", policy: "v7" });
+      return '总结正文。<video-topics>[{"key":"canvas:a","topic":"替换主题"}]</video-topics>';
+    });
+    await new VideoSummarySession().start(request);
+    expect(await readVideoTopics("Default")).toEqual({ "canvas:a": "替换主题" });
+  });
+  it("generates section topics in the summary request, persists them and hides metadata from chat", async () => {
+    const { readVideoTopics } = await import("./video_topics");
+    mocks.invoke.mockImplementation(async (command, args) => {
+      if (command === "prepare_video_material") return material;
+      args.onChunk.onmessage("总结正文。\n<video-to");
+      args.onChunk.onmessage('pics>[{"key":"canvas:a","topic":"语法分析"}]</video-topics>');
+      return '总结正文。\n<video-topics>[{"key":"canvas:a","topic":"语法分析"}]</video-topics>';
+    });
+    const session = new VideoSummarySession();
+    await session.start(request);
+    expect(session.getSnapshot().messages[session.getSnapshot().messages.length - 1]?.content).toBe("总结正文。");
+    expect(await readVideoTopics("Default")).toEqual({ "canvas:a": "语法分析" });
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "chat_video_materials")).toHaveLength(1);
+    expect(session.getSnapshot().cacheEntry?.messages[session.getSnapshot().cacheEntry!.messages.length - 1]?.content).not.toContain("video-topics");
+  });
+  it("only starts transcription when enabled and retains that preference in history", async () => {
+    mocks.invoke.mockImplementation(async (command) => {
+      if (command === "prepare_video_material") return { ...material, srt: "", subtitleAvailable: false, text: "PPT 内容", ocrAvailable: true };
+      if (command === "transcribe_video_material") return { ...material, srt: "", subtitleAvailable: false, transcriptAvailable: true, text: "补齐的转录" };
+      return "总结";
+    });
+    const session = new VideoSummarySession();
+    await session.start({ ...request, transcribeMissing: false });
+    expect(mocks.invoke.mock.calls.some(([command]) => command === "transcribe_video_material")).toBe(false);
+    expect(session.getSnapshot().cacheEntry?.transcribeMissing).toBe(false);
+    const restored = new VideoSummarySession(); restored.restore(session.getSnapshot().cacheEntry!);
+    expect(restored.getSnapshot().transcribeMissing).toBe(false);
+    await session.start({ ...request, transcribeMissing: true });
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "transcribe_video_material")).toHaveLength(1);
+    expect(session.getSnapshot().text).toContain("补齐的转录");
+    expect((await readSummaryCache())).toHaveLength(2);
+  });
+
+  it("uses previously saved untimed text even when new transcription is disabled", async () => {
+    mocks.invoke.mockImplementation(async (command) => command === "prepare_video_material"
+      ? { ...material, srt: "", subtitleAvailable: false, transcriptAvailable: true, text: "本地保存的转录" } : "总结");
+    const session = new VideoSummarySession();
+    await session.start({ ...request, transcribeMissing: false });
+    expect(session.getSnapshot().text).toContain("本地保存的转录");
+    expect(mocks.invoke.mock.calls.some(([command]) => command === "transcribe_video_material")).toBe(false);
+    expect(mocks.invoke.mock.calls.some(([command]) => command === "chat_video_materials")).toBe(true);
+  });
+  it("summarizes available subtitles directly without a separate proofreading call", async () => {
+    mocks.invoke.mockImplementation(async (command) => command === "prepare_video_material"
+      ? { ...material, subtitleSource: "canvas", text: "有识别错误的原始字幕与 PPT OCR" } : "结合上下文的总结");
+    const session = new VideoSummarySession();
+    await session.start(request);
+    expect(mocks.invoke.mock.calls.some(([command]) => command === "proofread_video_subtitles")).toBe(false);
+    expect(session.getSnapshot().text).toContain("有识别错误的原始字幕与 PPT OCR");
+    expect(mocks.invoke.mock.calls.some(([command]) => command === "chat_video_materials")).toBe(true);
+  });
+  it("does not summarize a caption track whose entire text was excluded, but can still use PPT evidence", async () => {
+    mocks.invoke.mockResolvedValue({ ...material, text: "## 课堂", summarySubtitleAvailable: false });
+    const session = new VideoSummarySession();
+    await session.start(request);
+    expect(mocks.invoke.mock.calls.some(([command]) => command === "chat_video_materials")).toBe(false);
+    const messages = session.getSnapshot().messages;
+    expect(messages[messages.length - 1]?.content).toContain("均无可用字幕");
+    mocks.invoke.mockImplementation(async (command) => command === "prepare_video_material"
+      ? { ...material, text: "PPT 教学资料", summarySubtitleAvailable: false, ocrAvailable: true }
+      : "根据 PPT 总结");
+    await session.start({ ...request, force: true });
+    const args = mocks.invoke.mock.calls.find(([command]) => command === "chat_video_materials")![1];
+    expect(args.text).toContain("PPT 教学资料");
+  });
+
   it("refreshes materials from an older PPT cleanup policy and reuses only the current policy", async () => {
     const options = videoSummaryOptions();
-    writeSummaryCache({ key: summaryCacheKey(request.namespace, scopes, request.organization, options),
+    await writeSummaryCache({ key: summaryCacheKey(request.namespace, scopes, request.organization, options),
       namespace: request.namespace, scopes, organization: request.organization, title: "旧总结",
       text: "旧版清理后的资料", messages: [], coverage: "1/1", savedAt: "2026-01-01T00:00:00Z" });
     mocks.invoke.mockImplementation(async (command) => command === "prepare_video_material" ? material : "新总结");
@@ -193,7 +341,7 @@ describe("video summary lifetime", () => {
     const calls = mocks.invoke.mock.calls.length;
     await session.start({ ...request, summaryOptions: { ...options, prompt: "只列考试重点" } });
     expect(mocks.invoke.mock.calls.length).toBeGreaterThan(calls);
-    expect((await readSummaryCache())).toHaveLength(2);
+    expect(await readSummaryCache()).toHaveLength(2);
     expect(session.getSnapshot().preparedContext).toEqual(prepared);
   });
   it("continues preparation and streaming while unmounted, caches the result and reuses context", async () => {
@@ -224,7 +372,7 @@ describe("video summary lifetime", () => {
     const running = session.start(request); session.reset(); preparation.resolve(material); await running;
     expect(mocks.invoke).not.toHaveBeenCalled();
     expect(session.getSnapshot().messages).toEqual([]);
-    expect((await readSummaryCache())).toEqual([]);
+    expect(await readSummaryCache()).toEqual([]);
   });
 
   it("retains a failed reply without caching it and allows another request", async () => {
@@ -233,7 +381,7 @@ describe("video summary lifetime", () => {
     await session.start(request);
     expect(session.getSnapshot().loading).toBe(false);
     expect(session.getSnapshot().messages[1]).toMatchObject({ error: true });
-    expect((await readSummaryCache())).toEqual([]);
+    expect(await readSummaryCache()).toEqual([]);
     mocks.invoke.mockResolvedValue("重试成功"); await session.send("请重试");
     expect(session.getSnapshot().messages[3].content).toBe("重试成功");
   });

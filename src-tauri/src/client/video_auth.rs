@@ -42,8 +42,10 @@ fn session_url(base: &Url, value: &str) -> Result<Url> {
 
 impl Client {
     pub async fn configure_video_auth(&self, token: &str, cookie: &str, reset: bool) {
+        self.transcription.configure(cookie, reset).await;
         let mut auth = self.video_auth.lock().await;
         if reset || auth.canvas_token != token || auth.ja_auth_cookie != cookie {
+            self.subtitle_proofread.clear().await;
             *auth = VideoAuth {
                 canvas_token: token.into(),
                 ja_auth_cookie: cookie.into(),

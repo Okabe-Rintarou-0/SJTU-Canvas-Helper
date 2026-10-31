@@ -16,6 +16,7 @@ mod constants;
 pub mod jbox;
 pub mod video;
 pub mod video_library;
+mod video_artifacts;
 pub(crate) mod ppt;
 #[cfg(test)]
 mod ppt_audit;

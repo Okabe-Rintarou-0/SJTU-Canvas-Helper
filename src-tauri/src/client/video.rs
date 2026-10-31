@@ -401,7 +401,7 @@ fn daily_lesson_numbers(records: &[Value]) -> HashMap<usize, i64> {
     lesson_numbers
 }
 
-fn api_data(value: &Value) -> Result<&Value> {
+fn optional_api_data(value: &Value) -> Result<Option<&Value>> {
     let status = value_as_i64(value.get("status")).unwrap_or(200);
     if status != 200 {
         let message = first_string(value, &["message", "msg", "code"]);
@@ -412,11 +412,15 @@ fn api_data(value: &Value) -> Result<&Value> {
         }));
     }
 
-    value
+    Ok(value
         .get("data")
         .filter(|value| !value.is_null())
         .or_else(|| value.get("result"))
-        .filter(|value| !value.is_null())
+        .filter(|value| !value.is_null()))
+}
+
+fn api_data(value: &Value) -> Result<&Value> {
+    optional_api_data(value)?
         .ok_or_else(|| AppError::VideoDownloadError("Video service returned no data".to_string()))
 }
 
@@ -597,26 +601,25 @@ fn video_info_from_response(value: &Value) -> Result<VideoInfo> {
 }
 
 fn subtitles_from_response(value: &Value) -> Result<CanvasVideoSubTitleResponseBody> {
-    let data = api_data(value).map_err(|error| match error {
-        AppError::VideoDownloadError(message) if message == "Video service returned no data" => {
-            AppError::VideoDownloadError("Subtitle unavailable".to_string())
-        }
-        error => error,
-    })?;
-    let subtitles: CanvasVideoSubTitleResponseBody = serde_json::from_value(data.clone())?;
-    if subtitles.before_assembly_list.is_empty() && subtitles.after_assembly_list.is_empty() {
-        return Err(AppError::VideoDownloadError(
-            "Subtitle unavailable".to_string(),
-        ));
+    match optional_api_data(value)? {
+        Some(data) => Ok(serde_json::from_value(data.clone())?),
+        // An explicit null is the service's normal "not generated" result.
+        None if value.get("data").is_some() || value.get("result").is_some() => Ok(Default::default()),
+        None => Err(AppError::VideoDownloadError("Subtitle response has no data field".into())),
     }
-    Ok(subtitles)
 }
 
 fn ppts_from_response(value: &Value) -> Result<Vec<CanvasVideoPPT>> {
-    let docs = api_data(value)?
-        .get("docList")
-        .and_then(Value::as_array)
-        .ok_or_else(|| AppError::VideoDownloadError("No PPT found".to_string()))?;
+    let Some(data) = optional_api_data(value)? else {
+        if value.get("data").is_some() || value.get("result").is_some() { return Ok(Vec::new()); }
+        return Err(AppError::VideoDownloadError("PPT response has no data field".into()));
+    };
+    if !data.is_object() { return Err(AppError::VideoDownloadError("Invalid PPT payload".into())); }
+    let docs = match data.get("docList") {
+        None | Some(Value::Null) => return Ok(Vec::new()),
+        Some(Value::Array(docs)) => docs,
+        _ => return Err(AppError::VideoDownloadError("Invalid PPT list".into())),
+    };
     Ok(docs
         .iter()
         .filter_map(|doc| {
@@ -1450,18 +1453,32 @@ impl Client {
     }
 
     pub async fn get_canvas_video_info(&self, video_id: &str) -> Result<VideoInfo> {
+        let token = self.token.read().await.clone();
+        let value = self.canvas_video_info_response(video_id, &token).await?;
+        // Course launches can replace the shared JWT while the video remains
+        // playable. A successful but empty VOD response gets one fresh launch;
+        // HTTP/service errors and malformed payloads retain their real errors.
+        if value.get("data").is_some_and(Value::is_null) && optional_api_data(&value)?.is_none() {
+            let token = self.get_video_space_token().await?;
+            *self.token.write().await = token.clone();
+            return video_info_from_response(&self.canvas_video_info_response(video_id, &token).await?);
+        }
+        video_info_from_response(&value)
+    }
+
+    async fn canvas_video_info_response(&self, video_id: &str, token: &str) -> Result<Value> {
         let url = format!("{RESOURCE_MANAGE_BASE_URL}/v1/course_vod_urls_new");
         let resp = self
             .cli
             .get(url)
             .query(&[("courseId", video_id)])
-            .header("jwt-token", self.token.read().await.as_str())
+            .header("jwt-token", token)
             .header(REFERER, RESOURCE_MANAGE_UI_URL)
+            .timeout(std::time::Duration::from_secs(15))
             .send()
             .await?
             .error_for_status()?;
-        let value: Value = serde_json::from_slice(&resp.bytes().await?)?;
-        video_info_from_response(&value)
+        Ok(serde_json::from_slice(&resp.bytes().await?)?)
     }
 
     pub async fn get_video_info(
@@ -1501,36 +1518,83 @@ impl Client {
         &self,
         canvas_course_id: i64,
     ) -> Result<CanvasVideoSubTitleResponseBody> {
-        let url = format!("{RESOURCE_MANAGE_BASE_URL}/v1/course/ai/translate/{canvas_course_id}");
-        let resp = self
-            .cli
-            .get(url)
-            .query(&[("useOriginal", true)])
-            .header("jwt-token", self.token.read().await.as_str())
-            .header(REFERER, RESOURCE_MANAGE_UI_URL)
-            .send()
-            .await?
-            .error_for_status()?;
-        let value: Value = serde_json::from_slice(&resp.bytes().await?)?;
-        subtitles_from_response(&value)
+        self.get_subtitle_at(RESOURCE_MANAGE_BASE_URL, canvas_course_id).await
     }
 
-    // TODO: Choose a Version & Convert to SRT
-    // 1. Original
-    // 2. Original + Eng
-    // 3. Eng
-    // 4. Eng + Translated Chs
+    async fn get_subtitle_at(&self, base: &str, canvas_course_id: i64) -> Result<CanvasVideoSubTitleResponseBody> {
+        self.get_subtitle_at_version(base, canvas_course_id).await.map(|(sub, _)| sub)
+    }
+
+    pub async fn get_subtitle_with_source(&self, canvas_course_id: i64) -> Result<(CanvasVideoSubTitleResponseBody, bool)> {
+        self.get_subtitle_with_source_at(RESOURCE_MANAGE_BASE_URL, canvas_course_id).await
+    }
+
+    pub async fn get_original_subtitle(&self, canvas_course_id: i64) -> Result<CanvasVideoSubTitleResponseBody> {
+        let response = self.cli.get(format!("{RESOURCE_MANAGE_BASE_URL}/v1/course/ai/translate/{canvas_course_id}"))
+            .query(&[("useOriginal", true)])
+            .header("jwt-token", self.token.read().await.as_str()).header(REFERER, RESOURCE_MANAGE_UI_URL)
+            .timeout(std::time::Duration::from_secs(15)).send().await?.error_for_status()?;
+        subtitles_from_response(&response.json::<Value>().await?)
+    }
+
+    async fn get_subtitle_with_source_at(&self, base: &str, canvas_course_id: i64) -> Result<(CanvasVideoSubTitleResponseBody, bool)> {
+        let status = async {
+            let response = self.cli.get(format!("{base}/v1/course/ai/transcript/optimize/tasks"))
+                .query(&[("courseId", canvas_course_id)])
+                .header("jwt-token", self.token.read().await.as_str())
+                .header(REFERER, RESOURCE_MANAGE_UI_URL)
+                .timeout(std::time::Duration::from_secs(5)).send().await?.error_for_status()?;
+            let value: Value = response.json().await?;
+            let data = api_data(&value)?;
+            Ok::<bool, AppError>(data.as_array().is_some_and(|tasks| tasks.iter().any(|task| {
+                task["courseId"].as_i64() == Some(canvas_course_id) && task["status"].as_i64() == Some(3)
+            })))
+        };
+        let (subtitles, optimized) = tokio::join!(self.get_subtitle_at_version(base, canvas_course_id), status);
+        let (subtitles, preferred_version) = subtitles?;
+        // useOriginal=false can return the original while optimization is pending.
+        // Only label AI+ after confirming success, and never for a fallback fetch.
+        Ok((subtitles, preferred_version && optimized.unwrap_or(false)))
+    }
+
+    async fn get_subtitle_at_version(&self, base: &str, canvas_course_id: i64) -> Result<(CanvasVideoSubTitleResponseBody, bool)> {
+        let url = format!("{base}/v1/course/ai/translate/{canvas_course_id}");
+        let mut last_error = None;
+        // The service returns the original while optimization is pending. An
+        // unavailable/empty optimized response must not hide usable originals.
+        for original in [false, true] {
+            let result = async {
+                let resp = self.cli.get(&url)
+                    .query(&[("useOriginal", original)])
+                    .header("jwt-token", self.token.read().await.as_str())
+                    .header(REFERER, RESOURCE_MANAGE_UI_URL)
+                    .timeout(std::time::Duration::from_secs(15))
+                    .send().await?.error_for_status()?;
+                let value: Value = resp.json().await?;
+                subtitles_from_response(&value)
+            }.await;
+            match result {
+                Ok(mut sub) => {
+                    let usable = |line: &CanvasVideoSubTitle| !line.res.trim().is_empty() && line.ed > line.bg;
+                    sub.before_assembly_list.retain(usable);
+                    sub.after_assembly_list.retain(usable);
+                    if !sub.before_assembly_list.is_empty() || !sub.after_assembly_list.is_empty() { return Ok((sub, !original)); }
+                },
+                Err(error) => last_error = Some(error),
+            }
+        }
+        match last_error { Some(error) => Err(error), None => Ok((Default::default(), false)) }
+    }
+
+    // Canvas labels `res` as source language; `zh` and `en` are translations.
+    // The request's useOriginal flag selects the refinement version, not a language.
     pub fn convert_to_srt(&self, subtitle: &[CanvasVideoSubTitle]) -> Result<String> {
         let mut srt = String::new();
         for (i, item) in subtitle.iter().enumerate() {
             // Start time & End time in milliseconds
             // Convert to SRT format: HH:MM:SS,ms --> HH:MM:SS,ms
             let start_time = format_time(item.bg);
-            let end_time = if i == subtitle.len() - 1 {
-                format_time(item.ed)
-            } else {
-                format_time(subtitle[i + 1].bg)
-            };
+            let end_time = format_time(item.ed);
 
             let text = item.res.clone();
             srt.push_str(&format!("{}\n", i + 1));
@@ -1709,6 +1773,99 @@ mod tests {
 
     use super::*;
     use reqwest::header::{HeaderMap, HeaderValue, ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE};
+
+    #[tokio::test]
+    async fn missing_subtitles_are_normal_results_but_service_failures_remain_errors() {
+        use httpmock::prelude::*;
+        for response in [
+            serde_json::json!({"status":200,"data":null}),
+            serde_json::json!({"status":200,"data":{"beforeAssemblyList":[],"afterAssemblyList":[]}}),
+            serde_json::json!({"status":200,"data":{"beforeAssemblyList":null,"afterAssemblyList":null}}),
+        ] {
+            let server = MockServer::start();
+            let subtitle = server.mock(|when, then| {
+                when.method(GET).path("/v1/course/ai/translate/1");
+                then.json_body(response.clone());
+            });
+            let client = Client::new_without_proxy(server.base_url().as_str(), "", "", "", None);
+            let (sub, optimized) = client.get_subtitle_at_version(&server.base_url(), 1).await.unwrap();
+            assert!(sub.before_assembly_list.is_empty() && sub.after_assembly_list.is_empty());
+            assert!(!optimized);
+            subtitle.assert_hits(2);
+        }
+        for response in [serde_json::json!({"status":401,"data":null}), serde_json::json!({"status":500,"data":null}), serde_json::json!({}), serde_json::json!({"data":"bad payload"})] {
+            assert!(subtitles_from_response(&response).is_err());
+        }
+    }
+
+    #[test]
+    fn english_source_is_not_replaced_with_available_translations() {
+        let response = serde_json::json!({"data":{"beforeAssemblyList":[{
+            "bg":1000,"ed":5000,"res":"Today we discuss CNNs and pooling.",
+            "zh":"今天我们讨论卷积神经网络和池化。","en":"An alternative translation."
+        }]}});
+        let subtitles = subtitles_from_response(&response).unwrap();
+        let srt = Client::default().convert_to_srt(&subtitles.before_assembly_list).unwrap();
+        assert!(srt.contains("Today we discuss CNNs and pooling."));
+        assert!(!srt.contains("今天我们讨论") && !srt.contains("An alternative translation."));
+    }
+
+    #[test]
+    fn absent_slides_are_not_service_failures() {
+        for value in [serde_json::json!({"data":null}), serde_json::json!({"data":{"docList":null}}), serde_json::json!({"data":{"docList":[]}})] {
+            assert!(ppts_from_response(&value).unwrap().is_empty());
+        }
+        for value in [serde_json::json!({"status":401,"data":null}), serde_json::json!({}), serde_json::json!({"data":"bad"}), serde_json::json!({"data":{"docList":"bad"}})] {
+            assert!(ppts_from_response(&value).is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn subtitles_prefer_optimized_and_fall_back_for_empty_invalid_or_failed_response() {
+        use httpmock::prelude::*;
+        for optimized in [serde_json::json!({"data":{"beforeAssemblyList":[{"bg":1000,"ed":2000,"res":"精校术语"}]}}),
+            serde_json::json!({"data":{"beforeAssemblyList":[]}}),
+            serde_json::json!({"data":{"beforeAssemblyList":[{"res":"没有时间戳"}]}}),
+            serde_json::json!({"status":500,"data":null})] {
+            let server = MockServer::start();
+            let edited = server.mock(|when, then| {
+                when.method(GET).path("/v1/course/ai/translate/1").query_param("useOriginal", "false");
+                then.json_body(optimized.clone());
+            });
+            let raw = server.mock(|when, then| {
+                when.method(GET).path("/v1/course/ai/translate/1").query_param("useOriginal", "true");
+                then.json_body(serde_json::json!({"data":{"beforeAssemblyList":[{"bg":1000,"ed":2000,"res":"原始文字"}]}}));
+            });
+            let client = Client::new_without_proxy(server.base_url().as_str(), "", "", "", None);
+            let sub = client.get_subtitle_at(&server.base_url(), 1).await.unwrap();
+            let has_optimized = optimized["data"]["beforeAssemblyList"][0]["ed"] == 2000;
+            assert_eq!(sub.before_assembly_list[0].res, if has_optimized { "精校术语" } else { "原始文字" });
+            edited.assert_hits(1); raw.assert_hits(usize::from(!has_optimized));
+        }
+    }
+
+    #[tokio::test]
+    async fn ai_plus_requires_a_successful_matching_task_and_a_usable_preferred_version() {
+        use httpmock::prelude::*;
+        for (task_status, task_course, preferred_valid, expected) in [(3, 1, true, true), (6, 1, true, false), (3, 2, true, false), (3, 1, false, false)] {
+            let server = MockServer::start();
+            server.mock(|when, then| {
+                when.method(GET).path("/v1/course/ai/transcript/optimize/tasks").query_param("courseId", "1");
+                then.json_body(serde_json::json!({"data":[{"courseId":task_course,"status":task_status}]}));
+            });
+            server.mock(|when, then| {
+                when.method(GET).path("/v1/course/ai/translate/1").query_param("useOriginal", "false");
+                then.json_body(if preferred_valid { serde_json::json!({"data":{"beforeAssemblyList":[{"bg":1,"ed":2,"res":"可用字幕"}]}}) } else { serde_json::json!({"data":{}}) });
+            });
+            server.mock(|when, then| {
+                when.method(GET).path("/v1/course/ai/translate/1").query_param("useOriginal", "true");
+                then.json_body(serde_json::json!({"data":{"beforeAssemblyList":[{"bg":1,"ed":2,"res":"原字幕"}]}}));
+            });
+            let client = Client::new_without_proxy(server.base_url().as_str(), "", "", "", None);
+            let (_, optimized) = client.get_subtitle_with_source_at(&server.base_url(), 1).await.unwrap();
+            assert_eq!(optimized, expected);
+        }
+    }
 
     #[test]
     fn test_live_list_keeps_upcoming_sections_and_requires_valid_times() {
