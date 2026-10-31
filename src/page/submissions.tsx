@@ -1,3 +1,5 @@
+import { downloadCourseContext } from "../lib/downloads";
+import { DownloadCourseContext } from "../lib/download_context";
 import PageTaskLists from "../components/page_task_lists";
 import { enqueueTask } from "../lib/task_runtime";
 import { useLegacyTasks } from "../lib/task_hooks";
@@ -372,14 +374,16 @@ export default function SubmissionsPage() {
 
   const handleDownloadAttachment = async (attachment: Attachment) => {
     const file = attachmentToFile(attachment);
+    const selected = courses.data.find((item) => item.id === selectedCourseId);
+    const course = selected ? downloadCourseContext(selected) : undefined;
     enqueueTask({
       id: `attachment:${selectedCourseId}:${file.uuid}`, name: file.display_name,
       source: "submissions", kind: "attachment", data: { file },
       context: courses.data.find((course) => course.id === selectedCourseId)?.name,
       event: { channel: "download://progress", id: file.uuid },
       locks: [`save:${file.display_name}`], stage: "正在下载",
-      run: () => invoke("download_file", { file }),
-      open: () => invoke("open_file", { name: file.display_name }),
+      run: () => invoke("download_file", { file, ...(course ? { course } : {}) }),
+      open: () => invoke("open_file", { name: file.display_name, ...(course ? { course } : {}) }),
     });
   };
 
@@ -502,7 +506,7 @@ export default function SubmissionsPage() {
   return (
     <BasicLayout>
       {contextHolder}
-      {previewer}
+      <DownloadCourseContext.Provider value={selectedCourse ? downloadCourseContext(selectedCourse) : undefined}>{previewer}</DownloadCourseContext.Provider>
       <Stack spacing={3}>
         <ClosableAlert
           message="使用指南"

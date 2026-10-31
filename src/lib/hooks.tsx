@@ -1,4 +1,5 @@
 import { enqueuePDFMerge } from "./pdf_tasks";
+import type { DownloadCourse } from "./downloads";
 import { useTasks } from "./task_hooks";
 import { isTaskActive, taskManager } from "./task_manager";
 import {
@@ -268,10 +269,12 @@ export function useMerger({
   setPreviewEntry,
   onHoverEntry,
   onLeaveEntry,
+  course,
 }: {
   setPreviewEntry: Dispatch<SetStateAction<EntryType>>;
   onHoverEntry: (entry: Entry) => void;
   onLeaveEntry: () => void;
+  course?: DownloadCourse;
 }) {
   const tasks = useTasks();
   const latest = [...tasks].reverse().find((task) => task.kind === "pdf-merge");
@@ -290,7 +293,7 @@ export function useMerger({
       return;
     }
     const name = outFileName.trim().replace(/[\\/:*?"<>|]/g, "_") || `merged_${Date.now()}`;
-    enqueuePDFMerge(selected, `${name}.pdf`);
+    enqueuePDFMerge(selected, `${name}.pdf`, course);
   };
   const progress = (
     <Stack spacing={1}>

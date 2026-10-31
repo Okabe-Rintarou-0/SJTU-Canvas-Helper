@@ -8,6 +8,8 @@ use crate::{
 };
 pub mod annual;
 pub mod basic;
+pub mod data;
+pub mod downloads;
 mod qrcode;
 pub mod cache;
 mod constants;
@@ -142,6 +144,7 @@ mod test {
         app.download_video(
             &video.video_play_response_vo_list[0],
             "download.mp4",
+            None,
             |_| {},
         )
         .await?;

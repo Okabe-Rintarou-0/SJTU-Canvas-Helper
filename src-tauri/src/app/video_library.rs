@@ -234,6 +234,7 @@ impl App {
         all_tracks: bool,
         progress: Arc<dyn Fn(ExportProgress) + Send + Sync>,
     ) -> Result<ExportResult> {
+        let output = self.download_output().await?;
         let mut result = ExportResult {
             paths: vec![],
             warnings: vec![],
@@ -367,6 +368,9 @@ impl App {
         }
         if result.paths.is_empty() {
             return Err(failure(error_warnings.join("；")));
+        }
+        for path in &result.paths {
+            output.register(Path::new(path)).await?;
         }
         Ok(result)
     }

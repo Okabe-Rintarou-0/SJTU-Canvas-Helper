@@ -8,11 +8,14 @@ import { readSummaryCache, writeSummaryCache, summaryCacheKey, PPT_CLEANUP_POLIC
 import type { CanvasVideo, File } from "./model";
 import type { VideoSession } from "./video_library";
 import { videoSummaryOptions } from "./video_summary_config";
+import { createDataMock } from "../test/app_data_mock";
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn() }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke, Channel: class { onmessage = () => {}; } }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: (command: string, args: Parameters<typeof dataMock.invoke>[0]) => command === "app_data" ? dataMock.invoke(args) : command === "read_account_info" ? Promise.resolve({ current_account: "Default" }) : mocks.invoke(command, args), Channel: class { onmessage = () => {}; } }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
 vi.mock("./video_library_tasks", () => ({ recordingRequest: (video: CanvasVideo, title: string) => ({ key: video.videoId, title }) }));
+
+const dataMock = createDataMock();
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -31,7 +34,7 @@ const material = { key: "a", title: "第一堂课", text: "课堂资料", srt: "
 const request = { scopes, organization: "combined", namespace: "account:course:ppt-cleanup-v3=0", title: "课堂总结", cleanUpPpt: false };
 
 beforeEach(() => {
-  vi.resetAllMocks(); localStorage.clear(); handlers.clear(); unlisteners.length = 0;
+  vi.resetAllMocks(); dataMock.reset(); localStorage.clear(); handlers.clear(); unlisteners.length = 0;
   mocks.listen.mockImplementation(async (event: string, handler: (event: { payload: Payload }) => void) => {
     handlers.set(event, handler);
     const unlisten = vi.fn(() => { if (handlers.get(event) === handler) handlers.delete(event); });
@@ -178,7 +181,7 @@ describe("video summary lifetime", () => {
     expect(firstArgs.options).toEqual(options);
     expect(firstArgs.messages[0].content).toContain("详细推导公式");
     expect(firstArgs.text).toContain(material.text);
-    const cache = readSummaryCache()[0];
+    const cache = (await readSummaryCache())[0];
     expect(cache.preparedContext).toEqual(prepared);
     const restored = new VideoSummarySession(); restored.restore(cache);
     await restored.send("继续解释这个条件");
@@ -190,7 +193,7 @@ describe("video summary lifetime", () => {
     const calls = mocks.invoke.mock.calls.length;
     await session.start({ ...request, summaryOptions: { ...options, prompt: "只列考试重点" } });
     expect(mocks.invoke.mock.calls.length).toBeGreaterThan(calls);
-    expect(readSummaryCache()).toHaveLength(2);
+    expect((await readSummaryCache())).toHaveLength(2);
     expect(session.getSnapshot().preparedContext).toEqual(prepared);
   });
   it("continues preparation and streaming while unmounted, caches the result and reuses context", async () => {
@@ -208,10 +211,10 @@ describe("video summary lifetime", () => {
     expect(returned.result.current.loading).toBe(true); returned.unmount();
     answer.resolve("完整总结"); await running;
     expect(session.getSnapshot().loading).toBe(false);
-    expect(readSummaryCache()[0].messages[1].content).toContain("完整总结");
+    expect((await readSummaryCache())[0].messages[1].content).toContain("完整总结");
     mocks.invoke.mockResolvedValue("追问回复"); await session.send("继续解释");
     expect(mocks.invoke.mock.calls[2][1].text).toBe(args.text);
-    expect(readSummaryCache()[0].messages[3].content).toBe("追问回复");
+    expect((await readSummaryCache())[0].messages[3].content).toBe("追问回复");
     expect(mocks.invoke.mock.calls.filter(([command]) => command === "prepare_video_material")).toHaveLength(1);
   });
 
@@ -219,9 +222,9 @@ describe("video summary lifetime", () => {
     const session = new VideoSummarySession(); const preparation = deferred<typeof material>();
     mocks.invoke.mockReturnValue(preparation.promise);
     const running = session.start(request); session.reset(); preparation.resolve(material); await running;
-    expect(mocks.invoke).toHaveBeenCalledOnce();
+    expect(mocks.invoke).not.toHaveBeenCalled();
     expect(session.getSnapshot().messages).toEqual([]);
-    expect(readSummaryCache()).toEqual([]);
+    expect((await readSummaryCache())).toEqual([]);
   });
 
   it("retains a failed reply without caching it and allows another request", async () => {
@@ -230,7 +233,7 @@ describe("video summary lifetime", () => {
     await session.start(request);
     expect(session.getSnapshot().loading).toBe(false);
     expect(session.getSnapshot().messages[1]).toMatchObject({ error: true });
-    expect(readSummaryCache()).toEqual([]);
+    expect((await readSummaryCache())).toEqual([]);
     mocks.invoke.mockResolvedValue("重试成功"); await session.send("请重试");
     expect(session.getSnapshot().messages[3].content).toBe("重试成功");
   });

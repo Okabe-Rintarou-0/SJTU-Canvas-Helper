@@ -123,14 +123,18 @@ impl App {
         &self,
         video: &VideoPlayInfo,
         save_name: &str,
+        course: Option<&crate::utils::download::DownloadCourse>,
         progress_handler: F,
     ) -> Result<()> {
+        let output = self.download_output().await?;
         let save_dir = self.config.read().await.save_path.clone();
-        let save_path = Path::new(&save_dir).join(save_name);
+        let save_path = crate::utils::download::directory(Path::new(&save_dir), "video", course)?.join(crate::utils::download::safe_name(save_name));
         self.client
             .clone()
             .download_video(video, save_path.to_str().unwrap(), progress_handler)
-            .await
+            .await?;
+        output.register(&save_path).await?;
+        Ok(())
     }
 
     pub async fn get_video_course(
@@ -142,9 +146,11 @@ impl App {
     }
 
     pub async fn download_subtitle(&self, canvas_course_id: i64, save_path: &str) -> Result<()> {
+        let output = self.download_output().await?;
         let res = self.client.get_subtitle(canvas_course_id).await?;
         let sub_title = self.client.convert_to_srt(&res.before_assembly_list)?;
         fs::write(save_path, sub_title)?;
+        output.register(Path::new(save_path)).await?;
         Ok(())
     }
 
@@ -154,6 +160,7 @@ impl App {
         save_path: &str,
         progress_handler: F,
     ) -> Result<Vec<String>> {
+        let output = self.download_output().await?;
         let res = self.client.get_ppt(canvas_course_id).await?;
         let enabled = self.config.read().await.experimental_ppt_cleanup;
         let (res, notes) = super::ppt::clean_up_slides(res, enabled);
@@ -165,6 +172,7 @@ impl App {
             .clone()
             .download_ppt_pdf(&res, save_path, progress_handler)
             .await?;
+        output.register(Path::new(save_path)).await?;
         Ok(notes)
     }
 }

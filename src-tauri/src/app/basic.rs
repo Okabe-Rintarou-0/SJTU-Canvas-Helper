@@ -19,6 +19,7 @@ use tauri::{Emitter, Runtime, Window};
 use tokio::{io::AsyncReadExt, process::Command as TokioCommand};
 use tokio::sync::RwLock;
 use uuid::Uuid;
+use crate::utils::download as outputs;
 use warp::filters::query::raw as query_raw;
 use warp::{hyper::Response, Filter};
 
@@ -838,29 +839,35 @@ impl App {
             .await
     }
 
-    pub async fn save_file_content(&self, content: &[u8], file_name: &str) -> Result<()> {
+    pub async fn save_file_content(&self, content: &[u8], file_name: &str, course: Option<&outputs::DownloadCourse>) -> Result<()> {
+        let output = self.download_output().await?;
         let save_dir = self.config.read().await.save_path.clone();
-        let path = Path::new(&save_dir).join(file_name);
+        let path = outputs::directory(Path::new(&save_dir), "attachment", course)?.join(outputs::safe_name(file_name));
         // create file if path not exists, else open it in append mode
         let mut file = match fs::metadata(&path) {
             Ok(_) => fs::OpenOptions::new().append(true).open(&path)?,
             Err(_) => fs::File::create(&path)?,
         };
         file.write_all(content)?;
+        drop(file);
+        output.register(&path).await?;
         Ok(())
     }
 
     pub async fn download_file<F: Fn(ProgressPayload) + Send>(
         &self,
         file: &File,
+        course: Option<&outputs::DownloadCourse>,
         progress_handler: F,
     ) -> Result<()> {
+        let output = self.download_output().await?;
         let guard = self.config.read().await;
         let token = &guard.token.clone();
-        let save_path = &guard.save_path.clone();
+        let save_path = outputs::directory(Path::new(&guard.save_path), "attachment", course)?;
         self.client
-            .download_file(file, token, save_path, progress_handler)
+            .download_file(file, token, &outputs::display_path(&save_path), progress_handler)
             .await?;
+        output.register(&save_path.join(outputs::safe_name(&file.display_name))).await?;
         Ok(())
     }
 
@@ -871,18 +878,18 @@ impl App {
         folder_path: &str,
         progress_handler: F,
     ) -> Result<()> {
+        let output = self.download_output().await?;
         let guard = self.config.read().await;
         let token = &guard.token.clone();
-        let course_identifier = self.get_course_identifier(course);
-        let save_path = Path::new(&guard.save_path)
-            .join(course_identifier)
-            .join(folder_path);
+        let save_path = outputs::directory(Path::new(&guard.save_path), "file", Some(&course.into()))?
+            .join(outputs::relative_path(folder_path)?);
         let save_path = save_path.to_str().unwrap_or_default();
         App::ensure_directory(save_path);
         tracing::info!("Starting course file download");
         self.client
             .download_file(file, token, save_path, progress_handler)
             .await?;
+        output.register(&Path::new(save_path).join(outputs::safe_name(&file.display_name))).await?;
         Ok(())
     }
 
@@ -892,17 +899,19 @@ impl App {
         folder_path: &str,
         progress_handler: F,
     ) -> Result<()> {
+        let output = self.download_output().await?;
         let guard = self.config.read().await;
         let token = &guard.token.clone();
         let save_path = Path::new(&guard.save_path)
             .join(MY_CANVAS_FILES_FOLDER_NAME)
-            .join(folder_path);
+            .join(outputs::relative_path(folder_path)?);
         let save_path = save_path.to_str().unwrap_or_default();
         App::ensure_directory(save_path);
         tracing::info!("Starting personal file download");
         self.client
             .download_file(file, token, save_path, progress_handler)
             .await?;
+        output.register(&Path::new(save_path).join(outputs::safe_name(&file.display_name))).await?;
         Ok(())
     }
 
@@ -912,27 +921,28 @@ impl App {
         course: &Course,
         folder_path: &str,
     ) -> Result<()> {
+        let output = self.download_output().await?;
         let (pdf_name, pdf_content) = self.convert_office_file_to_pdf(file).await?;
-        let save_path = Path::new(&self.config.read().await.save_path)
-            .join(self.get_course_identifier(course))
-            .join(folder_path);
+        let save_path = outputs::directory(Path::new(&self.config.read().await.save_path), "file", Some(&course.into()))?
+            .join(outputs::relative_path(folder_path)?);
         fs::create_dir_all(&save_path)?;
-        fs::write(save_path.join(pdf_name), pdf_content)?;
+        let path = save_path.join(outputs::safe_name(&pdf_name));
+        fs::write(&path, pdf_content)?;
+        output.register(&path).await?;
         Ok(())
     }
 
     pub async fn download_my_file_as_pdf(&self, file: &File, folder_path: &str) -> Result<()> {
+        let output = self.download_output().await?;
         let (pdf_name, pdf_content) = self.convert_office_file_to_pdf(file).await?;
         let save_path = Path::new(&self.config.read().await.save_path)
             .join(MY_CANVAS_FILES_FOLDER_NAME)
-            .join(folder_path);
+            .join(outputs::relative_path(folder_path)?);
         fs::create_dir_all(&save_path)?;
-        fs::write(save_path.join(pdf_name), pdf_content)?;
+        let path = save_path.join(outputs::safe_name(&pdf_name));
+        fs::write(&path, pdf_content)?;
+        output.register(&path).await?;
         Ok(())
-    }
-
-    fn get_course_identifier(&self, course: &Course) -> String {
-        self.client.get_course_identifier(course)
     }
 
     pub async fn sync_course_files(&self, course: &Course) -> Result<Vec<File>> {
@@ -944,9 +954,9 @@ impl App {
             .await
     }
 
-    pub async fn open_file(&self, name: &str) -> Result<()> {
+    pub async fn open_file(&self, name: &str, kind: &str, course: Option<&outputs::DownloadCourse>) -> Result<()> {
         let save_path = &self.config.read().await.save_path;
-        let path = Path::new(save_path).join(name);
+        let path = outputs::existing_file(Path::new(save_path), name, kind, course);
         self.open_path(path.to_str().unwrap_or_default())
     }
 
@@ -957,10 +967,7 @@ impl App {
         folder_path: &str,
     ) -> Result<()> {
         let save_path = &self.config.read().await.save_path;
-        let path = Path::new(save_path)
-            .join(self.get_course_identifier(course))
-            .join(folder_path)
-            .join(name);
+        let path = outputs::course_file_path(Path::new(save_path), course, folder_path, name)?;
         self.open_path(path.to_str().unwrap_or_default())
     }
 
@@ -968,8 +975,8 @@ impl App {
         let save_path = &self.config.read().await.save_path;
         let path = Path::new(save_path)
             .join(MY_CANVAS_FILES_FOLDER_NAME)
-            .join(folder_path)
-            .join(name);
+            .join(outputs::relative_path(folder_path)?)
+            .join(outputs::safe_name(name));
         self.open_path(path.to_str().unwrap_or_default())
     }
 
@@ -984,14 +991,15 @@ impl App {
     }
 
     fn open_path(&self, path: &str) -> Result<()> {
+        let path = outputs::display_path(Path::new(path));
         #[cfg(target_os = "macos")]
-        let _ = std::process::Command::new("open").arg(path).output()?;
+        let _ = std::process::Command::new("open").arg(&path).output()?;
 
         #[cfg(target_os = "linux")]
-        let _ = std::process::Command::new("xdg-open").arg(path).output()?;
+        let _ = std::process::Command::new("xdg-open").arg(&path).output()?;
 
         #[cfg(target_os = "windows")]
-        let _ = std::process::Command::new("explorer").arg(path).output()?;
+        let _ = std::process::Command::new("explorer").arg(&path).output()?;
 
         Ok(())
     }
@@ -1006,9 +1014,9 @@ impl App {
         self.open_path(&config_dir)
     }
 
-    pub async fn delete_file(&self, file: &File) -> Result<()> {
+    pub async fn delete_file(&self, file: &File, course: Option<&outputs::DownloadCourse>) -> Result<()> {
         let save_path = &self.config.read().await.save_path;
-        let path = Path::new(save_path).join(&file.display_name);
+        let path = outputs::existing_file(Path::new(save_path), &file.display_name, "attachment", course);
         fs::remove_file(path)?;
         Ok(())
     }
@@ -1020,10 +1028,7 @@ impl App {
         folder_path: &str,
     ) -> Result<()> {
         let save_path = &self.config.read().await.save_path;
-        let path = Path::new(save_path)
-            .join(self.get_course_identifier(course))
-            .join(folder_path)
-            .join(&file.display_name);
+        let path = outputs::course_file_path(Path::new(save_path), course, folder_path, &file.display_name)?;
         fs::remove_file(path)?;
         Ok(())
     }
@@ -1032,15 +1037,15 @@ impl App {
         let save_path = &self.config.read().await.save_path;
         let path = Path::new(save_path)
             .join(MY_CANVAS_FILES_FOLDER_NAME)
-            .join(folder_path)
-            .join(&file.display_name);
+            .join(outputs::relative_path(folder_path)?)
+            .join(outputs::safe_name(&file.display_name));
         fs::remove_file(path)?;
         Ok(())
     }
 
-    pub async fn delete_file_with_name(&self, name: &str) -> Result<()> {
+    pub async fn delete_file_with_name(&self, name: &str, course: Option<&outputs::DownloadCourse>) -> Result<()> {
         let save_path = &self.config.read().await.save_path;
-        let path = Path::new(save_path).join(name);
+        let path = outputs::existing_file(Path::new(save_path), name, "attachment", course);
         fs::remove_file(path)?;
         Ok(())
     }
@@ -1214,7 +1219,8 @@ impl App {
         file_name: &str,
         folder_path: &str,
     ) -> Result<()> {
-        let path = Path::new(folder_path).join(file_name);
+        let output = self.download_output().await?;
+        let path = Path::new(folder_path).join(outputs::safe_name(file_name));
         let mut workbook = Workbook::new();
         let sheet = workbook.add_worksheet();
         for (row, row_data) in data.iter().enumerate() {
@@ -1222,13 +1228,15 @@ impl App {
                 sheet.write_string(row as u32, col as u16, col_data)?;
             }
         }
-        workbook.save(path)?;
+        workbook.save(&path)?;
+        output.register(&path).await?;
         Ok(())
     }
 
-    pub async fn export_users(&self, users: &[User], save_name: &str) -> Result<()> {
+    pub async fn export_users(&self, users: &[User], save_name: &str, course: Option<&outputs::DownloadCourse>) -> Result<()> {
+        let output = self.download_output().await?;
         let save_path = self.config.read().await.save_path.clone();
-        let path = Path::new(&save_path).join(save_name);
+        let path = outputs::directory(Path::new(&save_path), "export", course)?.join(outputs::safe_name(save_name));
 
         let mut workbook = Workbook::new();
         let sheet = workbook.add_worksheet();
@@ -1252,7 +1260,8 @@ impl App {
             sheet.write_string(row, 5, &user.short_name)?;
             sheet.write_string(row, 6, &user.login_id)?;
         }
-        workbook.save(path)?;
+        workbook.save(&path)?;
+        output.register(&path).await?;
         Ok(())
     }
 

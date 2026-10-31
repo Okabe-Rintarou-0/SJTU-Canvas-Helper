@@ -1,3 +1,5 @@
+import { downloadCourseContext } from "../lib/downloads";
+import { DownloadCourseContext } from "../lib/download_context";
 import { invoke } from "@tauri-apps/api/core";
 import AssignmentRoundedIcon from "@mui/icons-material/AssignmentRounded";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
@@ -187,8 +189,9 @@ export default function AssignmentsPage() {
 
   const handleDownloadAttachment = async (attachment: Attachment) => {
     const file = attachmentToFile(attachment);
+    const course = courses.data.find((item) => item.id === selectedCourseId);
     try {
-      await invoke("download_file", { file });
+      await invoke("download_file", { file, ...(course ? { course: downloadCourseContext(course) } : {}) });
       messageApi.success("下载成功", 0.5);
     } catch (error) {
       messageApi.error(`下载失败：${error}`);
@@ -443,7 +446,7 @@ export default function AssignmentsPage() {
   return (
     <BasicLayout>
       {contextHolder}
-      {previewer}
+      <DownloadCourseContext.Provider value={selectedCourse ? downloadCourseContext(selectedCourse) : undefined}>{previewer}</DownloadCourseContext.Provider>
       {assignmentToModify ? (
         <ModifyDDLModal
           open={showModifyDDLModal}

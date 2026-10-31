@@ -14,7 +14,7 @@ const report = `${environment}\n近期运行日志\n${log}`;
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.invoke.mockImplementation(async (command: string) => command === "read_diagnostic_report" ? report : undefined);
+  mocks.invoke.mockImplementation(async (command: string) => command === "read_diagnostic_report" ? report : command === "download_directory" ? "D:/下载/导出" : undefined);
   mocks.save.mockResolvedValue("D:\\反馈\\诊断信息.txt");
   mocks.getVersion.mockResolvedValue("3.0.13");
   mocks.open.mockResolvedValue(undefined);
@@ -52,6 +52,17 @@ describe("logs and feedback", () => {
     expect(await screen.findByText(/已保存到：D:\\反馈\\诊断信息.txt/)).toHaveTextContent("手动附加");
     expect(screen.getByText(/已保存到/)).toHaveTextContent("不会自动上传");
     expect(mocks.open).not.toHaveBeenCalled();
+  });
+
+  it("can still export diagnostics when the configured download directory is unavailable", async () => {
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "read_diagnostic_report") return report;
+      if (command === "download_directory") throw new Error("目录不可用");
+    });
+    await load();
+    fireEvent.click(screen.getByRole("button", { name: "导出诊断信息" }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("save_diagnostic_report", { path: "D:\\反馈\\诊断信息.txt" }));
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ defaultPath: expect.stringMatching(/^SJTU-Canvas-Helper-diagnostics-.*\.txt$/) }));
   });
 
   it("does not save or announce success when the save dialog is cancelled", async () => {

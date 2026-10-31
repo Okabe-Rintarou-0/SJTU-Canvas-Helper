@@ -49,6 +49,8 @@ import { changeSessionAccount } from "../lib/account_sessions";
 import VideoSummarySettings from "../components/video_summary_settings";
 import { videoSummaryOptions, videoSummaryOptionsError } from "../lib/video_summary_config";
 import SettingsShell, { SettingsPanel, type SettingsSection } from "../components/settings_shell";
+import AppDataSettings from "../components/app_data_settings";
+import DownloadedFilesSettings from "../components/downloaded_files_settings";
 import { LoginAlert } from "../components/login_alert";
 import { getConfig, saveConfig, updateConfig } from "../lib/config";
 import { useConfigDispatch, useQRCode } from "../lib/hooks";
@@ -256,7 +258,7 @@ export default function SettingsPage() {
   const theme = useTheme();
   const location = useLocation();
   const focusProxyPort = new URLSearchParams(location.search).get("focus") === "proxy-port";
-  const [activeSection, setActiveSection] = useState<SettingsSection>(focusProxyPort ? "advanced" : "account");
+  const [activeSection, setActiveSection] = useState<SettingsSection>(focusProxyPort ? "advanced" : new URLSearchParams(location.search).get("section") === "storage" ? "storage" : "account");
   const dispatch = useConfigDispatch();
   const [messageApi, contextHolder] = useAppMessage();
   const tokenFieldRef = useRef<HTMLDivElement>(null);
@@ -329,8 +331,9 @@ export default function SettingsPage() {
   const [checkingExtraLogin, setCheckingExtraLogin] = useState(true);
 
   useEffect(() => {
-    if (activeSection !== "account") return;
-    const field = tokenError ? tokenFieldRef.current : savePathError ? savePathFieldRef.current : null;
+    if (activeSection !== "account" && activeSection !== "storage") return;
+    const field = activeSection === "account" && tokenError ? tokenFieldRef.current
+      : activeSection === "storage" && savePathError ? savePathFieldRef.current : null;
     field?.querySelector("input")?.focus();
   }, [activeSection, tokenError, savePathError]);
 
@@ -613,7 +616,7 @@ export default function SettingsPage() {
 
     const valid = await validateForm();
     if (!valid) {
-      setActiveSection("account");
+      setActiveSection(!formData.token.trim() ? "account" : "storage");
       messageApi.error("请先修正表单中的错误，再保存设置。");
       return;
     }
@@ -1008,41 +1011,6 @@ export default function SettingsPage() {
 
                     {tokenTestResult && <Alert severity={tokenTestResult.severity}>{tokenTestResult.text}</Alert>}
 
-                    <Box
-                      sx={{
-                        display: "grid",
-                        gap: 2,
-                        gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "minmax(0, 1fr) auto" },
-                        alignItems: "start",
-                      }}
-                    >
-                      <Box ref={savePathFieldRef}>
-                        <TextField size="small" fullWidth
-                          label="下载保存目录"
-                          name="save_path"
-                          value={formData?.save_path ?? ""}
-                          onChange={(event) =>
-                            updateField("save_path", event.target.value)
-                          }
-                          placeholder="请选择下载保存目录…"
-                          error={Boolean(savePathError)}
-                          helperText={
-                            savePathError ||
-                            "建议使用固定目录，方便文件归档与后续自动化处理。"
-                          }
-                          autoComplete="off"
-                        />
-                      </Box>
-                      <Button
-                        variant="outlined"
-                        onClick={handleSelectSavePath}
-                        startIcon={<FolderOpenRoundedIcon />}
-                        sx={{ minHeight: 40 }}
-                      >
-                        选择目录
-                      </Button>
-                    </Box>
-
                     <Divider />
 
                     <Stack spacing={2}>
@@ -1116,6 +1084,50 @@ export default function SettingsPage() {
                   </Stack>
                 </CardContent>
               </Card>
+            </SettingsPanel>
+            <SettingsPanel id="storage" active={activeSection}>
+              <Card sx={cardSx}><CardContent><Stack spacing={2}>
+                <Typography variant="h5">下载文件</Typography>
+                <Typography variant="body2" color="text.secondary">下载和导出的默认目录按账号设置，修改后点击“保存全部设置”。已有文件保留原位。</Typography>
+                    <Box
+                      sx={{
+                        display: "grid",
+                        gap: 2,
+                        gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "minmax(0, 1fr) auto" },
+                        alignItems: "start",
+                      }}
+                    >
+                      <Box ref={savePathFieldRef}>
+                        <TextField size="small" fullWidth
+                          label="下载保存目录"
+                          name="save_path"
+                          value={formData?.save_path ?? ""}
+                          onChange={(event) =>
+                            updateField("save_path", event.target.value)
+                          }
+                          placeholder="请选择下载保存目录…"
+                          error={Boolean(savePathError)}
+                          helperText={
+                            savePathError ||
+                            "此目录作为根目录，课程资料自动按学期、课程和资料类型分文件夹。"
+                          }
+                          autoComplete="off"
+                        />
+                      </Box>
+                      <Button
+                        variant="outlined"
+                        onClick={handleSelectSavePath}
+                        startIcon={<FolderOpenRoundedIcon />}
+                        sx={{ minHeight: 40 }}
+                      >
+                        选择目录
+                      </Button>
+                    </Box>
+
+                <Divider />
+                <DownloadedFilesSettings active={activeSection === "storage"} refreshKey={initialSnapshot} />
+              </Stack></CardContent></Card>
+              <Box sx={{ mt: 2 }}><AppDataSettings active={activeSection === "storage"} /></Box>
             </SettingsPanel>
             <SettingsPanel id="appearance" active={activeSection}>
               <Card sx={cardSx}>

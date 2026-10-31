@@ -1,3 +1,4 @@
+import { downloadCourseContext, downloadDirectory } from "../lib/downloads";
 import { invoke } from "@tauri-apps/api/core";
 import AssignmentRoundedIcon from "@mui/icons-material/AssignmentRounded";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
@@ -34,7 +35,6 @@ import BasicLayout from "../components/layout";
 import GradeStatisticChart from "../components/grade_statistic";
 import { WorkspaceHero } from "../components/workspace_hero";
 import { TableSkeleton } from "../components/skeleton";
-import { getConfig } from "../lib/config";
 import { useAppMessage } from "../lib/message";
 import {
   useAssignments,
@@ -93,18 +93,21 @@ export default function GradePage() {
   );
 
   useEffect(() => {
+    let disposed = false;
     const initExportInfo = async (course: Course) => {
-      const config = await getConfig();
+      const folderPath = await downloadDirectory("export", downloadCourseContext(course));
+      if (disposed) return;
       setExportInfo({
         fileName: `${course.name}_成绩`,
-        folderPath: config.save_path,
+        folderPath,
       });
     };
 
     if (selectedCourse) {
-      void initExportInfo(selectedCourse);
+      void initExportInfo(selectedCourse).catch((error) => { if (!disposed) messageApi.error(`读取导出目录失败：${error}`); });
     }
-  }, [selectedCourse]);
+    return () => { disposed = true; };
+  }, [selectedCourse, messageApi]);
 
   useEffect(() => {
     setStudentIds(students.data.map((student) => student.id));

@@ -42,12 +42,14 @@ beforeEach(() => {
   mocks.saveConfig.mockResolvedValue(undefined);
   mocks.validatePath.mockResolvedValue(undefined);
   mocks.open.mockResolvedValue("D:\\Selected");
-  mocks.invoke.mockImplementation(async (command: string) => {
+  mocks.invoke.mockImplementation(async (command: string, args?: { request?: { op: string } }) => {
     if (command === "list_accounts") return ["Default", "Study"];
     if (command === "read_account_info") return { current_account: "Default" };
     if (command === "check_extra_login_status") return true;
     if (command === "get_raw_config") return JSON.stringify({ theme: "light" });
     if (command === "test_token") return { name: "测试用户" };
+    if (command === "downloaded_files") return { directory: config.save_path, files: [], totalBytes: 0, warnings: [], busy: false };
+    if (command === "app_data") return args?.request?.op === "overview" ? { directory: "D:/应用数据", totalBytes: 0, categories: [] } : [];
   });
 });
 afterEach(cleanup);
@@ -207,8 +209,10 @@ it("retains token visibility, token test, folder selection and account creation"
   fireEvent.click(screen.getByRole("button", { name: "测试 Canvas Token" }));
   await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("test_token", { token: "test-token" }));
   expect(await screen.findByText("Token 校验通过，已连接到 测试用户 的 Canvas。")).toBeVisible();
+  section("存储与数据");
   fireEvent.click(screen.getByRole("button", { name: "选择目录" }));
   await waitFor(() => expect(screen.getByLabelText("下载保存目录")).toHaveValue("D:\\Selected"));
+  section("账号与连接");
   expect(screen.getByRole("button", { name: "删除当前账号" })).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "新建账号" }));
   fireEvent.change(screen.getByLabelText("新账号名称"), { target: { value: "Research" } });

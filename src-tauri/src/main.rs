@@ -33,6 +33,11 @@ lazy_static! {
 }
 
 #[tauri::command]
+async fn app_data(account: String, request: app::data::DataRequest) -> std::result::Result<serde_json::Value, String> {
+    APP.application_data(account, request).await
+}
+
+#[tauri::command]
 async fn generate_annual_report(year: i32) -> Result<AnnualReport> {
     APP.generate_annual_report(year).await
 }
@@ -48,8 +53,15 @@ fn read_diagnostic_report() -> String {
 }
 
 #[tauri::command]
-fn save_diagnostic_report(path: String) -> Result<()> {
+async fn save_diagnostic_report(path: String) -> Result<()> {
+    let output = APP.download_output().await;
     diagnostics::save_report(std::path::Path::new(&path))?;
+    // Diagnostics must remain exportable when the data store itself is broken.
+    if let Ok(output) = output {
+        if let Err(error) = output.register(std::path::Path::new(&path)).await {
+            tracing::warn!("诊断信息已导出，下载索引更新失败：{error}");
+        }
+    }
     Ok(())
 }
 
@@ -214,7 +226,10 @@ async fn run_video_aggregate<R: Runtime>(
     window: Window<R>,
     params: VideoAggregateParams,
 ) -> Result<i32> {
-    App::run_video_aggregate(window, &params).await
+    let output = APP.download_output().await?;
+    let code = App::run_video_aggregate(window, &params).await?;
+    if code == 0 { output.register(&std::path::Path::new(&params.output_dir).join(&params.output_name)).await?; }
+    Ok(code)
 }
 
 #[tauri::command]
@@ -553,13 +568,13 @@ async fn start_subtitle_chat_stream(
 }
 
 #[tauri::command]
-async fn export_users(users: Vec<User>, save_name: String) -> Result<()> {
-    APP.export_users(&users, &save_name).await
+async fn export_users(users: Vec<User>, save_name: String, course: Option<utils::download::DownloadCourse>) -> Result<()> {
+    APP.export_users(&users, &save_name, course.as_ref()).await
 }
 
 #[tauri::command]
-async fn open_file(name: String) -> Result<()> {
-    APP.open_file(&name).await
+async fn open_file(name: String, kind: Option<String>, course: Option<utils::download::DownloadCourse>) -> Result<()> {
+    APP.open_file(&name, kind.as_deref().unwrap_or("attachment"), course.as_ref()).await
 }
 
 #[tauri::command]
@@ -588,8 +603,8 @@ async fn open_config_dir() -> Result<()> {
 }
 
 #[tauri::command]
-async fn delete_file(file: File) -> Result<()> {
-    APP.delete_file(&file).await
+async fn delete_file(file: File, course: Option<utils::download::DownloadCourse>) -> Result<()> {
+    APP.delete_file(&file, course.as_ref()).await
 }
 
 #[tauri::command]
@@ -603,8 +618,8 @@ async fn delete_my_file(file: File, folder_path: String) -> Result<()> {
 }
 
 #[tauri::command]
-async fn delete_file_with_name(name: String) -> Result<()> {
-    APP.delete_file_with_name(&name).await
+async fn delete_file_with_name(name: String, course: Option<utils::download::DownloadCourse>) -> Result<()> {
+    APP.delete_file_with_name(&name, course.as_ref()).await
 }
 
 #[tauri::command]
@@ -615,8 +630,20 @@ async fn delete_path_file(path: String) -> Result<()> {
 
 #[tauri::command]
 async fn save_path_file(path: String, content: Vec<u8>) -> Result<()> {
-    std::fs::write(path, content)?;
+    let output = APP.download_output().await?;
+    std::fs::write(&path, content)?;
+    output.register(std::path::Path::new(&path)).await?;
     Ok(())
+}
+
+#[tauri::command]
+async fn download_directory(kind: String, course: Option<utils::download::DownloadCourse>, root: Option<String>) -> Result<String> {
+    APP.download_directory(&kind, course.as_ref(), root.as_deref()).await
+}
+
+#[tauri::command]
+async fn downloaded_files(account: String, request: app::downloads::DownloadRequest) -> std::result::Result<serde_json::Value, String> {
+    APP.downloaded_files(account, request).await
 }
 
 #[tauri::command]
@@ -629,8 +656,8 @@ async fn export_excel(
 }
 
 #[tauri::command]
-async fn download_file<R: Runtime>(window: Window<R>, file: File) -> Result<()> {
-    APP.download_file(&file, &|progress| {
+async fn download_file<R: Runtime>(window: Window<R>, file: File, course: Option<utils::download::DownloadCourse>) -> Result<()> {
+    APP.download_file(&file, course.as_ref(), &|progress| {
         let _ = window.emit("download://progress", progress);
     })
     .await
@@ -677,8 +704,8 @@ async fn download_my_file_as_pdf(file: File, folder_path: String) -> Result<()> 
 }
 
 #[tauri::command]
-async fn save_file_content(content: Vec<u8>, file_name: String) -> Result<()> {
-    APP.save_file_content(&content, &file_name).await
+async fn save_file_content(content: Vec<u8>, file_name: String, course: Option<utils::download::DownloadCourse>) -> Result<()> {
+    APP.save_file_content(&content, &file_name, course.as_ref()).await
 }
 
 #[tauri::command]
@@ -952,9 +979,10 @@ async fn download_video<R: Runtime>(
     window: Window<R>,
     video: VideoPlayInfo,
     save_name: String,
+    course: Option<utils::download::DownloadCourse>,
 ) -> Result<()> {
     let window = Arc::new(window);
-    APP.download_video(&video, &save_name, move |progress| {
+    APP.download_video(&video, &save_name, course.as_ref(), move |progress| {
         let _ = window.clone().emit("video_download://progress", progress);
     })
     .await
@@ -1115,6 +1143,7 @@ async fn main() -> Result<()> {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
+            app_data,
             read_log_content,
             read_diagnostic_report,
             save_diagnostic_report,
@@ -1172,6 +1201,8 @@ async fn main() -> Result<()> {
             delete_file_with_name,
             delete_path_file,
             save_path_file,
+            download_directory,
+            downloaded_files,
             delete_course_file,
             delete_my_file,
             download_file,

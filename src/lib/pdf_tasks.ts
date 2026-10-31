@@ -4,8 +4,9 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { open } from "@tauri-apps/plugin-shell";
 import type { File } from "./model";
 import { taskManager } from "./task_manager";
+import { defaultDownloadPath, type DownloadCourse } from "./downloads";
 
-export function enqueuePDFMerge(files: File[], name: string) {
+export function enqueuePDFMerge(files: File[], name: string, course?: DownloadCourse) {
   const id = `pdf-merge:${crypto.randomUUID()}`;
   let resultUrl: string | undefined;
   return taskManager.enqueue({
@@ -30,7 +31,7 @@ export function enqueuePDFMerge(files: File[], name: string) {
       resultUrl = URL.createObjectURL(blob);
       update({ result: { url: resultUrl, name } });
       setSave(async () => {
-        const path = await save({ defaultPath: name, filters: [{ name: "PDF", extensions: ["pdf"] }] });
+        const path = await save({ defaultPath: await defaultDownloadPath(name, course ? "file" : "export", course), filters: [{ name: "PDF", extensions: ["pdf"] }] });
         if (!path) return;
         taskManager.enqueue({
           id: `${id}:save:${path}`, name, source: "files", kind: "pdf-save", outputPath: path,

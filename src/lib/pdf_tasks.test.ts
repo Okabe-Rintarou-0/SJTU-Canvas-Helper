@@ -13,7 +13,7 @@ describe("PDF merge jobs", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.add.mockResolvedValue(undefined);
-    mocks.invoke.mockResolvedValue([1, 2]);
+    mocks.invoke.mockImplementation(async (command: string) => command === "download_directory" ? "C:/下载/导出" : [1, 2]);
     mocks.save.mockResolvedValue("C:/output/merged.pdf");
     mocks.saveAsBlob.mockResolvedValue({ arrayBuffer: async () => new Uint8Array([10, 20]).buffer });
     vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:merged"), revokeObjectURL: vi.fn() });
@@ -25,11 +25,15 @@ describe("PDF merge jobs", () => {
   const files = [{ display_name: "slides.pptx", url: "https://example.test/slides" }, { display_name: "notes.pdf", url: "https://example.test/notes" }] as File[];
 
   it("retains merge output and saves it as a separate overwrite-safe job", async () => {
-    const id = enqueuePDFMerge(files, "merged.pdf");
+    const course = { id: "10", name: "课程", term: "2026-2027 秋" };
+    mocks.invoke.mockImplementation(async (command: string) => command === "download_directory" ? "C:/下载/2026-2027 秋/课程 [10]/课件" : [1, 2]);
+    const id = enqueuePDFMerge(files, "merged.pdf", course);
     await vi.waitFor(() => expect(taskManager.getSnapshot().find((task) => task.id === id)?.status).toBe("succeeded"));
     expect(mocks.invoke).toHaveBeenCalledWith("convert_pptx_to_pdf", { file: files[0] });
     expect(taskManager.getSnapshot().find((task) => task.id === id)?.result?.url).toBe("blob:merged");
     await taskManager.action(id, "save");
+    expect(mocks.invoke).toHaveBeenCalledWith("download_directory", { kind: "file", course });
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ defaultPath: "C:/下载/2026-2027 秋/课程 [10]/课件/merged.pdf" }));
     await vi.waitFor(() => expect(taskManager.getSnapshot().find((task) => task.kind === "pdf-save")?.status).toBe("succeeded"));
     expect(mocks.invoke).toHaveBeenCalledWith("save_path_file", { path: "C:/output/merged.pdf", content: [10, 20] });
     expect(mocks.invoke).not.toHaveBeenCalledWith("save_file_content", expect.anything());

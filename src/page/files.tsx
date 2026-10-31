@@ -1,3 +1,5 @@
+import { downloadCourseContext } from "../lib/downloads";
+import { DownloadCourseContext } from "../lib/download_context";
 import PageTaskLists from "../components/page_task_lists";
 import { enqueueTask } from "../lib/task_runtime";
 import { createCloudUploadTask } from "../lib/upload_tasks";
@@ -134,14 +136,17 @@ export default function FilesPage() {
   const [fileActionMenu, setFileActionMenu] =
     useState<FileActionMenuState | null>(null);
   const [messageApi] = useAppMessage();
+  const courses = useCourses();
+  const selectedDownloadCourse = section === COURSE_FILES ? courses.data.find((course) => course.id === selectedCourseId) : undefined;
+  const downloadCourse = selectedDownloadCourse ? downloadCourseContext(selectedDownloadCourse) : undefined;
   const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry, setEntries } =
     usePreview();
   const { merger, mergePDFs } = useMerger({
     setPreviewEntry,
     onHoverEntry,
     onLeaveEntry,
+    course: downloadCourse,
   });
-  const courses = useCourses();
   const baseURL = useBaseURL();
   const externalFiles = useExternalFiles(showExternal ? selectedCourseId : -1);
 
@@ -471,7 +476,7 @@ export default function FilesPage() {
 
   return (
     <BasicLayout>
-      {previewer}
+      <DownloadCourseContext.Provider value={downloadCourse}>{previewer}</DownloadCourseContext.Provider>
 
       <FileOrderSelectModal
         open={openFileOrderSelectModal}

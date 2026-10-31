@@ -7,6 +7,8 @@ import { recordingRequest } from "./video_library_tasks";
 import { deleteSummaryCache, readSummaryCache, summaryCacheKey, writeSummaryCache, PPT_CLEANUP_POLICY, type VideoSummaryCache, type VideoPreparedContext, type VideoChatResponse } from "./video_summary_cache";
 import { videoSummaryOptions, type VideoSummaryOptions } from "./video_summary_config";
 
+import { currentDataAccount } from "./app_data";
+
 interface SummaryState {
   open: boolean;
   title: string;
@@ -44,6 +46,7 @@ function withTimeout<T>(promise: Promise<T>): Promise<T> {
 
 export class VideoSummarySession extends AISessionStore<SummaryState> {
   private materialCache = new Map<string, VideoMaterial>();
+  private storageAccount?: string;
 
   constructor() {
     super(() => ({ open: false, title: "", scopes: [], messages: [], loading: false, progress: "", coverage: "",
@@ -53,29 +56,40 @@ export class VideoSummarySession extends AISessionStore<SummaryState> {
   clearMaterials = () => { this.materialCache.clear(); };
   override reset() {
     this.clearMaterials();
+    this.storageAccount = undefined;
     super.reset();
   }
 
-  restore = (entry: VideoSummaryCache, scopes = entry.scopes) => {
+  restore = (entry: VideoSummaryCache, scopes = entry.scopes, account?: string) => {
     if (this.state.loading) return;
+    this.storageAccount = account;
     this.generation++;
     this.update({ cacheEntry: { ...entry, scopes }, namespace: entry.namespace, title: entry.title, scopes,
       messages: entry.messages, organization: entry.organization, text: entry.text, coverage: entry.coverage,
       summaryOptions: entry.summaryOptions ?? videoSummaryOptions(), preparedContext: entry.preparedContext,
-      input: "", open: true, progress: "", cacheNotice: `已读取本地缓存 · ${new Date(entry.savedAt).toLocaleString("zh-CN")}` });
+      input: "", open: true, progress: "", cacheNotice: `已读取本地历史 · ${new Date(entry.savedAt).toLocaleString("zh-CN")}` });
   };
 
-  deleteCache = () => {
-    if (this.state.loading || !this.state.cacheEntry || !deleteSummaryCache(this.state.cacheEntry.key)) return false;
-    this.update({ cacheEntry: undefined, cacheNotice: "本地缓存已删除，当前会话仍可阅读" });
-    return true;
+  deleteCache = async () => {
+    if (this.state.loading || !this.state.cacheEntry) return false;
+    const key = this.state.cacheEntry.key;
+    const generation = ++this.generation;
+    this.update({ loading: true, progress: "正在删除本地历史" });
+    try {
+      if (!await deleteSummaryCache(key, this.storageAccount)) return false;
+      if (generation === this.generation) this.update({ cacheEntry: undefined, cacheNotice: "本地历史已删除，当前会话仍可阅读" });
+      return true;
+    } finally {
+      if (generation === this.generation) this.update({ loading: false, progress: "" });
+    }
   };
 
-  private persist(entry: VideoSummaryCache) {
-    const saved = !!entry.namespace && writeSummaryCache(entry);
+  private async persist(entry: VideoSummaryCache, generation: number) {
+    const saved = !!entry.namespace && await writeSummaryCache(entry, this.storageAccount);
+    if (generation !== this.generation) return;
     this.update({ cacheEntry: entry, cacheNotice: saved
-      ? `已缓存到本地 · ${new Date(entry.savedAt).toLocaleString("zh-CN")}`
-      : "本次结果保留在当前应用会话中，未能写入本地缓存" });
+      ? `已保存到本地 · ${new Date(entry.savedAt).toLocaleString("zh-CN")}`
+      : "本次结果保留在当前应用会话中，未能保存到应用数据目录" });
   }
 
   private async requestChat(messages: LLMChatMessage[], history: CanvasAgentChatMessage[], generation: number, prefix = "") {
@@ -105,8 +119,6 @@ export class VideoSummarySession extends AISessionStore<SummaryState> {
     namespace = namespace.replace(/:ppt-(?:animation|cleanup)(?:-v\d+)?=[01]$/, `:${PPT_CLEANUP_POLICY}=${Number(cleanUpPpt)}`);
     summaryOptions = { ...summaryOptions, prompt: summaryOptions.prompt.trim() || videoSummaryOptions().prompt };
     const key = summaryCacheKey(namespace, scopes, organization, summaryOptions);
-    const cached = !force && namespace && readSummaryCache().find((entry) => entry.key === key);
-    if (cached) { this.restore(cached, scopes); return; }
     if (force) this.clearMaterials();
     const generation = ++this.generation;
     const prompt = organization === "sessions"
@@ -117,6 +129,18 @@ export class VideoSummarySession extends AISessionStore<SummaryState> {
       summaryOptions, preparedContext: undefined,
       messages: [opening], coverage: "", text: "", input: "", loading: true, open: true, progress: "正在准备资料" });
     try {
+      this.storageAccount = await currentDataAccount();
+      if (generation !== this.generation) return;
+      let history: VideoSummaryCache[] = [];
+      try { history = await readSummaryCache(this.storageAccount); }
+      catch (error) { this.update({ cacheNotice: `读取历史失败：${error}；新结果仍会尝试保存` }); }
+      if (generation !== this.generation) return;
+      const cached = !force && history.find((entry) => entry.key === key);
+      if (cached) {
+        this.update({ loading: false });
+        this.restore(cached, scopes, this.storageAccount);
+        return;
+      }
       const entries = scopes.flatMap((session) => session.videos.map((video, i) => ({ video, title: `${session.title} · ${video.courseBeginTime || `小节 ${i + 1}`}` })));
       const materials: VideoMaterial[] = [];
       for (const [index, entry] of entries.entries()) {
@@ -144,8 +168,8 @@ export class VideoSummarySession extends AISessionStore<SummaryState> {
       if (generation !== this.generation) return;
       const messages = [opening, aiMessage("assistant", `${report}\n\n${result}`)];
       this.update({ messages });
-      this.persist({ key, namespace, title, scopes, organization, messages, text, coverage: report,
-        summaryOptions, preparedContext: this.state.preparedContext, savedAt: new Date().toISOString() });
+      await this.persist({ key, namespace, title, scopes, organization, messages, text, coverage: report,
+        summaryOptions, preparedContext: this.state.preparedContext, savedAt: new Date().toISOString() }, generation);
     } catch (e) {
       if (generation === this.generation) this.update({ messages: [opening, aiMessage("assistant", `总结失败：${e}`, { error: true })] });
     } finally {
@@ -163,7 +187,7 @@ export class VideoSummarySession extends AISessionStore<SummaryState> {
       if (generation !== this.generation) return;
       const messages = [...next, aiMessage("assistant", result)];
       this.update({ messages });
-      if (this.state.cacheEntry) this.persist({ ...this.state.cacheEntry, messages, preparedContext: this.state.preparedContext, savedAt: new Date().toISOString() });
+      if (this.state.cacheEntry) await this.persist({ ...this.state.cacheEntry, messages, preparedContext: this.state.preparedContext, savedAt: new Date().toISOString() }, generation);
     } catch (e) {
       if (generation === this.generation) this.update({ messages: [...next, aiMessage("assistant", `回答失败：${e}`, { error: true })] });
     } finally {

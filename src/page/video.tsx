@@ -1,3 +1,6 @@
+import VideoSummaryScope from "../components/video_summary_scope";
+import { subscribeAppData } from "../lib/app_data";
+import { downloadCourseContext, downloadDirectory, type DownloadCourse } from "../lib/downloads";
 import WorkspaceSelect from "../components/workspace_select";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -14,7 +17,6 @@ import PsychologyRoundedIcon from "@mui/icons-material/PsychologyRounded";
 import { alpha } from "@mui/material/styles";
 import BasicLayout from "../components/layout";
 import CourseSelect from "../components/course_select";
-import VideoTrackDownloads from "../components/video_track_downloads";
 import { VideoLibraryTaskQueue } from "../components/video_library_tasks";
 import VideoAggregator from "../components/video_aggregator";
 import VideoLibraryPlayer from "../components/video_library_player";
@@ -56,7 +58,27 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   const { open: chatOpen, title: chatTitle, scopes: chatScope, messages: chatMessages,
     loading: chatLoading, progress: chatProgress, coverage, cacheNotice } = summary;
   const setChatOpen = (open: boolean) => videoSummarySession.update({ open });
-  const cachedSummaries = useMemo(readSummaryCache, [summary.cacheEntry, cacheNotice]);
+  const [cachedSummaries, setCachedSummaries] = useState<VideoSummaryCache[]>([]);
+  const [historyError, setHistoryError] = useState("");
+  useEffect(() => {
+    if (!account) return;
+    let cancelled = false;
+    let revision = 0;
+    const load = async () => {
+      const current = ++revision;
+      try {
+        const entries = await readSummaryCache(account);
+        if (!cancelled && current === revision) { setCachedSummaries(entries); setHistoryError(""); }
+      } catch (error) {
+        if (!cancelled && current === revision) { setCachedSummaries([]); setHistoryError(`读取视频总结历史失败：${error}`); }
+      }
+    };
+    void load();
+    const unsubscribe = subscribeAppData((change) => {
+      if (change.account === account && (!change.collection || change.collection === "video-summaries")) void load();
+    });
+    return () => { cancelled = true; unsubscribe(); };
+  }, [account]);
   const [cacheListOpen, setCacheListOpen] = useState(false);
   const [playerMini, setPlayerMini] = useState(false);
   const [playback, setPlayback] = useState<"live" | "recording">("recording");
@@ -79,22 +101,20 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   const [expanded, setExpanded] = useState(new Map<string, boolean>());
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
-  const [downloadActionAnchor, setDownloadActionAnchor] = useState<HTMLElement | null>(null);
   const [toolsAnchor, setToolsAnchor] = useState<HTMLElement | null>(null);
-  const [trackDownload, setTrackDownload] = useState<CanvasVideo>();
   const [aggregator, setAggregator] = useState(false);
   const [downloadScopes, setDownloadScopes] = useState<VideoSession[]>();
-  const [downloadCourse, setDownloadCourse] = useState("");
+  const [downloadCourse, setDownloadCourse] = useState<DownloadCourse>();
   const [exporting, setExporting] = useState(false);
   const [exportOptions, setExportOptions] = useState<VideoExportOptions>({ video: true, ppt: false, subtitle: false, pptPerSession: true, tracks: "all" });
-  const [player, setPlayer] = useState<{ session: VideoSession; key: string; seconds: number; nonce: string }>();
+  const [player, setPlayer] = useState<{ session: VideoSession; key: string; seconds: number; nonce: string; course?: DownloadCourse }>();
   const [aiScopes, setAiScopes] = useState<VideoSession[]>();
   const [aiOrganization, setAiOrganization] = useState("sessions");
   useEffect(() => {
     if (!active) {
-      setToolsAnchor(null); setDownloadActionAnchor(null);
+      setToolsAnchor(null);
       setDownloadScopes(undefined); setAiScopes(undefined);
-      setCacheListOpen(false); setAggregator(false); setTrackDownload(undefined);
+      setCacheListOpen(false); setAggregator(false);
     }
   }, [active]);
   const [messageApi, contextHolder] = useAppMessage();
@@ -161,20 +181,21 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
     const video = key ? session.videos.find((v) => recordingKey(v) === key) : session.videos.find(isPlayable);
     if (!video) { messageApi.info("本堂课暂无可播放录像"); return; }
     setPlayback("recording");
-    setPlayer({ session, key: recordingKey(video), seconds, nonce: crypto.randomUUID() });
+    setPlayer({ session, key: recordingKey(video), seconds, nonce: crypto.randomUUID(), course: selectedCourse ? downloadCourseContext(selectedCourse) : undefined });
   };
   const download = (next: VideoSession[], kind?: "ppt" | "subtitle") => {
-    setDownloadScopes(next); setDownloadCourse(selectedCourse?.name ?? "课程");
+    setDownloadScopes(next); setDownloadCourse(selectedCourse ? downloadCourseContext(selectedCourse) : undefined);
     if (kind) setExportOptions((previous) => ({ ...previous, video: false, ppt: kind === "ppt", subtitle: kind === "subtitle" }));
   };
   const downloadCount = downloadScopes?.reduce((count, scope) => count + scope.videos.length, 0) ?? 0;
   const singleDownload = downloadCount === 1 ? downloadScopes?.[0].videos[0] : undefined;
   const canMergePpt = downloadScopes?.some((scope) => scope.videos.length > 1) ?? false;
-  const submitDownload = async () => {
-    if (!downloadScopes || exporting) return;
+  const submitDownload = async (saveAs = false) => {
+    if (!downloadScopes || !downloadCourse || exporting) return;
     setExporting(true);
     try {
-      const directory = await open({ directory: true, multiple: false, title: "选择本批资料保存目录" });
+      const defaultPath = saveAs ? await downloadDirectory("root").catch(() => undefined) : await downloadDirectory("root");
+      const directory = saveAs ? await open({ directory: true, multiple: false, title: "选择本次下载根目录（其下按学期、课程和资料类型归档）", defaultPath }) : defaultPath;
       if (!directory || Array.isArray(directory)) return;
       const count = await enqueueVideoExports(downloadScopes, exportOptions, directory, downloadCourse);
       messageApi.success(`已加入 ${count} 个导出任务，可在${centerOnly ? "任务中心" : "下方下载任务列表"}查看进度`); setDownloadScopes(undefined);
@@ -182,22 +203,25 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
     finally { setExporting(false); }
   };
   const saveSingle = async (video: CanvasVideo, kind: "ppt" | "subtitle") => {
-    try { if (await saveRecordingMaterial(video, kind)) messageApi.success("已加入下载任务"); }
+    if (exporting) return;
+    setExporting(true);
+    try { if (await saveRecordingMaterial(video, kind, downloadCourse)) { messageApi.success("已加入下载任务"); setDownloadScopes(undefined); } }
     catch (e) { messageApi.error(`创建任务失败：${e}`); }
+    finally { setExporting(false); }
   };
-  const singleDownloadActions = singleDownload ? [
-    ...(exportOptions.video ? [{ label: "选择机位下载…", run: () => { setTrackDownload(singleDownload); setDownloadScopes(undefined); } }] : []),
-    ...(exportOptions.ppt ? [{ label: "PPT 另存为…", run: () => void saveSingle(singleDownload, "ppt") }] : []),
-    ...(exportOptions.subtitle ? [{ label: "字幕另存为…", run: () => void saveSingle(singleDownload, "subtitle") }] : []),
-  ] : [];
+  const saveAsDownload = () => {
+    if (singleDownload && !exportOptions.video && exportOptions.ppt !== exportOptions.subtitle) {
+      void saveSingle(singleDownload, exportOptions.ppt ? "ppt" : "subtitle");
+    } else void submitDownload(true);
+  };
   const restoreSummary = (entry: VideoSummaryCache, currentScopes = entry.scopes) => {
-    videoSummarySession.restore(entry, currentScopes);
+    videoSummarySession.restore(entry, currentScopes, account);
     setAiOrganization(entry.organization); setAiScopes(undefined); setCacheListOpen(false);
   };
   const summarize = (next: VideoSession[]) => {
     if (chatLoading) { setChatOpen(true); messageApi.info("请等待当前总结完成后再切换范围"); return; }
     const organization = next.length > 1 ? "sessions" : "combined";
-    const cached = cacheNamespace && readSummaryCache().find((entry) => entry.key === summaryCacheKey(cacheNamespace, next, organization, summaryOptions));
+    const cached = cacheNamespace && cachedSummaries.find((entry) => entry.key === summaryCacheKey(cacheNamespace, next, organization, summaryOptions));
     if (cached) { restoreSummary(cached, next); return; }
     setAiScopes(next); setAiOrganization(organization);
   };
@@ -239,6 +263,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
 
   return <BasicLayout active={active} contentKey="video-workspace">
     {contextHolder}
+    {historyError && <Alert severity="warning">{historyError}</Alert>}
     <Stack spacing={2} sx={{ width: "100%" }}>
       <WorkspaceHero
         chipLabel="视频管理"
@@ -259,11 +284,11 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
       />
       {selectedCourse && login === "ready" && <VideoLivePanel visible={active} key={selectedCourse.id} canvasCourseId={selectedCourse.canvasId} teachingClassId={selectedCourse.teachingClassId} refresh={refresh} playback={playback} onPlay={() => { setPlayer(undefined); setPlayback("live"); }} />}
       {(player || chatOpen) && <Box ref={workspaceRef} sx={{ scrollMarginTop: 16, display: "grid", gridTemplateColumns: player && !playerMini && chatOpen ? { xs: "minmax(0, 1fr)", md: "minmax(0, 1.2fr) minmax(340px, 1fr)" } : "minmax(0, 1fr)", gap: 2, alignItems: "start" }}>
-        {player && <VideoLibraryPlayer onMiniChange={setPlayerMini} session={player.session} initialKey={player.key} seconds={player.seconds} seekRequest={player.nonce} onClose={() => setPlayer(undefined)} onSummarize={() => summarize([player.session])} />}
+        {player && <VideoLibraryPlayer course={player.course} onMiniChange={setPlayerMini} session={player.session} initialKey={player.key} seconds={player.seconds} seekRequest={player.nonce} onClose={() => setPlayer(undefined)} onSummarize={() => summarize([player.session])} />}
         {chatOpen && <Card sx={{ ...surfaceCardSx, minWidth: 0 }}><Stack direction="row" gap={1} flexWrap="wrap" alignItems="center" sx={{ px: 2, pt: 1 }}>
           <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>{cacheNotice} · 本会话上下文 {summary.summaryOptions.contextTokens.toLocaleString("zh-CN")} / 输出上限 {summary.summaryOptions.outputTokens.toLocaleString("zh-CN")} tokens · 追问沿用本会话设置，重新生成使用当前设置</Typography>
           <Button disabled={chatLoading || !chatScope.length} onClick={() => void startSummary(true, chatScope, summary.organization, summary.namespace, chatTitle)}>重新生成</Button>
-          <Button disabled={chatLoading || !summary.cacheEntry} onClick={() => { if (!videoSummarySession.deleteCache()) messageApi.error("删除缓存失败"); }}>删除缓存</Button>
+          <Button disabled={chatLoading || !summary.cacheEntry} onClick={() => { void videoSummarySession.deleteCache().then((deleted) => { if (!deleted) messageApi.error("删除历史失败"); }); }}>删除历史</Button>
           <Button onClick={() => setChatOpen(false)}>收起总结</Button>
         </Stack>{chatPanel}</Card>}
       </Box>}
@@ -279,7 +304,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
               </Box>
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                 {chatMessages.length > 0 && <Button onClick={() => setChatOpen(true)}>{chatLoading ? "AI 处理中" : "上次总结"}</Button>}
-                {!!courseSummaries.length && <Button disabled={chatLoading} onClick={() => setCacheListOpen(true)}>已缓存总结 · {courseSummaries.length}</Button>}
+                {!!courseSummaries.length && <Button disabled={chatLoading} onClick={() => setCacheListOpen(true)}>已保存总结 · {courseSummaries.length}</Button>}
                 <Button variant="outlined" startIcon={<MoreHorizRoundedIcon />} onClick={(e) => setToolsAnchor(e.currentTarget)}>更多工具</Button>
               </Stack>
             </Stack>
@@ -369,31 +394,38 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
           <Typography variant="body2">{singleDownload ? "保存本小节的 SRT 字幕和阅读文本。" : "每小节独立 SRT，同时生成每堂课所选小节的阅读文本。"}阅读文本中的时间点属于各自小节。</Typography>
           {singleDownload && <Typography variant="caption" color="text.secondary">另存为仅保存 SRT，可自定义文件名和位置。</Typography>}
         </Stack>}
-        <Typography variant="caption" color="text.secondary">{singleDownload ? "“选择目录并下载”保存全部勾选资料，按课程和课堂归档；也可使用底部操作单独下载。" : "下一步为整批选择一次目录，按课程和课堂保存。"}同名文件自动编号；缺失资料在任务结果中列出。</Typography>
+        <Typography variant="caption" color="text.secondary">按“学期 → 课程 → 资料类型 → 课堂”归档，同名文件自动编号；缺失资料在任务结果中列出。</Typography>
         {(exportOptions.ppt || exportOptions.subtitle) && downloadScopes?.some((s) => s.videos.some((v) => !hasSubtitleSource(v))) && <Alert severity="info">部分来源仅提供视频，PPT 和字幕可能不可用；其他资料会继续导出。</Alert>}
       </Stack></DialogContent>
       <DialogActions sx={{ flexWrap: "wrap", gap: 1 }}>
-        <Button disabled={exporting} onClick={() => { setDownloadActionAnchor(null); setDownloadScopes(undefined); }}>取消</Button>
-        {singleDownloadActions.length === 1 && <Button disabled={exporting} onClick={singleDownloadActions[0].run}>{exportOptions.video ? "选择机位下载…" : "另存为…"}</Button>}
-        {singleDownloadActions.length > 1 && <Button disabled={exporting} aria-haspopup="menu" aria-controls={downloadActionAnchor ? "single-download-menu" : undefined} aria-expanded={!!downloadActionAnchor} onClick={(event) => setDownloadActionAnchor(event.currentTarget)}>单独下载 ▾</Button>}
-        <Button variant="contained" disabled={exporting || !(exportOptions.video || exportOptions.ppt || exportOptions.subtitle)} onClick={() => void submitDownload()}>{exporting ? "正在加入队列…" : "选择目录并下载"}</Button>
+        <Button disabled={exporting} onClick={() => setDownloadScopes(undefined)}>取消</Button>
+        <Button variant="outlined" disabled={exporting || !(exportOptions.video || exportOptions.ppt || exportOptions.subtitle)} onClick={saveAsDownload}>另存为</Button>
+        <Button variant="contained" disabled={exporting || !(exportOptions.video || exportOptions.ppt || exportOptions.subtitle)} onClick={() => void submitDownload()}>{exporting ? "正在加入队列…" : "下载"}</Button>
       </DialogActions>
-      <Menu id="single-download-menu" anchorEl={downloadActionAnchor} open={active && !!downloadActionAnchor && !!downloadScopes && singleDownloadActions.length > 1} onClose={() => setDownloadActionAnchor(null)}>
-        {singleDownloadActions.map((action) => <MenuItem key={action.label} onClick={() => { setDownloadActionAnchor(null); action.run(); }}>{action.label}</MenuItem>)}
-      </Menu>
     </Dialog>
     <Dialog open={active && !!aiScopes} onClose={() => setAiScopes(undefined)} fullWidth maxWidth="sm">
       <DialogTitle>总结所选 {aiScopes?.reduce((n, s) => n + s.videos.length, 0)} 小节</DialogTitle>
       <DialogContent><Stack spacing={2} sx={{ pt: 1 }}>
         <Typography variant="body2">{aiScopes?.map((s) => s.title).join("；")}</Typography>
-        <Typography variant="body2" color="text.secondary">结合字幕与 PPT OCR，按各自时间点组织资料；OCR 可能仅含关键词。缺失资料会明确标注，引用可跳转到对应视频时间。成功结果缓存在本机，重新生成会重新读取资料。</Typography>
+        <Typography variant="body2" color="text.secondary">结合字幕与 PPT OCR，按各自时间点组织资料；OCR 可能仅含关键词。缺失资料会明确标注，引用可跳转到对应视频时间。成功结果保存到本地应用数据，重新生成会重新读取资料。</Typography>
         <WorkspaceSelect size="small" label="结果组织" value={aiOrganization} onChange={(e) => setAiOrganization(e.target.value)}><MenuItem value="sessions">逐堂总结，堂内综合各小节</MenuItem><MenuItem value="combined">综合所有所选小节</MenuItem></WorkspaceSelect>
       </Stack></DialogContent>
       <DialogActions><Button onClick={() => setAiScopes(undefined)}>取消</Button><Button variant="contained" onClick={() => void startSummary()}>开始总结</Button></DialogActions>
     </Dialog>
-    <Dialog open={active && cacheListOpen} onClose={() => setCacheListOpen(false)} fullWidth maxWidth="sm"><DialogTitle>本课程的已缓存总结</DialogTitle><DialogContent><Stack spacing={1}><Typography variant="caption" color="text.secondary">本机最多保留 12 份会话，总计约 3 MB；超出时移除最早保存的缓存。缓存不会自动检查字幕更新，可在会话中重新生成。</Typography>{courseSummaries.map((entry) => <Button key={entry.key} disabled={chatLoading} sx={{ justifyContent: "flex-start", textAlign: "left" }} onClick={() => restoreSummary(entry)}>{entry.scopes.map((scope) => scope.title).join("；")} · {entry.organization === "combined" ? "综合总结" : "逐堂总结"} · {new Date(entry.savedAt).toLocaleString("zh-CN")}</Button>)}</Stack></DialogContent><DialogActions><Button onClick={() => setCacheListOpen(false)}>关闭</Button></DialogActions></Dialog>
-    <Dialog open={active && aggregator} onClose={() => setAggregator(false)} maxWidth="lg" fullWidth><DialogTitle><Stack direction="row" justifyContent="space-between">视频合成工具<Button onClick={() => setAggregator(false)}>关闭</Button></Stack></DialogTitle><DialogContent>{active && aggregator && <VideoAggregator />}</DialogContent></Dialog>
-    {active && trackDownload && <VideoTrackDownloads video={trackDownload} onClose={() => setTrackDownload(undefined)} />}
+    <Dialog open={active && cacheListOpen} onClose={() => setCacheListOpen(false)} fullWidth maxWidth="sm">
+      <DialogTitle>本课程的已保存总结</DialogTitle>
+      <DialogContent><Stack spacing={2}>
+        <Typography variant="caption" color="text.secondary">每条记录列出当时选择的小节；重新生成可采用最新资料。</Typography>
+        {courseSummaries.map((entry) => <Box key={entry.key} sx={{ borderBottom: 1, borderColor: "divider", pb: 2 }}>
+          <Typography variant="subtitle2" sx={{ overflowWrap: "anywhere" }}>{entry.title}</Typography>
+          <Typography variant="caption" color="text.secondary">{entry.organization === "combined" ? "综合总结" : "逐堂总结"} · 保存于 {new Date(entry.savedAt).toLocaleString("zh-CN")}</Typography>
+          <VideoSummaryScope scopes={entry.scopes} />
+          <Button disabled={chatLoading} onClick={() => restoreSummary(entry)}>查看总结</Button>
+        </Box>)}
+      </Stack></DialogContent>
+      <DialogActions><Button onClick={() => setCacheListOpen(false)}>关闭</Button></DialogActions>
+    </Dialog>
+    <Dialog open={active && aggregator} onClose={() => setAggregator(false)} maxWidth="lg" fullWidth><DialogTitle><Stack direction="row" justifyContent="space-between">视频合成工具<Button onClick={() => setAggregator(false)}>关闭</Button></Stack></DialogTitle><DialogContent>{active && aggregator && <VideoAggregator course={selectedCourse ? downloadCourseContext(selectedCourse) : undefined} />}</DialogContent></Dialog>
     {chatLoading && !chatOpen && <Box sx={{ ...surfaceCardSx, position: "fixed", bottom: 20, right: 24, zIndex: 8, bgcolor: "background.paper", p: 1 }}><Button startIcon={<CircularProgress size={14} />} onClick={() => setChatOpen(true)}>{chatProgress}</Button></Box>}
   </BasicLayout>;
 }

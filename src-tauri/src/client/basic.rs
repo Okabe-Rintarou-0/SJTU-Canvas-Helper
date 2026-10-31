@@ -343,7 +343,7 @@ impl Client {
             processed: 0,
             total: file.size,
         };
-        let path = Path::new(save_path).join(&file.display_name);
+        let path = Path::new(save_path).join(crate::utils::download::safe_name(&file.display_name));
         let total = file.size;
         let mut file = fs::File::create(path.to_str().unwrap())?;
         let mut last_chunk_no = 0;
@@ -522,13 +522,6 @@ impl Client {
         Ok(FoldersAndFiles::new(folders, files))
     }
 
-    pub fn get_course_identifier(&self, course: &Course) -> String {
-        format!(
-            "{}({} {})",
-            course.name, course.term.name, course.teachers[0].display_name
-        )
-    }
-
     pub async fn sync_course_files(
         &self,
         course: &Course,
@@ -550,12 +543,14 @@ impl Client {
                             return false;
                         }
 
-                        let mut path = Path::new(save_dir).join(self.get_course_identifier(course));
+                        let mut relative = std::path::PathBuf::new();
                         if folder_name != "course files" {
-                            path = path.join(&folder_name[13..]);
+                            let Some(remote) = folder_name.strip_prefix("course files/") else { return true; };
+                            let Ok(folder) = crate::utils::download::relative_path(remote) else { return true; };
+                            relative = folder;
                         }
-                        path = path.join(&file.display_name);
-                        fs::metadata(&path).is_err()
+                        crate::utils::download::course_file_path(Path::new(save_dir), course, &relative.to_string_lossy(), &file.display_name)
+                            .map(|path| !path.is_file()).unwrap_or(true)
                     }
                     None => true,
                 }

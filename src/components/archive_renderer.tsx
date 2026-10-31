@@ -22,7 +22,8 @@ import {
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import { Archive } from "libarchive.js";
-import { Fragment, ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { DownloadCourseContext } from "../lib/download_context";
 
 import { useAppMessage } from "../lib/message";
 import { LOG_LEVEL_ERROR } from "../lib/model";
@@ -47,6 +48,7 @@ export default function ArchiveRenderer({
   mainState: { currentDocument },
 }: DocRendererProps) {
   const theme = useTheme();
+  const course = useContext(DownloadCourseContext);
   const [selectedPath, setSelectedPath] = useState("");
   const [messageApi, contextHolder] = useAppMessage();
   const [treeData, setTreeData] = useState<ArchiveTreeNode | undefined>();
@@ -238,7 +240,7 @@ export default function ArchiveRenderer({
       const buffer = await file.arrayBuffer();
       const content = Array.from<number>(new Uint8Array(buffer));
       const fileName = selectedDoc.fileName ?? "downloaded";
-      await invoke("save_file_content", { content, fileName });
+      await invoke("save_file_content", { content, fileName, ...(course ? { course } : {}) });
       messageApi.success("下载成功", 0.5);
     } catch (e) {
       messageApi.error(`下载失败：${e}`);

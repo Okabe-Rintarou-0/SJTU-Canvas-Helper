@@ -1,3 +1,4 @@
+import { downloadCourseContext } from "../lib/downloads";
 import { invoke } from "@tauri-apps/api/core";
 import CheckCircleOutlineRoundedIcon from "@mui/icons-material/CheckCircleOutlineRounded";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
@@ -45,6 +46,7 @@ export default function UsersPage() {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(20);
   const courses = useCurrentTermCourses();
+  const selectedCourse = courses.data.find((course) => course.id === selectedCourseId);
 
   const handleGetUsers = useCallback(async (courseId: number) => {
     if (courseId === -1) {
@@ -98,13 +100,14 @@ export default function UsersPage() {
         await invoke("export_users", {
           users: exportUsers,
           saveName: `${exportConfig.save_name}.xlsx`,
+          ...(selectedCourse ? { course: downloadCourseContext(selectedCourse) } : {}),
         });
         messageApi.success(exportAll ? "导出全部成功" : "导出成功", 0.5);
       } catch (error) {
         messageApi.error(error as string);
       }
     },
-    [exportConfig.save_name, messageApi, selectedUsers, users]
+    [exportConfig.save_name, messageApi, selectedUsers, users, selectedCourse]
   );
 
   const selectedUserIds = useMemo(
@@ -116,10 +119,6 @@ export default function UsersPage() {
     const start = page * rowsPerPage;
     return users.slice(start, start + rowsPerPage);
   }, [page, rowsPerPage, users]);
-
-  const selectedCourse = courses.data.find(
-    (course) => course.id === selectedCourseId
-  );
 
   useEffect(() => {
     setPage(0);

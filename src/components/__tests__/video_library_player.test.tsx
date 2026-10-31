@@ -21,8 +21,8 @@ beforeEach(() => {
   vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(function (this: HTMLMediaElement) { Object.defineProperty(this, "paused", { configurable: true, value: true }); });
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.clearAllMocks(); });
-async function load() {
-  render(<VideoLibraryPlayer session={{ id: "a", title: "课堂", videos: [recording] }} initialKey="canvas:a" onClose={() => {}} onSummarize={() => {}} />);
+async function load(course?: { id: string; name: string; term: string }) {
+  render(<VideoLibraryPlayer course={course} session={{ id: "a", title: "课堂", videos: [recording] }} initialKey="canvas:a" onClose={() => {}} onSummarize={() => {}} />);
   await screen.findByRole("button", { name: "下载当前机位" });
 }
 describe("video player compatibility", () => {
@@ -142,11 +142,12 @@ describe("video player compatibility", () => {
     expect(document.querySelector("video")!.currentTime).toBe(12);
   });
   it("downloads any selected track independently", async () => {
-    await load();
+    const course = { id: "10", name: "测试课程", term: "2026-2027 秋" };
+    await load(course);
     fireEvent.mouseDown(screen.getByRole("combobox", { name: "主机位" }));
     fireEvent.click(screen.getByRole("option", { name: "机位 2" }));
     fireEvent.click(screen.getByRole("button", { name: "下载当前机位" }));
-    expect(mocks.download).toHaveBeenCalledWith(recording, tracks[1], 1);
+    expect(mocks.download).toHaveBeenCalledWith(recording, tracks[1], 1, course);
   });
   it("swaps unsynchronized screens while preserving their individual playback states", async () => {
     await load();

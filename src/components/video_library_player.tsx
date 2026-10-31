@@ -1,3 +1,4 @@
+import type { DownloadCourse } from "../lib/downloads";
 import WorkspaceSelect from "./workspace_select";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -26,8 +27,9 @@ function playbackURL(url: string, port: number, source: CanvasVideo["source"]): 
   return url;
 }
 
-export default function VideoLibraryPlayer({ session, initialKey, seconds = 0, seekRequest, onMiniChange, onClose, onSummarize }: {
-  session: VideoSession; initialKey: string; seconds?: number; seekRequest?: string; onMiniChange?: (mini: boolean) => void; onClose: () => void; onSummarize: () => void;
+export default function VideoLibraryPlayer({ session, course, initialKey, seconds = 0, seekRequest, onMiniChange, onClose, onSummarize }: {
+  session: VideoSession;
+  course?: DownloadCourse; initialKey: string; seconds?: number; seekRequest?: string; onMiniChange?: (mini: boolean) => void; onClose: () => void; onSummarize: () => void;
 }) {
   const [mini, setMini] = useState(false);
   const [active, setActive] = useState(initialKey);
@@ -167,7 +169,7 @@ export default function VideoLibraryPlayer({ session, initialKey, seconds = 0, s
               <MenuItem value={-1}>关闭</MenuItem>{urls.map((_, i) => i !== main && <MenuItem key={i} value={i}>机位 {i + 1}</MenuItem>)}
             </WorkspaceSelect>}
             {secondary >= 0 && <Button onClick={() => changeMain(secondary)}>交换主副屏</Button>}
-            {tracks[main] && <Button onClick={() => { enqueueVideoTrack(video, tracks[main], main); setDownloadNotice(`机位 ${main + 1} 已加入下载任务，可返回资料库查看进度`); }}>下载当前机位</Button>}
+            {tracks[main] && <Button onClick={() => { enqueueVideoTrack(video, tracks[main], main, course); setDownloadNotice(`机位 ${main + 1} 已加入下载任务，可返回资料库查看进度`); }}>下载当前机位</Button>}
             <Button onClick={() => setSettings(!settings)}>播放设置</Button>
             <Button disabled={!session.videos.some(canSummarizeRecording)} onClick={onSummarize}>总结本堂课</Button>
           </Stack>

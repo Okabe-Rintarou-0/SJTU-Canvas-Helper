@@ -5,6 +5,7 @@ import PaletteOutlinedIcon from "@mui/icons-material/PaletteOutlined";
 import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
+import StorageRoundedIcon from "@mui/icons-material/StorageRounded";
 import { Box, Button, Chip, Stack, Tab, Tabs, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import { useLayoutEffect, useRef, type PropsWithChildren } from "react";
@@ -14,6 +15,7 @@ import { surfaceCardSx } from "../lib/styles";
 const sections = [
   { id: "account", label: "账号与连接", icon: <ManageAccountsOutlinedIcon /> },
   { id: "appearance", label: "界面偏好", icon: <PaletteOutlinedIcon /> },
+  { id: "storage", label: "存储与数据", icon: <StorageRoundedIcon /> },
   { id: "ai", label: "AI 与模型", icon: <AutoAwesomeRoundedIcon /> },
   { id: "advanced", label: "高级与实验", icon: <TuneRoundedIcon /> },
   { id: "tools", label: "工具与诊断", icon: <BuildOutlinedIcon /> },
