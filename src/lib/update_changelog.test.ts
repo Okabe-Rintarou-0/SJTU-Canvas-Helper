@@ -11,11 +11,11 @@ describe("cumulative update changelog", () => {
     expect(changes.map((entry) => entry.version)).toEqual(["v3.0.13", "v3.0.10", "v3.0.9"]);
   });
 
-  it("prefers published data and safely ignores malformed remote entries", () => {
+  it("safely ignores malformed bundled entries and unknown versions", () => {
     expect(getCumulativeChanges("3.0.12", "3.0.13", [
-      null, {}, log("invalid"), { ...log("3.0.13"), items: [null] }, log("3.0.13", "发布内容"),
-    ], [log("v3.0.13", "本地内容")])).toEqual([log("3.0.13", "发布内容")]);
-    expect(getCumulativeChanges("3.0.12", "3.0.13", {}, [log("v3.0.13")])).toHaveLength(1);
+      null, {}, log("invalid"), { ...log("3.0.13"), items: [null] }, log("3.0.13", "更新内容"),
+    ])).toEqual([log("3.0.13", "更新内容")]);
+    expect(getCumulativeChanges("3.0.12", "3.0.13", {})).toEqual([]);
     expect(getCumulativeChanges("unknown", "3.0.13", [log("3.0.13")])).toEqual([]);
   });
 

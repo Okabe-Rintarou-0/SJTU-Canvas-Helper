@@ -15,6 +15,7 @@ import {
 import { alpha, useTheme } from "@mui/material/styles";
 
 import releaseChangeLogs from "../lib/change_logs.json";
+import { ChangeLogText } from "./change_log_text";
 
 const changeLogs = [...releaseChangeLogs,
 { version: "v2.0.5", date: "2025/12/6", items: ["修复 pdf 渲染"] },
@@ -251,7 +252,7 @@ export function ChangeLogModal({
                         variant="body2"
                         sx={{ color: "text.secondary", lineHeight: 1.8 }}
                       >
-                        {item}
+                        {typeof item === "string" ? <ChangeLogText>{item}</ChangeLogText> : item}
                       </Typography>
                     ))}
                   </Stack>

@@ -41,15 +41,14 @@ function isReleaseChangeLog(value: unknown): value is ReleaseChangeLog {
     log.items.length > 0 && log.items.every((item) => typeof item === "string");
 }
 
-/** The manifest supplies future entries that cannot be bundled in the installed app. */
+/** Select the bundled release notes between the previously run and current versions. */
 export function getCumulativeChanges(
   currentVersion: string,
   targetVersion: string,
-  remoteLogs: unknown,
-  localLogs: ReleaseChangeLog[] = [],
+  bundledLogs: unknown,
 ): ReleaseChangeLog[] {
   const logs = new Map<string, ReleaseChangeLog>();
-  const candidates = [...localLogs, ...(Array.isArray(remoteLogs) ? remoteLogs : [])];
+  const candidates = Array.isArray(bundledLogs) ? bundledLogs : [];
   for (const log of candidates) {
     if (!isReleaseChangeLog(log)) continue;
     const sinceCurrent = compareVersions(log.version, currentVersion);
