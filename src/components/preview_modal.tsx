@@ -31,65 +31,87 @@ type ResolvedPreview =
   | { kind: "document"; document: IDocument }
   | { kind: "window" };
 
-const localDocumentCache = new Map<string, Promise<IDocument>>();
+// Conversion URLs belong to one open preview, never to a process-wide cache.
+// Disposal also prevents a conversion that finishes after Close from allocating a URL.
+function createPreviewSession() {
+  const localDocumentCache = new Map<string, Promise<IDocument>>();
+  const ownedUrls = new Set<string>();
+  let disposed = false;
+  const assertActive = () => {
+    if (disposed) throw new Error("Preview closed");
+  };
+  const dispose = () => {
+    disposed = true;
+    ownedUrls.forEach((url) => URL.revokeObjectURL(url));
+    ownedUrls.clear();
+    localDocumentCache.clear();
+  };
 
-async function resolveLocalDocument(file: File): Promise<IDocument> {
-  const cacheKey = `${file.display_name}|${file.url}`;
-  const cached = localDocumentCache.get(cacheKey);
-  if (cached) {
-    return cached;
-  }
-
-  const task = (async () => {
-    if (isPowerPointFile(file)) {
-      const content = await invoke<number[]>("convert_pptx_to_pdf", { file });
-      const pdfBlob = new Blob([new Uint8Array(content).buffer as ArrayBuffer], {
-        type: "application/pdf",
-      });
-      return {
-        uri: URL.createObjectURL(pdfBlob),
-        fileName: getPdfFileName(file.display_name),
-        fileType: "pdf",
-      } satisfies IDocument;
+  async function resolveLocalDocument(file: File): Promise<IDocument> {
+    assertActive();
+    const cacheKey = `${file.display_name}|${file.url}`;
+    const cached = localDocumentCache.get(cacheKey);
+    if (cached) {
+      return cached;
     }
 
-    const fileType = await getFileType(file.display_name);
-    return {
-      uri: file.url,
-      fileName: file.display_name,
-      fileType,
-    } satisfies IDocument;
-  })();
-
-  localDocumentCache.set(cacheKey, task);
-  void task.catch(() => localDocumentCache.delete(cacheKey));
-  return task;
-}
-
-async function resolvePreview(file: File): Promise<ResolvedPreview> {
-  if (file.url?.startsWith("blob:")) {
-    return { kind: "document", document: await resolveLocalDocument(file) };
-  }
-  if (canConvertFileToPdf(file) || isPdfFile(file)) {
-    try {
-      await invoke("open_file_preview_window", {
-        fileId: file.id,
-        title: file.display_name,
-      });
-      return { kind: "window" };
-    } catch (onlinePreviewError) {
-      if (!isPowerPointFile(file) && !isPdfFile(file)) {
-        throw onlinePreviewError;
+    const task = (async () => {
+      if (isPowerPointFile(file)) {
+        const content = await invoke<number[]>("convert_pptx_to_pdf", { file });
+        assertActive();
+        const pdfBlob = new Blob([new Uint8Array(content).buffer as ArrayBuffer], {
+          type: "application/pdf",
+        });
+        const uri = URL.createObjectURL(pdfBlob);
+        ownedUrls.add(uri);
+        return {
+          uri,
+          fileName: getPdfFileName(file.display_name),
+          fileType: "pdf",
+        } satisfies IDocument;
       }
 
+      const fileType = await getFileType(file.display_name);
       return {
-        kind: "document",
-        document: await resolveLocalDocument(file),
-      };
-    }
+        uri: file.url,
+        fileName: file.display_name,
+        fileType,
+      } satisfies IDocument;
+    })();
+
+    localDocumentCache.set(cacheKey, task);
+    void task.catch(() => localDocumentCache.delete(cacheKey));
+    return task;
   }
 
-  return { kind: "document", document: await resolveLocalDocument(file) };
+  async function resolvePreview(file: File): Promise<ResolvedPreview> {
+    assertActive();
+    if (file.url?.startsWith("blob:")) {
+      return { kind: "document", document: await resolveLocalDocument(file) };
+    }
+    if (canConvertFileToPdf(file) || isPdfFile(file)) {
+      try {
+        await invoke("open_file_preview_window", {
+          fileId: file.id,
+          title: file.display_name,
+        });
+        return { kind: "window" };
+      } catch (onlinePreviewError) {
+        if (!isPowerPointFile(file) && !isPdfFile(file)) {
+          throw onlinePreviewError;
+        }
+
+        return {
+          kind: "document",
+          document: await resolveLocalDocument(file),
+        };
+      }
+    }
+
+    return { kind: "document", document: await resolveLocalDocument(file) };
+  }
+
+  return { resolvePreview, dispose };
 }
 
 export default function PreviewModal({
@@ -112,30 +134,36 @@ export default function PreviewModal({
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const cancelPreviewRef = useRef(handleCancelPreview);
-  useLayoutEffect(() => { cancelPreviewRef.current = handleCancelPreview; }, [handleCancelPreview]);
+  useLayoutEffect(() => {
+    cancelPreviewRef.current = handleCancelPreview;
+  }, [handleCancelPreview]);
 
   useEffect(() => {
+    setPreviews([]);
+    setLoadError(null);
     if (!open || files.length === 0) {
+      setLoading(false);
       return;
     }
 
+    const session = createPreviewSession();
     let cancelled = false;
-    setPreviews([]);
-    setLoadError(null);
     setLoading(true);
     void (async () => {
       try {
         const nextPreviews = await Promise.all(
-          files.map((file) => resolvePreview(file))
+          files.map((file) => session.resolvePreview(file))
         );
         if (!cancelled) {
           if (nextPreviews.some((preview) => preview.kind === "window")) {
+            session.dispose();
             cancelPreviewRef.current?.();
           } else {
             setPreviews(nextPreviews);
           }
         }
       } catch (error) {
+        session.dispose();
         if (!cancelled) {
           setLoadError(String(error));
         }
@@ -148,6 +176,7 @@ export default function PreviewModal({
 
     return () => {
       cancelled = true;
+      session.dispose();
     };
   }, [files, open]);
 
