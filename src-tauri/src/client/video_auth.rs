@@ -1,7 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
 use reqwest::{cookie::Jar, redirect::Policy};
-use serde::Deserialize;
 use tauri::Url;
 
 use super::{
@@ -30,14 +29,6 @@ fn login_error() -> AppError {
     AppError::VideoDownloadError(
         "Canvas Token 登录课堂视频失败，额外登录态也不可用。请检查 Token，或前往设置扫码登录后刷新重试。".into(),
     )
-}
-
-fn session_url(base: &Url, value: &str) -> Result<Url> {
-    let url = Url::parse(value).map_err(|_| AppError::LoginError)?;
-    if url.origin() != base.origin() || !url.username().is_empty() || url.password().is_some() {
-        return Err(AppError::LoginError);
-    }
-    Ok(url)
 }
 
 impl Client {
@@ -93,24 +84,29 @@ impl Client {
             {
                 continue;
             }
-            let jar = Arc::new(Jar::default());
-            let client = reqwest::Client::builder()
-                .timeout(Duration::from_secs(15))
-                .redirect(Policy::none())
-                .cookie_provider(jar.clone())
-                .build()?;
             let result = match method {
                 VideoAuthMethod::CanvasToken => {
-                    self.canvas_token_video_launch(&client, &base, &launch, &auth.canvas_token)
-                        .await
+                    match super::canvas_session::connect(&base, &auth.canvas_token).await {
+                        Ok(browser) => self
+                            .follow_video_launch(&browser, launch.as_str())
+                            .await
+                            .map(|token| (browser, token)),
+                        Err(error) => Err(error),
+                    }
                 }
                 VideoAuthMethod::ExtraLogin => {
+                    let jar = Arc::new(Jar::default());
                     for host in [AUTH_URL, MY_SJTU_URL] {
                         jar.add_cookie_str(
                             &format!("JAAuthCookie={}", auth.ja_auth_cookie),
                             &Url::parse(host).unwrap(),
                         );
                     }
+                    let browser = reqwest::Client::builder()
+                        .timeout(Duration::from_secs(15))
+                        .redirect(Policy::none())
+                        .cookie_provider(jar.clone())
+                        .build()?;
                     let sso = reqwest::Client::builder()
                         .timeout(Duration::from_secs(15))
                         .redirect(Policy::limited(16))
@@ -121,14 +117,16 @@ impl Client {
                             if response.status().is_success()
                                 && response.url().origin() == launch.origin() =>
                         {
-                            self.follow_video_launch(&client, launch.as_str()).await
+                            self.follow_video_launch(&browser, launch.as_str())
+                                .await
+                                .map(|token| (browser, token))
                         }
                         _ => Err(AppError::LoginError),
                     }
                 }
             };
             match result {
-                Ok(token) => {
+                Ok((client, token)) => {
                     tracing::info!(?method, "Classroom video authentication completed");
                     auth.session = Some(client);
                     auth.method = Some(method);
@@ -141,38 +139,6 @@ impl Client {
             }
         }
         Err(login_error())
-    }
-
-    async fn canvas_token_video_launch(
-        &self,
-        client: &reqwest::Client,
-        base: &Url,
-        launch: &Url,
-        token: &str,
-    ) -> Result<String> {
-        #[derive(Deserialize)]
-        struct Session {
-            session_url: String,
-        }
-        // Send the long-lived token only to Canvas, never along the LTI redirects.
-        let endpoint = base
-            .join("/login/session_token")
-            .map_err(|_| AppError::LoginError)?;
-        let response = client
-            .get(endpoint)
-            .bearer_auth(token)
-            .query(&[("return_to", launch.as_str())])
-            .send()
-            .await
-            .map_err(|_| AppError::LoginError)?
-            .error_for_status()
-            .map_err(|_| AppError::LoginError)?;
-        let session: Session = response.json().await.map_err(|_| AppError::LoginError)?;
-        let url = session_url(base, &session.session_url)?;
-        // The URL contains a one-time credential; never log it or propagate raw errors.
-        self.follow_video_launch(client, url.as_str())
-            .await
-            .map_err(|_| AppError::LoginError)
     }
 
     pub(super) async fn video_browser_client(&self) -> reqwest::Client {
@@ -191,18 +157,18 @@ mod tests {
     use httpmock::prelude::*;
 
     #[tokio::test]
-    async fn token_exchange_and_lti_errors_fall_back_to_extra_login() {
-        for exchange_status in [401, 200] {
+    async fn token_exchange_session_and_lti_errors_fall_back_to_extra_login() {
+        for failure in ["exchange", "session", "lti"] {
             let server = MockServer::start();
             let exchange = server.mock(|when, then| {
                 when.path("/login/session_token")
                     .header("authorization", "Bearer rejected-token");
-                then.status(exchange_status)
+                then.status(if failure == "exchange" { 401 } else { 200 })
                     .json_body(serde_json::json!({"session_url": server.url("/broken-lti")}));
             });
             let broken = server.mock(|when, then| {
                 when.path("/broken-lti");
-                then.status(500);
+                then.status(if failure == "lti" { 200 } else { 500 });
             });
             let extra = server.mock(|when, then| {
                 when.path("/sso");
@@ -212,6 +178,10 @@ mod tests {
                 when.path("/launch").header("cookie", "extra=ready");
                 then.status(302)
                     .header("Location", "/ui/#/?jwt_token=fallback-jwt");
+            });
+            let failed_launch = server.mock(|when, then| {
+                when.path("/launch");
+                then.status(500);
             });
             let client = Client::new_without_proxy(server.base_url().as_str(), "", "", "", None);
             client
@@ -234,7 +204,8 @@ mod tests {
             exchange.assert_hits(1);
             extra.assert_hits(1);
             launch.assert_hits(1);
-            broken.assert_hits(usize::from(exchange_status == 200));
+            broken.assert_hits(usize::from(failure != "exchange"));
+            failed_launch.assert_hits(usize::from(failure == "lti"));
         }
     }
 
@@ -402,14 +373,18 @@ mod tests {
             when.method(GET)
                 .path("/login/session_token")
                 .header("authorization", "Bearer canvas-secret")
-                .query_param("return_to", canvas.url("/launch"));
+                .query_param("return_to", canvas.url("/"));
             then.json_body(serde_json::json!({"session_url": canvas.url("/session/one-time")}));
         });
         let consume = canvas.mock(|when, then| {
             when.method(GET).path("/session/one-time");
             then.status(302)
                 .header("Set-Cookie", "canvas_session=valid; Path=/")
-                .header("Location", "/launch");
+                .header("Location", "/");
+        });
+        let home = canvas.mock(|when, then| {
+            when.path("/").header("cookie", "canvas_session=valid");
+            then.status(200);
         });
         let launch = canvas.mock(|when, then| {
             when.method(GET)
@@ -421,13 +396,18 @@ mod tests {
             ));
         });
         let lti = video.mock(|when, then| {
-            when.method(POST).path("/lti").body("signed=yes");
+            when.method(POST)
+                .path("/lti")
+                .body("signed=yes")
+                .matches(|request| {
+                    request.headers.as_ref().is_none_or(|headers| {
+                        !headers
+                            .iter()
+                            .any(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+                    })
+                });
             then.status(302)
                 .header("Location", "/ui/#/?jwt_token=video%2Bjwt");
-        });
-        let leaked = video.mock(|when, then| {
-            when.header_exists("authorization");
-            then.status(400);
         });
         let client = Client::new_without_proxy(canvas.base_url().as_str(), "", "", "", None);
         client
@@ -449,9 +429,9 @@ mod tests {
         );
         exchange.assert_hits(1);
         consume.assert_hits(1);
+        home.assert_hits(1);
         launch.assert_hits(2);
         lti.assert_hits(2);
-        leaked.assert_hits(0);
         assert_eq!(
             client.video_auth.lock().await.method,
             Some(VideoAuthMethod::CanvasToken)
@@ -461,17 +441,5 @@ mod tests {
             .await;
         assert!(client.video_auth.lock().await.session.is_none());
         assert!(client.token.read().await.is_empty());
-    }
-
-    #[test]
-    fn rejects_session_urls_outside_canvas_origin() {
-        let base = Url::parse("https://oc.sjtu.edu.cn").unwrap();
-        for value in [
-            "https://evil.example/session",
-            "http://oc.sjtu.edu.cn/session",
-            "https://user:secret@oc.sjtu.edu.cn/session",
-        ] {
-            assert!(session_url(&base, value).is_err());
-        }
     }
 }

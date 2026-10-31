@@ -8,6 +8,7 @@ pub mod ai;
 pub mod annual;
 pub mod basic;
 mod common;
+mod canvas_session;
 pub mod constants;
 mod debug;
 mod file_parser;
