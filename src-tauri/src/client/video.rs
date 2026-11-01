@@ -724,11 +724,6 @@ fn get_cookie_value(cookies: &str, name: &str) -> Option<String> {
 // Apis here are for course video
 // We take references from: https://github.com/prcwcy/sjtu-canvas-video-download/blob/master/sjtu_canvas_video.py
 impl Client {
-    pub fn init_cookie(&self, cookie: &str) {
-        self.jar
-            .add_cookie_str(cookie, &Url::parse(VIDEO_BASE_URL).unwrap());
-    }
-
     // The extra login flow may bounce across jAccount and my.sjtu domains,
     // so we attach the cookie to both hosts before probing protected pages.
     fn attach_ja_auth_cookie(&self, cookie: &str) {
@@ -1319,7 +1314,7 @@ impl Client {
 
     pub(crate) async fn get_oauth_consumer_key_with_client(&self, client: &reqwest::Client) -> Result<Option<String>> {
         let request = client.get(VIDEO_OAUTH_KEY_URL).build()?;
-        let resp = self.debug_store.send(&client, request).await?;
+        let resp = self.debug_store.send(client, request).await?;
         let body = resp.text().await?;
         let document = Document::from(body.as_str());
         let Some(meta) = document.find(Name("meta")).find(|n: &Node| n.attr("id").unwrap_or_default() == "xForSecName") else {
@@ -1330,24 +1325,6 @@ impl Client {
         };
         let bytes = STANDARD.decode(v)?;
         Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
-    }
-
-    pub async fn get_oauth_consumer_key(&self) -> Result<Option<String>> {
-        let resp = self.get_request(VIDEO_OAUTH_KEY_URL, None::<&str>).await?;
-        let body = resp.text().await?;
-        let document = Document::from(body.as_str());
-
-        let Some(meta) = document
-            .find(Name("meta"))
-            .find(|n: &Node| n.attr("id").unwrap_or_default() == "xForSecName")
-        else {
-            return Ok(None);
-        };
-        let Some(v) = meta.attr("vaule") else {
-            return Ok(None);
-        };
-        let bytes = &STANDARD.decode(v)?;
-        Ok(Some(format!("{}", String::from_utf8_lossy(bytes))))
     }
 
     pub async fn get_video_course(
@@ -1527,49 +1504,6 @@ impl Client {
             .error_for_status()?;
         let value: Value = serde_json::from_slice(&resp.bytes().await?)?;
         video_info_from_response(&value)
-    }
-
-    pub async fn get_video_info(
-        &self,
-        video_id: i64,
-        oauth_consumer_key: &str,
-    ) -> Result<VideoInfo> {
-        let mut form_data = HashMap::new();
-        let oauth_nonce = self.get_oauth_nonce();
-        let oauth_signature = self.get_oauth_signature(video_id, &oauth_nonce, oauth_consumer_key);
-
-
-        let video_id_str = video_id.to_string();
-        form_data.insert("playTypeHls", "true");
-        form_data.insert("id", &video_id_str);
-        form_data.insert(OAUTH_RANDOM_P1, OAUTH_RANDOM_P1_VAL);
-        form_data.insert(OAUTH_RANDOM_P2, OAUTH_RANDOM_P2_VAL);
-
-        let response = self
-            .cli
-            .post(VIDEO_INFO_URL)
-            .form(&form_data)
-            .header(ACCEPT, "application/json")
-            .header("oauth-consumer-key", oauth_consumer_key)
-            .header("oauth-nonce", oauth_nonce)
-            .header("oauth-path", OAUTH_PATH)
-            .header("oauth-signature", oauth_signature)
-            .send()
-            .await?
-            .error_for_status()?;
-        let bytes = response.bytes().await?;
-        let video = utils::json::parse_json(&bytes)?;
-        Ok(video)
-    }
-
-    pub async fn get_video_info_for_cookies(
-        &self,
-        video_id: i64,
-        oauth_consumer_key: &str,
-        cookies: &str,
-    ) -> Result<VideoInfo> {
-        let client = Self::video_client_for_cookies(cookies)?;
-        self.get_video_info_with_client(video_id, oauth_consumer_key, &client).await
     }
 
     pub(crate) async fn get_video_info_with_client(

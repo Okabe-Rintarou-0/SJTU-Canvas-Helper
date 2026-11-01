@@ -82,7 +82,7 @@ impl ConfigStore {
         // Detect an externally replaced lock path before a new mutation. This
         // protects cooperating writers, not arbitrary malicious filesystem races.
         let path_metadata = fs::symlink_metadata(self.root.join(".account-store.lock"))
-            .map_err(|error| { self.poison(); error })?;
+            .inspect_err(|_| self.poison())?;
         if !path_metadata.file_type().is_file() {
             self.poison();
             return Err(AppError::PersistenceUncertain);
@@ -90,7 +90,7 @@ impl ConfigStore {
         #[cfg(unix)]
         {
             use std::os::unix::fs::MetadataExt;
-            let held = self._lock.metadata().map_err(|error| { self.poison(); error })?;
+            let held = self._lock.metadata().inspect_err(|_| self.poison())?;
             if path_metadata.dev() != held.dev() || path_metadata.ino() != held.ino() {
                 self.poison();
                 return Err(AppError::PersistenceUncertain);
