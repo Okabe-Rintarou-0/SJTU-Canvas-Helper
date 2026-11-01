@@ -376,8 +376,13 @@ impl App {
 mod tests {
     use super::*;
 
-    fn offline_app() -> App {
-        App {
+    fn offline_app() -> (tempfile::TempDir, App) {
+        // The fixture owns an isolated store; never read the real user configuration.
+        let directory = tempfile::tempdir().unwrap();
+        let store = super::super::config_store::ConfigStore::open(directory.path()).unwrap();
+        let app = App {
+            config_store: Some(store),
+            config_owner: tokio::sync::Mutex::new(Some("offline-test-owner".to_owned())),
             client: Arc::new(crate::client::Client::new_without_proxy(
                 "http://127.0.0.1",
                 "",
@@ -390,7 +395,8 @@ mod tests {
             handle: Default::default(),
             mcp_handle: Default::default(),
             cache: Default::default(),
-        }
+        };
+        (directory, app)
     }
 
     #[tokio::test]
@@ -399,7 +405,8 @@ mod tests {
             display_name: "张同学_202612345_私人课程作业".into(),
             ..Default::default()
         };
-        let error = offline_app().convert_office_file_to_pdf(&file).await.unwrap_err();
+        let (_directory, app) = offline_app();
+        let error = app.convert_office_file_to_pdf(&file).await.unwrap_err();
         assert!(matches!(&error, AppError::UnsupportedFileExtensionError(extension) if extension == "(missing)"));
         assert!(!error.to_string().contains(&file.display_name));
         assert!(!serde_json::to_string(&error).unwrap().contains(&file.display_name));
@@ -407,7 +414,7 @@ mod tests {
 
     #[tokio::test]
     async fn failed_exports_identify_sections_without_recording_titles() {
-        let app = offline_app();
+        let (_directory, app) = offline_app();
         let titles = ["张老师的私人课程", "李同学的私人课堂"];
         for kind in ["ppt", "subtitle", "reading"] {
             let requests = titles
