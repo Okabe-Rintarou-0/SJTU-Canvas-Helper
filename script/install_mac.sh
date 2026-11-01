@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-VERSION="3.0.13"
+VERSION="3.0.14"
 
 ARCH=$(uname -m)
 if [ "$ARCH" = "arm64" ]; then
