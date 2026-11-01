@@ -223,13 +223,13 @@ async fn collect_relationship() -> Result<RelationshipTopo> {
 }
 
 #[tauri::command]
-fn create_account(account: Account) -> Result<()> {
-    App::create_account(&account)
+async fn create_account(account: Account) -> Result<()> {
+    APP.create_account(&account).await
 }
 
 #[tauri::command]
 fn read_account_info() -> Result<AccountInfo> {
-    App::read_account_info()
+    APP.active_account_info()
 }
 
 #[tauri::command]
@@ -244,7 +244,7 @@ async fn delete_account(account: Account) -> Result<()> {
 
 #[tauri::command]
 fn list_accounts() -> Result<Vec<Account>> {
-    App::list_accounts()
+    APP.active_accounts()
 }
 
 #[tauri::command]
@@ -383,8 +383,8 @@ async fn get_me() -> Result<User> {
 }
 
 #[tauri::command]
-async fn get_config() -> AppConfig {
-    APP.get_config().await
+async fn get_config() -> Result<app::ConfigSnapshot> {
+    APP.get_config_snapshot().await
 }
 
 #[tauri::command]
@@ -553,18 +553,18 @@ async fn export_users(users: Vec<User>, save_name: String) -> Result<()> {
 }
 
 #[tauri::command]
-async fn open_file(name: String) -> Result<()> {
-    APP.open_file(&name).await
+async fn open_file(name: String, expected_owner: String, expected_save_path: String) -> Result<()> {
+    APP.open_file(&name, &expected_owner, &expected_save_path).await
 }
 
 #[tauri::command]
-async fn open_course_file(name: String, course: Course, folder_path: String) -> Result<()> {
-    APP.open_course_file(&name, &course, &folder_path).await
+async fn open_course_file(name: String, course: Course, folder_path: String, expected_owner: String, expected_save_path: String) -> Result<()> {
+    APP.open_course_file(&name, &course, &folder_path, &expected_owner, &expected_save_path).await
 }
 
 #[tauri::command]
-async fn open_my_file(name: String, folder_path: String) -> Result<()> {
-    APP.open_my_file(&name, &folder_path).await
+async fn open_my_file(name: String, folder_path: String, expected_owner: String, expected_save_path: String) -> Result<()> {
+    APP.open_my_file(&name, &folder_path, &expected_owner, &expected_save_path).await
 }
 
 #[tauri::command]
@@ -624,8 +624,9 @@ async fn export_excel(
 }
 
 #[tauri::command]
-async fn download_file<R: Runtime>(window: Window<R>, file: File) -> Result<()> {
-    APP.download_file(&file, &|progress| {
+async fn download_file<R: Runtime>(window: Window<R>, file: File, expected_owner: String, operation_id: String) -> Result<()> {
+    APP.download_file(&file, &expected_owner, &|mut progress: model::ProgressPayload| {
+        progress.uuid = operation_id.clone();
         let _ = window.emit("download://progress", progress);
     })
     .await
@@ -637,8 +638,11 @@ async fn download_course_file<R: Runtime>(
     file: File,
     course: Course,
     folder_path: String,
+    expected_owner: String,
+    operation_id: String,
 ) -> Result<()> {
-    APP.download_course_file(&file, &course, &folder_path, &|progress| {
+    APP.download_course_file(&file, &course, &folder_path, &expected_owner, &|mut progress: model::ProgressPayload| {
+        progress.uuid = operation_id.clone();
         let _ = window.emit("download://progress", progress);
     })
     .await
@@ -649,8 +653,11 @@ async fn download_my_file<R: Runtime>(
     window: Window<R>,
     file: File,
     folder_path: String,
+    expected_owner: String,
+    operation_id: String,
 ) -> Result<()> {
-    APP.download_my_file(&file, &folder_path, &|progress| {
+    APP.download_my_file(&file, &folder_path, &expected_owner, &|mut progress: model::ProgressPayload| {
+        progress.uuid = operation_id.clone();
         let _ = window.emit("download://progress", progress);
     })
     .await
@@ -661,14 +668,15 @@ async fn download_course_file_as_pdf(
     file: File,
     course: Course,
     folder_path: String,
+    expected_owner: String,
 ) -> Result<()> {
-    APP.download_course_file_as_pdf(&file, &course, &folder_path)
+    APP.download_course_file_as_pdf(&file, &course, &folder_path, &expected_owner)
         .await
 }
 
 #[tauri::command]
-async fn download_my_file_as_pdf(file: File, folder_path: String) -> Result<()> {
-    APP.download_my_file_as_pdf(&file, &folder_path).await
+async fn download_my_file_as_pdf(file: File, folder_path: String, expected_owner: String) -> Result<()> {
+    APP.download_my_file_as_pdf(&file, &folder_path, &expected_owner).await
 }
 
 #[tauri::command]
@@ -709,10 +717,10 @@ async fn get_colors() -> Result<Colors> {
 }
 
 #[tauri::command]
-async fn save_config(config: AppConfig) -> Result<()> {
+async fn save_config(config: AppConfig, expected_owner: String) -> Result<String> {
     diagnostics::protect_config(&config);
     tracing::info!("Saving application configuration");
-    APP.save_config(config).await
+    APP.save_config(config, &expected_owner).await
 }
 
 #[tauri::command]
@@ -947,9 +955,13 @@ async fn download_video<R: Runtime>(
     window: Window<R>,
     video: VideoPlayInfo,
     save_name: String,
+    expected_owner: String,
+    expected_save_path: String,
+    operation_id: String,
 ) -> Result<()> {
     let window = Arc::new(window);
-    APP.download_video(&video, &save_name, move |progress| {
+    APP.download_video(&video, &save_name, &expected_owner, &expected_save_path, move |mut progress: model::ProgressPayload| {
+        progress.uuid = operation_id.clone();
         let _ = window.clone().emit("video_download://progress", progress);
     })
     .await
@@ -1015,13 +1027,15 @@ async fn download_ppt<R: Runtime>(
 
 // Apis for jbox
 #[tauri::command]
-async fn login_jbox() -> Result<()> {
-    APP.login_jbox().await
+async fn login_jbox(expected_owner: String) -> Result<app::ConfigSnapshot> {
+    APP.login_jbox(&expected_owner).await
 }
 
 #[tauri::command]
-async fn upload_file<R: Runtime>(window: Window<R>, file: File, save_dir: String) -> Result<()> {
-    APP.upload_file(&file, &save_dir, |progress| {
+async fn upload_file<R: Runtime>(window: Window<R>, file: File, save_dir: String, expected_owner: String, operation_id: String) -> Result<()> {
+    APP.upload_file(&file, &save_dir, &expected_owner, |progress| {
+        let mut progress = progress;
+        progress.uuid = operation_id.clone();
         let _ = window.emit("file_upload://progress", progress);
     })
     .await
@@ -1032,8 +1046,12 @@ async fn upload_file_as_pdf<R: Runtime>(
     window: Window<R>,
     file: File,
     save_dir: String,
+    expected_owner: String,
+    operation_id: String,
 ) -> Result<()> {
-    APP.upload_file_as_pdf(&file, &save_dir, |progress| {
+    APP.upload_file_as_pdf(&file, &save_dir, &expected_owner, |progress| {
+        let mut progress = progress;
+        progress.uuid = operation_id.clone();
         let _ = window.emit("file_upload://progress", progress);
     })
     .await
@@ -1084,7 +1102,7 @@ async fn start_mcp_server() -> Result<bool> {
 }
 
 #[tauri::command]
-async fn stop_mcp_server() {
+async fn stop_mcp_server() -> Result<()> {
     APP.stop_mcp().await
 }
 
@@ -1239,7 +1257,9 @@ async fn main() -> Result<()> {
                 let handle = std::thread::spawn(|| {
                     let rt = tokio::runtime::Runtime::new().unwrap();
                     rt.block_on(async {
-                        APP.stop_mcp().await;
+                        if let Err(error) = APP.stop_mcp().await {
+                            tracing::error!(%error, "MCP shutdown incomplete");
+                        }
                         APP.stop_proxy().await;
                     });
                 });

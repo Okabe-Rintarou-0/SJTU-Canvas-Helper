@@ -71,7 +71,7 @@ export default function CommentPanel({
         await onRefresh?.(currentAttachment.user_id);
       }
     } catch (e) {
-      consoleLog(LOG_LEVEL_ERROR, e);
+      consoleLog(LOG_LEVEL_ERROR, "Submission comment failed");
       messageApi.error(e as string);
     }
   };
@@ -89,7 +89,7 @@ export default function CommentPanel({
       }
       messageApi.success("删除成功！🎉", 0.5);
     } catch (e) {
-      consoleLog(LOG_LEVEL_ERROR, e);
+      consoleLog(LOG_LEVEL_ERROR, "Submission comment deletion failed");
       messageApi.error(e as string);
     }
   };

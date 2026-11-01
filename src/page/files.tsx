@@ -2,6 +2,8 @@ import PageTaskLists from "../components/page_task_lists";
 import { enqueueTask } from "../lib/task_runtime";
 import { createCloudUploadTask } from "../lib/upload_tasks";
 import { useLegacyTasks } from "../lib/task_hooks";
+import { currentSession, isSessionCurrent } from "../lib/session";
+import { captureOperationConfig, isConfigOwnerCurrent } from "../lib/config";
 import { invoke } from "@tauri-apps/api/core";
 import ArrowDropDownRoundedIcon from "@mui/icons-material/ArrowDropDownRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
@@ -212,7 +214,7 @@ export default function FilesPage() {
       const myFolders = (await invoke("list_my_folders")) as Folder[];
       initWithFolders(myFolders);
     } catch (error) {
-      consoleLog(LOG_LEVEL_ERROR, error);
+      consoleLog(LOG_LEVEL_ERROR, "Personal folder loading failed");
       clearFilesAndFolders();
     }
   };
@@ -275,7 +277,7 @@ export default function FilesPage() {
         handleGetFolderFiles(folderId),
       ]);
     } catch (error) {
-      consoleLog(LOG_LEVEL_ERROR, error);
+      consoleLog(LOG_LEVEL_ERROR, "Folder contents loading failed");
       setFiles([]);
       setFolders([]);
     }
@@ -329,29 +331,55 @@ export default function FilesPage() {
   };
 
   const handleAddDownloadFileTask = (
-    file: File,
+    inputFile: File,
     outputFormat: FileOutputFormat = "original"
   ) => {
-    const course = section === COURSE_FILES ? getSelectedCourse() : undefined;
+    const session = currentSession();
+    const config = captureOperationConfig();
+    const file = structuredClone(inputFile);
+    const selectedCourse = section === COURSE_FILES ? getSelectedCourse() : undefined;
+    const course = selectedCourse ? structuredClone(selectedCourse) : undefined;
     const folderPath = getFolderPath(file) ?? "";
     const output = getOutputFile(file, outputFormat);
     const scope = course ? `course:${course.id}` : "my";
-    const id = `files:${scope}:${file.uuid}:${outputFormat}`;
+    const id = `files:${session}:${scope}:${file.uuid}:${outputFormat}`;
     const name = output.display_name;
+    const ensureOwner = () => {
+      if (!isSessionCurrent(session) || !isConfigOwnerCurrent(config))
+        throw new Error("账号已切换，请在当前账号重新创建下载任务。");
+    };
+    const event = { channel: "download://progress", id: crypto.randomUUID() };
     enqueueTask({
       id, name, source: "files", kind: outputFormat === "pdf" ? "conversion" : "file",
       context: course?.name ?? "我的 Canvas 文件",
       outputPath: `${course?.name ?? "我的Canvas文件"}/${folderPath}/${name}`,
+      // Keep physical-destination serialization independent of account identity.
       locks: [`output:${scope}:${folderPath}:${name}`],
-      event: outputFormat === "original" ? { channel: "download://progress", id: file.uuid } : undefined,
+      event: outputFormat === "original" ? event : undefined,
       stage: outputFormat === "pdf" ? "正在转换 PDF" : "正在下载",
-      data: { file, outputFormat },
-      run: () => invoke(course
-        ? outputFormat === "pdf" ? "download_course_file_as_pdf" : "download_course_file"
-        : outputFormat === "pdf" ? "download_my_file_as_pdf" : "download_my_file",
-        course ? { file, course, folderPath } : { file, folderPath }),
-      open: () => invoke(course ? "open_course_file" : "open_my_file",
-        course ? { name, course, folderPath } : { name, folderPath }),
+      data: { file: structuredClone(file), outputFormat },
+      run: async () => {
+        ensureOwner();
+        event.id = crypto.randomUUID();
+        try {
+          await invoke(course
+            ? outputFormat === "pdf" ? "download_course_file_as_pdf" : "download_course_file"
+            : outputFormat === "pdf" ? "download_my_file_as_pdf" : "download_my_file",
+            course
+              ? { file, course, folderPath, expectedOwner: config.__config_owner, operationId: event.id }
+              : { file, folderPath, expectedOwner: config.__config_owner, operationId: event.id });
+        } catch (error) {
+          ensureOwner();
+          throw error;
+        }
+        ensureOwner();
+      },
+      // Do not open a same-named file through a different current account.
+      open: async () => {
+        ensureOwner();
+        return invoke(course ? "open_course_file" : "open_my_file",
+          course ? { name, course, folderPath, expectedOwner: config.__config_owner, expectedSavePath: config.save_path } : { name, folderPath, expectedOwner: config.__config_owner, expectedSavePath: config.save_path });
+      },
     });
   };
 

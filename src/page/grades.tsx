@@ -34,7 +34,8 @@ import BasicLayout from "../components/layout";
 import GradeStatisticChart from "../components/grade_statistic";
 import { WorkspaceHero } from "../components/workspace_hero";
 import { TableSkeleton } from "../components/skeleton";
-import { getConfig } from "../lib/config";
+import { getConfig, StaleConfigSessionError } from "../lib/config";
+import { currentSession, isSessionCurrent } from "../lib/session";
 import { useAppMessage } from "../lib/message";
 import {
   useAssignments,
@@ -93,17 +94,24 @@ export default function GradePage() {
   );
 
   useEffect(() => {
+    const owner = currentSession();
+    let active = true;
+    const ownsRequest = () => active && isSessionCurrent(owner);
     const initExportInfo = async (course: Course) => {
-      const config = await getConfig();
-      setExportInfo({
-        fileName: `${course.name}_成绩`,
-        folderPath: config.save_path,
-      });
+      try {
+        const config = await getConfig();
+        if (!ownsRequest()) return;
+        setExportInfo({
+          fileName: `${course.name}_成绩`,
+          folderPath: config.save_path,
+        });
+      } catch (error: unknown) {
+        if (error instanceof StaleConfigSessionError || !ownsRequest()) return;
+        console.error("Failed to initialize grade export:", error);
+      }
     };
-
-    if (selectedCourse) {
-      void initExportInfo(selectedCourse);
-    }
+    if (selectedCourse) void initExportInfo(selectedCourse);
+    return () => { active = false; };
   }, [selectedCourse]);
 
   useEffect(() => {
@@ -285,7 +293,7 @@ export default function GradePage() {
       });
       messageApi.success("打分成功", 0.5);
     } catch (error) {
-      consoleLog(LOG_LEVEL_ERROR, error);
+      consoleLog(LOG_LEVEL_ERROR, "Submission grading failed");
       messageApi.error(`打分时出错：${error}`);
     }
   };
@@ -344,7 +352,7 @@ export default function GradePage() {
       });
       messageApi.success("导出成功", 0.5);
     } catch (error) {
-      consoleLog(LOG_LEVEL_ERROR, error);
+      consoleLog(LOG_LEVEL_ERROR, "Grades export failed");
       messageApi.error(`导出失败：${error}`);
     }
   };

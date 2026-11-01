@@ -23,7 +23,7 @@ import {
   Option
 } from "./model";
 import { AppMessageApi } from "./message";
-import { consoleLog, logDiagnostic } from "./diagnostics";
+import { logDiagnostic } from "./diagnostics";
 export { consoleLog } from "./diagnostics";
 
 export function isMergableFileType(fileType: string): boolean {
@@ -366,21 +366,22 @@ export function srtToVtt(srt: string) {
   );
 }
 
-function detectExternalType(item: ModuleItem) {
-  const supportedExt = [".pdf", ".doc", ".docx", ".pptx", ".txt", ".zip", ".7z", ".tar"];
+function detectExternalType(item: ModuleItem): [string, "File" | "Link" | undefined] {
+  const supportedExt = [".pdf", ".doc", ".docx", ".ppt", ".pptx", ".txt", ".zip", ".7z", ".tar"];
   if (!item.external_url) return ["", undefined];
-  let idx = item.external_url.lastIndexOf('/');
-  const fileName = item.external_url.slice(idx + 1);
-  idx = fileName.lastIndexOf('.');
-  if (idx == -1) {
-    return [fileName, "Link"];
+  try {
+    const url = new URL(item.external_url);
+    const fileName = url.pathname.slice(url.pathname.lastIndexOf("/") + 1);
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
+      return [fileName, "Link"];
+    }
+    const idx = fileName.lastIndexOf(".");
+    const type = idx >= 0 && supportedExt.includes(fileName.slice(idx).toLowerCase())
+      ? "File" : "Link";
+    return [fileName, type];
+  } catch {
+    return ["", "Link"];
   }
-  const ext = fileName.slice(idx);
-  consoleLog(LOG_LEVEL_ERROR, "ext", ext);
-  if (supportedExt.indexOf(ext) !== -1) {
-    return [fileName, "File"];
-  }
-  return [fileName, "Link"];
 }
 
 export function moduleItem2File(item: ModuleItem): FileModel {

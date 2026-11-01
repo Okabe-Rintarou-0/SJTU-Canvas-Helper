@@ -4,15 +4,39 @@ import type { CanvasVideo, VideoInfo, VideoPlayInfo } from "./model";
 import { enqueueTask } from "./task_runtime";
 import { taskManager } from "./task_manager";
 import { recordingKey, type VideoExportOptions, type VideoSession, type VideoMaterial } from "./video_library";
+import { captureOperationConfig, isConfigOwnerCurrent } from "./config";
+import { currentSession, isSessionCurrent } from "./session";
 
 export function enqueueVideoTrack(video: CanvasVideo, track: VideoPlayInfo, index: number) {
-  const name = `${Array.from(video.videoName, (c) => c.charCodeAt(0) < 32 ? "_" : c).join("").replace(/[<>:"/\\|?*]/g, "_")}_机位${index + 1}.mp4`;
+  const session = currentSession();
+  const config = captureOperationConfig();
+  const capturedTrack = structuredClone(track);
+  const name = `${Array.from(video.videoName, (c) => c.charCodeAt(0) < 32 ? "_" : c).join("").replace(/[<>:"/\\|?*]/g, '_')}_机位${index + 1}.mp4`;
+  const ensureOwner = () => {
+    if (!isSessionCurrent(session) || !isConfigOwnerCurrent(config))
+      throw new Error("账号已切换，请在当前账号重新创建视频任务。");
+  };
+  const event = { channel: "video_download://progress", id: crypto.randomUUID() };
   enqueueTask({
-    id: `video:${track.id}:${name}`, name, source: "video", kind: "video",
-    event: { channel: "video_download://progress", id: String(track.id) },
-    locks: [`save:${name}`], stage: "正在下载",
-    run: () => invoke("download_video", { video: { ...track, name, key: track.id, index }, saveName: name }),
-    open: () => invoke("open_file", { name }),
+    id: `video:${session}:${capturedTrack.id}:${name}`, name, source: "video", kind: "video",
+    event, locks: [`save:${name}`], stage: "正在下载",
+    run: async () => {
+      ensureOwner();
+      event.id = crypto.randomUUID();
+      try {
+        await invoke("download_video", {
+          video: { ...capturedTrack, name, key: capturedTrack.id, index }, saveName: name,
+          expectedOwner: config.__config_owner, expectedSavePath: config.save_path,
+          operationId: event.id,
+        });
+      } catch (error) { ensureOwner(); throw error; }
+      ensureOwner();
+    },
+    open: async () => {
+      ensureOwner();
+      return invoke("open_file", { name, expectedOwner: config.__config_owner,
+        expectedSavePath: config.save_path });
+    },
   });
 }
 
