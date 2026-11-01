@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { livePlaybackURL, liveSessionStatus } from "./video_live";
+import { livePlaybackURL, liveSessionStatus, nextLiveSession } from "./video_live";
 import type { CanvasLiveSession } from "./model";
 
 const session = { startTime: 100, finishTime: 200, enabled: true } as CanvasLiveSession;
@@ -10,6 +10,17 @@ describe("classroom live playback", () => {
     expect(liveSessionStatus(session, 199)).toBe("live");
     expect(liveSessionStatus(session, 200)).toBe("ended");
     expect(liveSessionStatus({ ...session, enabled: false }, 150)).toBe("unavailable");
+  });
+  it("follows the next available lesson of the same class and teaching day", () => {
+    const start = Date.parse("2026-10-26T09:00:00+08:00");
+    const current = { ...session, id: "1", teachingClassId: 7, startTime: start, finishTime: start + 40 * 60_000 };
+    const next = { ...current, id: "2", startTime: start + 50 * 60_000, finishTime: start + 90 * 60_000 };
+    const later = { ...next, id: "3", startTime: start + 100 * 60_000, finishTime: start + 140 * 60_000 };
+    const tomorrow = { ...next, id: "tomorrow", startTime: next.startTime + 86400_000, finishTime: next.finishTime + 86400_000 };
+    expect(nextLiveSession(current, [later, tomorrow, next, current], current.finishTime)).toBe(next);
+    expect(nextLiveSession(current, [next, later], next.finishTime)).toBe(later);
+    expect(nextLiveSession(current, [{ ...next, enabled: false }, { ...later, teachingClassId: 8 }, tomorrow], current.finishTime)).toBeUndefined();
+    expect(nextLiveSession(current, [current], current.finishTime)).toBeUndefined();
   });
   it("preserves signed queries through the dedicated proxy", () => {
     expect(livePlaybackURL("https://mss2.sjtu.edu.cn/live/camera.m3u8?auth_key=abc&account_token=a%2Bb%3D", 3030))

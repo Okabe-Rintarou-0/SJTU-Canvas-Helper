@@ -4,7 +4,7 @@ import { isAccountTransitioning } from "./account_transition";
 import type { CanvasAgentChatMessage, LLMChatMessage } from "./model";
 import { hasVideoMaterial, recordingKey, type VideoMaterial, type VideoSession } from "./video_library";
 import { recordingRequest } from "./video_library_tasks";
-import { deleteSummaryCache, readSummaryCache, summaryCacheKey, writeSummaryCache, type VideoSummaryCache, type VideoPreparedContext, type VideoChatResponse } from "./video_summary_cache";
+import { deleteSummaryCache, readSummaryCache, summaryCacheKey, writeSummaryCache, PPT_CLEANUP_POLICY, type VideoSummaryCache, type VideoPreparedContext, type VideoChatResponse } from "./video_summary_cache";
 import { videoSummaryOptions, type VideoSummaryOptions } from "./video_summary_config";
 
 interface SummaryState {
@@ -102,7 +102,7 @@ export class VideoSummarySession extends AISessionStore<SummaryState> {
 
   start = async ({ scopes, organization, namespace, title, cleanUpPpt, force = false, summaryOptions = videoSummaryOptions() }: SummaryRequest) => {
     if (isAccountTransitioning() || this.state.loading || !scopes.length) return;
-    namespace = namespace.replace(/:ppt-(?:animation|cleanup)(?:-v\d+)?=[01]$/, `:ppt-cleanup-v3=${Number(cleanUpPpt)}`);
+    namespace = namespace.replace(/:ppt-(?:animation|cleanup)(?:-v\d+)?=[01]$/, `:${PPT_CLEANUP_POLICY}=${Number(cleanUpPpt)}`);
     summaryOptions = { ...summaryOptions, prompt: summaryOptions.prompt.trim() || videoSummaryOptions().prompt };
     const key = summaryCacheKey(namespace, scopes, organization, summaryOptions);
     const cached = !force && namespace && readSummaryCache().find((entry) => entry.key === key);
@@ -122,7 +122,7 @@ export class VideoSummarySession extends AISessionStore<SummaryState> {
       for (const [index, entry] of entries.entries()) {
         if (generation !== this.generation) return;
         this.update({ progress: `正在读取字幕与 PPT OCR ${index + 1}/${entries.length}` });
-        const materialKey = `${namespace}:${recordingKey(entry.video)}:cleanup-v3=${cleanUpPpt}`;
+        const materialKey = `${namespace}:${recordingKey(entry.video)}:${PPT_CLEANUP_POLICY}=${cleanUpPpt}`;
         let material = this.materialCache.get(materialKey);
         if (!material) {
           try { material = await withTimeout(invoke<VideoMaterial>("prepare_video_material", { request: recordingRequest(entry.video, entry.title), cleanUpPpt })); }

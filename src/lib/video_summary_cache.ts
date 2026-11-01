@@ -21,6 +21,7 @@ export interface VideoSummaryCache {
 }
 // Rebuild contexts with concise chronological OCR evidence, without processing metadata.
 const STORAGE_KEY = "video-material-summaries-v7";
+export const PPT_CLEANUP_POLICY = "ppt-cleanup-v9";
 const MAX_BYTES = 3_000_000;
 
 function isRecording(value: unknown, depth = 0): value is CanvasVideo {
@@ -39,7 +40,7 @@ export function summaryCacheKey(namespace: string, scopes: VideoSession[], organ
 
 /** Regeneration retains the original course/account scope while adopting the current model. */
 export function withSummaryModelIdentity(namespace: string, modelIdentity: string): string {
-  const match = /^(.*)(:ppt-cleanup-v3=[01])$/.exec(namespace);
+  const match = /^(.*)(:ppt-cleanup-v\d+=[01])$/.exec(namespace);
   if (!match) return namespace;
   try {
     const parts: unknown = JSON.parse(match[1]);

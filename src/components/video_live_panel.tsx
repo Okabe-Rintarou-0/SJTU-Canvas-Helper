@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Alert, Box, Button, Card, CardContent, Chip, LinearProgress, Stack, Typography } from "@mui/material";
 import { surfaceCardSx } from "../lib/styles";
-import { liveRequest, liveSessionStatus, liveStatusLabels } from "../lib/video_live";
+import { liveRequest, liveSessionStatus, liveStatusLabels, nextLiveSession } from "../lib/video_live";
 import type { CanvasLiveList, CanvasLiveSession } from "../lib/model";
 import VideoLivePlayer from "./video_live_player";
 
@@ -16,9 +16,12 @@ export default function VideoLivePanel({ canvasCourseId, teachingClassId, refres
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
   const [active, setActive] = useState<CanvasLiveSession>();
+  const nextSession = active ? nextLiveSession(active, list?.sessions ?? [], now) : undefined;
+  const followingLive = !!active && playback === "live" && (now < active.finishTime || !!nextSession);
+  const shouldPoll = visible || followingLive;
 
   useEffect(() => {
-    if (!visible) return;
+    if (!shouldPoll) return;
     let cancelled = false;
     let inFlight = false;
     const load = async () => {
@@ -33,14 +36,26 @@ export default function VideoLivePanel({ canvasCourseId, teachingClassId, refres
     void load();
     const timer = window.setInterval(() => void load(), 60_000);
     return () => { cancelled = true; clearInterval(timer); };
-  }, [canvasCourseId, teachingClassId, refresh, reload, visible]);
+  }, [canvasCourseId, teachingClassId, refresh, reload, shouldPoll]);
 
   useEffect(() => {
-    if (!visible) return;
-    setNow(Date.now() + clockOffset);
-    const timer = window.setInterval(() => setNow(Date.now() + clockOffset), 1000);
-    return () => clearInterval(timer);
-  }, [clockOffset, visible]);
+    if (!shouldPoll) return;
+    const updateClock = () => setNow(Date.now() + clockOffset);
+    updateClock();
+    const timer = window.setInterval(updateClock, 1000);
+    window.addEventListener("focus", updateClock);
+    document.addEventListener("visibilitychange", updateClock);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", updateClock);
+      document.removeEventListener("visibilitychange", updateClock);
+    };
+  }, [clockOffset, shouldPoll]);
+
+  useEffect(() => {
+    if (!followingLive || !active || now < active.finishTime) return;
+    if (nextSession && now >= nextSession.startTime) setActive(nextSession);
+  }, [followingLive, active, nextSession, now]);
 
   const sessions = [...(list?.sessions ?? [])].sort((a, b) => a.startTime - b.startTime);
   const liveCount = sessions.filter((session) => liveSessionStatus(session, now) === "live").length;
@@ -54,7 +69,7 @@ export default function VideoLivePanel({ canvasCourseId, teachingClassId, refres
     </Stack>
     {loading && <LinearProgress aria-label="正在读取直播" />}
     {error && <Alert severity={list ? "warning" : "error"}>读取直播失败：{error}。可点击刷新直播重试。</Alert>}
-    {active && playback === "live" && <VideoLivePlayer key={active.id} session={active} canvasCourseId={canvasCourseId} teachingClassId={teachingClassId} onClose={() => setActive(undefined)} />}
+    {active && playback === "live" && <VideoLivePlayer session={active} nextSession={nextSession} canvasCourseId={canvasCourseId} teachingClassId={teachingClassId} onClose={() => setActive(undefined)} />}
     {sessions.map((session) => {
       const status = liveSessionStatus(session, now);
       return <Stack key={session.id} direction={{ xs: "column", sm: "row" }} alignItems={{ sm: "center" }} gap={1} sx={{ borderTop: "1px solid", borderColor: "divider", pt: 1.5 }}>

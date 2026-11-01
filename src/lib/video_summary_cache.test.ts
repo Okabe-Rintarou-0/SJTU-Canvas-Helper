@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { readSummaryCache, writeSummaryCache, deleteSummaryCache, summaryCacheKey, withSummaryModelIdentity, type VideoSummaryCache } from "./video_summary_cache";
+import { readSummaryCache, writeSummaryCache, deleteSummaryCache, summaryCacheKey, withSummaryModelIdentity, PPT_CLEANUP_POLICY, type VideoSummaryCache } from "./video_summary_cache";
 import type { CanvasVideo } from "./model";
 import { videoSummaryOptions } from "./video_summary_config";
 const scopes = [{ id: "day", title: "课堂", videos: [{ source: "canvas", videoId: "a", videoName: "录像", playable: true, courseBeginTime: "2026-09-28 08:00", courseEndTime: "2026-09-28 08:45" } as CanvasVideo] }];
@@ -7,11 +7,11 @@ const entry: VideoSummaryCache = { key: "key", namespace: "account-course-model"
 beforeEach(() => localStorage.clear());
 afterEach(() => vi.restoreAllMocks());
 describe("video summary persistence", () => {
-  it("regenerates with the current model without moving the original account/course scope", () => {
+  it.each(["ppt-cleanup-v3", PPT_CLEANUP_POLICY])("regenerates %s with the current model without moving the original account/course scope", (policy) => {
     const course = ["account", 10, "class-id", "课程", "学期"];
-    const original = `${JSON.stringify([...course, "old-model"])}:ppt-cleanup-v3=0`;
+    const original = `${JSON.stringify([...course, "old-model"])}:${policy}=0`;
     const regenerated = withSummaryModelIdentity(original, "new-model");
-    expect(regenerated).toBe(`${JSON.stringify([...course, "new-model"])}:ppt-cleanup-v3=0`);
+    expect(regenerated).toBe(`${JSON.stringify([...course, "new-model"])}:${policy}=0`);
     expect(summaryCacheKey(regenerated, scopes, "combined")).not.toBe(summaryCacheKey(original, scopes, "combined"));
     expect(withSummaryModelIdentity("invalid", "new-model")).toBe("invalid");
   });

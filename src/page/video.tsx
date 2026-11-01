@@ -26,7 +26,7 @@ import { useAppMessage } from "../lib/message";
 import { compareVideoCourses, loadVideoCourse, mergeVideoCourses } from "../lib/video_courses";
 import { canSummarizeRecording, groupVideoSessions, groupSessionsByDate, parseVideoCitation, formatVideoTimestamp, recordingKey, recordingTime, selectedSessionScopes, toggleRecordings, type VideoExportOptions, type VideoSession } from "../lib/video_library";
 import { enqueueVideoExports, saveRecordingMaterial } from "../lib/video_library_tasks";
-import { readSummaryCache, summaryCacheKey, withSummaryModelIdentity, type VideoSummaryCache } from "../lib/video_summary_cache";
+import { readSummaryCache, summaryCacheKey, withSummaryModelIdentity, PPT_CLEANUP_POLICY, type VideoSummaryCache } from "../lib/video_summary_cache";
 import type { AccountInfo, CanvasVideo, Course } from "../lib/model";
 import { useAISession } from "../lib/ai_session_store";
 import { videoSummarySession } from "../lib/video_summary_session";
@@ -67,7 +67,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   const courses = useMemo(() => mergeVideoCourses(canvas.data, space), [canvas.data, space]);
   const [courseId, setCourseId] = useState<number>();
   const selectedCourse = courses.find((course) => course.id === courseId);
-  const cacheNamespace = account && selectedCourse ? `${JSON.stringify([account, selectedCourse.canvasId, selectedCourse.teachingClassId, selectedCourse.name, selectedCourse.term.name, modelIdentity])}:ppt-cleanup-v3=${Number(pptCleanupEnabled)}` : "";
+  const cacheNamespace = account && selectedCourse ? `${JSON.stringify([account, selectedCourse.canvasId, selectedCourse.teachingClassId, selectedCourse.name, selectedCourse.term.name, modelIdentity])}:${PPT_CLEANUP_POLICY}=${Number(pptCleanupEnabled)}` : "";
   const courseSummaries = cachedSummaries.filter((entry) => entry.namespace === cacheNamespace);
   const [login, setLogin] = useState<"checking" | "ready" | "required">("checking");
   const [refresh, setRefresh] = useState(0);

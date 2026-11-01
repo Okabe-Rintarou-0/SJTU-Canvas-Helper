@@ -1,7 +1,9 @@
 use crate::error::Result;
+#[cfg(test)]
 use std::fs;
 use std::fs::File;
 use std::io::{Seek, SeekFrom, Write};
+#[cfg(test)]
 use uuid::Uuid;
 
 pub fn write_file_at_offset(file: &mut File, data: &[u8], offset: u64) -> std::io::Result<()> {
@@ -76,12 +78,14 @@ pub fn write_file_atomic(path: &std::path::Path, data: &[u8]) -> Result<()> {
     Ok(())
 }
 
-// RAII temp file
+// Test-only RAII temp file; QR scanning now decodes directly from memory.
+#[cfg(test)]
 pub struct TempFile {
     path: String,
     file_obj: File,
 }
 
+#[cfg(test)]
 impl TempFile {
     pub fn with_extension<D, E>(dir: D, ext: E) -> Result<Self>
     where
@@ -104,6 +108,7 @@ impl TempFile {
     }
 }
 
+#[cfg(test)]
 impl Drop for TempFile {
     fn drop(&mut self) {
         _ = fs::remove_file(&self.path);

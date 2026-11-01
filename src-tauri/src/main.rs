@@ -8,7 +8,7 @@ use model::{
     Account, AccountInfo, AnnualReport, AppConfig, Assignment, CalendarEvent, CanvasVideo, Colors,
     Course, DiscussionTopic, File, FileChatStreamChunkPayload, FileChatStreamDonePayload,
     FileChatStreamErrorPayload, Folder, FullDiscussion, LLMChatMessage, LogLevel, ModuleItem,
-    NetworkRequestLog, QRCodeScanResult, RelationshipTopo, Submission, User, UserSubmissions,
+    NetworkRequestLog, QRCodeScanResult, QRCodeScanReport, RelationshipTopo, Submission, User, UserSubmissions,
     VideoAggregateParams, VideoCourse, VideoInfo, VideoPlayInfo, VideoSource, CanvasLiveList, CanvasLiveInfo,
 };
 use serde::{Deserialize, Serialize};
@@ -349,6 +349,11 @@ async fn list_course_assignments(course_id: i64) -> Result<Vec<Assignment>> {
 #[tauri::command]
 async fn filter_course_qrcode_images(course_id: i64) -> Result<Vec<QRCodeScanResult>> {
     APP.filter_course_qrcode_images(course_id).await
+}
+
+#[tauri::command]
+async fn scan_course_qrcodes(course_id: i64) -> Result<QRCodeScanReport> {
+    APP.scan_course_qrcodes(course_id).await
 }
 
 #[tauri::command]
@@ -1155,6 +1160,7 @@ async fn main() -> Result<()> {
             list_course_assignments,
             list_course_assignment_submissions,
             filter_course_qrcode_images,
+            scan_course_qrcodes,
             get_single_course_assignment_submission,
             export_excel,
             list_folder_files,

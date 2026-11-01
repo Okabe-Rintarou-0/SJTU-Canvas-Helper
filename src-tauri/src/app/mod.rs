@@ -9,6 +9,7 @@ use crate::{
 pub mod annual;
 pub mod basic;
 mod config_store;
+mod qrcode;
 pub mod cache;
 mod constants;
 pub mod jbox;

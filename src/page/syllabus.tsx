@@ -1,6 +1,7 @@
 import AutoStoriesRoundedIcon from "@mui/icons-material/AutoStoriesRounded";
 import {
   Box,
+  Button,
   Card,
   CardContent,
   Typography,
@@ -16,7 +17,7 @@ export default function SyllabusPage() {
   const { selectedCourseId, setSelectedCourseId } = useSelectedCourse();
   const { data: courses } = useCourses();
   const syllabusCourseId = selectedCourseId > 0 ? selectedCourseId : undefined;
-  const { data: syllabusCourse, isLoading } = useCourseSyllabus(syllabusCourseId);
+  const { data: syllabusCourse, isLoading, error, mutate } = useCourseSyllabus(syllabusCourseId);
 
   return (
     <BasicLayout>
@@ -57,7 +58,17 @@ export default function SyllabusPage() {
           <Box sx={{ mt: 2 }}>
             <ListSkeleton items={2} />
           </Box>
-        ) : syllabusCourse?.syllabus_body ? (
+        ) : error !== undefined ? (
+          <Card sx={{ mt: 2, borderRadius: "24px", boxShadow: "none", border: "1px solid", borderColor: "divider" }}>
+            <CardContent role="alert" sx={{ p: 4, textAlign: "center" }}>
+              <Typography variant="h6" sx={{ mb: 1 }}>暂时无法加载教学大纲</Typography>
+              <Typography color="text.secondary">
+                请稍后重试；若仍无法加载，可前往 Canvas 课程页面查看，并在系统设置中检查 Canvas Token 是否有效。
+              </Typography>
+              <Button variant="outlined" onClick={mutate} sx={{ mt: 2 }}>重新加载</Button>
+            </CardContent>
+          </Card>
+        ) : syllabusCourse?.syllabus_body?.trim() ? (
           <Card sx={{ mt: 2, borderRadius: "24px", boxShadow: "none", border: "1px solid", borderColor: "divider" }}>
             <CardContent
               sx={{ p: 3 }}
