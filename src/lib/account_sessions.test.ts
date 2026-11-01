@@ -47,3 +47,18 @@ it("keeps old sessions and playback when switching fails, and unlocks retry", as
   await changeSessionAccount(() => Promise.resolve());
   expect(mocks.releaseWorkspace).toHaveBeenCalledOnce();
 });
+
+
+it("reconciles after a rejected attempted transition before releasing its lock", async () => {
+  const failure = new Error("switch rejected");
+  const reconcile = vi.fn(async () => { expect(isAccountTransitioning()).toBe(true); });
+  await expect(changeSessionAccount(async () => {throw failure;}, reconcile)).rejects.toBe(failure);
+  expect(reconcile).toHaveBeenCalledOnce();
+  expect(isAccountTransitioning()).toBe(false);
+});
+
+it("does not reconcile when a busy session prevents the transition from starting", async () => {
+  canvasAgentSession.update({loading: true}); const reconcile = vi.fn(async () => {});
+  await expect(changeSessionAccount(vi.fn(), reconcile)).rejects.toThrow("AI 请求仍在处理中");
+  expect(reconcile).not.toHaveBeenCalled();
+});

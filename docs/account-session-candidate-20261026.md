@@ -6,9 +6,14 @@ The original review candidate was based on f804dd55477418a7c21eaa5401e2dc59e04ef
 - Resolved 13 textual conflicts across the 18 overlapping paths; preserved upstream typed diagnostic IDs, body-byte-count API, sanitization, bounded logs and export/copy UI. Includes the narrow diagnostic lock fix in upstream PR #138.
 - Adapted the new JBox scoped client to the upstream response parser, protected its user token, and removed reintroduced video-ID logging.
 - Startup video key refresh now uses the latest same-owner configuration commit helper instead of saving the pre-await whole configuration.
-- Current frontend: 34 files / 180 Vitest tests passed; TypeScript passed; ESLint completed with 0 errors / 67 warnings.
+- Current frontend: 34 files / 185 Vitest tests passed; TypeScript passed; ESLint completed with 0 errors / 67 warnings.
 - Packaging/Rust-check harness Node tests: 4 passed / 1 skipped. These are not Rust compilation or backend tests.
 - No current Rust toolchain is available in this cloud workspace. No prior denied dependency-fetch operation was retried. Backend compilation and all ownership/authentication/storage acceptance gates remain unverified.
+
+## Additional session regressions
+- Failed switch/delete attempts reconcile authoritative settings before releasing the transition lock; late initialization cannot publish after unmount.
+- Repeated configuration failures revoke an already-invalid session only once, preventing a read/failure/session-effect loop. Successful reads or an explicit new session reopen the invalidation boundary.
+- Five added tests cover failed/busy transitions, rejected/ownerless reads and failure-success-failure/session-change boundaries. Full frontend suite, typecheck and lint were rerun on these changes.
 
 ## Source provenance
 - Original captured index tree: e2b43a79f8aa74b537ed5992bbe6225a44964848.

@@ -23,7 +23,7 @@ vi.mock("./message", () => ({
 }));
 
 import { getConfig, saveConfig } from "./config";
-import { useAutoLoadCourse, useData } from "./hooks";
+import { useAutoLoadCourse, useData, useBaseURL } from "./hooks";
 import { currentSession, invalidateSession } from "./session";
 import { configStore, courseSlice } from "./store";
 
@@ -384,4 +384,41 @@ describe("account session ownership", () => {
 
     expect(configStore.getState().config.data?.token).toBe("B token");
   });
+});
+
+
+describe("configuration read failure retry boundary", () => {
+  it.each(["rejected", "ownerless"])("%s stops useBaseURL from an unbounded session retry loop", async kind => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command !== "get_config") return Promise.resolve(undefined);
+      return kind === "rejected" ? Promise.reject(new Error("synthetic unavailable")) : Promise.resolve({account_type: "Default"});
+    });
+    const {result, unmount} = renderHook(() => useBaseURL());
+    try {
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      expect(countCalls("get_config")).toBeLessThanOrEqual(2);
+      const calls = countCalls("get_config");
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
+      expect(countCalls("get_config")).toBe(calls);
+    } finally { unmount(); error.mockRestore(); }
+  });
+});
+
+
+it("a successful read and an explicit session change each reopen the failure invalidation boundary", async () => {
+  mocks.invoke.mockRejectedValue(new Error("synthetic unavailable"));
+  const initial = currentSession();
+  await expect(getConfig(true)).rejects.toMatchObject({name: "ConfigReadFailure"});
+  const failed = currentSession(); expect(failed).toBe(initial + 1);
+  await expect(getConfig(true)).rejects.toMatchObject({name: "ConfigReadFailure"});
+  expect(currentSession()).toBe(failed);
+  mocks.invoke.mockResolvedValue(configFixture("recovered"));
+  await getConfig(true); const restored = currentSession();
+  mocks.invoke.mockRejectedValue(new Error("synthetic unavailable again"));
+  await expect(getConfig(true)).rejects.toMatchObject({name: "ConfigReadFailure"});
+  expect(currentSession()).toBe(restored + 1);
+  invalidateSession(); const changed = currentSession();
+  await expect(getConfig(true)).rejects.toMatchObject({name: "ConfigReadFailure"});
+  expect(currentSession()).toBe(changed + 1);
 });
