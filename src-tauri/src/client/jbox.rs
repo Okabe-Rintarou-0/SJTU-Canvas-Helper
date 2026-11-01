@@ -14,11 +14,14 @@ use tauri::Url;
 use crate::{
     error::{AppError, Result},
     model::{
-        ConfirmChunkUploadResult, File, JBoxErrorMessage, JBoxLoginInfo, JboxLoginResult,
+        ConfirmChunkUploadResult, JBoxErrorMessage, JBoxLoginInfo, JboxLoginResult,
         PersonalSpaceInfo, ProgressPayload, StartChunkUploadContext,
     },
     utils,
 };
+
+#[cfg(test)]
+use crate::model::File;
 
 // Apis here are for jbox
 // Check https://pan.sjtu.edu.cn/
