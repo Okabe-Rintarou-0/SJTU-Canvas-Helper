@@ -25,13 +25,14 @@ import {
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { invoke } from "@tauri-apps/api/core";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ReactAnsi from "react-ansi";
 
 import { useAppMessage } from "../lib/message";
 import { LOG_LEVEL_INFO, VideoAggregateParams } from "../lib/model";
 import { consoleLog } from "../lib/utils";
 import { PathSelector } from "./path_selector";
+import { downloadDirectory, type DownloadCourse } from "../lib/downloads";
 
 type FfmpegState = "unknown" | "installed" | "uninstalled";
 
@@ -61,7 +62,7 @@ function ffmpegStateMeta(state: FfmpegState) {
   }
 }
 
-export default function VideoAggregator() {
+export default function VideoAggregator({ course }: { course?: DownloadCourse }) {
   const theme = useTheme();
   const [ffmpegState, setFfmpegState] = useState<FfmpegState>("unknown");
   const tasks = useTasks();
@@ -77,6 +78,13 @@ export default function VideoAggregator() {
     subVideoAlpha: DEFAULT_SUB_VIDEO_ALPHA,
     subVideoSizePercentage: DEFAULT_SUB_VIDEO_SIZE_PERCENTAGE,
   });
+  useEffect(() => {
+    let disposed = false;
+    void downloadDirectory("video", course).then((directory) => {
+      if (!disposed) setFormData((current) => current.outputDir ? current : { ...current, outputDir: directory });
+    }).catch(() => { /* The directory can still be selected manually. */ });
+    return () => { disposed = true; };
+  }, [course]);
 
   const handleCheckFfmpegState = async () => {
     const installed = await invoke("is_ffmpeg_installed");

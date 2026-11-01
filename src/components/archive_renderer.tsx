@@ -22,7 +22,8 @@ import {
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import { Archive } from "libarchive.js";
-import { Fragment, ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { DownloadCourseContext } from "../lib/download_context";
 
 import { useAppMessage } from "../lib/message";
 import { LOG_LEVEL_ERROR } from "../lib/model";
@@ -47,11 +48,21 @@ export default function ArchiveRenderer({
   mainState: { currentDocument },
 }: DocRendererProps) {
   const theme = useTheme();
+  const course = useContext(DownloadCourseContext);
   const [selectedPath, setSelectedPath] = useState("");
   const [messageApi, contextHolder] = useAppMessage();
   const [treeData, setTreeData] = useState<ArchiveTreeNode | undefined>();
   const [fileMap, setFileMap] = useState<Map<string, any> | undefined>();
   const [selectedDoc, setSelectedDoc] = useState<IDocument | undefined>();
+  const selectedViewer = useMemo(() => selectedDoc ? (
+    <DocViewer
+      key={selectedDoc.uri}
+      config={{ header: { disableHeader: true, disableFileName: true, retainURLParams: true } }}
+      pluginRenderers={ArchiveSupportedRenderers}
+      documents={[selectedDoc]}
+      style={{ height: "100%" }}
+    />
+  ) : null, [selectedDoc]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | undefined>();
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
@@ -229,7 +240,7 @@ export default function ArchiveRenderer({
       const buffer = await file.arrayBuffer();
       const content = Array.from<number>(new Uint8Array(buffer));
       const fileName = selectedDoc.fileName ?? "downloaded";
-      await invoke("save_file_content", { content, fileName });
+      await invoke("save_file_content", { content, fileName, ...(course ? { course } : {}) });
       messageApi.success("下载成功", 0.5);
     } catch (e) {
       messageApi.error(`下载失败：${e}`);
@@ -431,19 +442,7 @@ export default function ArchiveRenderer({
               <Divider />
               <Box sx={{ flex: 1, minHeight: 0 }}>
                 {selectedDoc ? (
-                  <DocViewer
-                    key={selectedDoc.uri}
-                    config={{
-                      header: {
-                        disableHeader: true,
-                        disableFileName: true,
-                        retainURLParams: true,
-                      },
-                    }}
-                    pluginRenderers={ArchiveSupportedRenderers}
-                    documents={[selectedDoc]}
-                    style={{ height: "100%" }}
-                  />
+                  selectedViewer
                 ) : (
                   <Box
                     sx={{

@@ -3,13 +3,15 @@ import { save } from "@tauri-apps/plugin-dialog";
 import type { CanvasVideo, VideoInfo, VideoPlayInfo } from "./model";
 import { enqueueTask } from "./task_runtime";
 import { taskManager } from "./task_manager";
+import { defaultDownloadPath, downloadDirectory, type DownloadCourse } from "./downloads";
 import { recordingKey, type VideoExportOptions, type VideoSession, type VideoMaterial } from "./video_library";
 import { captureOperationConfig, isConfigOwnerCurrent } from "./config";
 import { currentSession, isSessionCurrent } from "./session";
 
-export function enqueueVideoTrack(video: CanvasVideo, track: VideoPlayInfo, index: number) {
+export function enqueueVideoTrack(video: CanvasVideo, track: VideoPlayInfo, index: number, course?: DownloadCourse) {
   const session = currentSession();
   const config = captureOperationConfig();
+  const capturedCourse = course ? structuredClone(course) : undefined;
   const capturedTrack = structuredClone(track);
   const name = `${Array.from(video.videoName, (c) => c.charCodeAt(0) < 32 ? "_" : c).join("").replace(/[<>:"/\\|?*]/g, '_')}_机位${index + 1}.mp4`;
   const ensureOwner = () => {
@@ -18,8 +20,8 @@ export function enqueueVideoTrack(video: CanvasVideo, track: VideoPlayInfo, inde
   };
   const event = { channel: "video_download://progress", id: crypto.randomUUID() };
   enqueueTask({
-    id: `video:${session}:${capturedTrack.id}:${name}`, name, source: "video", kind: "video",
-    event, locks: [`save:${name}`], stage: "正在下载",
+    id: `video:${session}:${capturedCourse?.id ?? "other"}:${capturedTrack.id}:${name}`, name, source: "video", kind: "video",
+    context: capturedCourse?.name, event, locks: [`save:${name}`], stage: "正在下载",
     run: async () => {
       ensureOwner();
       event.id = crypto.randomUUID();
@@ -27,22 +29,22 @@ export function enqueueVideoTrack(video: CanvasVideo, track: VideoPlayInfo, inde
         await invoke("download_video", {
           video: { ...capturedTrack, name, key: capturedTrack.id, index }, saveName: name,
           expectedOwner: config.__config_owner, expectedSavePath: config.save_path,
-          operationId: event.id,
+          operationId: event.id, ...(capturedCourse ? { course: capturedCourse } : {}),
         });
       } catch (error) { ensureOwner(); throw error; }
       ensureOwner();
     },
     open: async () => {
       ensureOwner();
-      return invoke("open_file", { name, expectedOwner: config.__config_owner,
+      return invoke("open_file", { name, kind: "video", ...(capturedCourse ? { course: capturedCourse } : {}), expectedOwner: config.__config_owner,
         expectedSavePath: config.save_path });
     },
   });
 }
 
-export async function saveRecordingMaterial(video: CanvasVideo, kind: "ppt" | "subtitle") {
+export async function saveRecordingMaterial(video: CanvasVideo, kind: "ppt" | "subtitle", course?: DownloadCourse) {
   const extension = kind === "ppt" ? "pdf" : "srt";
-  const outputPath = await save({ defaultPath: `${video.videoName}.${extension}`, filters: [{ name: kind === "ppt" ? "PDF" : "字幕", extensions: [extension] }] });
+  const outputPath = await save({ defaultPath: await defaultDownloadPath(`${video.videoName}.${extension}`, kind, course), filters: [{ name: kind === "ppt" ? "PDF" : "字幕", extensions: [extension] }] });
   if (!outputPath) return false;
   const name = outputPath.split(/[/\\]/).pop()!;
   enqueueTask({
@@ -90,24 +92,28 @@ export async function resolveRecording(video: CanvasVideo): Promise<{ info: Vide
   throw new Error(errors.join("；"));
 }
 
-export async function enqueueVideoExports(scopes: VideoSession[], options: VideoExportOptions, directory: string, course: string) {
-  const root = await invoke<string>("create_video_export_directory", { directory, course });
+export async function enqueueVideoExports(scopes: VideoSession[], options: VideoExportOptions, directory: string, course: DownloadCourse) {
   const batch = crypto.randomUUID();
   const folders = new Map<string, string>();
-  for (const scope of scopes) {
-    folders.set(scope.id, await invoke<string>("create_video_export_directory", { directory: root, course: scope.title }));
+  const kinds = (Object.entries({ video: options.video, ppt: options.ppt, subtitle: options.subtitle }) as ["video" | "ppt" | "subtitle", boolean][]).filter(([, enabled]) => enabled).map(([kind]) => kind);
+  // Prepare all destinations before enqueueing any transfer.
+  for (const kind of kinds) {
+    const root = await downloadDirectory(kind, course, directory);
+    for (const scope of scopes) {
+      folders.set(`${scope.id}:${kind}`, await invoke<string>("create_video_export_directory", { directory: root, course: scope.title }));
+    }
   }
   let count = 0;
   for (const scope of scopes) {
-    const folder = folders.get(scope.id)!;
     const requests = scope.videos.map((video) => recordingRequest(video, `${video.courseBeginTime || video.videoName} ${video.videoId}`));
     const add = (kind: "video" | "ppt" | "subtitle" | "reading", items: typeof requests, name: string) => {
+      const folder = folders.get(`${scope.id}:${kind === "reading" ? "subtitle" : kind}`)!;
       const labels = { video: "视频", ppt: "PPT 切片 PDF", subtitle: "字幕 SRT", reading: "整堂课字幕文本" };
       count++;
       taskManager.enqueue({
         id: `${batch}:${scope.id}:${kind}:${count}`, name: `${name} · ${labels[kind]}`,
         source: "video", kind: kind === "video" ? "video" : kind === "ppt" ? "ppt" : "subtitle",
-        context: course, outputDirectory: folder, stage: "准备资料", locks: [`video-export:${folder}:${kind}`],
+        context: course.name, outputDirectory: folder, stage: "准备资料", locks: [`video-export:${folder}:${kind}`],
         run: async ({ update, setOpen }) => {
           update({ stage: `正在导出${labels[kind]}` });
           const onProgress = new Channel<{ processed: number; total: number; stage: string }>();

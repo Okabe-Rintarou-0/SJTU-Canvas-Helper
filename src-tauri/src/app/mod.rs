@@ -8,17 +8,20 @@ use crate::{
 };
 pub mod annual;
 pub mod basic;
-mod config_store;
-mod qrcode;
 pub mod cache;
+mod config_store;
 mod constants;
+pub mod data;
+pub mod downloads;
 pub mod jbox;
-pub mod video;
-mod session;
-pub mod video_library;
 pub(crate) mod ppt;
 #[cfg(test)]
 mod ppt_audit;
+mod qrcode;
+mod session;
+pub mod video;
+mod video_artifacts;
+pub mod video_library;
 
 #[derive(serde::Serialize)]
 pub struct ConfigSnapshot {
@@ -157,6 +160,7 @@ mod test {
         app.download_video(
             &video.video_play_response_vo_list[0],
             "download.mp4",
+            None,
             &snapshot.owner,
             &snapshot.config.save_path,
             |_| {},
@@ -189,7 +193,8 @@ mod test {
         tracing_subscriber::fmt::init();
         let app = App::new();
         app.init().await?;
-        app.login_jbox(&app.get_config_snapshot().await.unwrap().owner).await?;
+        app.login_jbox(&app.get_config_snapshot().await.unwrap().owner)
+            .await?;
         let info = app.get_config().await.jbox_login_info.clone();
         app.client
             .create_jbox_directory("/test/nested", &info)

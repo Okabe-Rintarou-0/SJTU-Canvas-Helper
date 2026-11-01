@@ -176,6 +176,7 @@ export default function CanvasAgentPage() {
   const setMaxTurns = (maxTurns: string) => canvasAgentSession.update({ maxTurns });
   const setMaxTokens = (maxTokens: string) => canvasAgentSession.update({ maxTokens });
   const bodyRef = useRef<HTMLDivElement>(null);
+  const shouldStickToBottomRef = useRef(true);
 
   const stats = useMemo(
     () => [
@@ -197,7 +198,9 @@ export default function CanvasAgentPage() {
   const canSend = input.trim().length > 0 && !loading && !changingAccount;
 
   useEffect(() => {
-    bodyRef.current?.scrollTo?.({ top: bodyRef.current.scrollHeight, behavior: "smooth" });
+    if (shouldStickToBottomRef.current) {
+      bodyRef.current?.scrollTo?.({ top: bodyRef.current.scrollHeight, behavior: "smooth" });
+    }
   }, [messages]);
 
   const sendMessage = canvasAgentSession.send;
@@ -207,6 +210,7 @@ export default function CanvasAgentPage() {
     if (!nextInput || loading || isAccountTransitioning()) {
       return;
     }
+    shouldStickToBottomRef.current = true;
     setInput("");
     await sendMessage(nextInput);
   };
@@ -356,6 +360,12 @@ export default function CanvasAgentPage() {
 
               <Box
                 ref={bodyRef}
+                role="log"
+                aria-label="Agent 对话"
+                onScroll={() => {
+                  const body = bodyRef.current;
+                  if (body) shouldStickToBottomRef.current = body.scrollHeight - body.scrollTop - body.clientHeight < 80;
+                }}
                 sx={{
                   px: { xs: 2, md: 3 },
                   py: 2.5,

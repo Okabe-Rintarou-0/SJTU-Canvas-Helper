@@ -4,17 +4,16 @@ import {
   Box,
   Chip,
   InputAdornment,
-  Paper,
   TextField,
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 
 import { Course } from "../lib/model";
 import { useWorkspacePopup } from "../lib/workspace_activity";
 
-export default function CourseSelect({
+export default memo(function CourseSelect({
   courses,
   disabled,
   onChange,
@@ -68,19 +67,18 @@ export default function CourseSelect({
       getOptionLabel={(option) => option.name}
       isOptionEqualToValue={(option, currentValue) => option.id === currentValue.id}
       noOptionsText="暂无可用课程"
-      PaperComponent={(props) => (
-        <Paper
-          {...props}
-          sx={{
+      slotProps={{
+        paper: {
+          sx: {
             mt: 1,
             borderRadius: "14px",
             border: "1px solid",
             borderColor: "divider",
             boxShadow: "0 12px 32px rgba(15, 23, 42, 0.1)",
             overflow: "hidden",
-          }}
-        />
-      )}
+          },
+        },
+      }}
       renderOption={(props, option) => {
         const isTA = option.enrollments?.some(
           (enrollment) => enrollment.role === "TaEnrollment"
@@ -194,4 +192,4 @@ export default function CourseSelect({
       )}
     />
   );
-}
+});

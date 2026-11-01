@@ -1,3 +1,5 @@
+import { downloadCourseContext } from "../lib/downloads";
+import { DownloadCourseContext } from "../lib/download_context";
 import { invoke } from "@tauri-apps/api/core";
 import { currentSession, isSessionCurrent } from "../lib/session";
 import { captureOperationConfig, isConfigOwnerCurrent } from "../lib/config";
@@ -35,7 +37,7 @@ import {
   Typography,
 } from "@mui/material";
 import dayjs from "dayjs";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import CourseSelect from "../components/course_select";
@@ -190,9 +192,10 @@ export default function AssignmentsPage() {
   const handleDownloadAttachment = async (attachment: Attachment) => {
     const session = currentSession();
     const file = structuredClone(attachmentToFile(attachment));
+    const course = courses.data.find((item) => item.id === selectedCourseId);
     try {
       const config = captureOperationConfig();
-      await invoke("download_file", { file, expectedOwner: config.__config_owner, operationId: crypto.randomUUID() });
+      await invoke("download_file", { file, expectedOwner: config.__config_owner, operationId: crypto.randomUUID(), ...(course ? { course: downloadCourseContext(course) } : {}) });
       if (!isSessionCurrent(session) || !isConfigOwnerCurrent(config)) return;
       messageApi.success("下载成功", 0.5);
     } catch (error) {
@@ -201,13 +204,13 @@ export default function AssignmentsPage() {
     }
   };
 
-  const handleCourseSelect = (courseId: number) => {
+  const handleCourseSelect = useCallback((courseId: number) => {
     const selectedCourse = courses.data.find((course) => course.id === courseId);
     if (!selectedCourse) {
       return;
     }
     setSelectedCourseId(courseId);
-  };
+  }, [courses.data, setSelectedCourseId]);
 
   useAutoLoadCourse(
     (courseId) => {
@@ -449,7 +452,7 @@ export default function AssignmentsPage() {
   return (
     <BasicLayout>
       {contextHolder}
-      {previewer}
+      <DownloadCourseContext.Provider value={selectedCourse ? downloadCourseContext(selectedCourse) : undefined}>{previewer}</DownloadCourseContext.Provider>
       {assignmentToModify ? (
         <ModifyDDLModal
           open={showModifyDDLModal}
@@ -498,7 +501,7 @@ export default function AssignmentsPage() {
               }}
             >
               <CourseSelect
-                onChange={(courseId) => void handleCourseSelect(courseId)}
+                onChange={handleCourseSelect}
                 disabled={operating}
                 courses={courses.data}
                 value={selectedCourseId === -1 ? undefined : selectedCourseId}

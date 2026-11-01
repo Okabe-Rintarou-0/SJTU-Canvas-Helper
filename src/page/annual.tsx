@@ -23,6 +23,7 @@ import {
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { surfaceCardSx } from "../lib/styles";
+import { defaultDownloadPath } from "../lib/downloads";
 import { save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import ReactEcharts from "echarts-for-react";
@@ -435,7 +436,7 @@ export default function AnnualPage() {
     try {
       setExporting("image");
       const outputPath = await save({
-        defaultPath: `${exportBaseName}.png`,
+        defaultPath: await defaultDownloadPath(`${exportBaseName}.png`),
         filters: [{ name: "PNG Image", extensions: ["png"] }],
       });
       if (!outputPath) {
@@ -464,7 +465,7 @@ export default function AnnualPage() {
     try {
       setExporting("pdf");
       const outputPath = await save({
-        defaultPath: `${exportBaseName}.pdf`,
+        defaultPath: await defaultDownloadPath(`${exportBaseName}.pdf`),
         filters: [{ name: "PDF Document", extensions: ["pdf"] }],
       });
       if (!outputPath) {

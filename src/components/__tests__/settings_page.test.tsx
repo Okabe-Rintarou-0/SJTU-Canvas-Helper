@@ -5,6 +5,7 @@ import SettingsPage from "../../page/settings";
 import type { AppConfig } from "../../lib/model";
 import { ConfigReadFailure, StaleConfigSessionError } from "../../lib/config";
 import { currentSession, invalidateSession } from "../../lib/session";
+import { MemoryRouter } from "react-router-dom";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(), getConfig: vi.fn(), saveConfig: vi.fn(), dispatch: vi.fn(), open: vi.fn(),
@@ -34,6 +35,12 @@ let config: AppConfig;
 let ownerSession: number;
 beforeEach(() => {
   vi.clearAllMocks();
+  // Provider-model discovery is triggered by settings interactions. Keep these
+  // component tests fully offline; no synthetic keys or URLs leave the process.
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ data: [] }), {
+    status: 200, headers: { "Content-Type": "application/json" },
+  })));
+
   HTMLElement.prototype.scrollIntoView = vi.fn();
   Object.defineProperty(navigator, "clipboard", { value: { writeText: mocks.writeClipboard }, configurable: true });
   mocks.writeClipboard.mockResolvedValue(undefined);
@@ -64,17 +71,19 @@ beforeEach(() => {
   });
   mocks.validatePath.mockResolvedValue(undefined);
   mocks.open.mockResolvedValue("D:\\Selected");
-  mocks.invoke.mockImplementation(async (command: string) => {
+  mocks.invoke.mockImplementation(async (command: string, args?: { request?: { op: string } }) => {
     if (command === "list_accounts") return ["Default", "Study"];
     if (command === "read_account_info") return { current_account: "Default" };
     if (command === "check_extra_login_status") return true;
     if (command === "get_raw_config") return JSON.stringify({ theme: "light" });
     if (command === "test_token") return { name: "测试用户" };
+    if (command === "downloaded_files") return { directory: config.save_path, files: [], totalBytes: 0, warnings: [], busy: false };
+    if (command === "app_data") return args?.request?.op === "overview" ? { directory: "D:/应用数据", totalBytes: 0, categories: [] } : [];
   });
 });
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 async function openSettings() {
-  render(<SettingsPage />);
+  render(<MemoryRouter><SettingsPage /></MemoryRouter>);
   await screen.findByRole("tab", { name: "账号与连接" });
 }
 function section(name: string) { fireEvent.click(screen.getByRole("tab", { name })); }
@@ -89,6 +98,48 @@ async function switchAccount(account: string) {
   fireEvent.mouseDown(screen.getByRole("combobox", { name: "选择账号" }));
   fireEvent.click(await screen.findByRole("option", { name: account }));
 }
+
+it("keeps the footer save status across categories and failed saves, then clears it on success", async () => {
+  await openSettings();
+  fireEvent.change(screen.getByLabelText("Canvas Token"), { target: { value: "updated-token" } });
+  const reminder = screen.getByText("修改尚未保存");
+  section("高级与实验");
+  expect(reminder).toBeVisible();
+  mocks.saveConfig.mockRejectedValueOnce("保存失败");
+  save();
+  await waitFor(() => expect(mocks.message.error).toHaveBeenCalledWith("保存失败"));
+  expect(reminder).toBeVisible();
+  save();
+  await waitFor(() => expect(screen.queryByText("修改尚未保存")).not.toBeInTheDocument());
+  expect(screen.getByText("所有设置已同步")).toBeVisible();
+});
+
+it("opens and focuses the playback proxy setting from a playback error link", async () => {
+  render(<MemoryRouter initialEntries={["/settings?focus=proxy-port"]}><SettingsPage /></MemoryRouter>);
+  const port = await screen.findByLabelText("播放代理端口");
+  expect(port).toBeVisible();
+  expect(screen.getByRole("tab", { name: "高级与实验" })).toHaveAttribute("aria-selected", "true");
+  await waitFor(() => expect(port).toHaveFocus());
+  expect(port).toHaveValue(3030);
+  fireEvent.change(port, { target: { value: "3031" } });
+  save();
+  await waitFor(() => expect(mocks.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ proxy_port: 3031 })));
+});
+
+it.each(["", "0", "-1", "65536", "3030.5"])("rejects invalid playback port %j and accepts its correction", async (value) => {
+  await openSettings();
+  section("高级与实验");
+  const port = screen.getByLabelText("播放代理端口");
+  fireEvent.change(port, { target: { value } });
+  section("工具与诊断");
+  save();
+  await waitFor(() => expect(screen.getByRole("tab", { name: "高级与实验" })).toHaveAttribute("aria-selected", "true"));
+  expect(screen.getByText("请输入 1–65535 之间的整数端口。")).toBeVisible();
+  expect(mocks.saveConfig).not.toHaveBeenCalled();
+  fireEvent.change(port, { target: { value: "65535" } });
+  save();
+  await waitFor(() => expect(mocks.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ proxy_port: 65535 })));
+});
 
 it("opens token instructions for the selected Canvas and returns to the draft", async () => {
   await openSettings();
@@ -113,7 +164,7 @@ it("opens token instructions for the selected Canvas and returns to the draft", 
 
 it("uses the same token instructions in first-run onboarding", async () => {
   config.token = "";
-  render(<SettingsPage />);
+  render(<MemoryRouter><SettingsPage /></MemoryRouter>);
   const tour = within(await screen.findByRole("dialog", { name: "填写您的 Canvas Token" }));
   expect(tour.getByText("点击“创建新访问许可证”")).toBeVisible();
   expect(tour.getByRole("link", { name: "打开 Canvas 个人设置" })).toHaveAttribute("href", "https://oc.sjtu.edu.cn/profile/settings");
@@ -137,6 +188,37 @@ it("keeps edits across categories and saves all categories together", async () =
   await waitFor(() => expect(screen.getByText("所有设置已同步")).toBeVisible());
 });
 
+it("applies a completed color selection once and saves the default color with other edits", async () => {
+  config.color_primary = "#336699";
+  await openSettings();
+  fireEvent.change(screen.getByLabelText("Canvas Token"), { target: { value: "draft-token" } });
+  section("界面偏好");
+  const picker = screen.getByLabelText("选择主色");
+  fireEvent.input(picker, { target: { value: "#ff0000" } });
+  fireEvent.input(picker, { target: { value: "#123456" } });
+  expect(mocks.dispatch).not.toHaveBeenCalled();
+  fireEvent.change(picker, { target: { value: "#123456" } });
+  expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ color_primary: "#123456", token: "draft-token" }));
+  fireEvent.click(screen.getByRole("button", { name: "恢复默认主色调" }));
+  expect(screen.getByLabelText("主色调")).toHaveValue("#00b96b");
+  expect(screen.getByText("修改尚未保存")).toBeVisible();
+  expect(mocks.saveConfig).not.toHaveBeenCalled();
+  save();
+  await waitFor(() => expect(mocks.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ color_primary: "#00b96b", token: "draft-token" })));
+  await waitFor(() => expect(screen.getByText("所有设置已同步")).toBeVisible());
+});
+
+it("restores the saved theme when leaving after an unsaved color reset", async () => {
+  config.color_primary = "#336699";
+  const { unmount } = render(<MemoryRouter><SettingsPage /></MemoryRouter>);
+  await screen.findByRole("tab", { name: "界面偏好" });
+  section("界面偏好");
+  fireEvent.click(screen.getByRole("button", { name: "恢复默认主色调" }));
+  expect(mocks.dispatch).toHaveBeenLastCalledWith(expect.objectContaining({ color_primary: "#00b96b" }));
+  unmount();
+  expect(mocks.dispatch).toHaveBeenLastCalledWith(expect.objectContaining({ color_primary: "#336699" }));
+});
+
 it("returns to the invalid category when saving from another category", async () => {
   await openSettings();
   fireEvent.change(screen.getByLabelText("Canvas Token"), { target: { value: "" } });
@@ -154,7 +236,7 @@ it("returns to the invalid category when saving from another category", async ()
   expect(mocks.saveConfig).not.toHaveBeenCalled();
 });
 
-it("retains token visibility, token test, folder selection and account creation", async () => {
+it("retains token visibility and token test", async () => {
   await openSettings();
   expect(within(screen.getByRole("group", { name: "Canvas Token 与校验" })).getByRole("button", { name: "测试 Canvas Token" })).toBeVisible();
   expect(within(screen.getByRole("group", { name: "额外登录状态与检查" })).getByText("额外登录已连接")).toBeVisible();
@@ -164,8 +246,18 @@ it("retains token visibility, token test, folder selection and account creation"
   fireEvent.click(screen.getByRole("button", { name: "测试 Canvas Token" }));
   await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("test_token", { token: "test-token" }));
   expect(await screen.findByText("Token 校验通过，已连接到 测试用户 的 Canvas。")).toBeVisible();
+});
+
+it("retains folder selection", async () => {
+  await openSettings();
+  section("存储与数据");
   fireEvent.click(screen.getByRole("button", { name: "选择目录" }));
   await waitFor(() => expect(screen.getByLabelText("下载保存目录")).toHaveValue("D:\\Selected"));
+});
+
+it("retains account creation", async () => {
+  await openSettings();
+  section("账号与连接");
   expect(screen.getByRole("button", { name: "删除当前账号" })).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "新建账号" }));
   fireEvent.change(screen.getByLabelText("新账号名称"), { target: { value: "Research" } });
@@ -374,7 +466,7 @@ it("suppresses initialization failures delivered after disposal", async () => {
   const late = deferred<{ current_account: string }>();
   const invoke = mocks.invoke.getMockImplementation()!;
   mocks.invoke.mockImplementation((command: string, ...args: unknown[]) => command === "read_account_info" ? late.promise : invoke(command, ...args));
-  const view = render(<SettingsPage />);
+  const view = render(<MemoryRouter><SettingsPage /></MemoryRouter>);
   await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("read_account_info"));
   view.unmount();
   await act(async () => late.reject(new Error("disposed initialization failed")));
@@ -383,8 +475,20 @@ it("suppresses initialization failures delivered after disposal", async () => {
 
 it("reports a current configuration read failure without leaking stale initialization errors", async () => {
   mocks.getConfig.mockImplementation(async () => { throw new ConfigReadFailure(currentSession()); });
-  render(<SettingsPage />);
+  render(<MemoryRouter><SettingsPage /></MemoryRouter>);
   await waitFor(() => expect(mocks.message.error).toHaveBeenCalledWith("读取配置失败，请重试。"));
   expect(mocks.message.error).toHaveBeenCalledTimes(1);
   expect(screen.queryByRole("tab", { name: "账号与连接" })).not.toBeInTheDocument();
+});
+
+it("defaults recording topics off and saves the experiment setting", async () => {
+  await openSettings();
+  section("高级与实验");
+  const toggle = screen.getByRole("switch", { name: "生成课堂主题" });
+  expect(toggle).not.toBeChecked();
+  fireEvent.click(toggle);
+  save();
+  await waitFor(() => expect(mocks.saveConfig).toHaveBeenCalledWith(expect.objectContaining({
+    experimental_video_topics: true,
+  })));
 });

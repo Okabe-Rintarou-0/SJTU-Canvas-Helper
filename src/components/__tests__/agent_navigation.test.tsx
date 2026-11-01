@@ -14,6 +14,27 @@ vi.mock("../layout", () => ({ default: ({ children }: { children: ReactNode }) =
 beforeEach(() => { canvasAgentSession.reset(); vi.clearAllMocks(); });
 afterEach(cleanup);
 
+it("does not force readers back to the bottom when a reply updates", () => {
+  const scrollTo = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: scrollTo });
+  const message = { id: "reply", role: "assistant" as const, content: "历史回复", createdAt: "2026-10-29" };
+  canvasAgentSession.update({ messages: [message] });
+  render(<CanvasAgentPage />);
+  const body = screen.getByRole("log", { name: "Agent 对话" });
+  Object.defineProperties(body, { scrollHeight: { configurable: true, value: 1200 }, clientHeight: { configurable: true, value: 300 } });
+  body.scrollTop = 200;
+  fireEvent.scroll(body);
+  scrollTo.mockClear();
+  act(() => canvasAgentSession.update({ messages: [{ ...message, content: "更新后的回复" }] }));
+  expect(scrollTo).not.toHaveBeenCalled();
+  expect(body.scrollTop).toBe(200);
+
+  body.scrollTop = 900;
+  fireEvent.scroll(body);
+  act(() => canvasAgentSession.update({ messages: [{ ...message, content: "继续更新的回复" }] }));
+  expect(scrollTo).toHaveBeenCalledWith({ top: 1200, behavior: "smooth" });
+});
+
 it("keeps a pending reply through Agent → settings → Agent and restores a draft", async () => {
   let finish!: (value: string) => void;
   mocks.invoke.mockImplementation(() => new Promise<string>((resolve) => { finish = resolve; }));

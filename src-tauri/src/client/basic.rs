@@ -1,6 +1,7 @@
 use super::{
     common::{build_http_client, canvas_redirect_policy},
-    constants::BASE_URL, file_parser, llm, Client,
+    constants::BASE_URL,
+    file_parser, llm, Client,
 };
 use futures::{stream::FuturesUnordered, StreamExt};
 use reqwest::{cookie, multipart};
@@ -12,12 +13,15 @@ use crate::{
     client::constants::CHUNK_SIZE,
     error::{AppError, Result},
     model::{
-        Assignment, CalendarEvent, Colors, Course, DiscussionTopic, File, Folder,
-        FoldersAndFiles, FullDiscussion, Module, ModuleItem, ProgressPayload, RelationshipEdge,
-        RelationshipNode, RelationshipNodeType, RelationshipTopo, Submission, SubmissionUploadResult,
+        Assignment, CalendarEvent, Colors, Course, DiscussionTopic, File, Folder, FoldersAndFiles,
+        FullDiscussion, Module, ModuleItem, ProgressPayload, RelationshipEdge, RelationshipNode,
+        RelationshipNodeType, RelationshipTopo, Submission, SubmissionUploadResult,
         SubmissionUploadSuccessResponse, User, UserSubmissions,
     },
-    utils::{self, file::{checked_download_path, get_file_name}},
+    utils::{
+        self,
+        file::{checked_download_path, get_file_name},
+    },
 };
 
 // Apis here are for canvas
@@ -36,7 +40,11 @@ impl Client {
         llm_temperature: Option<f32>,
     ) -> Self {
         let jar = Arc::new(cookie::Jar::default());
-        let cli = build_http_client(true, Some(jar.clone()), reqwest::redirect::Policy::default());
+        let cli = build_http_client(
+            true,
+            Some(jar.clone()),
+            reqwest::redirect::Policy::default(),
+        );
         let canvas_cli = build_http_client(true, Some(jar.clone()), canvas_redirect_policy());
         let download_cli = build_http_client(true, None, reqwest::redirect::Policy::none());
         let base_url = RwLock::new(base_url.into());
@@ -56,6 +64,9 @@ impl Client {
             jar,
             base_url,
             token,
+            video_auth: Default::default(),
+            transcription: Default::default(),
+            subtitle_proofread: Default::default(),
             llm_cli,
             file_parser,
             debug_store: Arc::new(super::debug::NetworkDebugStore::new(false)),
@@ -85,7 +96,11 @@ impl Client {
         llm_config: llm::chat::EffectiveLlmConfig,
     ) -> Self {
         let jar = Arc::new(cookie::Jar::default());
-        let cli = build_http_client(false, Some(jar.clone()), reqwest::redirect::Policy::default());
+        let cli = build_http_client(
+            false,
+            Some(jar.clone()),
+            reqwest::redirect::Policy::default(),
+        );
         let canvas_cli = build_http_client(false, Some(jar.clone()), canvas_redirect_policy());
         let download_cli = build_http_client(false, None, reqwest::redirect::Policy::none());
         let base_url = RwLock::new(base_url.into());
@@ -99,6 +114,9 @@ impl Client {
             jar,
             base_url,
             token,
+            video_auth: Default::default(),
+            transcription: Default::default(),
+            subtitle_proofread: Default::default(),
             llm_cli,
             file_parser,
             debug_store: Arc::new(super::debug::NetworkDebugStore::new(false)),
@@ -118,8 +136,12 @@ impl Client {
 
     pub(crate) fn video_read_snapshot(&self, base_url: &str, cookies: &str) -> Result<Self> {
         let mut snapshot = self.canvas_read_snapshot(base_url);
-        let scope = reqwest::Url::parse(super::constants::VIDEO_BASE_URL)
-            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid fixed video origin"))?;
+        let scope = reqwest::Url::parse(super::constants::VIDEO_BASE_URL).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Invalid fixed video origin",
+            )
+        })?;
         snapshot.cli = super::media_auth::client_for_cookie_scope(cookies, scope)?;
         Ok(snapshot)
     }
@@ -182,7 +204,9 @@ impl Client {
             .canvas_request(reqwest::Method::DELETE, &url, token)
             .await?
             .build()?;
-        self.execute_canvas_request(request).await?.error_for_status()?;
+        self.execute_canvas_request(request)
+            .await?
+            .error_for_status()?;
         Ok(())
     }
 
@@ -312,7 +336,9 @@ impl Client {
             .canvas_request(reqwest::Method::DELETE, &url, token)
             .await?
             .build()?;
-        self.execute_canvas_request(request).await?.error_for_status()?;
+        self.execute_canvas_request(request)
+            .await?
+            .error_for_status()?;
         Ok(())
     }
 
@@ -360,20 +386,42 @@ impl Client {
         progress_handler: F,
     ) -> Result<()> {
         let save_path = save_path.as_ref();
-        let path = checked_download_path(save_path, None, "", &file.display_name)?;
-        let mut response = self.download_response(&file.url, token).await?.error_for_status()?;
+        let path = checked_download_path(
+            save_path,
+            None,
+            "",
+            &crate::utils::download::safe_name(&file.display_name),
+        )?;
+        let mut response = self
+            .download_response(&file.url, token)
+            .await?
+            .error_for_status()?;
         let expected_size = file.expected_download_size();
-        let total = expected_size.or_else(|| response.content_length()).unwrap_or(0);
-        let mut payload = ProgressPayload { uuid: file.uuid.clone(), processed: 0, total };
+        let total = expected_size
+            .or_else(|| response.content_length())
+            .unwrap_or(0);
+        let mut payload = ProgressPayload {
+            uuid: file.uuid.clone(),
+            processed: 0,
+            total,
+        };
         // Same-directory exclusive temporary creation preserves any previous file
         // on network/write failure or when this future is dropped.
         let mut temporary = tempfile::NamedTempFile::new_in(save_path)?;
         let mut last_chunk_no = 0;
         while let Some(chunk) = response.chunk().await? {
-            let processed = payload.processed.checked_add(chunk.len() as u64).ok_or_else(||
-                std::io::Error::new(std::io::ErrorKind::InvalidData, "Download size overflow"))?;
+            let processed = payload
+                .processed
+                .checked_add(chunk.len() as u64)
+                .ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, "Download size overflow")
+                })?;
             if expected_size.is_some_and(|size| processed > size) {
-                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Downloaded file exceeds expected size").into());
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Downloaded file exceeds expected size",
+                )
+                .into());
             }
             temporary.write_all(&chunk)?;
             payload.processed = processed;
@@ -384,7 +432,11 @@ impl Client {
             }
         }
         if expected_size.is_some_and(|size| payload.processed != size) {
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Downloaded file size does not match expected size").into());
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Downloaded file size does not match expected size",
+            )
+            .into());
         }
         temporary.as_file().sync_all()?;
         temporary.persist(&path).map_err(|error| error.error)?;
@@ -555,13 +607,6 @@ impl Client {
         Ok(FoldersAndFiles::new(folders, files))
     }
 
-    pub fn get_course_identifier(&self, course: &Course) -> String {
-        match course.teachers.first() {
-            Some(teacher) => format!("{}({} {})", course.name, course.term.name, teacher.display_name),
-            None => format!("{}({} course-{})", course.name, course.term.name, course.id),
-        }
-    }
-
     pub async fn sync_course_files(
         &self,
         course: &Course,
@@ -571,7 +616,6 @@ impl Client {
         let folders_and_files = self.get_folders_and_files(course.id, token).await?;
         let folders_map = &folders_and_files.folders_map;
         tracing::info!(folder_count = folders_map.len(), "Prepared folder map");
-        let course_identifier = self.get_course_identifier(course);
         let mut pending = Vec::new();
         for file in folders_and_files.files {
             let folder = folders_map.get(&file.folder_id);
@@ -579,25 +623,43 @@ impl Client {
                 Some(folder) if folder.full_name == "course files" => "",
                 Some(folder) => match folder.full_name.strip_prefix("course files/") {
                     Some(path) => path,
-                    None => { pending.push(file); continue; }
+                    None => {
+                        pending.push(file);
+                        continue;
+                    }
                 },
                 None => "",
             };
-            let path = match checked_download_path(Path::new(save_dir), Some(&course_identifier), folder_path, &file.display_name) {
+            let path = match crate::utils::download::course_file_path(
+                Path::new(save_dir),
+                course,
+                folder_path,
+                &file.display_name,
+            ) {
                 Ok(path) => path,
                 // Keep per-file failures in the queue; the download entry rejects
                 // the invalid path without blocking unrelated course files.
-                Err(_) => { pending.push(file); continue; }
+                Err(_) => {
+                    pending.push(file);
+                    continue;
+                }
             };
             if folder.is_none() {
                 pending.push(file);
                 continue;
             }
             let complete = match fs::metadata(path) {
-                Ok(metadata) => metadata.is_file() && file.expected_download_size().is_some_and(|size| metadata.len() == size),
+                Ok(metadata) => {
+                    metadata.is_file()
+                        && file
+                            .expected_download_size()
+                            .is_some_and(|size| metadata.len() == size)
+                }
                 Err(_) => false,
             };
-            if !complete { pending.push(file); }
+            if !complete {
+                pending.push(file);
+            }
         }
         Ok(pending)
     }
@@ -1087,7 +1149,11 @@ mod mock_tests {
         });
         let client = create_test_client(&first.base_url());
         assert_eq!(
-            client.test_credential("supplied-credential").await.unwrap().id,
+            client
+                .test_credential("supplied-credential")
+                .await
+                .unwrap()
+                .id,
             7
         );
         client.set_base_url(second.base_url()).await;
@@ -1324,7 +1390,10 @@ mod mock_tests {
 
         assert_eq!(course.id, course_id);
         assert_eq!(course.name, "Physics 201");
-        assert_eq!(course.syllabus_body, "<p>Welcome to Physics 201! This course covers...</p>");
+        assert_eq!(
+            course.syllabus_body,
+            "<p>Welcome to Physics 201! This course covers...</p>"
+        );
         assert_eq!(course.teachers[0].display_name, "Dr. Einstein");
 
         mock.assert();
@@ -1369,29 +1438,40 @@ mod mock_tests {
                 let body = if page < 3 {
                     json!([{"id": page, "assignment_id": 8, "user_id": 10,
                         "late": false, "workflow_state": "submitted"}])
-                } else { json!([]) };
+                } else {
+                    json!([])
+                };
                 then.status(200).json_body(body);
             }));
         }
         let submissions = create_test_client(&server.base_url())
-            .list_course_assignment_submissions(7, 8, "test-token").await.unwrap();
-        assert_eq!(submissions.iter().map(|item| item.id).collect::<Vec<_>>(), vec![1, 2]);
+            .list_course_assignment_submissions(7, 8, "test-token")
+            .await
+            .unwrap();
+        assert_eq!(
+            submissions.iter().map(|item| item.id).collect::<Vec<_>>(),
+            vec![1, 2]
+        );
         assert!(submissions.iter().all(|item| item.assignment_id == 8));
-        for page in pages { page.assert_hits(1); }
+        for page in pages {
+            page.assert_hits(1);
+        }
     }
 
     #[tokio::test]
     async fn test_list_submissions_propagates_http_failure_without_live_canvas() {
         let server = MockServer::start();
         let denied = server.mock(|when, then| {
-            when.method(GET).path("/api/v1/courses/7/assignments/8/submissions");
+            when.method(GET)
+                .path("/api/v1/courses/7/assignments/8/submissions");
             then.status(401);
         });
         assert!(create_test_client(&server.base_url())
-            .list_course_assignment_submissions(7, 8, "test-token").await.is_err());
+            .list_course_assignment_submissions(7, 8, "test-token")
+            .await
+            .is_err());
         denied.assert_hits(1);
     }
-
 
     #[tokio::test]
     async fn test_update_grade_with_grade_and_comment() {
@@ -1413,7 +1493,14 @@ mod mock_tests {
 
         let client = create_test_client(&server.base_url());
         client
-            .update_grade(course_id, assignment_id, student_id, Some("95"), Some("Good job"), token)
+            .update_grade(
+                course_id,
+                assignment_id,
+                student_id,
+                Some("95"),
+                Some("Good job"),
+                token,
+            )
             .await
             .unwrap();
 
@@ -1439,7 +1526,14 @@ mod mock_tests {
 
         let client = create_test_client(&server.base_url());
         client
-            .update_grade(course_id, assignment_id, student_id, Some("88.5"), None, token)
+            .update_grade(
+                course_id,
+                assignment_id,
+                student_id,
+                Some("88.5"),
+                None,
+                token,
+            )
             .await
             .unwrap();
 
@@ -1465,7 +1559,14 @@ mod mock_tests {
 
         let client = create_test_client(&server.base_url());
         client
-            .update_grade(course_id, assignment_id, student_id, None, Some("Great work"), token)
+            .update_grade(
+                course_id,
+                assignment_id,
+                student_id,
+                None,
+                Some("Great work"),
+                token,
+            )
             .await
             .unwrap();
 
@@ -1492,7 +1593,14 @@ mod mock_tests {
 
         let client = create_test_client(&server.base_url());
         let result = client
-            .update_grade(course_id, assignment_id, student_id, Some("90"), None, token)
+            .update_grade(
+                course_id,
+                assignment_id,
+                student_id,
+                Some("90"),
+                None,
+                token,
+            )
             .await;
 
         assert!(result.is_err());
@@ -1712,15 +1820,26 @@ impl Client {
         assert_eq!(url.host_str(), Some("127.0.0.1"));
         // Do not let the test runner's proxy environment turn a loopback
         // fixture into an external request. The real session Jar is retained.
-        let client = reqwest::Client::builder().no_proxy().cookie_provider(Arc::clone(&self.jar)).build()?;
-        let token = client.get(url).send().await?.error_for_status()?.text().await?;
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .cookie_provider(Arc::clone(&self.jar))
+            .build()?;
+        let token = client
+            .get(url)
+            .send()
+            .await?
+            .error_for_status()?
+            .text()
+            .await?;
         *self.token.write().await = token;
         Ok(())
     }
 
     pub(crate) async fn session_test_state(&self, url: &str) -> (Option<String>, String) {
         use reqwest::cookie::CookieStore;
-        let cookie = self.jar.cookies(&reqwest::Url::parse(url).unwrap())
+        let cookie = self
+            .jar
+            .cookies(&reqwest::Url::parse(url).unwrap())
             .map(|value| value.to_str().unwrap().to_owned());
         (cookie, self.token.read().await.clone())
     }

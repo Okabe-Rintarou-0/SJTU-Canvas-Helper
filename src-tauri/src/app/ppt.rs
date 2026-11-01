@@ -810,7 +810,7 @@ fn decimal_digit(c: char) -> bool {
         return false;
     }
     static DECIMAL: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let regex = DECIMAL.get_or_init(|| regex::Regex::new(r"^\p{Nd}$").unwrap());
+    let regex = DECIMAL.get_or_init(|| regex::Regex::new(r"^\p{Decimal_Number}$").unwrap());
     let mut encoded = [0; 4];
     regex.is_match(c.encode_utf8(&mut encoded))
 }

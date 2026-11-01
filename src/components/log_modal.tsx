@@ -1,6 +1,7 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
+import { defaultDownloadPath } from "../lib/downloads";
 import { open as openExternal } from "@tauri-apps/plugin-shell";
 import {
   Alert,
@@ -65,9 +66,10 @@ export default function LogModal({ onClose }: { onClose: () => void }) {
     setNotice(null);
     setSavedPath("");
     try {
+      const name = `SJTU-Canvas-Helper-diagnostics-${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
       const path = await save({
         title: "保存诊断信息",
-        defaultPath: `SJTU-Canvas-Helper-diagnostics-${new Date().toISOString().replace(/[:.]/g, "-")}.txt`,
+        defaultPath: await defaultDownloadPath(name).catch(() => name),
         filters: [{ name: "文本文件", extensions: ["txt"] }],
       });
       if (!path) return;

@@ -1,3 +1,4 @@
+import { downloadCourseContext, downloadDirectory } from "../lib/downloads";
 import { invoke } from "@tauri-apps/api/core";
 import AssignmentRoundedIcon from "@mui/icons-material/AssignmentRounded";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
@@ -34,7 +35,6 @@ import BasicLayout from "../components/layout";
 import GradeStatisticChart from "../components/grade_statistic";
 import { WorkspaceHero } from "../components/workspace_hero";
 import { TableSkeleton } from "../components/skeleton";
-import { getConfig, StaleConfigSessionError } from "../lib/config";
 import { currentSession, isSessionCurrent } from "../lib/session";
 import { useAppMessage } from "../lib/message";
 import {
@@ -95,24 +95,20 @@ export default function GradePage() {
 
   useEffect(() => {
     const owner = currentSession();
-    let active = true;
-    const ownsRequest = () => active && isSessionCurrent(owner);
+    let disposed = false;
+    const ownsRequest = () => !disposed && isSessionCurrent(owner);
     const initExportInfo = async (course: Course) => {
-      try {
-        const config = await getConfig();
-        if (!ownsRequest()) return;
-        setExportInfo({
-          fileName: `${course.name}_成绩`,
-          folderPath: config.save_path,
-        });
-      } catch (error: unknown) {
-        if (error instanceof StaleConfigSessionError || !ownsRequest()) return;
-        console.error("Failed to initialize grade export:", error);
-      }
+      const folderPath = await downloadDirectory("export", downloadCourseContext(course));
+      if (!ownsRequest()) return;
+      setExportInfo({ fileName: `${course.name}_成绩`, folderPath });
     };
-    if (selectedCourse) void initExportInfo(selectedCourse);
-    return () => { active = false; };
-  }, [selectedCourse]);
+    if (selectedCourse) {
+      void initExportInfo(selectedCourse).catch((error) => {
+        if (ownsRequest()) messageApi.error(`读取导出目录失败：${error}`);
+      });
+    }
+    return () => { disposed = true; };
+  }, [selectedCourse, messageApi]);
 
   useEffect(() => {
     setStudentIds(students.data.map((student) => student.id));

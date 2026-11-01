@@ -26,6 +26,7 @@ const routesConfig = [
     { path: "/debug", element: <DebugPage /> },
     { path: "/discussions", element: <DiscussionsPage /> },
     { path: "/files", element: <FilesPage /> },
+    { path: "/downloads", element: <Navigate to="/settings?section=storage" replace /> },
     { path: "/grades", element: <GradePage /> },
     { path: "/qrcode", element: <QRCodePage /> },
     { path: "/relationship", element: <RelationshipPage /> },

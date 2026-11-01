@@ -1,10 +1,13 @@
 //! A session is owned by one configuration generation, never by an account name.
 //! Old tasks retain their old Arc (including its Jar and JWT). Replacing this
 //! single-slot cache cannot make a late HTTP response mutate a newer session.
+use super::App;
+use crate::{
+    client::{authentication, Client},
+    error::{AppError, Result},
+};
 use std::{future::Future, sync::Arc};
 use tokio::sync::Mutex;
-use super::App;
-use crate::{client::{authentication, Client}, error::{AppError, Result}};
 
 pub(super) struct CanvasSession {
     pub owner: String,
@@ -24,11 +27,12 @@ impl CanvasSession {
                 *ready = true;
             }
             Ok(())
-        }).await
+        })
+        .await
     }
 
     pub async fn prepare(&self) -> Result<()> {
-        self.prepare_with(self.client.login_canvas_website(&self.cookie)).await
+        self.prepare_with(self.client.login_classroom_video()).await
     }
 
     // An explicit user login must refresh an expired same-owner session; lazy
@@ -37,23 +41,36 @@ impl CanvasSession {
         authentication(async {
             let mut ready = self.ready.lock().await;
             *ready = false;
-            self.client.login_canvas_website(&self.cookie).await?;
+            self.client.login_classroom_video().await?;
             *ready = true;
             Ok(())
-        }).await
+        })
+        .await
+    }
+
+    async fn check_with(&self, check: impl Future<Output = Result<bool>>) -> Result<bool> {
+        authentication(async {
+            let mut ready = self.ready.lock().await;
+            // Extra-login status is not classroom VideoAuth/JWT readiness.
+            // Failure or cancellation also leaves media preparation retryable.
+            *ready = false;
+            check.await
+        })
+        .await
     }
 
     pub async fn check(&self) -> Result<bool> {
-        authentication(async {
-            let mut ready = self.ready.lock().await;
-            *ready = false;
-            if !self.client.check_extra_login_status(&self.cookie).await? { return Ok(false); }
+        self.check_with(async {
+            if !self.client.check_extra_login_status(&self.cookie).await? {
+                return Ok(false);
+            }
             match self.client.login_canvas_website(&self.cookie).await {
-                Ok(()) => { *ready = true; Ok(true) },
+                Ok(()) => Ok(true),
                 Err(AppError::LoginError) => Ok(false),
                 Err(error) => Err(error),
             }
-        }).await
+        })
+        .await
     }
 }
 
@@ -76,9 +93,18 @@ impl App {
         if let Some(session) = slot.as_ref().filter(|session| session.owner == *owner) {
             return Ok(Arc::clone(session));
         }
+        let client = Arc::new(
+            self.client
+                .canvas_read_snapshot(Self::get_base_url(&config.account_type)),
+        );
+        // This new client is not published yet. Bind video authentication to the
+        // same immutable owner credentials before making it available to callers.
+        client
+            .configure_video_auth(&config.token, &config.ja_auth_cookie, true)
+            .await;
         let session = Arc::new(CanvasSession {
             owner: owner.clone(),
-            client: Arc::new(self.client.canvas_read_snapshot(Self::get_base_url(&config.account_type))),
+            client,
             cookie: format!("JAAuthCookie={}", config.ja_auth_cookie),
             ready: Mutex::new(false),
         });
@@ -94,7 +120,26 @@ impl App {
         Ok(session)
     }
 
-    pub(super) async fn finish_session<T>(&self, session: &CanvasSession, result: Result<T>) -> Result<T> {
+    /// Serialize local artifact IO with account transitions. The supplied future
+    /// must not perform network IO or reacquire the configuration-owner lock.
+    pub(super) async fn with_session_owner<T>(
+        &self,
+        session: &CanvasSession,
+        operation: impl Future<Output = Result<T>>,
+    ) -> Result<T> {
+        let owner = self.config_owner.lock().await;
+        self.store_ready()?;
+        if owner.as_deref() != Some(session.owner.as_str()) {
+            return Err(AppError::StaleConfigOwner);
+        }
+        operation.await
+    }
+
+    pub(super) async fn finish_session<T>(
+        &self,
+        session: &CanvasSession,
+        result: Result<T>,
+    ) -> Result<T> {
         self.ensure_config_owner(&session.owner).await?;
         result
     }
@@ -104,20 +149,35 @@ impl App {
         self.store_ready()?;
         let owner = owner.as_ref().ok_or(AppError::StaleConfigOwner)?.clone();
         let config = self.config.read().await;
-        let client = Arc::new(self.client.canvas_read_snapshot(Self::get_base_url(&config.account_type)));
+        let client = Arc::new(
+            self.client
+                .canvas_read_snapshot(Self::get_base_url(&config.account_type)),
+        );
         let id = uuid::Uuid::new_v4().to_string();
         *self.login_attempt.lock().await = Some(LoginAttempt {
-            owner: owner.clone(), id: id.clone(), uuid: None, client: Arc::clone(&client),
+            owner: owner.clone(),
+            id: id.clone(),
+            uuid: None,
+            client: Arc::clone(&client),
         });
         Ok((owner, id, client))
     }
 
-    pub(super) async fn finish_login_uuid(&self, expected_owner: &str, id: &str, result: Result<Option<String>>) -> Result<Option<String>> {
+    pub(super) async fn finish_login_uuid(
+        &self,
+        expected_owner: &str,
+        id: &str,
+        result: Result<Option<String>>,
+    ) -> Result<Option<String>> {
         let owner = self.config_owner.lock().await;
         self.store_ready()?;
-        if owner.as_deref() != Some(expected_owner) { return Err(AppError::StaleConfigOwner); }
+        if owner.as_deref() != Some(expected_owner) {
+            return Err(AppError::StaleConfigOwner);
+        }
         let mut slot = self.login_attempt.lock().await;
-        let attempt = slot.as_mut().filter(|attempt| attempt.id == id && attempt.owner == expected_owner)
+        let attempt = slot
+            .as_mut()
+            .filter(|attempt| attempt.id == id && attempt.owner == expected_owner)
             .ok_or(AppError::StaleConfigOwner)?;
         let uuid = result?;
         attempt.uuid = uuid.clone();
@@ -129,20 +189,36 @@ impl App {
             let owner = self.config_owner.lock().await;
             self.store_ready()?;
             let slot = self.login_attempt.lock().await;
-            let attempt = slot.as_ref().filter(|attempt| Some(attempt.owner.as_str()) == owner.as_deref()
-                && attempt.uuid.as_deref() == Some(uuid)).ok_or(AppError::StaleConfigOwner)?;
-            (attempt.owner.clone(), attempt.id.clone(), Arc::clone(&attempt.client))
+            let attempt = slot
+                .as_ref()
+                .filter(|attempt| {
+                    Some(attempt.owner.as_str()) == owner.as_deref()
+                        && attempt.uuid.as_deref() == Some(uuid)
+                })
+                .ok_or(AppError::StaleConfigOwner)?;
+            (
+                attempt.owner.clone(),
+                attempt.id.clone(),
+                Arc::clone(&attempt.client),
+            )
         };
         let result = authentication(client.express_login(uuid)).await;
-        self.finish_login_attempt(&expected_owner, &id, result).await
+        self.finish_login_attempt(&expected_owner, &id, result)
+            .await
     }
 
-    pub(super) async fn finish_login_attempt(&self, expected_owner: &str, id: &str, result: Result<Option<String>>) -> Result<Option<String>> {
+    pub(super) async fn finish_login_attempt(
+        &self,
+        expected_owner: &str,
+        id: &str,
+        result: Result<Option<String>>,
+    ) -> Result<Option<String>> {
         let owner = self.config_owner.lock().await;
         self.store_ready()?;
         let slot = self.login_attempt.lock().await;
         if owner.as_deref() != Some(expected_owner)
-            || !slot.as_ref().is_some_and(|attempt| attempt.id == id) {
+            || !slot.as_ref().is_some_and(|attempt| attempt.id == id)
+        {
             return Err(AppError::StaleConfigOwner);
         }
         result
@@ -152,30 +228,56 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
     use crate::model::{Account, AccountInfo, AppConfig};
-    use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::{oneshot, RwLock}};
+    use std::time::Duration;
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        sync::{oneshot, RwLock},
+    };
 
     fn offline_app() -> (tempfile::TempDir, Arc<App>) {
         let directory = tempfile::tempdir().unwrap();
         let store = super::super::config_store::ConfigStore::open(directory.path()).unwrap();
         let config = AppConfig::default();
-        std::fs::write(directory.path().join("account.json"), serde_json::to_vec(&AccountInfo::default()).unwrap()).unwrap();
-        std::fs::write(directory.path().join("sjtu_canvas_helper_config.json"), serde_json::to_vec(&config).unwrap()).unwrap();
+        std::fs::write(
+            directory.path().join("account.json"),
+            serde_json::to_vec(&AccountInfo::default()).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            directory.path().join("sjtu_canvas_helper_config.json"),
+            serde_json::to_vec(&config).unwrap(),
+        )
+        .unwrap();
         let app = Arc::new(App {
             config_store: Some(store),
-            client: Arc::new(Client::new_without_proxy("http://127.0.0.1", "", "", "", None)),
-            canvas_session: Default::default(), login_attempt: Default::default(),
-            current_account: RwLock::new(Account::Default), config: RwLock::new(config),
+            client: Arc::new(Client::new_without_proxy(
+                "http://127.0.0.1",
+                "",
+                "",
+                "",
+                None,
+            )),
+            canvas_session: Default::default(),
+            login_attempt: Default::default(),
+            current_account: RwLock::new(Account::Default),
+            config: RwLock::new(config),
             config_owner: Mutex::new(Some(uuid::Uuid::new_v4().to_string())),
-            handle: Default::default(), mcp_handle: Default::default(), cache: Default::default(),
+            handle: Default::default(),
+            mcp_handle: Default::default(),
+            cache: Default::default(),
         });
         (directory, app)
     }
 
     // Response is released by the test, not a timing-dependent sleep. Cookies
     // and JWT are delivered only after a real configuration/account transition.
-    async fn blocked_response() -> (String, oneshot::Receiver<()>, oneshot::Sender<()>, tokio::task::JoinHandle<()>) {
+    async fn blocked_response() -> (
+        String,
+        oneshot::Receiver<()>,
+        oneshot::Sender<()>,
+        tokio::task::JoinHandle<()>,
+    ) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/auth", listener.local_addr().unwrap());
         let (started_tx, started_rx) = oneshot::channel();
@@ -198,7 +300,9 @@ mod tests {
         assert!(Arc::ptr_eq(&first, &app.canvas_session().await.unwrap()));
         let mut config = app.get_config_snapshot().await.unwrap().config;
         config.debug_mode = !config.debug_mode;
+        let generation = app.client.subtitle_proofread_generation().await;
         let owner = app.save_config(config, &first.owner).await.unwrap();
+        assert_eq!(app.client.subtitle_proofread_generation().await, generation);
         assert_eq!(owner, first.owner);
         assert!(Arc::ptr_eq(&first, &app.canvas_session().await.unwrap()));
         for field in ["token", "ja", "video", "key"] {
@@ -210,11 +314,16 @@ mod tests {
                 "video" => config.video_cookies = "synthetic-video".into(),
                 _ => config.oauth_consumer_key = "synthetic-key".into(),
             }
+            let generation = app.client.subtitle_proofread_generation().await;
             let owner = app.save_config(config, &prior.owner).await.unwrap();
+            assert!(app.client.subtitle_proofread_generation().await > generation);
             let next = app.canvas_session().await.unwrap();
             assert_ne!(owner, prior.owner);
             assert!(!Arc::ptr_eq(&prior.client, &next.client));
-            assert_eq!(next.client.session_test_state("http://127.0.0.1/").await, (None, String::new()));
+            assert_eq!(
+                next.client.session_test_state("http://127.0.0.1/").await,
+                (None, String::new())
+            );
         }
     }
 
@@ -229,12 +338,20 @@ mod tests {
         let old_a = Arc::clone(&a);
         let request_url = url.clone();
         let request = tokio::spawn(async move {
-            let result = old_a.prepare_with(old_a.client.session_test_auth_response(&request_url)).await;
+            let result = old_a
+                .prepare_with(old_a.client.session_test_auth_response(&request_url))
+                .await;
             old_app.finish_session(&old_a, result).await
         });
-        tokio::time::timeout(Duration::from_secs(2), started).await.unwrap().unwrap();
+        tokio::time::timeout(Duration::from_secs(2), started)
+            .await
+            .unwrap()
+            .unwrap();
         // The old session's auth mutex is held during HTTP, but not owner/cache.
-        tokio::time::timeout(Duration::from_secs(2), app.switch_account(&b_account)).await.unwrap().unwrap();
+        tokio::time::timeout(Duration::from_secs(2), app.switch_account(&b_account))
+            .await
+            .unwrap()
+            .unwrap();
         let b = app.canvas_session().await.unwrap();
         assert!(!Arc::ptr_eq(&a.client, &b.client));
         app.switch_account(&Account::Default).await.unwrap();
@@ -242,13 +359,99 @@ mod tests {
         assert_ne!(a.owner, a_again.owner);
         assert!(!Arc::ptr_eq(&a.client, &a_again.client));
         release.send(()).unwrap();
-        assert!(matches!(request.await.unwrap(), Err(AppError::StaleConfigOwner)));
+        assert!(matches!(
+            request.await.unwrap(),
+            Err(AppError::StaleConfigOwner)
+        ));
         server.await.unwrap();
-        assert_eq!(a.client.session_test_state(&url).await, (Some("synthetic_session=old-a".into()), "old-a-jwt".into()));
-        assert_eq!(b.client.session_test_state(&url).await, (None, String::new()));
-        assert_eq!(a_again.client.session_test_state(&url).await, (None, String::new()));
-        assert!(matches!(app.commit_video_consumer_key(&a.owner, "late-key".into()).await, Err(AppError::StaleConfigOwner)));
+        assert_eq!(
+            a.client.session_test_state(&url).await,
+            (Some("synthetic_session=old-a".into()), "old-a-jwt".into())
+        );
+        assert_eq!(
+            b.client.session_test_state(&url).await,
+            (None, String::new())
+        );
+        assert_eq!(
+            a_again.client.session_test_state(&url).await,
+            (None, String::new())
+        );
+        assert!(matches!(
+            app.commit_video_consumer_key(&a.owner, "late-key".into())
+                .await,
+            Err(AppError::StaleConfigOwner)
+        ));
         assert_ne!(app.get_config().await.oauth_consumer_key, "late-key");
+    }
+
+    #[tokio::test]
+    async fn stale_session_never_polls_local_artifact_write() {
+        let (_directory, app) = offline_app();
+        let session = app.canvas_session().await.unwrap();
+        *app.config_owner.lock().await = Some("replacement-owner".into());
+        let called = std::sync::atomic::AtomicBool::new(false);
+        let result = app
+            .with_session_owner(&session, async {
+                called.store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(())
+            })
+            .await;
+        assert!(matches!(result, Err(AppError::StaleConfigOwner)));
+        assert!(!called.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn transcript_artifacts_use_isolated_store_and_reject_late_generation() {
+        let (_directory, app) = offline_app();
+        let session = app.canvas_session().await.unwrap();
+        let account = app.video_data_account().await.unwrap();
+        let request = super::super::video_library::RecordingRequest {
+            key: "synthetic:transcript".into(),
+            title: "synthetic".into(),
+            candidates: vec![],
+        };
+        app.with_session_owner(
+            &session,
+            app.save_video_transcript(&account, &request, "original".into()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            app.saved_video_transcript(&account, &request)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("original")
+        );
+        // The logical account is unchanged; only its owner generation changed.
+        *app.config_owner.lock().await = Some("new-generation-same-account".into());
+        let late = app
+            .with_session_owner(
+                &session,
+                app.save_video_transcript(&account, &request, "late-overwrite".into()),
+            )
+            .await;
+        assert!(matches!(late, Err(AppError::StaleConfigOwner)));
+        assert_eq!(
+            app.saved_video_transcript(&account, &request)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("original")
+        );
+    }
+
+    #[tokio::test]
+    async fn local_artifact_write_retains_owner_lock_until_complete() {
+        let (_directory, app) = offline_app();
+        let session = app.canvas_session().await.unwrap();
+        app.with_session_owner(&session, async {
+            assert!(app.config_owner.try_lock().is_err());
+            Ok(())
+        })
+        .await
+        .unwrap();
+        assert!(app.config_owner.try_lock().is_ok());
     }
 
     #[tokio::test]
@@ -256,18 +459,111 @@ mod tests {
         let (_directory, app) = offline_app();
         let session = app.canvas_session().await.unwrap();
         assert!(!*session.ready.lock().await);
-        assert!(session.prepare_with(async { Err(AppError::LoginError) }).await.is_err());
+        assert!(session
+            .prepare_with(async { Err(AppError::LoginError) })
+            .await
+            .is_err());
         assert!(!*session.ready.lock().await);
         // Cancellation also releases the session-local lock without marking
         // authentication ready, so it cannot wedge all later retries.
-        assert!(tokio::time::timeout(Duration::from_millis(10),
-            session.prepare_with(std::future::pending::<Result<()>>())).await.is_err());
+        assert!(tokio::time::timeout(
+            Duration::from_millis(10),
+            session.prepare_with(std::future::pending::<Result<()>>())
+        )
+        .await
+        .is_err());
         assert!(!*session.ready.lock().await);
         let calls = std::sync::atomic::AtomicUsize::new(0);
-        let login = || async { calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst); Ok(()) };
-        let (first, second) = tokio::join!(session.prepare_with(login()), session.prepare_with(login()));
-        first.unwrap(); second.unwrap();
+        let login = || async {
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        };
+        let (first, second) =
+            tokio::join!(session.prepare_with(login()), session.prepare_with(login()));
+        first.unwrap();
+        second.unwrap();
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn successful_extra_login_check_does_not_skip_classroom_preparation() {
+        let (_directory, app) = offline_app();
+        let session = app.canvas_session().await.unwrap();
+        // Exercise both a cold session and a previously prepared session.
+        for initially_ready in [false, true] {
+            *session.ready.lock().await = initially_ready;
+            assert!(session.check_with(async { Ok(true) }).await.unwrap());
+            assert!(!*session.ready.lock().await);
+            let calls = std::sync::atomic::AtomicUsize::new(0);
+            session
+                .prepare_with(async {
+                    calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    Ok(())
+                })
+                .await
+                .unwrap();
+            assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+            assert!(*session.ready.lock().await);
+        }
+    }
+
+    #[tokio::test]
+    async fn unsuccessful_extra_login_checks_leave_classroom_preparation_retryable() {
+        let (_directory, app) = offline_app();
+        let session = app.canvas_session().await.unwrap();
+        *session.ready.lock().await = true;
+        assert!(!session.check_with(async { Ok(false) }).await.unwrap());
+        assert!(!*session.ready.lock().await);
+        *session.ready.lock().await = true;
+        assert!(matches!(
+            session
+                .check_with(async { Err(AppError::LoginError) })
+                .await,
+            Err(AppError::LoginError)
+        ));
+        assert!(!*session.ready.lock().await);
+        session.prepare_with(async { Ok(()) }).await.unwrap();
+        assert!(*session.ready.lock().await);
+    }
+
+    #[tokio::test]
+    async fn cancelled_extra_login_check_releases_readiness_lock() {
+        let (_directory, app) = offline_app();
+        let session = app.canvas_session().await.unwrap();
+        *session.ready.lock().await = true;
+        let (started_tx, started_rx) = oneshot::channel();
+        let checking_session = Arc::clone(&session);
+        let checking = tokio::spawn(async move {
+            checking_session
+                .check_with(async {
+                    started_tx.send(()).unwrap();
+                    std::future::pending::<Result<bool>>().await
+                })
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(5), started_rx)
+            .await
+            .unwrap()
+            .unwrap();
+        checking.abort();
+        assert!(tokio::time::timeout(Duration::from_secs(5), checking)
+            .await
+            .unwrap()
+            .unwrap_err()
+            .is_cancelled());
+        assert!(
+            !*tokio::time::timeout(Duration::from_secs(5), session.ready.lock())
+                .await
+                .unwrap()
+        );
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            session.prepare_with(async { Ok(()) }),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(*session.ready.lock().await);
     }
 
     #[tokio::test]
@@ -276,23 +572,53 @@ mod tests {
         // Empty configuration credentials do not block first-time QR login.
         assert!(app.get_config().await.ja_auth_cookie.is_empty());
         let (owner, id, first) = app.begin_login_attempt().await.unwrap();
-        assert!(app.finish_login_uuid(&owner, &id, Err(AppError::LoginError)).await.is_err());
+        assert!(app
+            .finish_login_uuid(&owner, &id, Err(AppError::LoginError))
+            .await
+            .is_err());
         let (owner, retry_id, retry) = app.begin_login_attempt().await.unwrap();
         assert!(!Arc::ptr_eq(&first, &retry));
-        assert!(matches!(app.finish_login_uuid(&owner, &id, Ok(Some("old-uuid".into()))).await, Err(AppError::StaleConfigOwner)));
-        assert_eq!(app.finish_login_uuid(&owner, &retry_id, Ok(Some("new-uuid".into()))).await.unwrap().as_deref(), Some("new-uuid"));
-        assert!(matches!(app.express_login_attempt("old-uuid").await, Err(AppError::StaleConfigOwner)));
+        assert!(matches!(
+            app.finish_login_uuid(&owner, &id, Ok(Some("old-uuid".into())))
+                .await,
+            Err(AppError::StaleConfigOwner)
+        ));
+        assert_eq!(
+            app.finish_login_uuid(&owner, &retry_id, Ok(Some("new-uuid".into())))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("new-uuid")
+        );
+        assert!(matches!(
+            app.express_login_attempt("old-uuid").await,
+            Err(AppError::StaleConfigOwner)
+        ));
         // Polling completion may repeat for this same attempt, without changing it.
         for _ in 0..2 {
-            assert_eq!(app.finish_login_attempt(&owner, &retry_id, Ok(Some("synthetic-ja".into()))).await.unwrap().as_deref(), Some("synthetic-ja"));
+            assert_eq!(
+                app.finish_login_attempt(&owner, &retry_id, Ok(Some("synthetic-ja".into())))
+                    .await
+                    .unwrap()
+                    .as_deref(),
+                Some("synthetic-ja")
+            );
         }
         app.begin_login_attempt().await.unwrap();
-        assert!(matches!(app.finish_login_attempt(&owner, &retry_id, Ok(Some("late-ja".into()))).await, Err(AppError::StaleConfigOwner)));
+        assert!(matches!(
+            app.finish_login_attempt(&owner, &retry_id, Ok(Some("late-ja".into())))
+                .await,
+            Err(AppError::StaleConfigOwner)
+        ));
         let (owner, latest_id, _) = app.begin_login_attempt().await.unwrap();
         let mut config = app.get_config().await;
         config.ja_auth_cookie = "credential-replaced".into();
         app.save_config(config, &owner).await.unwrap();
-        assert!(matches!(app.finish_login_attempt(&owner, &latest_id, Ok(Some("old-owner-ja".into()))).await, Err(AppError::StaleConfigOwner)));
+        assert!(matches!(
+            app.finish_login_attempt(&owner, &latest_id, Ok(Some("old-owner-ja".into())))
+                .await,
+            Err(AppError::StaleConfigOwner)
+        ));
     }
 
     #[tokio::test]
@@ -305,16 +631,27 @@ mod tests {
         let request_url = url.clone();
         let request = tokio::spawn(async move {
             old.session_test_auth_response(&request_url).await.unwrap();
-            old_app.finish_login_attempt(&owner, &id, Ok(Some("late-ja".into()))).await
+            old_app
+                .finish_login_attempt(&owner, &id, Ok(Some("late-ja".into())))
+                .await
         });
-        tokio::time::timeout(Duration::from_secs(2), started).await.unwrap().unwrap();
+        tokio::time::timeout(Duration::from_secs(2), started)
+            .await
+            .unwrap()
+            .unwrap();
         let (_, _, next) = app.begin_login_attempt().await.unwrap();
         let session = app.canvas_session().await.unwrap();
         release.send(()).unwrap();
-        assert!(matches!(request.await.unwrap(), Err(AppError::StaleConfigOwner)));
+        assert!(matches!(
+            request.await.unwrap(),
+            Err(AppError::StaleConfigOwner)
+        ));
         server.await.unwrap();
         assert!(client.session_test_state(&url).await.0.is_some());
         assert_eq!(next.session_test_state(&url).await, (None, String::new()));
-        assert_eq!(session.client.session_test_state(&url).await, (None, String::new()));
+        assert_eq!(
+            session.client.session_test_state(&url).await,
+            (None, String::new())
+        );
     }
 }

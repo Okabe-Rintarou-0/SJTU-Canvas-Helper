@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { Alert, Button, CircularProgress, Dialog, DialogContent, DialogTitle, Stack, Typography } from "@mui/material";
 import { enqueueVideoTrack, resolveRecording } from "../lib/video_library_tasks";
 import type { CanvasVideo, VideoPlayInfo } from "../lib/model";
+import type { DownloadCourse } from "../lib/downloads";
 
-export default function VideoTrackDownloads({ video, onClose }: { video: CanvasVideo; onClose: () => void }) {
+export default function VideoTrackDownloads({ video, course, onClose }: { video: CanvasVideo; course?: DownloadCourse; onClose: () => void }) {
   const [tracks, setTracks] = useState<VideoPlayInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -21,11 +22,11 @@ export default function VideoTrackDownloads({ video, onClose }: { video: CanvasV
     <DialogTitle><Stack direction="row" justifyContent="space-between" alignItems="center">选择机位下载<Button onClick={onClose}>关闭</Button></Stack></DialogTitle>
     <DialogContent><Stack spacing={2}>
       <Typography>{video.videoName}</Typography>
-      <Typography variant="body2" color="text.secondary">保存到「系统设置 → 账号与连接」中的下载保存目录，可在下载任务中查看进度。</Typography>
+      <Typography variant="body2" color="text.secondary">保存到设置中的下载根目录，按学期、课程和资料类型归档，可在下载任务中查看进度。</Typography>
       {loading && <CircularProgress size={24} />}
       {error && <Alert severity="error" action={<Button onClick={() => setRetry((value) => value + 1)}>重试</Button>}>{error}</Alert>}
       {notice && <Alert severity="success">{notice}</Alert>}
-      {tracks.map((track, index) => <Stack key={track.id} direction="row" justifyContent="space-between" alignItems="center"><Typography>机位 {index + 1}</Typography><Button variant="outlined" onClick={() => { enqueueVideoTrack(video, track, index); setNotice(`机位 ${index + 1} 已加入下载任务`); }}>下载机位 {index + 1}</Button></Stack>)}
+      {tracks.map((track, index) => <Stack key={track.id} direction="row" justifyContent="space-between" alignItems="center"><Typography>机位 {index + 1}</Typography><Button variant="outlined" onClick={() => { enqueueVideoTrack(video, track, index, course); setNotice(`机位 ${index + 1} 已加入下载任务`); }}>下载机位 {index + 1}</Button></Stack>)}
     </Stack></DialogContent>
   </Dialog>;
 }

@@ -8,6 +8,9 @@ import type { AppConfig } from "./model";
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), error: vi.fn() }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+// These session/config hooks never mount document previews. Keep unrelated
+// notebook ESM renderer imports outside this hook-only suite.
+vi.mock("../components/preview_modal", () => ({ default: () => null }));
 // Session hooks do not execute PDF workers; keep this asset out of the shared
 // dependency cache's Vite URL loader while exercising the real hooks/config.
 vi.mock("pdfjs-dist/build/pdf.worker.min.js?url", () => ({ default: "synthetic-pdf-worker-url" }));

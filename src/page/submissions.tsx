@@ -1,3 +1,5 @@
+import { downloadCourseContext } from "../lib/downloads";
+import { DownloadCourseContext } from "../lib/download_context";
 import PageTaskLists from "../components/page_task_lists";
 import { enqueueTask } from "../lib/task_runtime";
 import { useLegacyTasks } from "../lib/task_hooks";
@@ -395,6 +397,8 @@ export default function SubmissionsPage() {
         throw new Error("账号已切换，请在当前账号重新创建下载任务。");
     };
     const event = { channel: "download://progress", id: crypto.randomUUID() };
+    const selected = courses.data.find((item) => item.id === selectedCourseId);
+    const course = selected ? downloadCourseContext(selected) : undefined;
     enqueueTask({
       id: `attachment:${session}:${selectedCourseId}:${file.uuid}`, name: file.display_name,
       source: "submissions", kind: "attachment", data: { file: structuredClone(file) },
@@ -404,13 +408,13 @@ export default function SubmissionsPage() {
       run: async () => {
         ensureOwner();
         event.id = crypto.randomUUID();
-        try { await invoke("download_file", { file, expectedOwner: config.__config_owner, operationId: event.id }); }
+        try { await invoke("download_file", { file, expectedOwner: config.__config_owner, operationId: event.id, ...(course ? { course } : {}) }); }
         catch (error) { ensureOwner(); throw error; }
         ensureOwner();
       },
       open: async () => {
         ensureOwner();
-        return invoke("open_file", { name: file.display_name, expectedOwner: config.__config_owner, expectedSavePath: config.save_path });
+        return invoke("open_file", { name: file.display_name, expectedOwner: config.__config_owner, expectedSavePath: config.save_path, ...(course ? { course } : {}) });
       },
     });
   };
@@ -554,7 +558,7 @@ export default function SubmissionsPage() {
   return (
     <BasicLayout>
       {contextHolder}
-      {previewer}
+      <DownloadCourseContext.Provider value={selectedCourse ? downloadCourseContext(selectedCourse) : undefined}>{previewer}</DownloadCourseContext.Provider>
       <Stack spacing={3}>
         <ClosableAlert
           message="使用指南"
@@ -582,7 +586,7 @@ export default function SubmissionsPage() {
               }}
             >
               <CourseSelect
-                onChange={(courseId) => setSelectedCourseId(courseId)}
+                onChange={setSelectedCourseId}
                 disabled={operating}
                 courses={courses.data}
                 value={selectedCourseId === -1 ? undefined : selectedCourseId}

@@ -3,6 +3,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { Alert, Box, Button, Card, CardContent, Checkbox, LinearProgress, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from "@mui/material";
 import { taskManager, taskKindLabels, isTaskActive, type Task } from "../lib/task_manager";
 import { surfaceCardSx } from "../lib/styles";
+import { useTasks } from "../lib/task_hooks";
+
+/** Keep frequent progress updates local to the task list. */
+export function VideoLibraryTaskQueue() {
+  const tasks = useTasks();
+  return <VideoLibraryTasks tasks={tasks.filter((task) => task.source === "video")} />;
+}
 
 /** Page-local view of the same queue, including exports without legacy task data. */
 export default function VideoLibraryTasks({ tasks }: { tasks: Task[] }) {

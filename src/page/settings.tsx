@@ -39,14 +39,18 @@ import { surfaceCardSx } from "../lib/styles";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import ReactJson from "react-json-view-ts";
 import BasicLayout from "../components/layout";
 import LogModal from "../components/log_modal";
+import PrimaryColorField, { DEFAULT_PRIMARY } from "../components/primary_color_field";
 import CanvasTokenGuideDialog, { CanvasTokenGuideContent } from "../components/canvas_token_guide";
 import { changeSessionAccount } from "../lib/account_sessions";
 import VideoSummarySettings from "../components/video_summary_settings";
 import { videoSummaryOptions, videoSummaryOptionsError } from "../lib/video_summary_config";
 import SettingsShell, { SettingsPanel, type SettingsSection } from "../components/settings_shell";
+import AppDataSettings from "../components/app_data_settings";
+import DownloadedFilesSettings from "../components/downloaded_files_settings";
 import { LoginAlert } from "../components/login_alert";
 import { ConfigReadFailure, getConfig, isConfigOwnerCurrent, saveConfig, StaleConfigSessionError, updateConfig } from "../lib/config";
 import { useConfigDispatch, useQRCode } from "../lib/hooks";
@@ -62,7 +66,6 @@ import { savePathValidator } from "../lib/utils";
 
 type AccountMode = "create" | "select";
 
-const DEFAULT_PRIMARY = "#00b96b";
 const DEFAULT_PROXY_PORT = 3030;
 const MIN_LLM_TEMPERATURE = 0;
 const MAX_LLM_TEMPERATURE = 2;
@@ -254,11 +257,14 @@ function InlineQRCodePanel({
 
 export default function SettingsPage() {
   const theme = useTheme();
-  const [activeSection, setActiveSection] = useState<SettingsSection>("account");
+  const location = useLocation();
+  const focusProxyPort = new URLSearchParams(location.search).get("focus") === "proxy-port";
+  const [activeSection, setActiveSection] = useState<SettingsSection>(focusProxyPort ? "advanced" : new URLSearchParams(location.search).get("section") === "storage" ? "storage" : "account");
   const dispatch = useConfigDispatch();
   const [messageApi, contextHolder] = useAppMessage();
   const tokenFieldRef = useRef<HTMLDivElement>(null);
   const savePathFieldRef = useRef<HTMLDivElement>(null);
+  const proxyPortFieldRef = useRef<HTMLInputElement>(null);
   const latestFormDataRef = useRef<AppConfig | null>(null);
   const initialSnapshotRef = useRef<string>("");
   // Guards initConfig against out-of-order completion: rapid account switches
@@ -331,8 +337,9 @@ export default function SettingsPage() {
   const [checkingExtraLogin, setCheckingExtraLogin] = useState(true);
 
   useEffect(() => {
-    if (activeSection !== "account") return;
-    const field = tokenError ? tokenFieldRef.current : savePathError ? savePathFieldRef.current : null;
+    if (activeSection !== "account" && activeSection !== "storage") return;
+    const field = activeSection === "account" && tokenError ? tokenFieldRef.current
+      : activeSection === "storage" && savePathError ? savePathFieldRef.current : null;
     field?.querySelector("input")?.focus();
   }, [activeSection, tokenError, savePathError]);
 
@@ -358,6 +365,18 @@ export default function SettingsPage() {
   }, [formData, initialSnapshot]);
 
   const loading = !formData;
+  const proxyPortError = formData && (!Number.isInteger(formData.proxy_port) || formData.proxy_port < 1 || formData.proxy_port > 65535)
+    ? "请输入 1–65535 之间的整数端口。" : "";
+
+  useEffect(() => {
+    if (focusProxyPort) setActiveSection("advanced");
+  }, [focusProxyPort]);
+
+  useEffect(() => {
+    if (!loading && activeSection === "advanced" && (focusProxyPort || proxyPortError)) {
+      proxyPortFieldRef.current?.focus();
+    }
+  }, [loading, activeSection, focusProxyPort, proxyPortError]);
 
   const mcpConnectionText = useMemo(() => {
     if (!formData?.token) return "// 请先配置 Canvas Token 并保存";
@@ -393,6 +412,7 @@ export default function SettingsPage() {
         if (!prev || !isConfigOwnerCurrent(prev)) {
           return prev;
         }
+        if (Object.is(prev[key], value)) return prev;
         const next = { ...prev, [key]: value };
         if (key === "theme" || key === "color_primary" || key === "compact_mode" || key === "debug_mode") {
           dispatch(updateConfig(next));
@@ -411,6 +431,10 @@ export default function SettingsPage() {
       return { ...current, __config_owner: saved.__config_owner };
     });
   }, []);
+  const handlePrimaryColorChange = useCallback(
+    (value: string) => updateField("color_primary", value),
+    [updateField]
+  );
 
   // Auto-save debug_mode immediately on toggle
   const prevDebugModeRef = useRef(formData?.debug_mode);
@@ -527,9 +551,10 @@ export default function SettingsPage() {
         compact_mode: config.compact_mode ?? false,
         experimental_task_center_only: config.experimental_task_center_only ?? false,
         experimental_ppt_cleanup: config.experimental_ppt_cleanup ?? false,
+        experimental_video_topics: config.experimental_video_topics ?? false,
         mcp_enabled: config.mcp_enabled ?? false,
         mcp_port: config.mcp_port || 3100,
-        proxy_port: config.proxy_port === 0 ? DEFAULT_PROXY_PORT : config.proxy_port,
+        proxy_port: config.proxy_port || DEFAULT_PROXY_PORT,
         llm_api_keys: config.llm_api_keys ?? [],
         llm_active_api_key: config.llm_active_api_key ?? "",
         video_summary_prompt: videoSummaryOptions(config).prompt,
@@ -649,13 +674,20 @@ export default function SettingsPage() {
 
     const valid = await validateForm();
     if (!valid) {
-      setActiveSection("account");
+      setActiveSection(!formData.token.trim() ? "account" : "storage");
       messageApi.error("请先修正表单中的错误，再保存设置。");
       return;
     }
 
     const summaryError = videoSummaryOptionsError(videoSummaryOptions(formData));
     if (summaryError) { setActiveSection("ai"); messageApi.error(summaryError); return; }
+
+    if (proxyPortError) {
+      setActiveSection("advanced");
+      messageApi.error(proxyPortError);
+      proxyPortFieldRef.current?.focus();
+      return;
+    }
 
     try {
       const saved = await saveConfig(formData);
@@ -669,7 +701,7 @@ export default function SettingsPage() {
       if (e instanceof StaleConfigSessionError) return;
       messageApi.error(e as string);
     }
-  }, [formData, messageApi, rawConfig, validateForm, acceptSavedOwner]);
+  }, [formData, messageApi, rawConfig, validateForm, acceptSavedOwner, proxyPortError]);
 
   const handleTestToken = async () => {
     const token = formData?.token ?? "";
@@ -1045,41 +1077,6 @@ export default function SettingsPage() {
 
                     {tokenTestResult && <Alert severity={tokenTestResult.severity}>{tokenTestResult.text}</Alert>}
 
-                    <Box
-                      sx={{
-                        display: "grid",
-                        gap: 2,
-                        gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "minmax(0, 1fr) auto" },
-                        alignItems: "start",
-                      }}
-                    >
-                      <Box ref={savePathFieldRef}>
-                        <TextField size="small" fullWidth
-                          label="下载保存目录"
-                          name="save_path"
-                          value={formData?.save_path ?? ""}
-                          onChange={(event) =>
-                            updateField("save_path", event.target.value)
-                          }
-                          placeholder="请选择下载保存目录…"
-                          error={Boolean(savePathError)}
-                          helperText={
-                            savePathError ||
-                            "建议使用固定目录，方便文件归档与后续自动化处理。"
-                          }
-                          autoComplete="off"
-                        />
-                      </Box>
-                      <Button
-                        variant="outlined"
-                        onClick={handleSelectSavePath}
-                        startIcon={<FolderOpenRoundedIcon />}
-                        sx={{ minHeight: 40 }}
-                      >
-                        选择目录
-                      </Button>
-                    </Box>
-
                     <Divider />
 
                     <Stack spacing={2}>
@@ -1089,7 +1086,7 @@ export default function SettingsPage() {
                             额外扫码登录
                           </Typography>
                           <Typography variant="body2" color="text.secondary">
-                            视频等功能需要额外登录态，未连接时可在下方扫码登录。
+                            扫码登录用于交大云盘上传、课堂音频转录，以及课堂视频的备用登录。
                           </Typography>
                         </Box>
 
@@ -1155,6 +1152,50 @@ export default function SettingsPage() {
                 </CardContent>
               </Card>
             </SettingsPanel>
+            <SettingsPanel id="storage" active={activeSection}>
+              <Card sx={cardSx}><CardContent><Stack spacing={2}>
+                <Typography variant="h5">下载文件</Typography>
+                <Typography variant="body2" color="text.secondary">下载和导出的默认目录按账号设置，修改后点击“保存全部设置”。已有文件保留原位。</Typography>
+                    <Box
+                      sx={{
+                        display: "grid",
+                        gap: 2,
+                        gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "minmax(0, 1fr) auto" },
+                        alignItems: "start",
+                      }}
+                    >
+                      <Box ref={savePathFieldRef}>
+                        <TextField size="small" fullWidth
+                          label="下载保存目录"
+                          name="save_path"
+                          value={formData?.save_path ?? ""}
+                          onChange={(event) =>
+                            updateField("save_path", event.target.value)
+                          }
+                          placeholder="请选择下载保存目录…"
+                          error={Boolean(savePathError)}
+                          helperText={
+                            savePathError ||
+                            "此目录作为根目录，课程资料自动按学期、课程和资料类型分文件夹。"
+                          }
+                          autoComplete="off"
+                        />
+                      </Box>
+                      <Button
+                        variant="outlined"
+                        onClick={handleSelectSavePath}
+                        startIcon={<FolderOpenRoundedIcon />}
+                        sx={{ minHeight: 40 }}
+                      >
+                        选择目录
+                      </Button>
+                    </Box>
+
+                <Divider />
+                <DownloadedFilesSettings active={activeSection === "storage"} refreshKey={initialSnapshot} />
+              </Stack></CardContent></Card>
+              <Box sx={{ mt: 2 }}><AppDataSettings active={activeSection === "storage"} /></Box>
+            </SettingsPanel>
             <SettingsPanel id="appearance" active={activeSection}>
               <Card sx={cardSx}>
                 <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
@@ -1190,52 +1231,10 @@ export default function SettingsPage() {
                         <MenuItem value="dark">深色主题</MenuItem>
                       </TextField>
 
-                      <TextField size="small" fullWidth
-                        label="主色调"
-                        name="color_primary"
+                      <PrimaryColorField
                         value={formData?.color_primary ?? DEFAULT_PRIMARY}
-                        onChange={(event) =>
-                          updateField("color_primary", event.target.value)
-                        }
-                        placeholder="#00b96b"
-                        helperText="支持输入 Hex 颜色值。"
-                        InputProps={{
-                          startAdornment: (
-                            <InputAdornment position="start">
-                              <Box
-                                sx={{
-                                  width: 18,
-                                  height: 18,
-                                  borderRadius: "6px",
-                                  bgcolor:
-                                    formData?.color_primary || DEFAULT_PRIMARY,
-                                  border: "1px solid",
-                                  borderColor: "divider",
-                                }}
-                              />
-                            </InputAdornment>
-                          ),
-                          endAdornment: (
-                            <InputAdornment position="end">
-                              <input
-                                aria-label="选择主色"
-                                type="color"
-                                value={formData?.color_primary ?? DEFAULT_PRIMARY}
-                                onChange={(event) =>
-                                  updateField("color_primary", event.target.value)
-                                }
-                                style={{
-                                  width: 28,
-                                  height: 28,
-                                  padding: 0,
-                                  border: "none",
-                                  background: "transparent",
-                                  cursor: "pointer",
-                                }}
-                              />
-                            </InputAdornment>
-                          ),
-                        }}
+                        onChange={handlePrimaryColorChange}
+                        canEdit={() => Boolean(formData && isConfigOwnerCurrent(formData))}
                       />
                     </Box>
 
@@ -1728,8 +1727,19 @@ export default function SettingsPage() {
                   <Stack spacing={2.5}>
                     <Box>
                       <Typography variant="h5">高级选项</Typography>
-                      <Typography variant="body2" color="text.secondary">配置文件打开方式、开发调试与 MCP 服务。</Typography>
+                      <Typography variant="body2" color="text.secondary">播放代理端口、开发调试与 MCP 服务。</Typography>
                     </Box>
+                    <TextField size="small" fullWidth
+                      label="播放代理端口"
+                      name="proxy_port"
+                      type="number"
+                      inputRef={proxyPortFieldRef}
+                      value={formData?.proxy_port === 0 ? "" : formData?.proxy_port ?? DEFAULT_PROXY_PORT}
+                      onChange={(event) => updateField("proxy_port", Number(event.target.value))}
+                      error={Boolean(proxyPortError)}
+                      helperText={proxyPortError || "默认 3030。端口被占用或无法使用时可更换；保存后重新打开视频或重新连接直播，无需重启应用。"}
+                      inputProps={{ min: 1, max: 65535, step: 1 }}
+                    />
                     <Box
                       sx={{
                         display: "grid",
@@ -1866,6 +1876,10 @@ export default function SettingsPage() {
                       <Typography variant="body2" color="text.secondary">
                         默认关闭，保存后生效。
                       </Typography>
+                    </Box>
+                    <Box>
+                      <FormControlLabel label="生成课堂主题" control={<Switch size="small" checked={formData?.experimental_video_topics ?? false} onChange={(event) => updateField("experimental_video_topics", event.target.checked)} />} />
+                      <Typography variant="body2" color="text.secondary">精校或总结时生成主题，并更新已有主题。</Typography>
                     </Box>
                     <Box>
                       <FormControlLabel
