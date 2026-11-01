@@ -9,6 +9,23 @@ use super::{debug::RequestLogId, Client};
 use crate::{error::{AppError, Result}, utils};
 use std::{io, sync::Arc};
 
+// One budget for an entire authentication chain, including redirects, response
+// bodies and form exchanges. Never apply this helper to media downloads/data.
+const AUTH_BUDGET: std::time::Duration = std::time::Duration::from_secs(30);
+
+pub(crate) async fn authentication<T>(future: impl std::future::Future<Output = Result<T>>) -> Result<T> {
+    authentication_with_budget(AUTH_BUDGET, future).await
+}
+
+async fn authentication_with_budget<T>(
+    budget: std::time::Duration,
+    future: impl std::future::Future<Output = Result<T>>,
+) -> Result<T> {
+    tokio::time::timeout(budget, future).await.map_err(|_| {
+        std::io::Error::new(std::io::ErrorKind::TimedOut, "Authentication timed out")
+    })?
+}
+
 // Keep the existing proxy selection and user agent in every request channel.
 // Only Canvas requests share credentials; download redirects are checked per hop.
 pub(super) fn build_http_client(
@@ -327,5 +344,86 @@ mod tests {
         let captured = format!("{logs:?}");
         assert!(!captured.contains("request-secret"));
         assert!(!captured.contains("response-secret"));
+    }
+}
+
+#[cfg(test)]
+mod authentication_budget_tests {
+    use super::*;
+    use std::{future::pending, sync::atomic::{AtomicBool, Ordering}, time::Duration};
+    use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::{oneshot, Mutex}};
+
+    struct Dropped(Arc<AtomicBool>);
+    impl Drop for Dropped {
+        fn drop(&mut self) { self.0.store(true, Ordering::SeqCst); }
+    }
+
+    #[tokio::test]
+    async fn authentication_budget_preserves_success_and_original_error() {
+        let result = authentication_with_budget(Duration::from_millis(50), async {
+            Ok((42, "synthetic-token".to_string()))
+        }).await.unwrap();
+        assert_eq!(result, (42, "synthetic-token".to_string()));
+        let result = authentication_with_budget(Duration::from_millis(50), async {
+            Err::<(), _>(AppError::LoginError)
+        }).await;
+        assert!(matches!(result, Err(AppError::LoginError)));
+    }
+
+    #[tokio::test]
+    async fn pending_authentication_times_out_and_drops_held_resources() {
+        let lock = Mutex::new(());
+        let dropped = Arc::new(AtomicBool::new(false));
+        let result = authentication_with_budget(Duration::from_millis(10), async {
+            let _lock = lock.lock().await;
+            let _drop = Dropped(Arc::clone(&dropped));
+            pending::<Result<()>>().await
+        }).await;
+        assert!(matches!(result, Err(AppError::IO(error)) if error.kind() == io::ErrorKind::TimedOut));
+        assert!(dropped.load(Ordering::SeqCst));
+        assert!(lock.try_lock().is_ok(), "timeout must drop rather than detach the auth future");
+        authentication_with_budget(Duration::from_millis(50), async {
+            let _retry = lock.lock().await;
+            Ok(())
+        }).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn caller_cancellation_drops_authentication_before_its_own_budget() {
+        let lock = Mutex::new(());
+        let dropped = Arc::new(AtomicBool::new(false));
+        let cancelled = tokio::time::timeout(Duration::from_millis(10),
+            authentication_with_budget(Duration::from_secs(60), async {
+                let _lock = lock.lock().await;
+                let _drop = Dropped(Arc::clone(&dropped));
+                pending::<Result<()>>().await
+            })).await;
+        assert!(cancelled.is_err());
+        assert!(dropped.load(Ordering::SeqCst));
+        assert!(lock.try_lock().is_ok());
+    }
+
+    #[tokio::test]
+    async fn authentication_budget_includes_pending_loopback_response_body() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/synthetic-auth", listener.local_addr().unwrap());
+        let (release, wait) = oneshot::channel::<()>();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0; 4096];
+            assert!(socket.read(&mut request).await.unwrap() > 0);
+            // Headers complete successfully, but the authentication body never
+            // arrives until after the client budget expires. No sleep race.
+            socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n").await.unwrap();
+            wait.await.unwrap();
+        });
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let response = tokio::time::timeout(Duration::from_secs(2), client.get(url).send()).await.unwrap().unwrap();
+        let result = authentication_with_budget(Duration::from_millis(10), async {
+            Ok(response.text().await?)
+        }).await;
+        assert!(matches!(result, Err(AppError::IO(error)) if error.kind() == io::ErrorKind::TimedOut));
+        release.send(()).unwrap();
+        server.await.unwrap();
     }
 }

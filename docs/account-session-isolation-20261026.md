@@ -31,3 +31,12 @@ The loopback test helper uses the real session Jar/JWT lock and an explicitly no
 - Same-owner parallel course JWT replacement remains the pre-existing per-client semantics; this patch addresses account-generation isolation, not per-course JWT addressing.
 - Existing file-download tasks remain bound to their captured client/destination; this patch does not introduce transactional rollback of local exported artifacts after account switches.
 - The QR attempt slot is memory-bounded to one attempt; HTTP execution is time-bounded, but no new QR lifetime/expiry is imposed because the existing UI refreshes a UUID's websocket QR payload.
+
+## LTI authentication budget follow-up (base a880417)
+
+- Moved the unchanged 30-second authentication budget/error mapping to the client layer (`client/common.rs`, internal re-export). App session/QR/legacy callers reuse it; the client does not depend on App.
+- `get_video_space_token_from_url` now applies one budget around its entire redirect/form/body chain, not one fresh budget per hop.
+- `get_teaching_class_id_token` now applies one budget across Canvas launch forms, JWT extraction and the launch-context response/body. Course data pagination, media metadata and downloads are outside this budget and unchanged.
+- No URL/cookie/redirect trust rules, dependencies or public command fields changed. Cancellation drops the authentication future; it is not spawned/detached. Cookies received before cancellation remain only in that owner's session, as before.
+- Four new offline Rust tests cover success/original-error preservation, pending timeout, drop/lock release and retry, caller cancellation, and a loopback response whose headers finish but body remains blocked. Tests use a private duration helper (10–50 ms) rather than waiting the production 30 seconds. Existing synthetic successful LTI launch tests continue to exercise the now-wrapped production method.
+- `git diff --check` passed. Rust execution for this delta remains pending root's fork CI; the earlier 119-pass run is evidence for the prior source, not this follow-up.

@@ -852,44 +852,46 @@ impl Client {
     }
 
     async fn get_video_space_token_from_url(&self, launch_url: &str) -> Result<String> {
-        let client = reqwest::Client::builder()
-            .redirect(Policy::none())
-            .cookie_provider(self.jar.clone())
-            .build()?;
-        let mut request = client.get(launch_url);
-        for _ in 0..16 {
-            let response = request.send().await?.error_for_status()?;
-            let base = response.url().clone();
-            if base.domain() == Some("jaccount.sjtu.edu.cn") {
-                return Err(AppError::LoginError);
-            }
-            if let Some(location) = response.headers().get("location") {
-                let next = base
-                    .join(location.to_str()?)
-                    .map_err(|_| AppError::LoginError)?;
-                if let Some(token) = jwt_token_from_location(next.as_str()) {
+        super::authentication(async {
+            let client = reqwest::Client::builder()
+                .redirect(Policy::none())
+                .cookie_provider(self.jar.clone())
+                .build()?;
+            let mut request = client.get(launch_url);
+            for _ in 0..16 {
+                let response = request.send().await?.error_for_status()?;
+                let base = response.url().clone();
+                if base.domain() == Some("jaccount.sjtu.edu.cn") {
+                    return Err(AppError::LoginError);
+                }
+                if let Some(location) = response.headers().get("location") {
+                    let next = base
+                        .join(location.to_str()?)
+                        .map_err(|_| AppError::LoginError)?;
+                    if let Some(token) = jwt_token_from_location(next.as_str()) {
+                        return Ok(token);
+                    }
+                    request = client.get(next);
+                    continue;
+                }
+                let body = response.text().await?;
+                let document = Document::from(body.as_str());
+                let embedded_token = document
+                    .find(Name("iframe"))
+                    .filter_map(|node| node.attr("src"))
+                    .find_map(jwt_token_from_location);
+                if let Some(token) = embedded_token {
                     return Ok(token);
                 }
-                request = client.get(next);
-                continue;
+                let (action, data) = self.get_form_submission_from_doc(document)?;
+                request = client
+                    .post(self.resolve_form_action(&base, &action)?)
+                    .form(&data);
             }
-            let body = response.text().await?;
-            let document = Document::from(body.as_str());
-            let embedded_token = document
-                .find(Name("iframe"))
-                .filter_map(|node| node.attr("src"))
-                .find_map(jwt_token_from_location);
-            if let Some(token) = embedded_token {
-                return Ok(token);
-            }
-            let (action, data) = self.get_form_submission_from_doc(document)?;
-            request = client
-                .post(self.resolve_form_action(&base, &action)?)
-                .form(&data);
-        }
-        Err(AppError::VideoDownloadError(
-            "Video space login did not finish".into(),
-        ))
+            Err(AppError::VideoDownloadError(
+                "Video space login did not finish".into(),
+            ))
+        }).await
     }
 
     pub async fn list_video_space_courses(&self) -> Result<Vec<Course>> {
@@ -1049,24 +1051,26 @@ impl Client {
     }
 
     async fn get_teaching_class_id_token(&self, course_id: i64) -> Result<(i64, String)> {
-        let token = self.get_video_launch_token(course_id).await?;
-        let url = format!("{RESOURCE_MANAGE_BASE_URL}/lms/launch-context");
-        let response = self
-            .cli
-            .get(url)
-            .header("jwt-token", &token)
-            .header(REFERER, RESOURCE_MANAGE_UI_URL)
-            .send()
-            .await?
-            .error_for_status()?;
-        let value: Value = serde_json::from_slice(&response.bytes().await?)?;
-        let data = api_data(&value)?;
-        let teaching_class_id = value_as_i64(
-            data.get("canvasRecord")
-                .and_then(|record| record.get("teachingClassId")),
-        )
-        .ok_or_else(|| AppError::VideoDownloadError("Teaching class id is missing".to_string()))?;
-        Ok((teaching_class_id, token))
+        super::authentication(async {
+            let token = self.get_video_launch_token(course_id).await?;
+            let url = format!("{RESOURCE_MANAGE_BASE_URL}/lms/launch-context");
+            let response = self
+                .cli
+                .get(url)
+                .header("jwt-token", &token)
+                .header(REFERER, RESOURCE_MANAGE_UI_URL)
+                .send()
+                .await?
+                .error_for_status()?;
+            let value: Value = serde_json::from_slice(&response.bytes().await?)?;
+            let data = api_data(&value)?;
+            let teaching_class_id = value_as_i64(
+                data.get("canvasRecord")
+                    .and_then(|record| record.get("teachingClassId")),
+            )
+            .ok_or_else(|| AppError::VideoDownloadError("Teaching class id is missing".to_string()))?;
+            Ok((teaching_class_id, token))
+        }).await
     }
 
     pub async fn get_canvas_videos(&self, course_id: i64) -> Result<Vec<CanvasVideo>> {

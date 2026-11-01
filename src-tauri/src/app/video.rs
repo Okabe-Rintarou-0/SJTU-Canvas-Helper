@@ -11,7 +11,7 @@ use crate::{
 impl App {
     pub async fn get_uuid(&self) -> Result<Option<String>> {
         let (owner, id, client) = self.begin_login_attempt().await?;
-        let result = super::session::authentication(client.get_uuid()).await;
+        let result = crate::client::authentication(client.get_uuid()).await;
         self.finish_login_uuid(&owner, &id, result).await
     }
 
@@ -22,11 +22,11 @@ impl App {
     pub async fn login_video_website(&self) -> Result<()> {
         let snapshot = self.get_config_snapshot().await?;
         let cookie = format!("JAAuthCookie={}", snapshot.config.ja_auth_cookie);
-        let login_result = super::session::authentication(self.client.login_video_website(&cookie)).await;
+        let login_result = crate::client::authentication(self.client.login_video_website(&cookie)).await;
         self.ensure_config_owner(&snapshot.owner).await?;
         let cookies = login_result?.ok_or(AppError::LoginError)?;
         if cookies.trim().is_empty() { return Err(AppError::LoginError); }
-        let key_result = super::session::authentication(self.client.get_oauth_consumer_key_for_cookies(&cookies)).await;
+        let key_result = crate::client::authentication(self.client.get_oauth_consumer_key_for_cookies(&cookies)).await;
         self.ensure_config_owner(&snapshot.owner).await?;
         let consumer_key = key_result?.ok_or(AppError::LoginError)?;
         self.commit_video_login_result(&snapshot.owner, cookies, consumer_key).await
@@ -113,7 +113,7 @@ impl App {
         let mut owner = snapshot.owner;
         let mut consumer_key = snapshot.config.oauth_consumer_key.clone();
         if consumer_key.is_empty() {
-            let key_result = super::session::authentication(self.client.get_oauth_consumer_key_with_client(&client)).await;
+            let key_result = crate::client::authentication(self.client.get_oauth_consumer_key_with_client(&client)).await;
             self.ensure_config_owner(&owner).await?;
             consumer_key = key_result?.ok_or_else(|| {
                 AppError::VideoDownloadError("Legacy video authorization key is unavailable".to_string())
