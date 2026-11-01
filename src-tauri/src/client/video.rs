@@ -8,6 +8,7 @@ use std::{
 
 use super::{
     debug::RequestLogId,
+    download_ranges::{content_range, is_strong_etag, partitions, request_end, StagedDownload},
     constants::{
         AUTH_URL, CANVAS_LOGIN_URL, EXPRESS_LOGIN_URL, MY_SJTU_ACCOUNT_URL, MY_SJTU_URL,
         VIDEO_BASE_URL, VIDEO_LOGIN_URL, VIDEO_OAUTH_KEY_URL,
@@ -35,7 +36,7 @@ use regex::Regex;
 use reqwest::{
     cookie::{CookieStore, Jar},
     header::{
-        HeaderMap, HeaderValue, ACCEPT, ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE,
+        HeaderMap, HeaderValue, ACCEPT, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE,
         RANGE, REFERER,
     },
     redirect::Policy,
@@ -679,38 +680,26 @@ fn jwt_token_from_location(location: &str) -> Option<String> {
 }
 
 fn parse_download_probe(status: StatusCode, headers: &HeaderMap) -> (u64, bool) {
-    let supports_range = status == StatusCode::PARTIAL_CONTENT
-        || headers.get(CONTENT_RANGE).is_some()
-        || headers
-            .get(ACCEPT_RANGES)
-            .and_then(|value| value.to_str().ok())
-            .map(|value| value.contains("bytes"))
-            .unwrap_or(false);
-
-    if let Some(range) = headers
-        .get(CONTENT_RANGE)
-        .and_then(|value| value.to_str().ok())
-    {
-        let parts: Vec<_> = range.split('/').collect();
-        if parts.len() == 2 {
-            let size = parts[1].parse().unwrap_or_default();
-            if size > 0 {
-                return (size, supports_range);
-            }
-        }
+    if status == StatusCode::PARTIAL_CONTENT {
+        return headers
+            .get(CONTENT_RANGE)
+            .and_then(|v| v.to_str().ok())
+            .and_then(content_range)
+            .filter(|(start, end, _)| *start == 0 && *end == 0)
+            .map(|(_, _, size)| (size, true))
+            .unwrap_or((0, false));
     }
-
-    if let Some(length) = headers
-        .get(CONTENT_LENGTH)
-        .and_then(|value| value.to_str().ok())
-    {
-        let size = length.parse().unwrap_or_default();
-        if size > 0 {
-            return (size, supports_range);
-        }
+    if status != StatusCode::OK {
+        return (0, false);
     }
-
-    (0, supports_range)
+    (
+        headers
+            .get(CONTENT_LENGTH)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0),
+        false,
+    )
 }
 
 fn get_cookie_value(cookies: &str, name: &str) -> Option<String> {
@@ -1318,33 +1307,58 @@ impl Client {
         (since_the_epoch.as_nanos() / 1_000_000).to_string()
     }
 
-    async fn download_video_partial(&self, url: &str, begin: u64, end: u64) -> Result<Response> {
-        let range_value = HeaderValue::from_str(&format!("bytes={begin}-{end}")).unwrap();
-        let response = self
+    async fn download_video_partial(
+        &self,
+        url: &str,
+        begin: u64,
+        end: u64,
+        validator: Option<&HeaderValue>,
+    ) -> Result<Response> {
+        let mut request = self
             .cli
             .get(url)
-            .header(RANGE, range_value)
-            .header(REFERER, RESOURCE_MANAGE_UI_URL)
-            .send()
-            .await?;
-        Ok(response)
+            .timeout(std::time::Duration::from_secs(60))
+            .header(reqwest::header::ACCEPT_ENCODING, "identity")
+            .header(RANGE, format!("bytes={begin}-{end}"))
+            .header(REFERER, RESOURCE_MANAGE_UI_URL);
+        if let Some(value) = validator {
+            request = request.header(reqwest::header::IF_RANGE, value);
+        }
+        Ok(request.send().await?)
     }
-
-    async fn get_download_video_metadata(&self, url: &str) -> Result<(u64, bool)> {
-        let resp = self.download_video_partial(url, 0, 0).await?;
-        tracing::info!(status = resp.status().as_u16(), "Video download metadata received");
-        Ok(parse_download_probe(resp.status(), resp.headers()))
+    async fn get_download_video_metadata(
+        &self,
+        url: &str,
+    ) -> Result<(u64, bool, Option<HeaderValue>)> {
+        let mut response = self.download_video_partial(url, 0, 0, None).await?;
+        let (size, ranged) = parse_download_probe(response.status(), response.headers());
+        let validator = response
+            .headers()
+            .get(reqwest::header::ETAG)
+            .filter(|v| is_strong_etag(v.as_bytes()))
+            .cloned();
+        if ranged {
+            let mut received = 0;
+            while let Some(chunk) = response.chunk().await? {
+                if chunk.len() > 1 - received {
+                    return Err(AppError::VideoDownloadError("invalid probe body".into()));
+                }
+                received += chunk.len();
+            }
+            if received != 1 {
+                return Err(AppError::VideoDownloadError("incomplete probe body".into()));
+            }
+        }
+        Ok((size, ranged && validator.is_some(), validator))
     }
-
     pub async fn download_video<F: Fn(ProgressPayload) + Send + 'static>(
         self: Arc<Self>,
         video: &VideoPlayInfo,
         save_path: &str,
         progress_handler: F,
     ) -> Result<()> {
-        let output_file = Arc::new(Mutex::new(File::create(save_path)?));
         let url = &video.rtmp_url_hdv;
-        let (size, supports_range) = self.get_download_video_metadata(url).await?;
+        let (size, ranged, validator) = self.get_download_video_metadata(url).await?;
         let payload = ProgressPayload {
             uuid: video.id.to_string(),
             processed: 0,
@@ -1352,103 +1366,101 @@ impl Client {
         };
         progress_handler(payload.clone());
         if size == 0 {
-            tracing::warn!(
-                "try to download video as {}, but size is 0, can't download",
-                save_path
-            );
             return Err(AppError::VideoDownloadError(save_path.to_owned()));
         }
-
-        if !supports_range {
-            tracing::info!(
-                "video source does not support range requests, fallback to single stream"
-            );
+        let (staging, file) = StagedDownload::create(
+            std::path::Path::new(save_path),
+            &uuid::Uuid::new_v4().to_string(),
+        )?;
+        let output = Arc::new(Mutex::new(file));
+        let progress = Arc::new(Mutex::new(progress_handler));
+        let payload = Arc::new(Mutex::new(payload));
+        if !ranged {
             let mut response = self
                 .cli
                 .get(url)
+                .timeout(std::time::Duration::from_secs(3600))
+                .header(reqwest::header::ACCEPT_ENCODING, "identity")
                 .header(REFERER, RESOURCE_MANAGE_UI_URL)
                 .send()
                 .await?;
-            let status = response.status();
-            if status != StatusCode::OK {
-                tracing::error!("status not ok: {}", status);
+            if response.status() != StatusCode::OK {
                 return Err(AppError::VideoDownloadError(save_path.to_owned()));
             }
-
-            let progress_handler = Arc::new(Mutex::new(progress_handler));
-            let payload = Arc::new(Mutex::new(payload));
-            let mut current_offset = 0;
+            let mut offset = 0;
             while let Some(chunk) = response.chunk().await? {
-                {
-                    let mut file = output_file.lock().await;
-                    write_file_at_offset(file.by_ref(), &chunk, current_offset)?;
+                if chunk.len() as u64 > size - offset {
+                    return Err(AppError::VideoDownloadError(save_path.to_owned()));
                 }
-                current_offset += chunk.len() as u64;
-                let mut payload_guard = payload.lock().await;
-                payload_guard.processed = current_offset;
-                progress_handler.lock().await(payload_guard.clone());
+                write_file_at_offset(output.lock().await.by_ref(), &chunk, offset)?;
+                offset += chunk.len() as u64;
+                let mut p = payload.lock().await;
+                p.processed = offset;
+                progress.lock().await(p.clone());
             }
-            tracing::info!("Video download completed");
-            return Ok(());
-        }
-
-        let progress_handler = Arc::new(Mutex::new(progress_handler));
-        let payload = Arc::new(Mutex::new(payload));
-
-        let nproc = num_cpus::get();
-        tracing::info!("nproc: {}", nproc);
-        let chunk_size = size / nproc as u64;
-        let mut tasks = JoinSet::new();
-        for i in 0..nproc {
-            let begin = i as u64 * chunk_size;
-            let end = if i == nproc - 1 {
-                size - 1
-            } else {
-                (i + 1) as u64 * chunk_size - 1
-            };
-            let self_clone = self.clone();
-            let save_path = save_path.to_owned();
-            let output_file = output_file.clone();
-            let url = url.clone();
-            let payload = payload.clone();
-            let progress_handler = progress_handler.clone();
-            tasks.spawn(async move {
-                let mut current_begin = begin;
-                while current_begin < end {
-                    let response = self_clone
-                        .download_video_partial(
-                            &url,
-                            current_begin,
-                            current_begin + VIDEO_CHUNK_SIZE,
-                        )
-                        .await?;
-                    let status = response.status();
-                    if !(status == StatusCode::OK || status == StatusCode::PARTIAL_CONTENT) {
-                        tracing::error!("status not ok: {}", status);
-                        return Err(AppError::VideoDownloadError(save_path));
+            if offset != size {
+                return Err(AppError::VideoDownloadError(save_path.to_owned()));
+            }
+        } else {
+            let mut tasks = JoinSet::new();
+            for (begin, end) in partitions(size, num_cpus::get()) {
+                let client = self.clone();
+                let url = url.clone();
+                let validator = validator.clone();
+                let output = output.clone();
+                let payload = payload.clone();
+                let progress = progress.clone();
+                let path = save_path.to_owned();
+                tasks.spawn(async move {
+                    let mut start = begin;
+                    while start <= end {
+                        let last = request_end(start, end, VIDEO_CHUNK_SIZE)
+                            .ok_or_else(|| AppError::VideoDownloadError(path.clone()))?;
+                        let mut response = client
+                            .download_video_partial(&url, start, last, validator.as_ref())
+                            .await?;
+                        if response.status() != StatusCode::PARTIAL_CONTENT
+                            || response.headers().get(reqwest::header::ETAG) != validator.as_ref()
+                            || response
+                                .headers()
+                                .get(CONTENT_RANGE)
+                                .and_then(|v| v.to_str().ok())
+                                .and_then(content_range)
+                                != Some((start, last, size))
+                        {
+                            return Err(AppError::VideoDownloadError(path));
+                        }
+                        let expected = last - start + 1;
+                        let mut bytes = Vec::with_capacity(expected as usize);
+                        while let Some(chunk) = response.chunk().await? {
+                            if chunk.len() as u64 > expected - bytes.len() as u64 {
+                                return Err(AppError::VideoDownloadError(path));
+                            }
+                            bytes.extend_from_slice(&chunk);
+                        }
+                        if bytes.len() as u64 != expected {
+                            return Err(AppError::VideoDownloadError(path));
+                        }
+                        write_file_at_offset(output.lock().await.by_ref(), &bytes, start)?;
+                        start = last + 1;
+                        let mut p = payload.lock().await;
+                        p.processed += expected;
+                        progress.lock().await(p.clone());
                     }
-                    let bytes = response.bytes().await?;
-                    let read_bytes = bytes.len() as u64;
-                    tracing::info!("read_bytes: {:?}", read_bytes);
-                    {
-                        let mut file = output_file.lock().await;
-                        write_file_at_offset(file.by_ref(), &bytes, current_begin)?;
-                        // release lock automatically after scope release
-                    }
-
-                    current_begin += read_bytes;
-
-                    let mut payload_guard = payload.lock().await;
-                    payload_guard.processed += read_bytes;
-                    progress_handler.lock().await(payload_guard.clone());
+                    Ok(())
+                });
+            }
+            while let Some(result) = tasks.join_next().await {
+                if let Err(error) = result.map_err(AppError::from).and_then(|r| r) {
+                    tasks.abort_all();
+                    while tasks.join_next().await.is_some() {}
+                    return Err(error);
                 }
-                Ok(())
-            });
+            }
         }
-        while let Some(result) = tasks.join_next().await {
-            result??;
-        }
-        tracing::info!("Video download completed");
+        output.lock().await.sync_all()?;
+        drop(output);
+        staging.publish()?;
         Ok(())
     }
 
@@ -2238,65 +2250,393 @@ mod tests {
     #[tokio::test]
     async fn test_download_video() -> Result<()> {
         use httpmock::prelude::*;
-        // Exercise both range and single-stream downloads without external media.
-        let original = vec![0x5a; num_cpus::get() * 8 + 1];
-        for supports_range in [false, true] {
+        for length in [
+            1,
+            3,
+            65,
+            num_cpus::get().clamp(1, 8) * (VIDEO_CHUNK_SIZE as usize + 3),
+        ] {
+            let data: Vec<u8> = (0..length).map(|i| (i % 251) as u8).collect();
+            for mode in [0, 1, 2] {
+                let ranged = mode == 1;
+                let server = MockServer::start();
+                let probe = server.mock(|when, then| {
+                    when.method(GET).header("Range", "bytes=0-0");
+                    if mode != 0 {
+                        then.status(206)
+                            .header("ETag", if ranged { "\"v1\"" } else { "W/\"v1\"" })
+                            .header("Content-Range", format!("bytes 0-0/{length}"))
+                            .body(&data[..1]);
+                    } else {
+                        then.status(200).body(&data);
+                    }
+                });
+                let mut mocks = vec![];
+                if ranged {
+                    for (begin, end) in partitions(length as u64, num_cpus::get()) {
+                        let mut start = begin;
+                        while start <= end {
+                            let last = request_end(start, end, VIDEO_CHUNK_SIZE).unwrap();
+                            if (start, last) != (0, 0) {
+                                mocks.push(server.mock(|when, then| {
+                                    when.method(GET)
+                                        .header("Range", format!("bytes={start}-{last}"))
+                                        .header("If-Range", "\"v1\"");
+                                    then.status(206)
+                                        .header("ETag", "\"v1\"")
+                                        .header(
+                                            "Content-Range",
+                                            format!("bytes {start}-{last}/{length}"),
+                                        )
+                                        .body(&data[start as usize..=last as usize]);
+                                }));
+                            }
+                            start = last + 1;
+                        }
+                    }
+                } else {
+                    mocks.push(server.mock(|when, then| {
+                        when.method(GET);
+                        then.status(200).body(&data);
+                    }));
+                }
+                let dir = std::env::temp_dir().join(format!("canvas-ok-{}", uuid::Uuid::new_v4()));
+                fs::create_dir(&dir)?;
+                let out = dir.join("video.mp4");
+                fs::write(&out, b"previous completed file")?;
+                let cli = Arc::new(Client::new_without_proxy(
+                    server.base_url().as_str(),
+                    "",
+                    "",
+                    "",
+                    None,
+                ));
+                let info = VideoPlayInfo {
+                    rtmp_url_hdv: server.url("/video.mp4"),
+                    ..Default::default()
+                };
+                cli.download_video(&info, out.to_str().unwrap(), |_| {})
+                    .await?;
+                assert_eq!(fs::read(&out)?, data);
+                assert_eq!(fs::read_dir(&dir)?.count(), 1);
+                probe.assert_hits(
+                    if ranged && partitions(length as u64, num_cpus::get())[0].1 == 0 {
+                        2
+                    } else {
+                        1
+                    },
+                );
+                for mock in mocks {
+                    mock.assert_hits(1);
+                }
+                fs::remove_dir_all(dir)?;
+            }
+        }
+        Ok(())
+    }
+    #[tokio::test]
+    async fn test_range_download_rejects_empty_and_oversized_bodies() -> Result<()> {
+        use httpmock::prelude::*;
+        let size = num_cpus::get().max(1) * 2;
+        for body in [Vec::new(), vec![0x5a; size + 1]] {
             let server = MockServer::start();
             let probe = server.mock(|when, then| {
                 when.method(GET).path("/video.mp4").header("Range", "bytes=0-0");
-                if supports_range {
-                    then.status(206).header("Content-Range", format!("bytes 0-0/{}", original.len())).body(&original[..1]);
-                } else {
-                    then.status(200).body(&original);
-                }
+                then.status(206).header("ETag", "\"v1\"").header("Content-Range", format!("bytes 0-0/{size}")).body("Z");
             });
-            let mut chunks = Vec::new();
-            if supports_range {
-                let size = original.len() as u64;
-                let chunk_size = size / num_cpus::get() as u64;
-                for index in 0..num_cpus::get() {
-                    let begin = index as u64 * chunk_size;
-                    let end = (begin + VIDEO_CHUNK_SIZE).min(size - 1);
-                    chunks.push(server.mock(|when, then| {
-                        when.method(GET).path("/video.mp4").header("Range", format!("bytes={begin}-{}", begin + VIDEO_CHUNK_SIZE));
-                        then.status(206).header("Content-Range", format!("bytes {begin}-{end}/{size}"))
-                            .body(&original[begin as usize..=end as usize]);
-                    }));
-                }
-            } else {
-                chunks.push(server.mock(|when, then| {
-                    when.method(GET).path("/video.mp4");
-                    then.status(200).body(&original);
-                }));
-            }
+            let chunks: Vec<_> = partitions(size as u64, num_cpus::get()).into_iter().map(|(start, end)| {
+                server.mock(|when, then| {
+                    when.method(GET).path("/video.mp4")
+                        .header("Range", format!("bytes={start}-{end}"))
+                        .header("If-Range", "\"v1\"");
+                    then.status(206).header("ETag", "\"v1\"")
+                        .header("Content-Range", format!("bytes {start}-{end}/{size}"))
+                        .body(body.clone());
+                })
+            }).collect();
             let output = crate::utils::file::TempFile::with_extension(std::env::temp_dir().to_string_lossy().into_owned(), "mp4")?;
             let cli = Arc::new(Client::new_without_proxy(server.base_url().as_str(), "", "", "", None));
             let info = VideoPlayInfo { rtmp_url_hdv: server.url("/video.mp4"), ..Default::default() };
-            cli.download_video(&info, output.path(), |_| {}).await?;
-            assert_eq!(fs::read(output.path())?, original);
+            let result = tokio::time::timeout(std::time::Duration::from_secs(5), cli.download_video(&info, output.path(), |_| {})).await;
+            assert!(result.expect("invalid range response must terminate").is_err());
             probe.assert_hits(1);
-            for chunk in chunks { chunk.assert_hits(1); }
+            let hits: usize = chunks.iter().map(|chunk| chunk.hits()).sum();
+            assert!(hits > 0 && hits <= chunks.len());
         }
         Ok(())
     }
 
-    #[test]
-    fn test_parse_download_probe_with_partial_content() {
-        let mut headers = HeaderMap::new();
-        headers.insert(CONTENT_RANGE, HeaderValue::from_static("bytes 0-0/5485935"));
-        let (size, supports_range) = parse_download_probe(StatusCode::PARTIAL_CONTENT, &headers);
-        assert_eq!(size, 5_485_935);
-        assert!(supports_range);
+    #[tokio::test]
+    async fn test_range_download_handles_single_byte() -> Result<()> {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        let response = server.mock(|when, then| {
+            when.method(GET).path("/video.mp4").header("Range", "bytes=0-0");
+            then.status(206).header("ETag", "\"v1\"").header("Content-Range", "bytes 0-0/1").body("Z");
+        });
+        let output = crate::utils::file::TempFile::with_extension(std::env::temp_dir().to_string_lossy().into_owned(), "mp4")?;
+        let cli = Arc::new(Client::new_without_proxy(server.base_url().as_str(), "", "", "", None));
+        let info = VideoPlayInfo { rtmp_url_hdv: server.url("/video.mp4"), ..Default::default() };
+        cli.download_video(&info, output.path(), |_| {}).await?;
+        assert_eq!(fs::read(output.path())?, b"Z");
+        response.assert_hits(2);
+        Ok(())
     }
 
+    #[tokio::test]
+    async fn test_ignored_range_is_rejected() -> Result<()> {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).header("Range", "bytes=0-0");
+            then.status(206).header("ETag", "\"v1\"").header("Content-Range", "bytes 0-0/64").body(vec![0]);
+        });
+        server.mock(|when, then| {
+            when.method(GET);
+            then.status(200).body(vec![1; 64]);
+        });
+        let dir = std::env::temp_dir().join(format!("canvas-ignore-range-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&dir)?;
+        let out = dir.join("video.mp4");
+        fs::write(&out, b"original")?;
+        let cli = Arc::new(Client::new_without_proxy(server.base_url().as_str(), "", "", "", None));
+        let info = VideoPlayInfo { rtmp_url_hdv: server.url("/video"), ..Default::default() };
+        let result = cli.download_video(&info, out.to_str().unwrap(), |_| {}).await;
+        let bytes = fs::read(&out)?;
+        fs::remove_dir_all(&dir)?;
+        assert!(result.is_err(), "ignored Range must not report successful download");
+        assert_eq!(bytes, b"original");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_invalid_download_responses_preserve_destination() -> Result<()> {
+        use httpmock::prelude::*;
+        let parts = partitions(64, num_cpus::get());
+        let end = parts[0].1;
+        let expected = (end + 1) as usize;
+        for case in 0..7 {
+            let server = MockServer::start();
+            server.mock(|when, then| {
+                when.method(GET).header("Range", "bytes=0-0");
+                then.status(206)
+                    .header("ETag", "\"v1\"")
+                    .header("Content-Range", "bytes 0-0/64")
+                    .body(vec![0]);
+            });
+            let bad = server.mock(|when, then| {
+                when.method(GET).header("Range", format!("bytes=0-{end}"));
+                let status = if case == 0 { 200 } else { 206 };
+                let total = if case == 1 { 65 } else { 64 };
+                let last = if case == 2 { end - 1 } else { end };
+                let length = match case {
+                    3 => 0,
+                    4 => expected - 1,
+                    5 => expected + 1,
+                    _ => expected,
+                };
+                let tag = if case == 6 { "\"v2\"" } else { "\"v1\"" };
+                then.status(status)
+                    .header("ETag", tag)
+                    .header("Content-Range", format!("bytes 0-{last}/{total}"))
+                    .body(vec![1; length]);
+            });
+            for &(start, last) in parts.iter().skip(1) {
+                server.mock(|when, then| {
+                    when.method(GET)
+                        .header("Range", format!("bytes={start}-{last}"));
+                    then.status(206)
+                        .header("ETag", "\"v1\"")
+                        .header("Content-Range", format!("bytes {start}-{last}/64"))
+                        .body(vec![1; (last - start + 1) as usize]);
+                });
+            }
+            let dir = std::env::temp_dir().join(format!("canvas-bad-{}", uuid::Uuid::new_v4()));
+            fs::create_dir(&dir)?;
+            let out = dir.join("video.mp4");
+            fs::write(&out, b"original")?;
+            let cli = Arc::new(Client::new_without_proxy(
+                server.base_url().as_str(),
+                "",
+                "",
+                "",
+                None,
+            ));
+            let info = VideoPlayInfo {
+                rtmp_url_hdv: server.url("/video.mp4"),
+                ..Default::default()
+            };
+            assert!(
+                cli.download_video(&info, out.to_str().unwrap(), |_| {})
+                    .await
+                    .is_err(),
+                "case {case}"
+            );
+            bad.assert_hits(1);
+            assert_eq!(fs::read(&out)?, b"original");
+            assert_eq!(fs::read_dir(&dir)?.count(), 1);
+            fs::remove_dir_all(dir)?;
+        }
+        Ok(())
+    }
+    #[tokio::test]
+    async fn test_probe_body_and_validator() -> Result<()> {
+        use httpmock::prelude::*;
+        for body in [vec![], vec![1, 2]] {
+            let server = MockServer::start();
+            server.mock(|when, then| {
+                when.method(GET);
+                then.status(206)
+                    .header("ETag", "\"v1\"")
+                    .header("Content-Range", "bytes 0-0/64")
+                    .body(body);
+            });
+            let cli = Client::new_without_proxy(server.base_url().as_str(), "", "", "", None);
+            assert!(cli
+                .get_download_video_metadata(&server.url("/video"))
+                .await
+                .is_err());
+        }
+        for tag in [
+            None,
+            Some("W/\"v1\""),
+            Some("\"v1\", \"v2\""),
+            Some("\"has space\""),
+        ] {
+            let server = MockServer::start();
+            server.mock(|when, then| {
+                when.method(GET);
+                let then = then
+                    .status(206)
+                    .header("Content-Range", "bytes 0-0/64")
+                    .body(vec![1]);
+                if let Some(tag) = tag {
+                    then.header("ETag", tag);
+                }
+            });
+            let cli = Client::new_without_proxy(server.base_url().as_str(), "", "", "", None);
+            let (size, ranged, validator) = cli
+                .get_download_video_metadata(&server.url("/video"))
+                .await?;
+            assert_eq!(size, 64);
+            assert!(!ranged);
+            assert!(validator.is_none());
+        }
+        Ok(())
+    }
     #[test]
-    fn test_parse_download_probe_with_content_length_only() {
-        let mut headers = HeaderMap::new();
-        headers.insert(CONTENT_LENGTH, HeaderValue::from_static("5485935"));
-        headers.insert(ACCEPT_RANGES, HeaderValue::from_static("none"));
-        let (size, supports_range) = parse_download_probe(StatusCode::OK, &headers);
-        assert_eq!(size, 5_485_935);
-        assert!(!supports_range);
+    fn test_probe_contract() {
+        let mut h = HeaderMap::new();
+        h.insert(CONTENT_LENGTH, HeaderValue::from_static("64"));
+        h.insert(ACCEPT_RANGES, HeaderValue::from_static("bytes"));
+        assert_eq!(parse_download_probe(StatusCode::OK, &h), (64, false));
+        assert_eq!(parse_download_probe(StatusCode::NOT_FOUND, &h), (0, false));
+        assert_eq!(
+            parse_download_probe(StatusCode::PARTIAL_CONTENT, &h),
+            (0, false)
+        );
+        h.insert(CONTENT_RANGE, HeaderValue::from_static("bytes 1-1/64"));
+        assert_eq!(
+            parse_download_probe(StatusCode::PARTIAL_CONTENT, &h),
+            (0, false)
+        );
+        h.insert(CONTENT_RANGE, HeaderValue::from_static("bytes 0-0/64"));
+        assert_eq!(
+            parse_download_probe(StatusCode::PARTIAL_CONTENT, &h),
+            (64, true)
+        );
+    }
+    #[tokio::test]
+    async fn test_single_stream_size_mismatch() -> Result<()> {
+        use httpmock::prelude::*;
+        for length in [0, 63, 65] {
+            let server = MockServer::start();
+            server.mock(|when, then| {
+                when.method(GET).header("Range", "bytes=0-0");
+                then.status(200).body(vec![1; 64]);
+            });
+            server.mock(|when, then| {
+                when.method(GET);
+                then.status(200).body(vec![1; length]);
+            });
+            let dir = std::env::temp_dir().join(format!("canvas-stream-{}", uuid::Uuid::new_v4()));
+            fs::create_dir(&dir)?;
+            let out = dir.join("video.mp4");
+            fs::write(&out, b"original")?;
+            let cli = Arc::new(Client::new_without_proxy(
+                server.base_url().as_str(),
+                "",
+                "",
+                "",
+                None,
+            ));
+            let info = VideoPlayInfo {
+                rtmp_url_hdv: server.url("/video"),
+                ..Default::default()
+            };
+            assert!(cli
+                .download_video(&info, out.to_str().unwrap(), |_| {})
+                .await
+                .is_err());
+            assert_eq!(fs::read(&out)?, b"original");
+            assert_eq!(fs::read_dir(&dir)?.count(), 1);
+            fs::remove_dir_all(dir)?;
+        }
+        Ok(())
+    }
+    #[tokio::test]
+    async fn test_cancelled_download_does_not_publish() -> Result<()> {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).header("Range", "bytes=0-0");
+            then.status(206)
+                .header("ETag", "\"v1\"")
+                .header("Content-Range", "bytes 0-0/64")
+                .body(vec![0]);
+        });
+        let delayed = server.mock(|when, then| {
+            when.method(GET).header_exists("If-Range");
+            then.status(206)
+                .delay(std::time::Duration::from_secs(2))
+                .body(vec![0; 8]);
+        });
+        let dir = std::env::temp_dir().join(format!("canvas-cancel-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&dir)?;
+        let out = dir.join("video.mp4");
+        fs::write(&out, b"original")?;
+        let cli = Arc::new(Client::new_without_proxy(
+            server.base_url().as_str(),
+            "",
+            "",
+            "",
+            None,
+        ));
+        let info = VideoPlayInfo {
+            rtmp_url_hdv: server.url("/video"),
+            ..Default::default()
+        };
+        let path = out.to_string_lossy().into_owned();
+        let task = tokio::spawn(async move { cli.download_video(&info, &path, |_| {}).await });
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while delayed.hits() == 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("request started");
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while fs::read_dir(&dir).unwrap().count() != 1 {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("cleanup");
+        assert_eq!(fs::read(&out)?, b"original");
+        fs::remove_dir_all(dir)?;
+        Ok(())
     }
 
     #[test]
