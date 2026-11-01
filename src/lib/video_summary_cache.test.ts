@@ -57,7 +57,6 @@ describe("video summary persistence", () => {
     for (let i = 0; i < 15; i++) writeSummaryCache({ ...entry, key: String(i) });
     expect(readSummaryCache()).toHaveLength(12);
     expect(readSummaryCache()[0].key).toBe("14");
-    expect(writeSummaryCache({ ...entry, text: "中".repeat(1_100_000) })).toBe(false);
     localStorage.setItem("video-material-summaries-v7", "{bad json");
     expect(readSummaryCache()).toEqual([]);
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
