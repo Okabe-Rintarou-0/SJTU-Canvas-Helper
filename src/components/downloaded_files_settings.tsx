@@ -5,8 +5,16 @@ import { currentDataAccount } from "../lib/app_data";
 import { downloadType, fileSize, type DownloadedFile, type DownloadOverview, type DownloadType } from "../lib/downloads";
 import { isTaskActive } from "../lib/task_manager";
 import { useTasks } from "../lib/task_hooks";
+import { useSessionEpoch } from "../lib/session";
+import { useActiveSessionOperation } from "../lib/use_active_session_operation";
 
 export default function DownloadedFilesSettings({ active, refreshKey }: { active: boolean; refreshKey?: string }) {
+  const session = useSessionEpoch();
+  return <DownloadedFilesSession key={session} session={session} active={active} refreshKey={refreshKey} />;
+}
+
+function DownloadedFilesSession({ active, refreshKey, session }: { active: boolean; refreshKey?: string; session: number }) {
+  const captureOwner = useActiveSessionOperation(session, active);
   const [overview, setOverview] = useState<DownloadOverview>();
   const [account, setAccount] = useState("");
   const [query, setQuery] = useState("");
@@ -24,18 +32,22 @@ export default function DownloadedFilesSettings({ active, refreshKey }: { active
   const taskStatuses = tasks.map((t) => `${t.id}:${t.status}`).join("|");
   const busy = tasks.some(isTaskActive) || overview?.busy === true;
   const refresh = useCallback(async () => {
+    const owns = captureOwner();
+    if (!owns()) return;
     const request = ++generation.current;
+    const currentRequest = () => owns() && request === generation.current;
     setLoading(true);
     try {
       const current = await currentDataAccount();
+      if (!currentRequest()) return;
       const data = await invoke<DownloadOverview>("downloaded_files", { account: current, request: { op: "list" } });
-      if (request !== generation.current) return;
+      if (!currentRequest()) return;
       setAccount(current); setOverview(data); setSelected(new Set()); setPage(0); setError("");
-    } catch (e) { if (request === generation.current) setError(String(e)); }
-    finally { if (request === generation.current) setLoading(false); }
-  }, []);
+    } catch (e) { if (currentRequest()) setError(String(e)); }
+    finally { if (currentRequest()) setLoading(false); }
+  }, [captureOwner]);
   useEffect(() => {
-    if (!active) { setDeleting(undefined); setSelected(new Set()); return; }
+    if (!active) { setDeleting(undefined); setSelected(new Set()); setWorking(false); return; }
     void refresh();
     return () => { generation.current = generation.current + 1; };
   }, [active, refresh, taskStatuses, refreshKey]);
@@ -53,26 +65,38 @@ export default function DownloadedFilesSettings({ active, refreshKey }: { active
   const visible = filtered.slice(page * 50, (page + 1) * 50);
   const changeSelection = (path: string, checked: boolean) => setSelected((old) => { const next = new Set(old); if (checked) next.add(path); else next.delete(path); return next; });
   const open = async (file: DownloadedFile, folder: boolean) => {
+    const owns = captureOwner();
+    if (!owns()) return;
     try { await invoke("downloaded_files", { account, request: { op: "open", path: file.path, folder } }); }
-    catch (e) { setError(String(e)); }
+    catch (e) { if (owns()) setError(String(e)); }
+  };
+  const openDirectory = async () => {
+    const owns = captureOwner();
+    if (!owns()) return;
+    try { await invoke("open_save_dir"); }
+    catch (e) { if (owns()) setError(String(e)); }
   };
   const remove = async () => {
+    const owns = captureOwner();
+    if (!owns()) return;
     if (!deleting?.length || busy || working || loading) return;
     const files = deleting; setDeleting(undefined); setWorking(true); setNotice(""); setError("");
     try {
       const result = await invoke<{ deleted: string[]; errors: string[] }>("downloaded_files", { account, request: { op: "delete", files } });
+      if (!owns()) return;
       await refresh();
+      if (!owns()) return;
       setNotice(`已删除 ${result.deleted.length} 个文件。`);
       if (result.errors.length) setError(result.errors.join("；"));
-    } catch (e) { setError(String(e)); }
-    finally { setWorking(false); }
+    } catch (e) { if (owns()) setError(String(e)); }
+    finally { if (owns()) setWorking(false); }
   };
   const blocked = working || loading || busy;
   if (!active) return null;
   return <><Stack spacing={2}>
     <Stack direction="row" gap={1} useFlexGap flexWrap="wrap" alignItems="center" justifyContent="space-between">
       <Box><Typography variant="subtitle1">文件列表</Typography><Typography variant="body2" color="text.secondary">包含当前下载目录中的文件，以及本应用另存到其他位置的文件。</Typography></Box>
-      <Stack direction="row" gap={1}><Button disabled={loading || working} onClick={() => void refresh()}>{loading ? "正在读取…" : "刷新"}</Button><Button onClick={() => void invoke("open_save_dir").catch((e) => setError(String(e)))}>打开下载目录</Button></Stack>
+      <Stack direction="row" gap={1}><Button disabled={loading || working} onClick={() => void refresh()}>{loading ? "正在读取…" : "刷新"}</Button><Button onClick={() => void openDirectory()}>打开下载目录</Button></Stack>
     </Stack>
     {overview && <Box><Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>当前使用：{overview.directory}</Typography><Typography variant="body2" color="text.secondary">{overview.files.length} 个文件 · {fileSize(overview.totalBytes)}</Typography></Box>}
     <Typography variant="caption" color="text.secondary">课程资料统一按“学期 → 课程 → 资料类型”归档，视频批量导出再按课堂分目录。旧文件保留原位并继续显示；个人文件和无课程归属的文件单独存放。</Typography>
