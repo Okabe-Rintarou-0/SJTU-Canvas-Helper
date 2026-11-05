@@ -20,6 +20,7 @@ pub mod subtitle_proofread;
 mod transcription;
 pub mod video;
 mod video_auth;
+mod video_tokens;
 pub mod video_library;
 
 pub struct Client {
@@ -29,6 +30,7 @@ pub struct Client {
     jar: Arc<Jar>,
     base_url: RwLock<String>,
     token: RwLock<String>,
+    recording_tokens: RwLock<video_tokens::RecordingTokens>,
     video_auth: tokio::sync::Mutex<video_auth::VideoAuth>,
     transcription: transcription::TranscriptionRuntime,
     subtitle_proofread: subtitle_proofread::ProofreadRuntime,

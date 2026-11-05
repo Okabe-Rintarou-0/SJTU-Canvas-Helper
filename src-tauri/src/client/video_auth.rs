@@ -42,7 +42,7 @@ impl Client {
                 ja_auth_cookie: cookie.into(),
                 ..Default::default()
             };
-            self.token.write().await.clear();
+            self.reset_video_tokens(String::new()).await;
         }
     }
 

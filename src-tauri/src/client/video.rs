@@ -855,7 +855,7 @@ impl Client {
 
     pub async fn login_classroom_video(&self) -> Result<()> {
         let token = self.get_video_space_token().await?;
-        *self.token.write().await = token;
+        self.reset_video_tokens(token).await;
         Ok(())
     }
 
@@ -952,9 +952,9 @@ impl Client {
     }
 
     pub async fn get_video_space_videos(&self, teaching_class_id: i64) -> Result<Vec<CanvasVideo>> {
+        let launch = self.recording_tokens.write().await.begin_launch();
         let token = self.get_video_space_token().await?;
-        *self.token.write().await = token.clone();
-        self.get_videos_for_teaching_class(teaching_class_id, token, VideoSource::VideoSpace)
+        self.get_videos_for_teaching_class(teaching_class_id, token, VideoSource::VideoSpace, launch)
             .await
     }
 
@@ -1045,9 +1045,9 @@ impl Client {
     }
 
     pub async fn get_canvas_videos(&self, course_id: i64) -> Result<Vec<CanvasVideo>> {
+        let launch = self.recording_tokens.write().await.begin_launch();
         let (teaching_class_id, token) = self.get_teaching_class_id_token(course_id).await?;
-        *self.token.write().await = token.to_owned();
-        self.get_videos_for_teaching_class(teaching_class_id, token, VideoSource::Canvas)
+        self.get_videos_for_teaching_class(teaching_class_id, token, VideoSource::Canvas, launch)
             .await
     }
 
@@ -1059,7 +1059,8 @@ impl Client {
         } else {
             return Err(AppError::VideoDownloadError("当前课程没有可用的直播来源".into()));
         };
-        *self.token.write().await = token.clone();
+        // Live requests carry this launch token directly and must not change
+        // the credential used by an unrelated recording or subtitle request.
         Ok((id, token))
     }
 
@@ -1245,13 +1246,21 @@ impl Client {
         teaching_class_id: i64,
         token: String,
         source: VideoSource,
+        launch: super::video_tokens::RecordingLaunch,
     ) -> Result<Vec<CanvasVideo>> {
-        let url = format!("{RESOURCE_MANAGE_BASE_URL}/v1/subject_vod_list_new");
+        self.get_videos_for_teaching_class_at(RESOURCE_MANAGE_BASE_URL, teaching_class_id, token, source, launch).await
+    }
+
+    async fn get_videos_for_teaching_class_at(
+        &self, base: &str, teaching_class_id: i64, token: String,
+        source: VideoSource, launch: super::video_tokens::RecordingLaunch,
+    ) -> Result<Vec<CanvasVideo>> {
+        let url = format!("{base}/v1/subject_vod_list_new");
         let resp = self
             .cli
             .get(url)
             .header(REFERER, RESOURCE_MANAGE_UI_URL)
-            .header("jwt-token", token)
+            .header("jwt-token", &token)
             .query(&[
                 ("page.pageIndex", "1".to_string()),
                 ("page.pageSize", "1000".to_string()),
@@ -1264,7 +1273,11 @@ impl Client {
             .await?
             .error_for_status()?;
         let value: Value = serde_json::from_slice(&resp.bytes().await?)?;
-        canvas_videos_from_response(&value, source)
+        let videos = canvas_videos_from_response(&value, source)?;
+        self.recording_tokens.write().await.remember(
+            launch, videos.iter().map(|video| video.video_id.as_str()), &token,
+        );
+        Ok(videos)
     }
 
     pub(crate) fn video_client_for_cookies(cookies: &str) -> Result<reqwest::Client> {
@@ -1458,15 +1471,16 @@ impl Client {
     }
 
     pub async fn get_canvas_video_info(&self, video_id: &str) -> Result<VideoInfo> {
-        let token = self.token.read().await.clone();
+        let (token, version) = self.recording_token_snapshot(video_id).await;
         let value = self.canvas_video_info_response(video_id, &token).await?;
-        // Course launches can replace the shared JWT while the video remains
-        // playable. A successful but empty VOD response gets one fresh launch;
+        // A recording credential may have expired. A successful but empty VOD
+        // response gets one fresh launch, preserving unrelated course bindings;
         // HTTP/service errors and malformed payloads retain their real errors.
         if value.get("data").is_some_and(Value::is_null) && optional_api_data(&value)?.is_none() {
-            let token = self.get_video_space_token().await?;
-            *self.token.write().await = token.clone();
-            return video_info_from_response(&self.canvas_video_info_response(video_id, &token).await?);
+            let refreshed = self.get_video_space_token().await?;
+            let info = video_info_from_response(&self.canvas_video_info_response(video_id, &refreshed).await?)?;
+            self.publish_recording_refresh(version, &token, refreshed).await;
+            return Ok(info);
         }
         video_info_from_response(&value)
     }
@@ -1535,18 +1549,24 @@ impl Client {
     }
 
     pub async fn get_original_subtitle(&self, canvas_course_id: i64) -> Result<CanvasVideoSubTitleResponseBody> {
-        let response = self.cli.get(format!("{RESOURCE_MANAGE_BASE_URL}/v1/course/ai/translate/{canvas_course_id}"))
+        self.get_original_subtitle_at(RESOURCE_MANAGE_BASE_URL, canvas_course_id).await
+    }
+
+    async fn get_original_subtitle_at(&self, base: &str, canvas_course_id: i64) -> Result<CanvasVideoSubTitleResponseBody> {
+        let token = self.recording_token(&canvas_course_id.to_string()).await;
+        let response = self.cli.get(format!("{base}/v1/course/ai/translate/{canvas_course_id}"))
             .query(&[("useOriginal", true)])
-            .header("jwt-token", self.token.read().await.as_str()).header(REFERER, RESOURCE_MANAGE_UI_URL)
+            .header("jwt-token", token).header(REFERER, RESOURCE_MANAGE_UI_URL)
             .timeout(std::time::Duration::from_secs(15)).send().await?.error_for_status()?;
         subtitles_from_response(&response.json::<Value>().await?)
     }
 
     async fn get_subtitle_with_source_at(&self, base: &str, canvas_course_id: i64) -> Result<(CanvasVideoSubTitleResponseBody, bool)> {
+        let token = self.recording_token(&canvas_course_id.to_string()).await;
         let status = async {
             let response = self.cli.get(format!("{base}/v1/course/ai/transcript/optimize/tasks"))
                 .query(&[("courseId", canvas_course_id)])
-                .header("jwt-token", self.token.read().await.as_str())
+                .header("jwt-token", token.as_str())
                 .header(REFERER, RESOURCE_MANAGE_UI_URL)
                 .timeout(std::time::Duration::from_secs(5)).send().await?.error_for_status()?;
             let value: Value = response.json().await?;
@@ -1555,7 +1575,7 @@ impl Client {
                 task["courseId"].as_i64() == Some(canvas_course_id) && task["status"].as_i64() == Some(3)
             })))
         };
-        let (subtitles, optimized) = tokio::join!(self.get_subtitle_at_version(base, canvas_course_id), status);
+        let (subtitles, optimized) = tokio::join!(self.get_subtitle_at_version_with_token(base, canvas_course_id, &token), status);
         let (subtitles, preferred_version) = subtitles?;
         // useOriginal=false can return the original while optimization is pending.
         // Only label AI+ after confirming success, and never for a fallback fetch.
@@ -1563,6 +1583,11 @@ impl Client {
     }
 
     async fn get_subtitle_at_version(&self, base: &str, canvas_course_id: i64) -> Result<(CanvasVideoSubTitleResponseBody, bool)> {
+        let token = self.recording_token(&canvas_course_id.to_string()).await;
+        self.get_subtitle_at_version_with_token(base, canvas_course_id, &token).await
+    }
+
+    async fn get_subtitle_at_version_with_token(&self, base: &str, canvas_course_id: i64, token: &str) -> Result<(CanvasVideoSubTitleResponseBody, bool)> {
         let url = format!("{base}/v1/course/ai/translate/{canvas_course_id}");
         let mut last_error = None;
         // The service returns the original while optimization is pending. An
@@ -1571,7 +1596,7 @@ impl Client {
             let result = async {
                 let resp = self.cli.get(&url)
                     .query(&[("useOriginal", original)])
-                    .header("jwt-token", self.token.read().await.as_str())
+                    .header("jwt-token", token)
                     .header(REFERER, RESOURCE_MANAGE_UI_URL)
                     .timeout(std::time::Duration::from_secs(15))
                     .send().await?.error_for_status()?;
@@ -1610,12 +1635,17 @@ impl Client {
     }
 
     pub async fn get_ppt(&self, canvas_course_id: i64) -> Result<Vec<CanvasVideoPPT>> {
-        let url = format!("{RESOURCE_MANAGE_BASE_URL}/v1/course/ai/ppt");
+        self.get_ppt_at(RESOURCE_MANAGE_BASE_URL, canvas_course_id).await
+    }
+
+    async fn get_ppt_at(&self, base: &str, canvas_course_id: i64) -> Result<Vec<CanvasVideoPPT>> {
+        let token = self.recording_token(&canvas_course_id.to_string()).await;
+        let url = format!("{base}/v1/course/ai/ppt");
         let request = self
             .cli
             .get(url)
             .query(&[("courseId", canvas_course_id)])
-            .header("jwt-token", self.token.read().await.as_str())
+            .header("jwt-token", token)
             .header(REFERER, RESOURCE_MANAGE_UI_URL)
             .build()
             .inspect_err(|_| {
@@ -1778,6 +1808,171 @@ mod tests {
 
     use super::*;
     use reqwest::header::{HeaderMap, HeaderValue, ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE};
+
+    #[tokio::test]
+    async fn playback_refresh_keeps_sibling_subtitles_usable() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        let old = server.mock(|when, then| {
+            when.method(GET).path("/v1/course/ai/translate/102").header("jwt-token", "expired-course");
+            then.status(401);
+        });
+        let fresh = server.mock(|when, then| {
+            when.method(GET).path("/v1/course/ai/translate/102").header("jwt-token", "fresh-space");
+            then.json_body(serde_json::json!({"data":{"beforeAssemblyList":[{"bg":1,"ed":2,"res":"usable"}]}}));
+        });
+        let client = Client::new_without_proxy(server.base_url().as_str(), "", "", "", None);
+        let launch = client.recording_tokens.write().await.begin_launch();
+        client.recording_tokens.write().await.remember(launch, ["101", "102"], "expired-course");
+        let (token, generation) = client.recording_token_snapshot("101").await;
+        assert!(client.publish_recording_refresh(generation, &token, "fresh-space".into()).await);
+        let subtitles = client.get_subtitle_at(&server.base_url(), 102).await.unwrap();
+        assert_eq!(subtitles.before_assembly_list[0].res, "usable");
+        old.assert_hits(0);
+        fresh.assert_hits(1);
+    }
+
+    #[tokio::test]
+    async fn delayed_older_course_list_cannot_replace_a_newer_recording_binding() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        let old = server.mock(|when, then| {
+            when.method(GET).path("/v1/subject_vod_list_new").header("jwt-token", "old-course");
+            then.delay(std::time::Duration::from_millis(200))
+                .json_body(serde_json::json!({"data":{"records":[{"id":101}]}}));
+        });
+        let fresh = server.mock(|when, then| {
+            when.method(GET).path("/v1/subject_vod_list_new").header("jwt-token", "fresh-course");
+            then.json_body(serde_json::json!({"data":{"records":[{"id":101}]}}));
+        });
+        let client = Arc::new(Client::new_without_proxy(server.base_url().as_str(), "", "", "", None));
+        let launch = client.recording_tokens.write().await.begin_launch();
+        let pending_client = client.clone();
+        let base = server.base_url();
+        let pending = tokio::spawn(async move {
+            pending_client.get_videos_for_teaching_class_at(&base, 10, "old-course".into(), VideoSource::Canvas, launch).await
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            while old.hits_async().await == 0 { tokio::task::yield_now().await; }
+        }).await.unwrap();
+        let launch = client.recording_tokens.write().await.begin_launch();
+        assert_eq!(client.get_videos_for_teaching_class_at(&server.base_url(), 10, "fresh-course".into(), VideoSource::Canvas, launch).await.unwrap().len(), 1);
+        assert_eq!(pending.await.unwrap().unwrap().len(), 1);
+        assert_eq!(client.recording_token("101").await, "fresh-course");
+        old.assert_hits(1);
+        fresh.assert_hits(1);
+    }
+
+    #[tokio::test]
+    async fn concurrent_course_lists_bind_subtitles_and_ppt_to_their_own_tokens() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        let mut requests = Vec::new();
+        for (course, recording, token) in [(10, 101, "course-a"), (20, 202, "course-b")] {
+            requests.push(server.mock(|when, then| {
+                when.method(GET).path("/v1/subject_vod_list_new")
+                    .query_param("teclIds", course.to_string()).header("jwt-token", token);
+                then.json_body(serde_json::json!({"data":{"records":[{"id":recording,"vodStatus":5}]}}));
+            }));
+            requests.push(server.mock(|when, then| {
+                when.method(GET).path(format!("/v1/course/ai/translate/{recording}"))
+                    .query_param("useOriginal", "false").header("jwt-token", token);
+                then.json_body(serde_json::json!({"data":{"beforeAssemblyList":[{"bg":1,"ed":2,"res":token}]}}));
+            }));
+            requests.push(server.mock(|when, then| {
+                when.method(GET).path("/v1/course/ai/transcript/optimize/tasks")
+                    .query_param("courseId", recording.to_string()).header("jwt-token", token);
+                then.json_body(serde_json::json!({"data":[{"courseId":recording,"status":3}]}));
+            }));
+            requests.push(server.mock(|when, then| {
+                when.method(GET).path(format!("/v1/course/ai/translate/{recording}"))
+                    .query_param("useOriginal", "true").header("jwt-token", token);
+                then.json_body(serde_json::json!({"data":{"beforeAssemblyList":[{"bg":1,"ed":2,"res":token}]}}));
+            }));
+            requests.push(server.mock(|when, then| {
+                when.method(GET).path("/v1/course/ai/ppt")
+                    .query_param("courseId", recording.to_string()).header("jwt-token", token);
+                then.json_body(serde_json::json!({"data":{"docList":[]}}));
+            }));
+        }
+        let client = Client::new_without_proxy(server.base_url().as_str(), "", "", "", None);
+        *client.token.write().await = "video-space".into();
+        let base = server.base_url();
+        let first_launch = client.recording_tokens.write().await.begin_launch();
+        let second_launch = client.recording_tokens.write().await.begin_launch();
+        let (first, second) = tokio::join!(
+            client.get_videos_for_teaching_class_at(&base, 10, "course-a".into(), VideoSource::Canvas, first_launch),
+            client.get_videos_for_teaching_class_at(&base, 20, "course-b".into(), VideoSource::Canvas, second_launch),
+        );
+        assert_eq!(first.unwrap()[0].video_id, "101");
+        assert_eq!(second.unwrap()[0].video_id, "202");
+        for (id, token) in [(101, "course-a"), (202, "course-b")] {
+            let (sub, ai_plus) = client.get_subtitle_with_source_at(&base, id).await.unwrap();
+            assert!(ai_plus);
+            assert_eq!(sub.before_assembly_list[0].res, token);
+            assert_eq!(client.get_original_subtitle_at(&base, id).await.unwrap().before_assembly_list[0].res, token);
+            assert!(client.get_ppt_at(&base, id).await.unwrap().is_empty());
+        }
+        for request in requests { request.assert_hits(1); }
+        assert_eq!(client.recording_token("unknown").await, "video-space");
+        assert_eq!(*client.token.read().await, "video-space");
+    }
+
+    #[tokio::test]
+    async fn a_late_course_list_cannot_repopulate_tokens_after_login_reset() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        let list = server.mock(|when, then| {
+            when.method(GET).path("/v1/subject_vod_list_new").header("jwt-token", "old-course");
+            then.delay(std::time::Duration::from_millis(200))
+                .json_body(serde_json::json!({"data":{"records":[{"id":101}]}}));
+        });
+        let client = Arc::new(Client::new_without_proxy(server.base_url().as_str(), "", "", "", None));
+        let launch = client.recording_tokens.write().await.begin_launch();
+        let pending_client = client.clone();
+        let base = server.base_url();
+        let pending = tokio::spawn(async move {
+            pending_client.get_videos_for_teaching_class_at(&base, 10, "old-course".into(), VideoSource::Canvas, launch).await
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            while list.hits_async().await == 0 { tokio::task::yield_now().await; }
+        }).await.unwrap();
+        client.configure_video_auth("new-config", "", true).await;
+        *client.token.write().await = "new-space".into();
+        assert_eq!(pending.await.unwrap().unwrap().len(), 1);
+        assert_eq!(client.recording_token("101").await, "new-space");
+        assert!(client.recording_tokens.read().await.get("101").is_none());
+    }
+
+    #[tokio::test]
+    async fn subtitle_fallback_keeps_the_request_token_after_another_course_launch() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        let preferred = server.mock(|when, then| {
+            when.method(GET).path("/v1/course/ai/translate/1")
+                .query_param("useOriginal", "false").header("jwt-token", "course-a");
+            then.delay(std::time::Duration::from_millis(200))
+                .json_body(serde_json::json!({"data": {}}));
+        });
+        let original = server.mock(|when, then| {
+            when.method(GET).path("/v1/course/ai/translate/1")
+                .query_param("useOriginal", "true").header("jwt-token", "course-a");
+            then.json_body(serde_json::json!({"data":{"beforeAssemblyList":[{"bg":1,"ed":2,"res":"course-a-original"}]}}));
+        });
+        let client = Arc::new(Client::new_without_proxy(server.base_url().as_str(), "", "", "", None));
+        *client.token.write().await = "course-a".into();
+        let pending_client = client.clone();
+        let base = server.base_url();
+        let pending = tokio::spawn(async move { pending_client.get_subtitle_at(&base, 1).await });
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            while preferred.hits_async().await == 0 { tokio::task::yield_now().await; }
+            *client.token.write().await = "course-b".into();
+        }).await.unwrap();
+        let subtitles = pending.await.unwrap().unwrap();
+        assert_eq!(subtitles.before_assembly_list[0].res, "course-a-original");
+        original.assert_hits(1);
+        assert_eq!(*client.token.read().await, "course-b");
+    }
 
     #[tokio::test]
     async fn missing_subtitles_are_normal_results_but_service_failures_remain_errors() {
