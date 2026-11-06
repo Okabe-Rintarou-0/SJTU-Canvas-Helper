@@ -270,6 +270,7 @@ export default function SettingsPage() {
   // Guards initConfig against out-of-order completion: rapid account switches
   // each re-read the config, and only the newest read may publish its result.
   const initConfigRef = useRef(0);
+  const rawConfigRequestRef = useRef(0);
   const settingsMountedRef = useRef(true);
   const extraCheckRef = useRef(0);
   const [accounts, setAccounts] = useState<string[]>([]);
@@ -512,6 +513,10 @@ export default function SettingsPage() {
   );
 
   useEffect(() => subscribeSession(() => {
+    rawConfigRequestRef.current += 1;
+    setRawConfigLoading(false);
+    setRawConfig("");
+    setRawConfigError("");
     setCheckingExtraLogin(false);
     setExtraLoginReady(false);
   }), []);
@@ -533,6 +538,10 @@ export default function SettingsPage() {
   const initConfig = async () => {
     if (!settingsMountedRef.current) return;
     const generation = ++initConfigRef.current;
+    rawConfigRequestRef.current += 1;
+    setRawConfigLoading(false);
+    setRawConfig("");
+    setRawConfigError("");
     let observedSession = currentSession();
     let observedConfig: AppConfig | undefined;
     try {
@@ -637,8 +646,8 @@ export default function SettingsPage() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [dirty]);
 
-  const validateForm = useCallback(async () => {
-    if (!formData) {
+  const validateForm = useCallback(async (isCurrent: () => boolean) => {
+    if (!formData || !isCurrent()) {
       return false;
     }
 
@@ -657,8 +666,10 @@ export default function SettingsPage() {
     } else {
       try {
         await savePathValidator(undefined, formData.save_path);
+        if (!isCurrent()) return false;
         setSavePathError("");
       } catch (error) {
+        if (!isCurrent()) return false;
         setSavePathError((error as Error).message);
         valid = false;
       }
@@ -672,7 +683,13 @@ export default function SettingsPage() {
       return;
     }
 
-    const valid = await validateForm();
+    const generation = initConfigRef.current;
+    const session = currentSession();
+    const isMounted = () => settingsMountedRef.current && generation === initConfigRef.current;
+    const isCurrent = () => isMounted() && isSessionCurrent(session) && isConfigOwnerCurrent(formData);
+    if (!isCurrent()) return;
+    const valid = await validateForm(isCurrent);
+    if (!isCurrent()) return;
     if (!valid) {
       setActiveSection(!formData.token.trim() ? "account" : "storage");
       messageApi.error("请先修正表单中的错误，再保存设置。");
@@ -690,15 +707,19 @@ export default function SettingsPage() {
     }
 
     try {
+      // Once admitted to the config queue, a save must still publish its
+      // authoritative successor even if this view closes. Only its UI expires.
       const saved = await saveConfig(formData);
+      if (!isMounted() || !isConfigOwnerCurrent(saved)) return;
       acceptSavedOwner(formData, saved);
       setInitialSnapshot(JSON.stringify(saved));
       messageApi.success("保存成功！");
       if (rawConfig) {
-        await getRawConfig();
+        await getRawConfig(() => isMounted() && isConfigOwnerCurrent(saved));
       }
     } catch (e) {
-      if (e instanceof StaleConfigSessionError) return;
+      // A current native failure may itself invalidate the config session.
+      if (!isMounted() || e instanceof StaleConfigSessionError) return;
       messageApi.error(e as string);
     }
   }, [formData, messageApi, rawConfig, validateForm, acceptSavedOwner, proxyPortError]);
@@ -824,18 +845,26 @@ export default function SettingsPage() {
     }
   }, [currentAccount, messageApi]);
 
-  const getRawConfig = async () => {
+  const getRawConfig = async (isOwnerCurrent: () => boolean = () => true) => {
+    const request = ++rawConfigRequestRef.current;
+    const generation = initConfigRef.current;
+    const session = currentSession();
+    const isCurrent = () => settingsMountedRef.current && generation === initConfigRef.current
+      && request === rawConfigRequestRef.current && isSessionCurrent(session) && isOwnerCurrent();
+    if (!isCurrent()) return;
     setRawConfigLoading(true);
     setRawConfigError("");
     try {
       const nextRawConfig = (await invoke("get_raw_config")) as string;
+      if (!isCurrent()) return;
       if (!nextRawConfig.trim()) throw new Error("配置内容为空，请稍后重试。");
       setRawConfig(nextRawConfig);
     } catch (e) {
+      if (!isCurrent()) return;
       setRawConfigError(`无法加载配置：${e}`);
       messageApi.error(`获取失败：${e}`);
     } finally {
-      setRawConfigLoading(false);
+      if (isCurrent()) setRawConfigLoading(false);
     }
   };
 

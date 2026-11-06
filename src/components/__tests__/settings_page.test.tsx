@@ -492,3 +492,134 @@ it("defaults recording topics off and saves the experiment setting", async () =>
     experimental_video_topics: true,
   })));
 });
+
+
+it.each([
+  ["unmount", "resolve"], ["unmount", "reject"],
+  ["session", "resolve"], ["session", "reject"],
+])("ignores pending save-path validation after %s with %s", async (boundary, outcome) => {
+  const validation = deferred<void>();
+  mocks.validatePath.mockReturnValueOnce(validation.promise);
+  const view = render(<MemoryRouter><SettingsPage /></MemoryRouter>);
+  await screen.findByRole("tab", { name: "账号与连接" });
+  fireEvent.change(screen.getByLabelText("Canvas Token"), { target: { value: "old-draft-token" } });
+  save();
+  expect(mocks.validatePath).toHaveBeenCalledExactlyOnceWith(undefined, "D:\\Downloads");
+  expect(mocks.saveConfig).not.toHaveBeenCalled();
+  if (boundary === "unmount") view.unmount();
+  else act(() => invalidateSession());
+  await act(async () => {
+    if (outcome === "resolve") validation.resolve();
+    else validation.reject(new Error("obsolete path validation"));
+  });
+  expect(mocks.saveConfig).not.toHaveBeenCalled();
+  expect(mocks.message.error).not.toHaveBeenCalled();
+  expect(mocks.message.success).not.toHaveBeenCalled();
+  if (boundary === "session") {
+    expect(screen.queryByText("obsolete path validation")).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "账号与连接" })).toHaveAttribute("aria-selected", "true");
+  }
+});
+
+it.each([
+  ["unmount", "resolve"], ["unmount", "reject"],
+  ["session", "resolve"], ["session", "reject"],
+])("does not publish save UI after %s when the native save will %s", async (boundary, outcome) => {
+  const pending = deferred<AppConfig>();
+  mocks.saveConfig.mockReturnValueOnce(pending.promise);
+  const view = render(<MemoryRouter><SettingsPage /></MemoryRouter>);
+  await screen.findByRole("tab", { name: "账号与连接" });
+  fireEvent.change(screen.getByLabelText("Canvas Token"), { target: { value: "submitted-token" } });
+  save();
+  await waitFor(() => expect(mocks.saveConfig).toHaveBeenCalledTimes(1));
+  const submitted = mocks.saveConfig.mock.calls[0][0] as AppConfig;
+  if (boundary === "unmount") view.unmount();
+  else act(() => invalidateSession());
+  await act(async () => {
+    if (outcome === "resolve") pending.resolve(submitted);
+    // Real saveConfig maps failures from an expired session to this error.
+    else pending.reject(boundary === "session" ? new StaleConfigSessionError() : new Error("late native save failure"));
+  });
+  expect(mocks.message.success).not.toHaveBeenCalled();
+  expect(mocks.message.error).not.toHaveBeenCalled();
+});
+
+it("retains newer edits when the earlier validated snapshot saves and changes owner", async () => {
+  const validation = deferred<void>();
+  mocks.validatePath.mockReturnValueOnce(validation.promise);
+  await openSettings();
+  fireEvent.change(screen.getByLabelText("Canvas Token"), { target: { value: "submitted-token" } });
+  save();
+  expect(mocks.saveConfig).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText("Canvas Token"), { target: { value: "newer-draft-token" } });
+  await act(async () => validation.resolve());
+  expect(config.token).toBe("submitted-token");
+  expect(config.__config_owner).toBe("owner:Default:0:saved");
+  expect(screen.getByLabelText("Canvas Token")).toHaveValue("newer-draft-token");
+  expect(screen.getByText("修改尚未保存")).toBeVisible();
+  expect(mocks.message.success).toHaveBeenCalledWith("保存成功！");
+});
+
+it("suppresses a save-triggered raw-config refresh failure after unmount", async () => {
+  const refresh = deferred<string>();
+  let reads = 0;
+  const invoke = mocks.invoke.getMockImplementation()!;
+  mocks.invoke.mockImplementation((command: string, ...args: unknown[]) => {
+    if (command === "get_raw_config" && ++reads === 2) return refresh.promise;
+    return invoke(command, ...args);
+  });
+  const view = render(<MemoryRouter><SettingsPage /></MemoryRouter>);
+  await screen.findByRole("tab", { name: "账号与连接" });
+  fireEvent.change(screen.getByLabelText("Canvas Token"), { target: { value: "submitted-token" } });
+  section("工具与诊断");
+  fireEvent.click(screen.getByRole("button", { name: "加载原始配置" }));
+  expect(await screen.findByText('{"theme":"light"}')).toBeVisible();
+  save();
+  await waitFor(() => expect(reads).toBe(2));
+  expect(mocks.message.success).toHaveBeenCalledWith("保存成功！");
+  view.unmount();
+  await act(async () => refresh.reject(new Error("obsolete raw config refresh")));
+  expect(mocks.message.error).not.toHaveBeenCalled();
+});
+
+it("reports a current native save failure even when that failure invalidates the session", async () => {
+  mocks.saveConfig.mockImplementationOnce(async () => {
+    invalidateSession();
+    throw new Error("current native save failed");
+  });
+  await openSettings();
+  fireEvent.change(screen.getByLabelText("Canvas Token"), { target: { value: "submitted-token" } });
+  save();
+  await waitFor(() => expect(mocks.message.error).toHaveBeenCalledWith(expect.objectContaining({ message: "current native save failed" })));
+  expect(screen.getByText("修改尚未保存")).toBeVisible();
+  expect(mocks.message.success).not.toHaveBeenCalled();
+});
+
+
+it.each(["resolve", "reject"])("resets raw-config loading across a session change and ignores the old %s", async outcome => {
+  const stale = deferred<string>();
+  const current = deferred<string>();
+  let reads = 0;
+  const invoke = mocks.invoke.getMockImplementation()!;
+  mocks.invoke.mockImplementation((command: string, ...args: unknown[]) => {
+    if (command === "get_raw_config") return ++reads === 1 ? stale.promise : current.promise;
+    return invoke(command, ...args);
+  });
+  await openSettings();
+  section("工具与诊断");
+  fireEvent.click(screen.getByRole("button", { name: "加载原始配置" }));
+  expect(screen.getByRole("button", { name: "加载中…" })).toBeDisabled();
+  act(() => invalidateSession());
+  fireEvent.click(screen.getByRole("button", { name: "加载原始配置" }));
+  expect(reads).toBe(2);
+  await act(async () => {
+    if (outcome === "resolve") stale.resolve('{"source":"stale"}');
+    else stale.reject(new Error("obsolete raw config"));
+  });
+  expect(screen.getByRole("button", { name: "加载中…" })).toBeDisabled();
+  expect(screen.queryByText('{"source":"stale"}')).not.toBeInTheDocument();
+  expect(mocks.message.error).not.toHaveBeenCalled();
+  await act(async () => current.resolve('{"source":"current"}'));
+  expect(screen.getByText('{"source":"current"}')).toBeVisible();
+  expect(screen.getByRole("button", { name: "隐藏原始配置" })).toBeEnabled();
+});
