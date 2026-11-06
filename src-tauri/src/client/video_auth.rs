@@ -1,10 +1,10 @@
-use std::{sync::Arc, time::Duration};
+use std::{future::Future, sync::Arc, time::Duration};
 
-use reqwest::{cookie::Jar, redirect::Policy};
+use reqwest::{cookie::Jar, redirect::Policy, StatusCode};
 use tauri::Url;
 
 use super::{
-    constants::{AUTH_URL, CANVAS_LOGIN_URL, MY_SJTU_URL},
+    constants::{AUTH_URL, CANVAS_LOGIN_URL, MY_SJTU_URL, VIDEO_BASE_URL},
     Client,
 };
 use crate::error::{AppError, Result};
@@ -17,6 +17,8 @@ pub(super) struct VideoAuth {
     ja_auth_cookie: String,
     session: Option<reqwest::Client>,
     pub(super) method: Option<VideoAuthMethod>,
+    // Refreshing the old site session must not block or replace the Canvas session.
+    legacy_session: Arc<tokio::sync::Mutex<Option<reqwest::Client>>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -29,6 +31,24 @@ fn login_error() -> AppError {
     AppError::VideoDownloadError(
         "Canvas Token 登录课堂视频失败，额外登录态也不可用。请检查 Token，或前往设置扫码登录后刷新重试。".into(),
     )
+}
+
+fn legacy_login_error() -> AppError {
+    AppError::VideoDownloadError(
+        "旧版课堂视频登录态不可用，请前往设置扫码登录后刷新重试。".into(),
+    )
+}
+
+pub(super) fn video_auth_rejected(error: &AppError) -> bool {
+    matches!(
+        error,
+        AppError::Network(error)
+            if matches!(error.status(), Some(StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN))
+    )
+}
+
+fn legacy_session_rejected(error: &AppError) -> bool {
+    matches!(error, AppError::LoginError) || video_auth_rejected(error)
 }
 
 impl Client {
@@ -148,6 +168,66 @@ impl Client {
             .session
             .clone()
             .unwrap_or_else(|| self.cli.clone())
+    }
+
+    pub(super) async fn with_legacy_video_session<T, F>(
+        &self,
+        saved_cookies: &str,
+        request: impl Fn(reqwest::Client) -> F + Send,
+    ) -> Result<T>
+    where
+        F: Future<Output = Result<T>> + Send,
+    {
+        let (session, ja_cookie) = {
+            let auth = self.video_auth.lock().await;
+            (auth.legacy_session.clone(), auth.ja_auth_cookie.clone())
+        };
+        let mut session = session.lock().await;
+        if session.is_some() || !saved_cookies.is_empty() || ja_cookie.trim().is_empty() {
+            let initial = match session.as_ref() {
+                Some(client) => client.clone(),
+                None => {
+                    let jar = Arc::new(Jar::default());
+                    let url = Url::parse(VIDEO_BASE_URL).unwrap();
+                    for cookie in saved_cookies
+                        .split(';')
+                        .map(str::trim)
+                        .filter(|cookie| !cookie.is_empty())
+                    {
+                        jar.add_cookie_str(cookie, &url);
+                    }
+                    reqwest::Client::builder()
+                        .timeout(Duration::from_secs(15))
+                        .cookie_provider(jar)
+                        .build()?
+                }
+            };
+            match request(initial).await {
+                Err(error) if legacy_session_rejected(&error) => (),
+                result => return result,
+            }
+            *session = None;
+        }
+
+        if ja_cookie.trim().is_empty() {
+            return Err(legacy_login_error());
+        }
+        let (client, _) = Self::open_legacy_video_session(&format!("JAAuthCookie={ja_cookie}"))
+            .await
+            .map_err(|error| {
+                if legacy_session_rejected(&error) {
+                    legacy_login_error()
+                } else {
+                    error
+                }
+            })?;
+        match request(client.clone()).await {
+            Err(error) if legacy_session_rejected(&error) => Err(legacy_login_error()),
+            result => {
+                *session = Some(client);
+                result
+            }
+        }
     }
 }
 

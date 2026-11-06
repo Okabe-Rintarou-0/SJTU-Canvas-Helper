@@ -78,8 +78,9 @@ impl App {
         term_name: &str,
         teacher_names: &[String],
     ) -> Result<Vec<CanvasVideo>> {
+        let video_cookies = self.config.read().await.video_cookies.clone();
         self.client
-            .get_legacy_videos(course_id, course_name, term_name, teacher_names)
+            .get_legacy_videos(course_id, course_name, term_name, teacher_names, &video_cookies)
             .await
     }
 
@@ -111,7 +112,10 @@ impl App {
             VideoSource::Canvas | VideoSource::VideoSpace => {
                 self.get_canvas_video_info(video_id).await
             }
-            VideoSource::Legacy => self.client.get_legacy_video_info(video_id).await,
+            VideoSource::Legacy => {
+                let video_cookies = self.config.read().await.video_cookies.clone();
+                self.client.get_legacy_video_info(video_id, &video_cookies).await
+            }
         }
     }
 

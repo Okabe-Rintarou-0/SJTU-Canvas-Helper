@@ -12,6 +12,7 @@ use super::{
         AUTH_URL, CANVAS_LOGIN_URL, EXPRESS_LOGIN_URL, MY_SJTU_ACCOUNT_URL, MY_SJTU_URL,
         VIDEO_BASE_URL, VIDEO_LOGIN_URL, VIDEO_OAUTH_KEY_URL,
     },
+    video_auth::video_auth_rejected,
     Client,
 };
 use crate::{
@@ -773,6 +774,20 @@ impl Client {
     }
 
     pub async fn login_video_website(&self, cookie: &str) -> Result<Option<String>> {
+        let (_, jar) = Self::open_legacy_video_session(cookie).await?;
+        let url = Url::parse(VIDEO_BASE_URL).unwrap();
+        let cookies = jar
+            .cookies(&url)
+            .and_then(|value| value.to_str().ok().map(str::to_owned));
+        if let Some(cookies) = &cookies {
+            self.init_cookie(cookies);
+        }
+        Ok(cookies)
+    }
+
+    pub(super) async fn open_legacy_video_session(
+        cookie: &str,
+    ) -> Result<(reqwest::Client, Arc<Jar>)> {
         // Keep the legacy OAuth flow isolated from Canvas LTI launches. Both
         // services use jAccount, but mixing their transient cookies in the
         // shared jar can make the legacy endpoint redirect back to itself.
@@ -782,23 +797,20 @@ impl Client {
         }
         let login_client = reqwest::Client::builder()
             .no_proxy()
+            .timeout(std::time::Duration::from_secs(15))
             .redirect(Policy::limited(32))
             .cookie_provider(login_jar.clone())
             .build()?;
-        let response = login_client.get(VIDEO_LOGIN_URL).send().await?;
-        let url = response.url();
-        if let Some(domain) = url.domain() {
-            if domain == "jaccount.sjtu.edu.cn" {
-                return Err(AppError::LoginError);
-            }
+        let response = login_client
+            .get(VIDEO_LOGIN_URL)
+            .send()
+            .await?
+            .error_for_status()?;
+        let video_url = Url::parse(VIDEO_BASE_URL).unwrap();
+        if response.url().origin() != video_url.origin() {
+            return Err(AppError::LoginError);
         }
-        if let Some(cookies) = login_jar.cookies(&Url::parse(VIDEO_BASE_URL).unwrap()) {
-            if let Ok(cookies) = cookies.to_str() {
-                self.init_cookie(cookies);
-                return Ok(Some(cookies.to_owned()));
-            }
-        }
-        Ok(None)
+        Ok((login_client, login_jar))
     }
 
     pub async fn login_canvas_website(&self, cookie: &str) -> Result<()> {
@@ -833,8 +845,9 @@ impl Client {
         Ok(!body.trim().is_empty())
     }
 
-    pub async fn get_page_items<T: Serialize + DeserializeOwned>(
+    async fn get_page_items<T: Serialize + DeserializeOwned>(
         &self,
+        client: &reqwest::Client,
         url: &str,
     ) -> Result<Vec<T>> {
         let mut page_index = 1;
@@ -843,7 +856,7 @@ impl Client {
         loop {
             let paged_url = format!("{url}pageSize=100&pageIndex={page_index}");
             let item_page = self
-                .get_json_with_cookie::<_, ItemPage<T>>(&paged_url, None::<&str>)
+                .get_json_with_cookie::<_, ItemPage<T>>(client, &paged_url, None::<&str>)
                 .await?;
             all_items.extend(item_page.list);
             let page = &item_page.page;
@@ -998,9 +1011,10 @@ impl Client {
 
     async fn get_launch_form_from_url(
         &self,
+        client: &reqwest::Client,
         url: &str,
     ) -> Result<(String, HashMap<String, String>)> {
-        let response = self.video_browser_client().await.get(url).send().await?.error_for_status()?;
+        let response = client.get(url).send().await?.error_for_status()?;
         let response_url = response.url().clone();
         let body = response.text().await?;
         let document = Document::from(body.as_str());
@@ -1008,7 +1022,11 @@ impl Client {
         Ok((self.resolve_form_action(&response_url, &action)?, data))
     }
 
-    async fn get_course_external_tool_urls(&self, course_id: i64) -> Result<Vec<String>> {
+    async fn get_course_external_tool_urls(
+        &self,
+        client: &reqwest::Client,
+        course_id: i64,
+    ) -> Result<Vec<String>> {
         let base_url = Url::parse(self.base_url.read().await.trim_end_matches('/')).map_err(|error| {
             AppError::VideoDownloadError(format!("Invalid Canvas base URL: {error}"))
         })?;
@@ -1017,7 +1035,7 @@ impl Client {
             .map_err(|error| {
                 AppError::VideoDownloadError(format!("Invalid Canvas tabs URL: {error}"))
             })?;
-        let response = self.video_browser_client().await.get(url).send().await?.error_for_status()?;
+        let response = client.get(url).send().await?.error_for_status()?;
         let value: Value = serde_json::from_slice(&response.bytes().await?)?;
         Ok(external_tool_urls_from_tabs(&value, &base_url))
     }
@@ -1087,11 +1105,15 @@ impl Client {
         live_info_from_response(&serde_json::from_slice(&response.bytes().await?)?)
     }
 
-    async fn get_legacy_canvas_course_id(&self, course_id: i64) -> Result<Option<String>> {
-        let tool_urls = self.get_course_external_tool_urls(course_id).await?;
-        let client = self.video_browser_client().await;
+    async fn get_legacy_canvas_course_id(
+        &self,
+        client: &reqwest::Client,
+        course_id: i64,
+        list_url: &Url,
+    ) -> Result<Option<String>> {
+        let tool_urls = self.get_course_external_tool_urls(client, course_id).await?;
         for tool_url in tool_urls {
-            let Ok((action, data)) = self.get_launch_form_from_url(&tool_url).await else {
+            let Ok((action, data)) = self.get_launch_form_from_url(client, &tool_url).await else {
                 continue;
             };
             let Ok(response) = client.post(&action).form(&data).send().await else {
@@ -1112,7 +1134,7 @@ impl Client {
             let Ok(location) = action_url.join(location) else {
                 continue;
             };
-            if location.host_str() != Some("courses.sjtu.edu.cn") {
+            if location.origin() != list_url.origin() {
                 continue;
             }
             // The legacy page embeds the still-percent-encoded token directly in
@@ -1125,13 +1147,20 @@ impl Client {
         Ok(None)
     }
 
-    async fn get_legacy_videos_from_lti(&self, course_id: i64) -> Result<Vec<CanvasVideo>> {
-        let Some(canvas_course_id) = self.get_legacy_canvas_course_id(course_id).await? else {
+    async fn get_legacy_videos_from_lti(
+        &self,
+        client: &reqwest::Client,
+        course_id: i64,
+        list_url: Url,
+    ) -> Result<Vec<CanvasVideo>> {
+        let Some(canvas_course_id) = self
+            .get_legacy_canvas_course_id(client, course_id, &list_url)
+            .await?
+        else {
             return Ok(Vec::new());
         };
-        let response = self
-            .cli
-            .post(LEGACY_VIDEO_LIST_URL)
+        let response = client
+            .post(list_url)
             .form(&[
                 ("pageIndex", "1"),
                 ("pageSize", "1000"),
@@ -1148,9 +1177,12 @@ impl Client {
             .unwrap_or_default())
     }
 
-    async fn find_legacy_subjects(&self, course_name: &str) -> Result<Vec<LegacySubject>> {
-        let response = self
-            .cli
+    async fn find_legacy_subjects(
+        &self,
+        client: &reqwest::Client,
+        course_name: &str,
+    ) -> Result<Vec<LegacySubject>> {
+        let response = client
             .post(format!(
                 "{VIDEO_BASE_URL}/system/course/subject/findSubjectVodList"
             ))
@@ -1177,19 +1209,40 @@ impl Client {
         course_name: &str,
         term_name: &str,
         teacher_names: &[String],
+        video_cookies: &str,
     ) -> Result<Vec<CanvasVideo>> {
-        let videos = self.get_legacy_videos_from_lti(course_id).await?;
-        if !videos.is_empty() || course_name.trim().is_empty() {
-            return Ok(videos);
+        let client = self.video_browser_client().await;
+        let list_url = Url::parse(LEGACY_VIDEO_LIST_URL).unwrap();
+        match self.get_legacy_videos_from_lti(&client, course_id, list_url).await {
+            Ok(videos) if !videos.is_empty() || course_name.trim().is_empty() => return Ok(videos),
+            Ok(_) => {}
+            Err(error) if !video_auth_rejected(&error) || course_name.trim().is_empty() => {
+                return Err(error);
+            }
+            Err(_) => tracing::info!("Legacy Canvas video session rejected; trying the legacy website"),
         }
 
+        self.with_legacy_video_session(video_cookies, |client| async move {
+            self.search_legacy_videos(&client, course_name, term_name, teacher_names)
+                .await
+        })
+        .await
+    }
+
+    async fn search_legacy_videos(
+        &self,
+        client: &reqwest::Client,
+        course_name: &str,
+        term_name: &str,
+        teacher_names: &[String],
+    ) -> Result<Vec<CanvasVideo>> {
         let normalized_name = normalize_legacy_match(course_name);
         let normalized_teachers: Vec<String> = teacher_names
             .iter()
             .map(|teacher| normalize_legacy_match(teacher))
             .filter(|teacher| !teacher.is_empty())
             .collect();
-        let subjects = self.find_legacy_subjects(course_name).await?;
+        let subjects = self.find_legacy_subjects(client, course_name).await?;
         let mut candidates: Vec<LegacySubject> = subjects
             .into_iter()
             .filter(|subject| subject.subject_id > 0 && subject.tecl_id > 0)
@@ -1213,7 +1266,7 @@ impl Client {
         let mut videos = Vec::new();
         for subject in candidates {
             if let Some(course) = self
-                .get_video_course(subject.subject_id, subject.tecl_id)
+                .get_video_course_with_client(client, subject.subject_id, subject.tecl_id)
                 .await?
             {
                 videos.extend(legacy_videos_from_course(course));
@@ -1222,9 +1275,33 @@ impl Client {
         Ok(videos)
     }
 
-    pub async fn get_legacy_video_info(&self, video_id: &str) -> Result<VideoInfo> {
+    pub async fn get_legacy_video_info(
+        &self,
+        video_id: &str,
+        video_cookies: &str,
+    ) -> Result<VideoInfo> {
+        match self.get_legacy_lti_video_info(video_id).await {
+            Ok(info) => Ok(info),
+            Err(error) => {
+                let Ok(numeric_id) = video_id.parse() else {
+                    return Err(error);
+                };
+                self.with_legacy_video_session(video_cookies, |client| async move {
+                    let key = self
+                        .get_oauth_consumer_key_with_client(&client)
+                        .await?
+                        .ok_or(AppError::LoginError)?;
+                    self.get_video_info_with_client(&client, numeric_id, &key).await
+                })
+                .await
+            }
+        }
+    }
+
+    async fn get_legacy_lti_video_info(&self, video_id: &str) -> Result<VideoInfo> {
         let response = self
-            .cli
+            .video_browser_client()
+            .await
             .post(LEGACY_VIDEO_INFO_URL)
             .form(&[
                 ("playTypeHls", "true"),
@@ -1272,7 +1349,15 @@ impl Client {
     }
 
     pub async fn get_oauth_consumer_key(&self) -> Result<Option<String>> {
-        let resp = self.get_request(VIDEO_OAUTH_KEY_URL, None::<&str>).await?;
+        self.get_oauth_consumer_key_with_client(&self.cli).await
+    }
+
+    async fn get_oauth_consumer_key_with_client(
+        &self,
+        client: &reqwest::Client,
+    ) -> Result<Option<String>> {
+        let request = client.get(VIDEO_OAUTH_KEY_URL).build()?;
+        let resp = self.debug_store.send(client, request).await?.error_for_status()?;
         let body = resp.text().await?;
         let document = Document::from(body.as_str());
 
@@ -1294,10 +1379,19 @@ impl Client {
         subject_id: i64,
         tecl_id: i64,
     ) -> Result<Option<VideoCourse>> {
+        self.get_video_course_with_client(&self.cli, subject_id, tecl_id).await
+    }
+
+    async fn get_video_course_with_client(
+        &self,
+        client: &reqwest::Client,
+        subject_id: i64,
+        tecl_id: i64,
+    ) -> Result<Option<VideoCourse>> {
         let url = format!(
             "{VIDEO_BASE_URL}/system/resource/vodVideo/getCourseListBySubject?orderField=courTimes&subjectId={subject_id}&teclId={tecl_id}&",
         );
-        let mut courses = self.get_page_items(&url).await?;
+        let mut courses = self.get_page_items(client, &url).await?;
         Ok((!courses.is_empty()).then(|| courses.remove(0)))
     }
 
@@ -1486,6 +1580,15 @@ impl Client {
         video_id: i64,
         oauth_consumer_key: &str,
     ) -> Result<VideoInfo> {
+        self.get_video_info_with_client(&self.cli, video_id, oauth_consumer_key).await
+    }
+
+    async fn get_video_info_with_client(
+        &self,
+        client: &reqwest::Client,
+        video_id: i64,
+        oauth_consumer_key: &str,
+    ) -> Result<VideoInfo> {
         let mut form_data = HashMap::new();
         let oauth_nonce = self.get_oauth_nonce();
         let oauth_signature = self.get_oauth_signature(video_id, &oauth_nonce, oauth_consumer_key);
@@ -1497,8 +1600,7 @@ impl Client {
         form_data.insert(OAUTH_RANDOM_P1, OAUTH_RANDOM_P1_VAL);
         form_data.insert(OAUTH_RANDOM_P2, OAUTH_RANDOM_P2_VAL);
 
-        let response = self
-            .cli
+        let response = client
             .post(VIDEO_INFO_URL)
             .form(&form_data)
             .header(ACCEPT, "application/json")
@@ -2172,6 +2274,59 @@ mod tests {
             raw_query_parameter(&url, "canvasCourseId").as_deref(),
             Some("abc%2Fdef%2Bghi")
         );
+    }
+
+    #[tokio::test]
+    async fn legacy_recording_list_uses_the_cookie_set_by_lti_launch() {
+        use httpmock::prelude::*;
+
+        let canvas = MockServer::start();
+        let video = MockServer::start();
+        let tabs = canvas.mock(|when, then| {
+            when.method(GET).path("/api/v1/courses/123/tabs");
+            then.json_body(serde_json::json!([{
+                "id": "context_external_tool_456",
+                "html_url": "/courses/123/external_tools/456"
+            }]));
+        });
+        let form = canvas.mock(|when, then| {
+            when.method(GET).path("/courses/123/external_tools/456");
+            then.body(format!(
+                r#"<form action="{}"><input name="signed" value="yes"></form>"#,
+                video.url("/lti/launch")
+            ));
+        });
+        let launch = video.mock(|when, then| {
+            when.method(POST).path("/lti/launch").body("signed=yes");
+            then.status(302)
+                .header("Set-Cookie", "legacy_session=valid; Path=/lti")
+                .header("Location", "/lti/app?canvasCourseId=abc%2Fdef");
+        });
+        let list = video.mock(|when, then| {
+            when.method(POST)
+                .path("/lti/vodVideo/findVodVideoList")
+                .header("Cookie", "legacy_session=valid")
+                .body_contains("canvasCourseId=abc%252Fdef");
+            then.json_body(serde_json::json!({"body": {"list": [{"videoId": "123"}]}}));
+        });
+        let client = Client::new_without_proxy(canvas.base_url().as_str(), "", "", "", None);
+        let browser = reqwest::Client::builder()
+            .no_proxy()
+            .redirect(Policy::none())
+            .cookie_store(true)
+            .build()
+            .unwrap();
+        let list_url = Url::parse(&video.url("/lti/vodVideo/findVodVideoList")).unwrap();
+        let recordings = client
+            .get_legacy_videos_from_lti(&browser, 123, list_url)
+            .await
+            .unwrap();
+        assert_eq!(recordings.len(), 1);
+        assert_eq!(recordings[0].video_id, "123");
+        tabs.assert();
+        form.assert();
+        launch.assert();
+        list.assert();
     }
 
     #[test]
