@@ -147,7 +147,7 @@ function FilesPageContent() {
   const courses = useCourses();
   const selectedDownloadCourse = section === COURSE_FILES ? courses.data.find((course) => course.id === selectedCourseId) : undefined;
   const downloadCourse = selectedDownloadCourse ? downloadCourseContext(selectedDownloadCourse) : undefined;
-  const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry, setEntries } =
+  const { previewer, resetPreview, onHoverEntry, onLeaveEntry, setPreviewEntry, setEntries } =
     usePreview();
   const { merger, mergePDFs } = useMerger({
     setPreviewEntry,
@@ -156,7 +156,9 @@ function FilesPageContent() {
     course: downloadCourse,
   });
   const baseURL = useBaseURL();
-  const externalFiles = useExternalFiles(showExternal ? selectedCourseId : -1);
+  const showCourseExternal = section === COURSE_FILES && showExternal && Boolean(selectedDownloadCourse);
+  const externalFiles = useExternalFiles(showCourseExternal ? selectedCourseId : -1);
+  const courseFoldersReady = section === COURSE_FILES && allFolders.some((folder) => folder.name === COURSE_FILES);
 
   const notify = (message: string, severity: SnackSeverity = "info") => {
     if (severity === "success") {
@@ -188,6 +190,8 @@ function FilesPageContent() {
   const browseGeneration = useRef(0);
   useLayoutEffect(() => {
     activeBrowseSource.current = browseSource;
+    resetPreview();
+    setOpenFileOrderSelectModal(false);
     clearFolderView();
     setAllFolders([]);
     setOperating(false);
@@ -195,7 +199,7 @@ function FilesPageContent() {
       activeBrowseSource.current = undefined;
       browseGeneration.current += 1;
     };
-  }, [browseSource]);
+  }, [browseSource, resetPreview]);
 
   useEffect(() => {
     void initAllFolders();
@@ -311,7 +315,7 @@ function FilesPageContent() {
 
   const handleSyncFiles = async () => {
     const course = getSelectedCourse();
-    if (!course) return;
+    if (!course || !courseFoldersReady) return;
     const owner = currentSession();
     const ensureOwner = () => {
       if (!isSessionCurrent(owner)) throw new Error("账号已切换，请重新同步文件。");
@@ -324,6 +328,11 @@ function FilesPageContent() {
         ensureOwner();
         const filesToSync = await invoke<File[]>("sync_course_files", { course });
         ensureOwner();
+        // Sync may discover folders created after this page loaded. Fail before
+        // enqueueing any downloads rather than silently flattening their paths.
+        if (filesToSync.some((file) => getFolderPath(file) === undefined)) {
+          throw new Error("文件目录已更新，请切换课程或重新进入文件页面，刷新目录后再同步。");
+        }
         filesToSync.forEach((file) => handleAddDownloadFileTask(file));
         update({ log: filesToSync.length ? `已创建 ${filesToSync.length} 个文件下载任务。请查看对应下载任务的进度。` : "文件已同步，无需下载。" });
         notify(filesToSync.length ? `共 ${filesToSync.length} 个文件需要下载，已加入队列。` : "已同步，无需下载。", "success");
@@ -340,7 +349,11 @@ function FilesPageContent() {
     const file = structuredClone(inputFile);
     const selectedCourse = section === COURSE_FILES ? getSelectedCourse() : undefined;
     const course = selectedCourse ? structuredClone(selectedCourse) : undefined;
-    const folderPath = getFolderPath(file) ?? "";
+    const folderPath = getFolderPath(file);
+    if (folderPath === undefined) {
+      notify("无法确定文件目录，请重新进入文件页面，刷新目录后再下载。", "warning");
+      return;
+    }
     const output = getOutputFile(file, outputFormat);
     const scope = course ? `course:${course.id}` : "my";
     const id = `files:${session}:${scope}:${file.uuid}:${outputFormat}`;
@@ -465,10 +478,10 @@ function FilesPageContent() {
 
   const filteredEntries = useMemo(
     () =>
-      ([...(folders as Entry[]), ...(files as Entry[]), ...externalFiles.data] as Entry[]).filter(
+      ([...(folders as Entry[]), ...(files as Entry[]), ...(showCourseExternal ? externalFiles.data : [])] as Entry[]).filter(
         shouldShow
       ),
-    [folders, files, externalFiles.data, keyword, downloadableOnly]
+    [folders, files, externalFiles.data, showCourseExternal, keyword, downloadableOnly]
   );
 
   const selectedFileCount = selectedEntries.filter(isFile).length;
@@ -686,7 +699,7 @@ function FilesPageContent() {
                     根目录
                   </Button>
                   {section === COURSE_FILES && selectedCourseId > 0 && (
-                    <Button variant="contained" onClick={() => void handleSyncFiles()}>
+                    <Button variant="contained" disabled={!courseFoldersReady} onClick={() => void handleSyncFiles()}>
                       一键同步
                     </Button>
                   )}

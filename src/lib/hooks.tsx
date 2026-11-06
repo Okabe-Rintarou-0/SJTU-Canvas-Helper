@@ -87,6 +87,11 @@ export function usePreview(
     }
   }, [previewEntry, setHoveredEntry]);
 
+  const resetPreview = useCallback(() => {
+    setPreviewEntry(undefined);
+    setHoveredEntry(undefined);
+  }, [setPreviewEntry, setHoveredEntry]);
+
   const previewer = useMemo(
     () => (
       <Previewer
@@ -107,6 +112,7 @@ export function usePreview(
   return {
     previewer,
     previewEntry,
+    resetPreview,
     onHoverEntry,
     onLeaveEntry,
     setPreviewEntry,

@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { ReactNode } from "react";
+import { useCallback, type ReactNode } from "react";
 import FilesPage from "../../page/files";
 import { invalidateSession, useSessionEpoch } from "../../lib/session";
 import { usePreviewState } from "../../lib/preview_session";
@@ -24,7 +24,9 @@ vi.mock("../../lib/hooks", () => ({
   // A fresh callback accepting an old row is the source-lifetime regression.
   usePreview: () => {
     const [entry, setEntry] = usePreviewState<Entry | undefined>(useSessionEpoch(), undefined);
+    const resetPreview = useCallback(() => setEntry(undefined), [setEntry]);
     return {
+      resetPreview,
       previewer: <output data-testid="preview-selection">{entry && "display_name" in entry ? entry.display_name : ""}</output>,
       onHoverEntry: mocks.noop, onLeaveEntry: mocks.noop, setPreviewEntry: setEntry, setEntries: mocks.noop,
     };
@@ -41,7 +43,7 @@ vi.mock("../file_download_table", () => ({ default: () => null }));
 vi.mock("../file_ai_chat_modal", () => ({ default: () => null }));
 vi.mock("../file_order_select_modal", () => ({ default: () => null }));
 
-const oldFile = { id: 12, uuid: "old-file", display_name: "old-account.zip", url: "https://example.com/old", size: 20 };
+const oldFile = { id: 12, uuid: "old-file", folder_id: 1, display_name: "old-account.zip", url: "https://example.com/old", size: 20 };
 const newFile = { ...oldFile, id: 22, uuid: "new-file", display_name: "new-account.zip", url: "https://example.com/new" };
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -119,10 +121,11 @@ it("preserves loaded personal files and selection across an unrelated same-sessi
 function showCourseFiles() {
   mocks.courses.push({ id: 7, name: "Test course", term: { name: "2026" }, enrollments: [] } as unknown as Course);
   mocks.selectedCourseId = 7;
-  render(<FilesPage />);
+  return render(<FilesPage />);
 }
 it("rejects a queued sync before it can request files for a previous account", async () => {
   backend(() => [oldFile]); showCourseFiles();
+  await screen.findByText(oldFile.display_name);
   fireEvent.click(screen.getByRole("button", { name: "一键同步" }));
   const task = mocks.enqueue.mock.calls[0][0];
   act(() => invalidateSession());
@@ -370,4 +373,54 @@ it("does not fall back to a root upload after directory metadata fails", async (
   expect(mocks.uploadTask).not.toHaveBeenCalled();
   expect(mocks.enqueue).not.toHaveBeenCalled();
   expect(screen.getByRole("tab", { name: "课程文件" })).toBeEnabled();
+});
+
+it("does not queue a sync before the selected course folder map is ready", async () => {
+  const folders = pending<typeof rootFolder[]>();
+  navigationBackend((command) => command === "list_course_folders" ? folders.promise : undefined);
+  showCourseFiles();
+  const sync = screen.getByRole("button", { name: "一键同步" });
+  expect(sync).toBeDisabled(); fireEvent.click(sync);
+  expect(mocks.enqueue).not.toHaveBeenCalled();
+  await act(async () => folders.resolve([{ ...rootFolder, name: "course files", full_name: "course files" }]));
+  expect(sync).toBeEnabled();
+});
+
+it("refuses a sync result with an unknown folder instead of downloading it into root", async () => {
+  backend(() => [oldFile, { ...oldFile, id: 13, uuid: "unknown", display_name: "unknown.zip", folder_id: 77 }]); showCourseFiles();
+  await screen.findByText(oldFile.display_name);
+  fireEvent.click(screen.getByRole("button", { name: "一键同步" }));
+  const task = mocks.enqueue.mock.calls[0][0]; const update = vi.fn();
+  await expect(task.run({ update })).rejects.toThrow("目录");
+  expect(mocks.enqueue).toHaveBeenCalledOnce();
+  expect(update).not.toHaveBeenCalled();
+  expect(mocks.messages.success).not.toHaveBeenCalled();
+});
+
+
+it("does not create a direct download with an unknown folder path", async () => {
+  backend(() => [{ ...oldFile, folder_id: 77 }]); showCourseFiles();
+  await screen.findByText(oldFile.display_name);
+  fireEvent.click(within(screen.getByText(oldFile.display_name).closest("tr")!).getByRole("button", { name: "下载" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "下载原文件" }));
+  expect(mocks.enqueue).not.toHaveBeenCalled();
+  expect(mocks.messages.warning).toHaveBeenCalledWith(expect.stringContaining("目录"));
+});
+
+it("keeps a queued sync's original course and subfolder after same-session navigation", async () => {
+  navigationBackend((command) => command === "list_course_folders"
+    ? Promise.resolve([{ ...rootFolder, name: "course files", full_name: "course files" }, { ...branchFolder, full_name: "course files/Branch" }])
+    : command === "sync_course_files" ? Promise.resolve([{ ...branchFile, folder_id: 2 }]) : undefined);
+  const view = showCourseFiles();
+  await screen.findByText(rootFile.display_name);
+  fireEvent.click(screen.getByRole("button", { name: "一键同步" }));
+  const sync = mocks.enqueue.mock.calls[0][0];
+  mocks.courses.push({ id: 8, name: "New course", term: { name: "2026" } } as Course);
+  mocks.selectedCourseId = 8; view.rerender(<FilesPage />);
+  await act(async () => sync.run({ update: vi.fn() }));
+  expect(mocks.enqueue).toHaveBeenCalledTimes(2);
+  const download = mocks.enqueue.mock.calls[1][0];
+  expect(download.outputPath).toBe("Test course/Branch/branch.zip");
+  await download.run();
+  expect(mocks.invoke).toHaveBeenCalledWith("download_course_file", expect.objectContaining({ course: expect.objectContaining({ id: 7 }), folderPath: "Branch" }));
 });
