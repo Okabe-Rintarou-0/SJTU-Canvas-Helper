@@ -623,3 +623,65 @@ it.each(["resolve", "reject"])("resets raw-config loading across a session chang
   expect(screen.getByText('{"source":"current"}')).toBeVisible();
   expect(screen.getByRole("button", { name: "隐藏原始配置" })).toBeEnabled();
 });
+
+it.each([
+  ["debug", "resolve"], ["debug", "reject"],
+  ["add-key", "resolve"], ["add-key", "reject"],
+])("discards inline-save notifications after unmount for %s with %s", async (action, outcome) => {
+  const pending = deferred<AppConfig>();
+  mocks.saveConfig.mockReturnValueOnce(pending.promise);
+  const view = render(<MemoryRouter><SettingsPage /></MemoryRouter>);
+  await screen.findByRole("tab", { name: "账号与连接" });
+  if (action === "debug") {
+    section("高级与实验");
+    fireEvent.click(screen.getByRole("switch", { name: "启用 Debug 模式" }));
+  } else {
+    section("AI 与模型");
+    fireEvent.click(screen.getByRole("button", { name: "添加 Key" }));
+    const dialog = within(screen.getByRole("dialog"));
+    fireEvent.change(dialog.getByLabelText("名称"), { target: { value: "Test provider" } });
+    fireEvent.change(dialog.getByLabelText("API Key"), { target: { value: "synthetic-key" } });
+    fireEvent.click(dialog.getByRole("button", { name: "添加" }));
+  }
+  await waitFor(() => expect(mocks.saveConfig).toHaveBeenCalledTimes(1));
+  const submitted = mocks.saveConfig.mock.calls[0][0] as AppConfig;
+  view.unmount();
+  await act(async () => {
+    if (outcome === "resolve") pending.resolve(submitted);
+    else pending.reject(new Error("obsolete inline save"));
+  });
+  expect(mocks.message.success).not.toHaveBeenCalled();
+  expect(mocks.message.error).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["名称", "Renamed"], ["API Key", "synthetic-new-key"], ["Base URL", "https://new.example.com/v1"],
+])("discards an inline %s save error after unmount", async (label, value) => {
+  config.llm_api_keys = [{ name: "Original", key: "synthetic-key", base_url: "https://example.com/v1", model: "test-model" }];
+  config.llm_active_api_key = "Original";
+  const pending = deferred<AppConfig>();
+  mocks.saveConfig.mockReturnValueOnce(pending.promise);
+  const view = render(<MemoryRouter><SettingsPage /></MemoryRouter>);
+  await screen.findByRole("tab", { name: "账号与连接" });
+  section("AI 与模型");
+  const ai = within(screen.getByRole("tabpanel", { name: "AI 与模型" }));
+  const input = ai.getByLabelText(label);
+  fireEvent.change(input, { target: { value } });
+  fireEvent.blur(input);
+  await waitFor(() => expect(mocks.saveConfig).toHaveBeenCalledTimes(1));
+  view.unmount();
+  await act(async () => pending.reject(new Error("obsolete inline edit")));
+  expect(mocks.message.error).not.toHaveBeenCalled();
+});
+
+it("reports a current debug autosave failure even when the save invalidates the session", async () => {
+  mocks.saveConfig.mockImplementationOnce(async () => {
+    invalidateSession();
+    throw new Error("current debug save failed");
+  });
+  await openSettings();
+  section("高级与实验");
+  fireEvent.click(screen.getByRole("switch", { name: "启用 Debug 模式" }));
+  await waitFor(() => expect(mocks.message.error).toHaveBeenCalledWith("保存失败：Error: current debug save failed"));
+  expect(mocks.message.success).not.toHaveBeenCalled();
+});

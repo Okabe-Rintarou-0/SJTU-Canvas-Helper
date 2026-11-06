@@ -432,6 +432,24 @@ export default function SettingsPage() {
       return { ...current, __config_owner: saved.__config_owner };
     });
   }, []);
+  // Inline saves must still publish their authoritative config after this view
+  // closes. Only owner adoption and notices belong to the initiating view.
+  const saveInlineConfig = useCallback(async (next: AppConfig, success?: string, errorPrefix?: string) => {
+    const generation = initConfigRef.current;
+    const isMounted = () => settingsMountedRef.current && generation === initConfigRef.current;
+    if (!isMounted()) return;
+    try {
+      const saved = await saveConfig(next);
+      if (!isMounted() || !isConfigOwnerCurrent(saved)) return;
+      acceptSavedOwner(next, saved);
+      if (success) messageApi.success(success);
+    } catch (e) {
+      // A current native failure may itself invalidate the config session.
+      if (!isMounted() || e instanceof StaleConfigSessionError) return;
+      messageApi.error(errorPrefix ? errorPrefix + e : e as string);
+    }
+  }, [acceptSavedOwner, messageApi]);
+
   const handlePrimaryColorChange = useCallback(
     (value: string) => updateField("color_primary", value),
     [updateField]
@@ -443,20 +461,11 @@ export default function SettingsPage() {
     if (!formData) return;
     if (prevDebugModeRef.current !== undefined && prevDebugModeRef.current !== formData.debug_mode) {
       prevDebugModeRef.current = formData.debug_mode;
-      saveConfig(formData).then(
-        (saved) => {
-          acceptSavedOwner(formData, saved);
-          messageApi.success(formData.debug_mode ? "Debug 模式已开启" : "Debug 模式已关闭");
-        },
-        (e) => {
-          if (e instanceof StaleConfigSessionError) return;
-          messageApi.error("保存失败：" + e);
-        }
-      );
+      void saveInlineConfig(formData, formData.debug_mode ? "Debug 模式已开启" : "Debug 模式已关闭", "保存失败：");
     } else {
       prevDebugModeRef.current = formData.debug_mode;
     }
-  }, [formData?.debug_mode, formData, messageApi, acceptSavedOwner]);
+  }, [formData?.debug_mode, formData, saveInlineConfig]);
 
   const handleLlmTemperatureChange = useCallback(
     (rawValue: string) => {
@@ -1313,13 +1322,7 @@ export default function SettingsPage() {
                             setEditingKey(null);
                             setEditingBaseUrl(null);
                             setEditingModel(null);
-                            try {
-                              const saved = await saveConfig(next);
-                              acceptSavedOwner(next, saved);
-                            } catch (e) {
-                              if (e instanceof StaleConfigSessionError) return;
-                              messageApi.error(e as string);
-                            }
+                            await saveInlineConfig(next);
                           }}
                         >
                           {(formData?.llm_api_keys ?? []).length === 0 ? (
@@ -1386,7 +1389,7 @@ export default function SettingsPage() {
                                       const newActive = formData.llm_active_api_key === entry.name ? editingName.trim() : formData.llm_active_api_key;
                                       const next = { ...formData, llm_api_keys: updated, llm_active_api_key: newActive };
                                       setFormData(next);
-                                      try { const saved = await saveConfig(next); acceptSavedOwner(next, saved); } catch (e) { if (!(e instanceof StaleConfigSessionError)) messageApi.error(e as string); }
+                                      await saveInlineConfig(next);
                                     }}
                                     placeholder="Key 名称"
                                     autoComplete="off"
@@ -1407,7 +1410,7 @@ export default function SettingsPage() {
                                       );
                                       const next = { ...formData, llm_api_keys: updated, llm_api_key: keyVal };
                                       setFormData(next);
-                                      try { const saved = await saveConfig(next); acceptSavedOwner(next, saved); } catch (e) { if (!(e instanceof StaleConfigSessionError)) messageApi.error(e as string); }
+                                      await saveInlineConfig(next);
                                     }}
                                     placeholder="sk-…"
                                     autoComplete="off"
@@ -1452,7 +1455,7 @@ export default function SettingsPage() {
                                         ...(val ? { llm_base_url: val } : {}),
                                       };
                                       setFormData(next);
-                                      try { const saved = await saveConfig(next); acceptSavedOwner(next, saved); } catch (e) { if (!(e instanceof StaleConfigSessionError)) messageApi.error(e as string); }
+                                      await saveInlineConfig(next);
                                     }}
                                     placeholder={formData?.llm_base_url || DEFAULT_LLM_BASE_URL}
                                     autoComplete="off"
@@ -1482,7 +1485,7 @@ export default function SettingsPage() {
                                       );
                                       const next = { ...formData, llm_api_keys: updated, ...(val ? { llm_model: val } : {}) };
                                       setFormData(next);
-                                      try { const saved = await saveConfig(next); acceptSavedOwner(next, saved); } catch (e) { if (!(e instanceof StaleConfigSessionError)) messageApi.error(e as string); }
+                                      await saveInlineConfig(next);
                                     }}
                                     renderInput={(params) => (
                                       <TextField
@@ -1702,14 +1705,7 @@ export default function SettingsPage() {
                             setNewKeyBaseUrl("");
                             setNewKeyModel("");
                             setShowAddKeyDialog(false);
-                            try {
-                              const saved = await saveConfig(next);
-                              acceptSavedOwner(next, saved);
-                              messageApi.success(`已添加 API Key「${name}」。`);
-                            } catch (e) {
-                              if (e instanceof StaleConfigSessionError) return;
-                              messageApi.error(e as string);
-                            }
+                            await saveInlineConfig(next, `已添加 API Key「${name}」。`);
                           }}
                         >
                           添加
