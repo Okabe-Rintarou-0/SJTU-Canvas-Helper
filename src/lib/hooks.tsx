@@ -18,6 +18,7 @@ import {
   SetStateAction,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -582,56 +583,50 @@ export function useLoginModal({ onLogin }: { onLogin?: () => void }) {
   return { modal, showModal, closeModal };
 }
 
-export function useData<T>(command: string, shouldFetch: boolean, args?: any) {
+export function useData<T>(command: string, shouldFetch: boolean, args?: Record<string, unknown>, sourceSession?: number) {
   const session = useSessionEpoch();
-  const [data, setData] = useState<T | undefined>();
-  const [error, setError] = useState<unknown>();
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const owner = sourceSession ?? session;
+  const source = useMemo(() => ({ command, args, session: owner, shouldFetch }), [command, args, owner, shouldFetch]);
+  const activeSource = useRef<typeof source>();
+  const latestRequest = useRef(0);
+  const [state, setState] = useState<{
+    source: typeof source; data?: T; error?: unknown; isLoading: boolean;
+  }>();
 
-  // A new account session owns this state from now on: whatever the previous
-  // session loaded must not stay visible while the new session is fetching.
+  // Bind callbacks to the committed source, not to whichever account happens
+  // to be current when an old callback is eventually invoked.
+  useLayoutEffect(() => {
+    activeSource.current = source;
+    return () => { if (activeSource.current === source) activeSource.current = undefined; };
+  }, [source]);
   useEffect(() => {
-    setData(undefined);
-    setError(undefined);
-    setIsLoading(false);
-  }, [session]);
+    setState((previous) => previous?.source === source && isSessionCurrent(source.session) ? previous : undefined);
+  }, [source, session]);
 
-  const mutate = async () => {
-    const owner = currentSession();
-    setIsLoading(true);
-    setError(undefined);
+  const mutate = useCallback(async () => {
+    if (activeSource.current !== source || !isSessionCurrent(source.session)) return;
+    const request = ++latestRequest.current;
+    const owns = () => activeSource.current === source && isSessionCurrent(source.session)
+      && latestRequest.current === request;
+    setState((previous) => owns() ? { source, data: previous?.source === source ? previous.data : undefined, isLoading: true } : previous);
     try {
-      const data = (await invoke(command, args)) as T;
-      if (!isSessionCurrent(owner)) {
-        return;
-      }
-      setData(data);
-    } catch (e) {
-      if (!isSessionCurrent(owner)) {
-        return;
-      }
+      const data = await invoke<T>(source.command, source.args);
+      if (owns()) setState((previous) => owns() ? { source, data, isLoading: false } : previous);
+    } catch (error) {
+      if (!owns()) return;
       consoleLog(LOG_LEVEL_ERROR, "Data request failed");
-      appMessage().error(e as string);
-      setError(e);
-    } finally {
-      if (isSessionCurrent(owner)) {
-        setIsLoading(false);
-      }
+      appMessage().error(error as string);
+      setState((previous) => owns() ? { source, data: previous?.source === source ? previous.data : undefined, error, isLoading: false } : previous);
     }
-  };
+  }, [source]);
 
   useEffect(() => {
-    if (shouldFetch) {
-      mutate();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [command, args, session]);
-  return {
-    data,
-    isLoading,
-    error,
-    mutate,
-  };
+    if (shouldFetch) void mutate();
+  }, [mutate, shouldFetch]);
+  // Mask synchronously: a child effect must never copy an old account or
+  // folder's data during the render before passive cleanup runs.
+  const current = owner === session && state?.source === source ? state : undefined;
+  return { data: current?.data, error: current?.error, isLoading: current?.isLoading ?? false, mutate };
 }
 
 export { useCourseSyllabus } from "./course_syllabus";
@@ -678,16 +673,15 @@ export function useMe() {
   return useData<User>("get_me", true);
 }
 
+// Account-scoped IDs retain their selection owner. A session wake alone must
+// not reauthorize an old course/folder ID; select again or remount its page.
 export function useUserSubmissions(courseId?: number, studentIds?: number[]) {
-  const [args, setArgs] = useState<any>({ courseId, studentIds });
-  useEffect(() => {
-    setArgs({ courseId, studentIds });
-  }, [courseId, studentIds]);
+  const source = useMemo(() => ({ args: { courseId, studentIds }, session: currentSession() }), [courseId, studentIds]);
   const shouldFetch = courseId != undefined && (studentIds?.length ?? 0) > 0;
   const submissions = useData<UserSubmissions[]>(
     "list_user_submissions",
     shouldFetch,
-    args
+    source.args, source.session
   );
   return {
     ...submissions,
@@ -696,15 +690,12 @@ export function useUserSubmissions(courseId?: number, studentIds?: number[]) {
 }
 
 export function useAssignments(courseId?: number) {
-  const [args, setArgs] = useState<any>({ courseId });
-  useEffect(() => {
-    setArgs({ courseId });
-  }, [courseId]);
+  const source = useMemo(() => ({ args: { courseId }, session: currentSession() }), [courseId]);
   const shouldFetch = courseId != undefined;
   const assignments = useData<Assignment[]>(
     "list_course_assignments",
     shouldFetch,
-    args
+    source.args, source.session
   );
   return {
     ...assignments,
@@ -713,12 +704,9 @@ export function useAssignments(courseId?: number) {
 }
 
 export function useStudents(courseId?: number) {
-  const [args, setArgs] = useState<any>({ courseId });
-  useEffect(() => {
-    setArgs({ courseId });
-  }, [courseId]);
+  const source = useMemo(() => ({ args: { courseId }, session: currentSession() }), [courseId]);
   const shouldFetch = courseId != undefined;
-  const students = useData<User[]>("list_course_students", shouldFetch, args);
+  const students = useData<User[]>("list_course_students", shouldFetch, source.args, source.session);
   return {
     ...students,
     data: students.data ?? (EMPTY_ARRAY as User[]),
@@ -730,30 +718,21 @@ export function useRelationship() {
 }
 
 export function useFolderFiles(folderId?: number) {
-  const [args, setArgs] = useState<any>({ folderId });
-  useEffect(() => {
-    setArgs({ folderId });
-  }, [folderId]);
+  const source = useMemo(() => ({ args: { folderId }, session: currentSession() }), [folderId]);
   const shouldFetch = folderId != undefined;
-  return useData<File[]>("list_folder_files", shouldFetch, args);
+  return useData<File[]>("list_folder_files", shouldFetch, source.args, source.session);
 }
 
 export function useFolderFolders(folderId?: number) {
-  const [args, setArgs] = useState<any>({ folderId });
-  useEffect(() => {
-    setArgs({ folderId });
-  }, [folderId]);
+  const source = useMemo(() => ({ args: { folderId }, session: currentSession() }), [folderId]);
   const shouldFetch = folderId != undefined;
-  return useData<Folder[]>("list_folder_folders", shouldFetch, args);
+  return useData<Folder[]>("list_folder_folders", shouldFetch, source.args, source.session);
 }
 
 export function useCourseFolders(courseId?: number) {
-  const [args, setArgs] = useState<any>({ courseId });
-  useEffect(() => {
-    setArgs({ courseId });
-  }, [courseId]);
+  const source = useMemo(() => ({ args: { courseId }, session: currentSession() }), [courseId]);
   const shouldFetch = courseId != undefined;
-  return useData<Folder[]>("list_course_folders", shouldFetch, args);
+  return useData<Folder[]>("list_course_folders", shouldFetch, source.args, source.session);
 }
 
 export const useKeyPress = (targetKey: string, action: () => void) => {
@@ -800,10 +779,7 @@ export const useBaseURL = () => {
 };
 
 export const useAnnualReport = (year: number) => {
-  const [args, setArgs] = useState<any>({ year });
-  useEffect(() => {
-    setArgs({ year });
-  }, [year]);
+  const args = useMemo(() => ({ year }), [year]);
   return useData<AnnualReport>("generate_annual_report", true, args);
 };
 
@@ -849,15 +825,12 @@ export function useAutoLoadCourse(
 }
 
 export function useExternalFiles(courseId?: number) {
-  const [args, setArgs] = useState<any>({ courseId });
-  useEffect(() => {
-    setArgs({ courseId });
-  }, [courseId]);
+  const source = useMemo(() => ({ args: { courseId }, session: currentSession() }), [courseId]);
   const shouldFetch = courseId !== undefined && courseId !== -1;
   const { data,
     isLoading,
     error,
-    mutate } = useData<ModuleItem[]>("list_external_module_items", shouldFetch, args);
+    mutate } = useData<ModuleItem[]>("list_external_module_items", shouldFetch, source.args, source.session);
   const externalFiles = useMemo(() =>
     data?.map(item => moduleItem2File(item))
       .filter(item => item.external_type === "File"),

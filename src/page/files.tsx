@@ -1,3 +1,4 @@
+import AccountSessionBoundary from "../components/account_session_boundary";
 import { downloadCourseContext } from "../lib/downloads";
 import { DownloadCourseContext } from "../lib/download_context";
 import PageTaskLists from "../components/page_task_lists";
@@ -116,6 +117,10 @@ function isExplainableFile(file: File) {
 }
 
 export default function FilesPage() {
+  return <AccountSessionBoundary><FilesPageContent /></AccountSessionBoundary>;
+}
+
+function FilesPageContent() {
   const theme = useTheme();
   const [section, setSection] = useState<string>(COURSE_FILES);
   const { selectedCourseId, setSelectedCourseId } = useSelectedCourse();
@@ -322,12 +327,18 @@ export default function FilesPage() {
   const handleSyncFiles = async () => {
     const course = getSelectedCourse();
     if (!course) return;
+    const owner = currentSession();
+    const ensureOwner = () => {
+      if (!isSessionCurrent(owner)) throw new Error("账号已切换，请重新同步文件。");
+    };
     enqueueTask({
       id: `sync:${course.id}:${crypto.randomUUID()}`, name: `${course.name} · 同步检查`,
       source: "files", kind: "sync", context: course.name,
       locks: [`sync:${course.id}`], stage: "正在检查文件差异",
       run: async ({ update }) => {
+        ensureOwner();
         const filesToSync = await invoke<File[]>("sync_course_files", { course });
+        ensureOwner();
         filesToSync.forEach((file) => handleAddDownloadFileTask(file));
         update({ log: filesToSync.length ? `已创建 ${filesToSync.length} 个文件下载任务。请查看对应下载任务的进度。` : "文件已同步，无需下载。" });
         notify(filesToSync.length ? `共 ${filesToSync.length} 个文件需要下载，已加入队列。` : "已同步，无需下载。", "success");

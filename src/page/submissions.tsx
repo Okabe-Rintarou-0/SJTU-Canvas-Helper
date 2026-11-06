@@ -1,3 +1,4 @@
+import AccountSessionBoundary from "../components/account_session_boundary";
 import { downloadCourseContext } from "../lib/downloads";
 import { DownloadCourseContext } from "../lib/download_context";
 import PageTaskLists from "../components/page_task_lists";
@@ -142,6 +143,10 @@ function SubmissionGrade({
 import { surfaceCardSx } from "../lib/styles";
 
 export default function SubmissionsPage() {
+  return <AccountSessionBoundary><SubmissionsPageContent /></AccountSessionBoundary>;
+}
+
+function SubmissionsPageContent() {
   const [messageApi, contextHolder] = useAppMessage();
   const [operating, setOperating] = useState(false);
   const [users, setUsers] = useState<User[]>([]);

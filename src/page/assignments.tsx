@@ -1,3 +1,4 @@
+import AccountSessionBoundary from "../components/account_session_boundary";
 import { downloadCourseContext } from "../lib/downloads";
 import { DownloadCourseContext } from "../lib/download_context";
 import { invoke } from "@tauri-apps/api/core";
@@ -69,6 +70,10 @@ import {
 import { surfaceCardSx } from "../lib/styles";
 
 export default function AssignmentsPage() {
+  return <AccountSessionBoundary><AssignmentsPageContent /></AccountSessionBoundary>;
+}
+
+function AssignmentsPageContent() {
   const [messageApi, contextHolder] = useAppMessage();
   const [operating, setOperating] = useState(false);
   const [onlyShowUnfinished, setOnlyShowUnfinished] = useState(true);
