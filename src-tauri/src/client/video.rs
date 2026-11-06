@@ -10,7 +10,7 @@ use super::{
     debug::RequestLogId,
     constants::{
         AUTH_URL, CANVAS_LOGIN_URL, EXPRESS_LOGIN_URL, MY_SJTU_ACCOUNT_URL, MY_SJTU_URL,
-        VIDEO_BASE_URL, VIDEO_LOGIN_URL, VIDEO_OAUTH_KEY_URL,
+        VIDEO_APP_PATH, VIDEO_LOGIN_PATH, VIDEO_OAUTH_KEY_PATH, VIDEO_ORIGIN,
     },
     video_auth::video_auth_rejected,
     Client,
@@ -18,7 +18,7 @@ use super::{
 use crate::{
     client::constants::{
         OAUTH_PATH, OAUTH_RANDOM, OAUTH_RANDOM_P1, OAUTH_RANDOM_P1_VAL, OAUTH_RANDOM_P2,
-        OAUTH_RANDOM_P2_VAL, VIDEO_CHUNK_SIZE, VIDEO_INFO_URL,
+        OAUTH_RANDOM_P2_VAL, VIDEO_CHUNK_SIZE, VIDEO_INFO_PATH,
     },
     error::{AppError, Result},
     model::{
@@ -53,8 +53,8 @@ const RESOURCE_MANAGE_UI_URL: &str = "https://v.sjtu.edu.cn/jy-application-resou
 const VIDEO_SPACE_LAUNCH_URL: &str =
     "https://oc.sjtu.edu.cn/accounts/1/external_tools/3136?launch_type=global_navigation";
 const CANVAS_VIDEO_TOOL_ID: i64 = 8329;
-const LEGACY_VIDEO_LIST_URL: &str = "https://courses.sjtu.edu.cn/lti/vodVideo/findVodVideoList";
-const LEGACY_VIDEO_INFO_URL: &str = "https://courses.sjtu.edu.cn/lti/vodVideo/getVodVideoInfos";
+const LEGACY_VIDEO_LIST_PATH: &str = "/lti/vodVideo/findVodVideoList";
+const LEGACY_VIDEO_INFO_PATH: &str = "/lti/vodVideo/getVodVideoInfos";
 
 fn ppt_content_type(headers: &HeaderMap) -> &'static str {
     let Some(value) = headers.get(CONTENT_TYPE) else {
@@ -728,9 +728,17 @@ fn get_cookie_value(cookies: &str, name: &str) -> Option<String> {
 // Apis here are for course video
 // We take references from: https://github.com/prcwcy/sjtu-canvas-video-download/blob/master/sjtu_canvas_video.py
 impl Client {
+    pub(super) fn legacy_video_url(&self, path: &str) -> Url {
+        #[cfg(test)]
+        if let Some(origin) = &self.legacy_video_origin {
+            return origin.join(path).unwrap();
+        }
+        Url::parse(VIDEO_ORIGIN).unwrap().join(path).unwrap()
+    }
+
     pub fn init_cookie(&self, cookie: &str) {
         self.jar
-            .add_cookie_str(cookie, &Url::parse(VIDEO_BASE_URL).unwrap());
+            .add_cookie_str(cookie, &self.legacy_video_url(VIDEO_APP_PATH));
     }
 
     // The extra login flow may bounce across jAccount and my.sjtu domains,
@@ -774,8 +782,8 @@ impl Client {
     }
 
     pub async fn login_video_website(&self, cookie: &str) -> Result<Option<String>> {
-        let (_, jar) = Self::open_legacy_video_session(cookie).await?;
-        let url = Url::parse(VIDEO_BASE_URL).unwrap();
+        let (_, jar) = self.open_legacy_video_session(cookie).await?;
+        let url = self.legacy_video_url(VIDEO_APP_PATH);
         let cookies = jar
             .cookies(&url)
             .and_then(|value| value.to_str().ok().map(str::to_owned));
@@ -786,6 +794,7 @@ impl Client {
     }
 
     pub(super) async fn open_legacy_video_session(
+        &self,
         cookie: &str,
     ) -> Result<(reqwest::Client, Arc<Jar>)> {
         // Keep the legacy OAuth flow isolated from Canvas LTI launches. Both
@@ -801,13 +810,13 @@ impl Client {
             .redirect(Policy::limited(32))
             .cookie_provider(login_jar.clone())
             .build()?;
+        let login_url = self.legacy_video_url(VIDEO_LOGIN_PATH);
         let response = login_client
-            .get(VIDEO_LOGIN_URL)
+            .get(login_url.clone())
             .send()
             .await?
             .error_for_status()?;
-        let video_url = Url::parse(VIDEO_BASE_URL).unwrap();
-        if response.url().origin() != video_url.origin() {
+        if response.url().origin() != login_url.origin() {
             return Err(AppError::LoginError);
         }
         Ok((login_client, login_jar))
@@ -1183,9 +1192,7 @@ impl Client {
         course_name: &str,
     ) -> Result<Vec<LegacySubject>> {
         let response = client
-            .post(format!(
-                "{VIDEO_BASE_URL}/system/course/subject/findSubjectVodList"
-            ))
+            .post(self.legacy_video_url("/app/system/course/subject/findSubjectVodList"))
             .form(&[
                 ("termTimeId", ""),
                 ("firstFromCache", "true"),
@@ -1212,7 +1219,7 @@ impl Client {
         video_cookies: &str,
     ) -> Result<Vec<CanvasVideo>> {
         let client = self.video_browser_client().await;
-        let list_url = Url::parse(LEGACY_VIDEO_LIST_URL).unwrap();
+        let list_url = self.legacy_video_url(LEGACY_VIDEO_LIST_PATH);
         match self.get_legacy_videos_from_lti(&client, course_id, list_url).await {
             Ok(videos) if !videos.is_empty() || course_name.trim().is_empty() => return Ok(videos),
             Ok(_) => {}
@@ -1302,7 +1309,7 @@ impl Client {
         let response = self
             .video_browser_client()
             .await
-            .post(LEGACY_VIDEO_INFO_URL)
+            .post(self.legacy_video_url(LEGACY_VIDEO_INFO_PATH))
             .form(&[
                 ("playTypeHls", "true"),
                 ("id", video_id),
@@ -1356,7 +1363,7 @@ impl Client {
         &self,
         client: &reqwest::Client,
     ) -> Result<Option<String>> {
-        let request = client.get(VIDEO_OAUTH_KEY_URL).build()?;
+        let request = client.get(self.legacy_video_url(VIDEO_OAUTH_KEY_PATH)).build()?;
         let resp = self.debug_store.send(client, request).await?.error_for_status()?;
         let body = resp.text().await?;
         let document = Document::from(body.as_str());
@@ -1388,10 +1395,10 @@ impl Client {
         subject_id: i64,
         tecl_id: i64,
     ) -> Result<Option<VideoCourse>> {
-        let url = format!(
-            "{VIDEO_BASE_URL}/system/resource/vodVideo/getCourseListBySubject?orderField=courTimes&subjectId={subject_id}&teclId={tecl_id}&",
-        );
-        let mut courses = self.get_page_items(client, &url).await?;
+        let url = self.legacy_video_url(&format!(
+            "/app/system/resource/vodVideo/getCourseListBySubject?orderField=courTimes&subjectId={subject_id}&teclId={tecl_id}&",
+        ));
+        let mut courses = self.get_page_items(client, url.as_str()).await?;
         Ok((!courses.is_empty()).then(|| courses.remove(0)))
     }
 
@@ -1601,7 +1608,7 @@ impl Client {
         form_data.insert(OAUTH_RANDOM_P2, OAUTH_RANDOM_P2_VAL);
 
         let response = client
-            .post(VIDEO_INFO_URL)
+            .post(self.legacy_video_url(VIDEO_INFO_PATH))
             .form(&form_data)
             .header(ACCEPT, "application/json")
             .header("oauth-consumer-key", oauth_consumer_key)
@@ -2277,7 +2284,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn legacy_recording_list_uses_the_cookie_set_by_lti_launch() {
+    async fn legacy_recordings_keep_lti_cookies_and_refresh_the_old_site_after_forbidden() {
+        use crate::model::{PageInfo, Video};
         use httpmock::prelude::*;
 
         let canvas = MockServer::start();
@@ -2309,16 +2317,16 @@ mod tests {
                 .body_contains("canvasCourseId=abc%252Fdef");
             then.json_body(serde_json::json!({"body": {"list": [{"videoId": "123"}]}}));
         });
-        let client = Client::new_without_proxy(canvas.base_url().as_str(), "", "", "", None);
-        let browser = reqwest::Client::builder()
+        let mut client = Client::new_without_proxy(canvas.base_url().as_str(), "", "", "", None);
+        client.legacy_video_origin = Some(Url::parse(&video.base_url()).unwrap());
+        client.cli = reqwest::Client::builder()
             .no_proxy()
             .redirect(Policy::none())
             .cookie_store(true)
             .build()
             .unwrap();
-        let list_url = Url::parse(&video.url("/lti/vodVideo/findVodVideoList")).unwrap();
         let recordings = client
-            .get_legacy_videos_from_lti(&browser, 123, list_url)
+            .get_legacy_videos(123, "Algorithms", "2025-2026 秋", &[], "")
             .await
             .unwrap();
         assert_eq!(recordings.len(), 1);
@@ -2327,6 +2335,108 @@ mod tests {
         form.assert();
         launch.assert();
         list.assert();
+        list.delete_async().await;
+
+        let rejected_lti = video.mock(|when, then| {
+            when.method(POST)
+                .path("/lti/vodVideo/findVodVideoList")
+                .header("Cookie", "legacy_session=valid");
+            then.status(403);
+        });
+        let expired_cookie = "legacy_app=expired";
+        let subject_path = "/app/system/course/subject/findSubjectVodList";
+        let rejected_cookie = video.mock(|when, then| {
+            when.method(POST).path(subject_path).header("Cookie", expired_cookie);
+            then.status(403);
+        });
+        let login = video.mock(|when, then| {
+            when.method(GET).path("/app/oauth/2.0/login").query_param("login_type", "outer");
+            then.status(302)
+                .header("Set-Cookie", "legacy_app=fresh; Path=/app")
+                .header("Location", "/app/home");
+        });
+        let home = video.mock(|when, then| {
+            when.method(GET).path("/app/home").header("Cookie", "legacy_app=fresh");
+            then.status(200);
+        });
+        let subjects = video.mock(|when, then| {
+            when.method(POST)
+                .path(subject_path)
+                .body_contains("subjectName=Algorithms")
+                .header("Cookie", "legacy_app=fresh");
+            then.json_body(serde_json::json!({
+                "page": PageInfo::default(),
+                "list": [{
+                    "subjectId": 42, "teclId": 84, "subjectName": "Algorithms",
+                    "userName": "Teacher", "beginYear": 2025, "endYear": 2026, "termTime": 1
+                }]
+            }));
+        });
+        let course = video.mock(|when, then| {
+            when.method(GET)
+                .path("/app/system/resource/vodVideo/getCourseListBySubject")
+                .query_param("subjectId", "42")
+                .query_param("teclId", "84")
+                .query_param("pageIndex", "1")
+                .header("Cookie", "legacy_app=fresh");
+            then.json_body(serde_json::json!(ItemPage {
+                list: vec![VideoCourse {
+                    subj_name: "Algorithms".into(),
+                    response_vo_list: vec![Video { id: 456, ..Default::default() }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }));
+        });
+        let rejected_lti_info = video.mock(|when, then| {
+            when.method(POST).path(LEGACY_VIDEO_INFO_PATH).body_contains("id=456");
+            then.status(403);
+        });
+        let consumer_key = video.mock(|when, then| {
+            when.method(GET)
+                .path("/app/vodvideo/vodVideoPlay.d2j")
+                .header("Cookie", "legacy_app=fresh");
+            then.body(r#"<meta id="xForSecName" vaule="bGVnYWN5LWtleQ==">"#);
+        });
+        let playback = video.mock(|when, then| {
+            when.method(POST)
+                .path(VIDEO_INFO_PATH)
+                .body_contains("id=456")
+                .header("oauth-consumer-key", "legacy-key")
+                .header_exists("oauth-signature")
+                .header("Cookie", "legacy_app=fresh");
+            then.json_body(serde_json::json!(VideoInfo { id: 456, ..Default::default() }));
+        });
+
+        client.configure_video_auth("", "test-jaccount", false).await;
+        let teachers = ["Teacher".to_owned()];
+        let recordings = client
+            .get_legacy_videos(123, "Algorithms", "2025-2026 秋", &teachers, expired_cookie)
+            .await
+            .unwrap();
+        assert_eq!(recordings.len(), 1);
+        assert_eq!(recordings[0].video_id, "456");
+        let info = client
+            .get_legacy_video_info(&recordings[0].video_id, expired_cookie)
+            .await
+            .unwrap();
+        assert_eq!(info.id, 456);
+        rejected_lti_info.assert();
+        consumer_key.assert();
+        playback.assert();
+        home.assert();
+        subjects.assert();
+        course.assert();
+
+        client.configure_video_auth("another-account", "", true).await;
+        let error = client
+            .get_legacy_videos(123, "Algorithms", "2025-2026 秋", &teachers, expired_cookie)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("请前往设置扫码登录"));
+        rejected_lti.assert_hits(2);
+        rejected_cookie.assert_hits(2);
+        login.assert_hits(1);
     }
 
     #[test]

@@ -4,7 +4,7 @@ use reqwest::{cookie::Jar, redirect::Policy, StatusCode};
 use tauri::Url;
 
 use super::{
-    constants::{AUTH_URL, CANVAS_LOGIN_URL, MY_SJTU_URL, VIDEO_BASE_URL},
+    constants::{AUTH_URL, CANVAS_LOGIN_URL, MY_SJTU_URL, VIDEO_APP_PATH},
     Client,
 };
 use crate::error::{AppError, Result};
@@ -188,7 +188,7 @@ impl Client {
                 Some(client) => client.clone(),
                 None => {
                     let jar = Arc::new(Jar::default());
-                    let url = Url::parse(VIDEO_BASE_URL).unwrap();
+                    let url = self.legacy_video_url(VIDEO_APP_PATH);
                     for cookie in saved_cookies
                         .split(';')
                         .map(str::trim)
@@ -212,7 +212,7 @@ impl Client {
         if ja_cookie.trim().is_empty() {
             return Err(legacy_login_error());
         }
-        let (client, _) = Self::open_legacy_video_session(&format!("JAAuthCookie={ja_cookie}"))
+        let (client, _) = self.open_legacy_video_session(&format!("JAAuthCookie={ja_cookie}"))
             .await
             .map_err(|error| {
                 if legacy_session_rejected(&error) {

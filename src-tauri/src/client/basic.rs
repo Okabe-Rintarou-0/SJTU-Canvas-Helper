@@ -54,6 +54,8 @@ impl Client {
             base_url,
             token,
             video_auth: Default::default(),
+            #[cfg(test)]
+            legacy_video_origin: None,
             transcription: Default::default(),
             subtitle_proofread: Default::default(),
             llm_cli,
@@ -100,6 +102,8 @@ impl Client {
             base_url,
             token,
             video_auth: Default::default(),
+            #[cfg(test)]
+            legacy_video_origin: None,
             transcription: Default::default(),
             subtitle_proofread: Default::default(),
             llm_cli,
