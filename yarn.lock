@@ -7247,7 +7247,7 @@ levn@^0.4.1:
     prelude-ls "^1.2.1"
     type-check "~0.4.0"
 
-libarchive.js@^2.0.2:
+libarchive.js@2.0.2:
   version "2.0.2"
   resolved "https://registry.npmjs.org/libarchive.js/-/libarchive.js-2.0.2.tgz"
   integrity sha512-JHb+P4suNSjvz/dMdRgOe7JAxluXJeialzSFkKHU5y0ZK+m175drPOaIYW6I9WXSDcPcQ13eCUgMnpgY0ggmoQ==
