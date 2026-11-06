@@ -1623,10 +1623,14 @@ impl App {
         content: &[u8],
         file_name: &str,
         course: Option<&outputs::DownloadCourse>,
+        expected_owner: &str,
     ) -> Result<()> {
-        let output = self.download_output().await?;
-        let save_dir = self.config.read().await.save_path.clone();
-        let path = outputs::directory(Path::new(&save_dir), "attachment", course)?
+        let snapshot = self.get_config_snapshot().await?;
+        if snapshot.owner != expected_owner {
+            return Err(AppError::StaleConfigOwner);
+        }
+        let output = self.download_output_for_owner(expected_owner).await?;
+        let path = outputs::directory(Path::new(&snapshot.config.save_path), "attachment", course)?
             .join(outputs::safe_name(file_name));
         // create file if path not exists, else open it in append mode
         let mut file = match fs::metadata(&path) {
@@ -2890,6 +2894,68 @@ mod live_proxy_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn archive_save_app(root: &Path) -> App {
+        App {
+            config_store: Some(ConfigStore::open(&root.join("config")).unwrap()),
+            config_owner: tokio::sync::Mutex::new(Some("archive-owner-a".into())),
+            canvas_session: Default::default(),
+            login_attempt: Default::default(),
+            client: Arc::new(Client::new_without_proxy(
+                "http://127.0.0.1", "", "", "", None,
+            )),
+            current_account: RwLock::new(Account::Default),
+            config: RwLock::new(AppConfig {
+                save_path: root.join("account-a").to_string_lossy().into_owned(),
+                ..Default::default()
+            }),
+            handle: Default::default(),
+            mcp_handle: Default::default(),
+            cache: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn archive_save_accepts_current_owner() {
+        let directory = tempfile::tempdir().unwrap();
+        let app = archive_save_app(directory.path());
+        app.save_file_content(b"owned archive content", "notes.txt", None, "archive-owner-a")
+            .await
+            .unwrap();
+        let path = outputs::directory(&directory.path().join("account-a"), "attachment", None)
+            .unwrap()
+            .join("notes.txt");
+        assert_eq!(fs::read(path).unwrap(), b"owned archive content");
+    }
+
+    #[tokio::test]
+    async fn archive_save_rejects_an_owner_changed_while_waiting() {
+        let directory = tempfile::tempdir().unwrap();
+        let app = archive_save_app(directory.path());
+        let mut owner = app.config_owner.lock().await;
+        let mut account = app.current_account.write().await;
+        let mut config = app.config.write().await;
+        let saving = app.save_file_content(b"private archive content", "notes.txt", None, "archive-owner-a");
+        tokio::pin!(saving);
+        assert!(futures::poll!(saving.as_mut()).is_pending());
+
+        // Hold the transition's owner lock until both identity and directory agree.
+        *owner = Some("archive-owner-b".into());
+        *account = Account::Custom("archive-account-b".into());
+        config.save_path = directory.path().join("account-b").to_string_lossy().into_owned();
+        drop(config);
+        drop(account);
+        drop(owner);
+
+        assert!(matches!(saving.await, Err(AppError::StaleConfigOwner)));
+        assert!(!directory.path().join("account-a").exists());
+        assert!(!directory.path().join("account-b").exists());
+        assert!(matches!(
+            app.save_file_content(b"still stale", "late.txt", None, "archive-owner-a").await,
+            Err(AppError::StaleConfigOwner)
+        ));
+        assert!(!directory.path().join("account-b").exists());
+    }
 
     #[test]
     fn cache_keys_are_scoped_to_the_owning_generation() {

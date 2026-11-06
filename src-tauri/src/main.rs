@@ -862,8 +862,9 @@ async fn save_file_content(
     content: Vec<u8>,
     file_name: String,
     course: Option<utils::download::DownloadCourse>,
+    expected_owner: String,
 ) -> Result<()> {
-    APP.save_file_content(&content, &file_name, course.as_ref())
+    APP.save_file_content(&content, &file_name, course.as_ref(), &expected_owner)
         .await
 }
 

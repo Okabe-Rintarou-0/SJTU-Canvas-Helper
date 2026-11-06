@@ -8,9 +8,10 @@ import { currentSession, invalidateSession } from "../../lib/session";
 import { PreviewSessionContext } from "../../lib/preview_session";
 
 const mocks = vi.hoisted(() => ({
-  open: vi.fn(), invoke: vi.fn(), fileType: vi.fn(), createUrl: vi.fn(), revokeUrl: vi.fn(),
+  captureConfig: vi.fn(), open: vi.fn(), invoke: vi.fn(), fileType: vi.fn(), createUrl: vi.fn(), revokeUrl: vi.fn(),
   message: { warning: vi.fn(), error: vi.fn(), success: vi.fn() },
 }));
+vi.mock("../../lib/config", () => ({ captureOperationConfig: mocks.captureConfig }));
 vi.mock("../../lib/archive_open", () => ({ openArchive: mocks.open }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("../../lib/message", () => ({ useAppMessage: () => [mocks.message, null] }));
@@ -37,6 +38,7 @@ function archive(files = { "a.txt": entry("a.txt"), "b.txt": entry("b.txt") }) {
 const flush = () => act(async () => { for (let i = 0; i < 8; i += 1) await Promise.resolve(); });
 
 beforeEach(() => {
+  mocks.captureConfig.mockReturnValue({ __config_owner: "archive-owner" });
   mocks.fileType.mockResolvedValue("txt");
   mocks.createUrl.mockImplementation((value: File) => `blob:${value.name}`);
   vi.stubGlobal("URL", class extends URL {
@@ -140,6 +142,38 @@ it("revokes each selected URL once on replacement and unmount", async () => {
   await waitFor(() => expect(screen.getByTestId("archive-preview")).toHaveTextContent("b.txt"));
   view.unmount();
   expect(mocks.revokeUrl.mock.calls).toEqual([["blob:a.txt"], ["blob:b.txt"]]);
+});
+
+it("passes the owner captured before download extraction to native save", async () => {
+  const value = archive(); mocks.open.mockResolvedValueOnce(value);
+  render(<ArchiveRenderer mainState={document()} />);
+  fireEvent.click(await screen.findByRole("button", { name: /a.txt/ }));
+  await screen.findByTestId("archive-preview");
+  const extracting = deferred<File>();
+  value.files["a.txt"].extract.mockReturnValueOnce(extracting.promise);
+  fireEvent.click(screen.getByRole("button", { name: "下载" }));
+  expect(mocks.captureConfig).toHaveBeenCalledOnce();
+  mocks.captureConfig.mockReturnValue({ __config_owner: "later-owner" });
+  const downloaded = file("a.txt");
+  Object.defineProperty(downloaded, "arrayBuffer", { value: async () => new Uint8Array([1, 2, 3]).buffer });
+  await act(async () => extracting.resolve(downloaded));
+  await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("save_file_content", {
+    content: [1, 2, 3], fileName: "a.txt", expectedOwner: "archive-owner",
+  }));
+  expect(mocks.captureConfig).toHaveBeenCalledOnce();
+});
+
+it("does not extract or save a download without a current configuration owner", async () => {
+  const value = archive(); mocks.open.mockResolvedValueOnce(value);
+  render(<ArchiveRenderer mainState={document()} />);
+  fireEvent.click(await screen.findByRole("button", { name: /a.txt/ }));
+  await screen.findByTestId("archive-preview");
+  mocks.captureConfig.mockImplementationOnce(() => { throw new Error("Configuration unavailable"); });
+  fireEvent.click(screen.getByRole("button", { name: "下载" }));
+  await flush();
+  expect(value.files["a.txt"].extract).toHaveBeenCalledOnce();
+  expect(mocks.invoke).not.toHaveBeenCalled();
+  expect(mocks.message.error).toHaveBeenCalledWith(expect.stringContaining("Configuration unavailable"));
 });
 
 it("does not invoke native save if download extraction completes after session expiry", async () => {

@@ -26,6 +26,7 @@ import { DownloadCourseContext } from "../lib/download_context";
 import { openArchive, type ArchiveFile, type ArchiveTree, type OpenArchive } from "../lib/archive_open";
 import { currentSession, isSessionCurrent, subscribeSession } from "../lib/session";
 import { PreviewSessionContext } from "../lib/preview_session";
+import { captureOperationConfig } from "../lib/config";
 
 import { useAppMessage } from "../lib/message";
 import { LOG_LEVEL_ERROR } from "../lib/model";
@@ -240,13 +241,14 @@ export default function ArchiveRenderer({
     const entry = lifetime.files.get(selectedPath);
     if (!entry || !owns()) return;
     try {
+      const config = captureOperationConfig();
       const file = await entry.extract();
       if (!owns()) return;
       const buffer = await file.arrayBuffer();
       if (!owns()) return;
       const content = Array.from(new Uint8Array(buffer));
       const fileName = selectedDoc.fileName ?? "downloaded";
-      await invoke("save_file_content", { content, fileName, ...(course ? { course } : {}) });
+      await invoke("save_file_content", { content, fileName, expectedOwner: config.__config_owner, ...(course ? { course } : {}) });
       if (owns()) messageApi.success("下载成功", 0.5);
     } catch (error: unknown) {
       if (owns()) messageApi.error(`下载失败：${error}`);
