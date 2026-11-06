@@ -51,7 +51,9 @@ import { alpha, useTheme } from "@mui/material/styles";
 import {
   MouseEvent as ReactMouseEvent,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -132,7 +134,6 @@ function FilesPageContent() {
   const [showExternal, setShowExternal] = useState<boolean>(false);
   const downloadTasks = useLegacyTasks<FileDownloadTask>("files", ["file", "conversion", "upload", "upload-pdf"]);
   const [operating, setOperating] = useState<boolean>(false);
-  const [currentFolderId, setCurrentFolderId] = useState(0);
   const [currentFolderFullName, setCurrentFolderFullName] =
     useState<Option<string>>("");
   const [parentFolderId, setParentFolderId] = useState<Option<number>>(null);
@@ -177,21 +178,28 @@ function FilesPageContent() {
     setEntries(files);
   }, [files]);
 
-  useEffect(() => {
-    if (currentFolderId > 0) {
-      void handleGetFoldersAndFiles(currentFolderId);
-    }
-  }, [currentFolderId]);
+  // A folder ID is not a request identity: A -> B -> A must reject the first A.
+  // Source ownership is invalidated at commit, before passive loading effects.
+  const browseCourseId = section === COURSE_FILES ? selectedCourseId : undefined;
+  const courseAvailable = courses.data.some((course) => course.id === browseCourseId);
+  const browseSource = useMemo(() => ({ section, courseId: browseCourseId, courseAvailable, session: currentSession() }),
+    [section, browseCourseId, courseAvailable]);
+  const activeBrowseSource = useRef<typeof browseSource>();
+  const browseGeneration = useRef(0);
+  useLayoutEffect(() => {
+    activeBrowseSource.current = browseSource;
+    clearFolderView();
+    setAllFolders([]);
+    setOperating(false);
+    return () => {
+      activeBrowseSource.current = undefined;
+      browseGeneration.current += 1;
+    };
+  }, [browseSource]);
 
   useEffect(() => {
-    if (section === MY_FILES) {
-      void initAllMyFolders();
-    } else if (selectedCourseId > 0) {
-      void handleCourseSelect(selectedCourseId);
-    } else {
-      clearFilesAndFolders();
-    }
-  }, [section, selectedCourseId, courses.data.length]);
+    void initAllFolders();
+  }, [browseSource]);
 
   const handleExplainFile = fileAISession.explain;
   const handleSendChatMessage = fileAISession.send;
@@ -203,114 +211,91 @@ function FilesPageContent() {
     return courses.data.find((course) => course.id === selectedCourseId);
   };
 
-  const initWithFolders = (nextFolders: Folder[]) => {
-    setAllFolders(nextFolders);
-    const folder = nextFolders.find((item) => item.name === section)!;
-    setCurrentFolderId(folder.id);
-    setCurrentFolderFullName(section);
-    setParentFolderId(null);
+  const beginBrowse = () => {
+    if (activeBrowseSource.current !== browseSource || !isSessionCurrent(browseSource.session)) return () => false;
+    const generation = ++browseGeneration.current;
+    return () => activeBrowseSource.current === browseSource
+      && browseGeneration.current === generation
+      && isSessionCurrent(browseSource.session);
   };
 
-  const clearFilesAndFolders = () => {
+  const clearFolderView = () => {
     setSelectedEntries([]);
-    setAllFolders([]);
     setFiles([]);
     setFolders([]);
-    setCurrentFolderId(0);
+    setCurrentFolderFullName(undefined);
+    setParentFolderId(null);
+    setFileActionMenu(null);
   };
 
-  const initAllMyFolders = async () => {
-    try {
-      const myFolders = (await invoke("list_my_folders")) as Folder[];
-      initWithFolders(myFolders);
-    } catch (error) {
-      consoleLog(LOG_LEVEL_ERROR, "Personal folder loading failed");
-      clearFilesAndFolders();
-    }
-  };
-
-  const initAllCourseFolders = async (courseId: number) => {
-    try {
-      const courseFolders = (await invoke("list_course_folders", {
-        courseId,
-      })) as Folder[];
-      initWithFolders(courseFolders);
-    } catch {
-      clearFilesAndFolders();
-    }
-  };
-
-  const getParentFolder = async (
-    folderId: number
-  ): Promise<Folder | undefined> => {
-    try {
-      return (await invoke("get_folder_by_id", { folderId })) as Folder;
-    } catch {
-      return undefined;
-    }
-  };
-
-  const handleGetFolderFiles = async (folderId: number) => {
-    try {
-      const nextFiles = (await invoke("list_folder_files", { folderId })) as File[];
-      if (folderId !== currentFolderId) {
-        return;
+  const loadFolder = async (folderId: number, isCurrent: () => boolean, knownFolder?: Folder) => {
+    if (!isCurrent()) return;
+    const loadFiles = async () => {
+      try {
+        const nextFiles = await invoke<File[]>("list_folder_files", { folderId });
+        if (isCurrent()) setFiles(nextFiles.map((file) => ({ ...file, key: file.uuid })));
+      } catch {
+        if (isCurrent()) setFiles([]);
       }
-      nextFiles.forEach((file) => {
-        file.key = file.uuid;
-      });
-      setFiles(nextFiles);
-    } catch {
-      setFiles([]);
-    }
+    };
+    const loadFolders = async () => {
+      try {
+        const nextFolders = await invoke<Folder[]>("list_folder_folders", { folderId });
+        if (isCurrent()) setFolders(nextFolders.map((folder) => ({ ...folder, key: folder.id.toString() })));
+      } catch {
+        if (isCurrent()) setFolders([]);
+      }
+    };
+    const loadPath = async () => {
+      try {
+        const folder = knownFolder ?? await invoke<Folder>("get_folder_by_id", { folderId });
+        if (!isCurrent()) return;
+        setCurrentFolderFullName(folder.full_name);
+        setParentFolderId(folder.parent_folder_id);
+      } catch {
+        if (!isCurrent()) return;
+        setCurrentFolderFullName(undefined);
+        setParentFolderId(null);
+      }
+    };
+    await Promise.all([loadFiles(), loadFolders(), loadPath()]);
+    if (isCurrent()) setOperating(false);
   };
 
-  const handleGetFolderFolders = async (folderId: number) => {
-    try {
-      const nextFolders = (await invoke("list_folder_folders", {
-        folderId,
-      })) as Folder[];
-      nextFolders.forEach((folder) => {
-        folder.key = folder.id.toString();
-      });
-      setFolders(nextFolders);
-    } catch {
-      setFolders([]);
-    }
-  };
-
-  const handleGetFoldersAndFiles = async (folderId: number) => {
+  const initAllFolders = async () => {
+    const isCurrent = beginBrowse();
+    if (!isCurrent()) return;
+    clearFolderView();
+    setAllFolders([]);
+    setOperating(false);
+    if (section !== MY_FILES && !courseAvailable) return;
     setOperating(true);
     try {
-      await Promise.all([
-        handleGetFolderFolders(folderId),
-        handleGetFolderFiles(folderId),
-      ]);
-    } catch (error) {
-      consoleLog(LOG_LEVEL_ERROR, "Folder contents loading failed");
-      setFiles([]);
-      setFolders([]);
-    }
-    setOperating(false);
-  };
-
-  const handleCourseSelect = async (courseId: number) => {
-    if (courses.data.find((course) => course.id === courseId)) {
-      setSelectedCourseId(courseId);
-      setSelectedEntries([]);
-      await initAllCourseFolders(courseId);
+      const nextFolders = section === MY_FILES
+        ? await invoke<Folder[]>("list_my_folders")
+        : await invoke<Folder[]>("list_course_folders", { courseId: selectedCourseId });
+      if (!isCurrent()) return;
+      setAllFolders(nextFolders);
+      const root = nextFolders.find((folder) => folder.name === section);
+      if (!root) {
+        setOperating(false);
+        return;
+      }
+      await loadFolder(root.id, isCurrent, root);
+    } catch {
+      if (!isCurrent()) return;
+      if (section === MY_FILES) consoleLog(LOG_LEVEL_ERROR, "Personal folder loading failed");
+      setOperating(false);
     }
   };
 
-  const handleFolderOpen = async (folderId: number) => {
-    setSelectedEntries([]);
-    setFiles([]);
-    setFolders([]);
-    setCurrentFolderId(folderId);
-    const parentFolder = await getParentFolder(folderId);
-    setCurrentFolderFullName(parentFolder?.full_name);
-    setParentFolderId(parentFolder?.parent_folder_id);
-    scrollToTop();
+  const handleFolderOpen = async (folderId: number, knownFolder?: Folder) => {
+    const isCurrent = beginBrowse();
+    if (!isCurrent()) return;
+    clearFolderView();
+    setOperating(true);
+    await loadFolder(folderId, isCurrent, knownFolder);
+    if (isCurrent()) scrollToTop();
   };
 
   const getFolderPath = (file: File) => {
@@ -403,7 +388,10 @@ function FilesPageContent() {
     file: File,
     outputFormat: FileOutputFormat = "original"
   ) => {
-    const subDir = currentFolderFullName?.replace(section, "") ?? "";
+    // Child file rows may arrive before their path, or path lookup may fail.
+    // Never silently upload them into the root directory.
+    if (!currentFolderFullName) return;
+    const subDir = currentFolderFullName.replace(section, "");
     const course = getSelectedCourse();
     if (section === COURSE_FILES && !course) return;
     const saveDir =
@@ -455,20 +443,12 @@ function FilesPageContent() {
   };
 
   const backToParentDir = async () => {
-    setFiles([]);
-    setFolders([]);
-    const nextFolderId = parentFolderId as number;
-    setCurrentFolderId(nextFolderId);
-    const parentFolder = await getParentFolder(nextFolderId);
-    setCurrentFolderFullName(parentFolder?.full_name);
-    setParentFolderId(parentFolder?.parent_folder_id);
+    if (typeof parentFolderId === "number") await handleFolderOpen(parentFolderId);
   };
 
   const backToRootDir = async () => {
-    const mainFolder = allFolders.find((folder) => folder.name === section)!;
-    setCurrentFolderId(mainFolder.id);
-    setCurrentFolderFullName(section);
-    setParentFolderId(null);
+    const root = allFolders.find((folder) => folder.name === section);
+    if (root) await handleFolderOpen(root.id, root);
   };
 
   const shouldShow = (entry: Entry) => {
@@ -809,6 +789,7 @@ function FilesPageContent() {
                                   <Button
                                     size="small"
                                     startIcon={<UploadFileRoundedIcon />}
+                                    disabled={!currentFolderFullName}
                                     endIcon={<ArrowDropDownRoundedIcon />}
                                     onClick={(event) =>
                                       openFileActionMenu(event, file, "upload")
