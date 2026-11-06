@@ -3,7 +3,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { IMainState } from "@cyntler/react-doc-viewer/dist/cjs/store/mainStateReducer";
 import type { IDocument } from "@cyntler/react-doc-viewer";
 import ArchiveRenderer from "../archive_renderer";
-import { invalidateSession } from "../../lib/session";
+import { currentSession, invalidateSession } from "../../lib/session";
+
+import { PreviewSessionContext } from "../../lib/preview_session";
 
 const mocks = vi.hoisted(() => ({
   open: vi.fn(), invoke: vi.fn(), fileType: vi.fn(), createUrl: vi.fn(), revokeUrl: vi.fn(),
@@ -218,4 +220,23 @@ it("recognizes directories containing a file named name", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "folder" }));
   fireEvent.click(screen.getByRole("button", { name: /name/ }));
   expect(await screen.findByTestId("archive-preview")).toHaveTextContent("name");
+});
+
+it("rejects an inherited stale owner before first mount and after a renderer remount", () => {
+  const owner = currentSession(); invalidateSession();
+  const element = <PreviewSessionContext.Provider value={owner}><ArchiveRenderer mainState={document()} /></PreviewSessionContext.Provider>;
+  const view = render(element);
+  expect(mocks.open).not.toHaveBeenCalled();
+  view.unmount();
+  render(element);
+  expect(mocks.open).not.toHaveBeenCalled();
+});
+it("does not recapture the current session when old document identity changes", async () => {
+  mocks.open.mockResolvedValueOnce(archive());
+  const view = render(<ArchiveRenderer mainState={document()} />);
+  await flush();
+  act(() => invalidateSession());
+  view.rerender(<ArchiveRenderer mainState={document()} />);
+  await flush();
+  expect(mocks.open).toHaveBeenCalledOnce();
 });

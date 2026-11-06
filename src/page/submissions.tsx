@@ -267,9 +267,13 @@ export default function SubmissionsPage() {
     );
   }, [previewEntry, attachments, selectedAssignment, readonlyGrade, me.data]);
 
+  // A new preview setter must not relabel the unchanged previous account list.
+  const previewSource = useMemo(() => ({
+    owner: currentSession(), entries: attachments.map(attachmentToFile),
+  }), [attachments]);
   useEffect(() => {
-    setEntries(attachments.map(attachmentToFile));
-  }, [attachments, setEntries]);
+    if (isSessionCurrent(previewSource.owner)) setEntries(previewSource.entries);
+  }, [previewSource, setEntries]);
 
   useEffect(() => {
     if (attachments.length > 0) {

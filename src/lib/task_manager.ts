@@ -1,3 +1,4 @@
+import { currentSession } from "./session";
 import { logDiagnostic } from "./diagnostics";
 import { LOG_LEVEL_ERROR, LOG_LEVEL_INFO } from "./model";
 
@@ -12,6 +13,8 @@ export const taskKindLabels: Record<TaskKind, string> = {
 export const taskSourceLabels: Record<TaskSource, string> = { files: "文件管理", submissions: "提交批改", video: "视频管理" };
 export interface Task {
   id: string;
+  /** Ownership of local preview results, retained across retries. */
+  ownerSession: number;
   name: string;
   kind: TaskKind;
   source: TaskSource;
@@ -104,7 +107,7 @@ export class TaskManager {
         this.failureStages.delete(existing.id);
         // Explicit resubmission replaces the operation; retry(id) retains it.
         this.patch(existing.id, {
-          name: spec.name, kind: spec.kind, source: spec.source,
+          name: spec.name, kind: spec.kind, source: spec.source, ownerSession: currentSession(),
           context: spec.context, outputPath: spec.outputPath,
           outputDirectory: spec.outputDirectory, data: spec.data,
           canOpen: !!spec.open, canSave: !!spec.save, result: undefined,
@@ -124,7 +127,7 @@ export class TaskManager {
     }
     this.specs.set(spec.id, spec);
     this.tasks = [...this.tasks, {
-      id: spec.id, name: spec.name, kind: spec.kind, source: spec.source,
+      id: spec.id, name: spec.name, kind: spec.kind, source: spec.source, ownerSession: currentSession(),
       context: spec.context, outputPath: spec.outputPath, outputDirectory: spec.outputDirectory, data: spec.data,
       status: "queued", stage: "等待执行", createdAt: Date.now(), attempt: 0,
       canOpen: !!spec.open, canSave: !!spec.save,

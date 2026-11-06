@@ -25,6 +25,7 @@ import { Fragment, ReactNode, useContext, useEffect, useMemo, useRef, useState }
 import { DownloadCourseContext } from "../lib/download_context";
 import { openArchive, type ArchiveFile, type ArchiveTree, type OpenArchive } from "../lib/archive_open";
 import { currentSession, isSessionCurrent, subscribeSession } from "../lib/session";
+import { PreviewSessionContext } from "../lib/preview_session";
 
 import { useAppMessage } from "../lib/message";
 import { LOG_LEVEL_ERROR } from "../lib/model";
@@ -122,6 +123,9 @@ export default function ArchiveRenderer({
 }: DocRendererProps) {
   const theme = useTheme();
   const course = useContext(DownloadCourseContext);
+  const inheritedSession = useContext(PreviewSessionContext);
+  const [mountSession] = useState(currentSession);
+  const ownerSession = inheritedSession ?? mountSession;
   const [selectedPath, setSelectedPath] = useState("");
   const [messageApi, contextHolder] = useAppMessage();
   const [treeData, setTreeData] = useState<ArchiveTreeNode | undefined>();
@@ -142,7 +146,7 @@ export default function ArchiveRenderer({
 
   useEffect(() => {
     const lifetime: ArchiveLifetime = {
-      active: true, session: currentSession(), controller: new AbortController(),
+      active: true, session: ownerSession, controller: new AbortController(),
       selection: 0, files: new Map(),
     };
     lifetimeRef.current = lifetime;
@@ -163,7 +167,11 @@ export default function ArchiveRenderer({
       setLoading(false);
       setError("账号会话已变更，请重新打开压缩包");
     });
-    if (currentDocument?.fileData) {
+    if (!isSessionCurrent(lifetime.session)) {
+      releaseArchive(lifetime);
+      setLoading(false);
+      setError("账号会话已变更，请重新打开压缩包");
+    } else if (currentDocument?.fileData) {
       void (async () => {
         try {
           const file = dataURLtoFile(currentDocument.fileData as string, currentDocument.fileName ?? "tmp");
@@ -195,7 +203,7 @@ export default function ArchiveRenderer({
       releaseArchive(lifetime);
       if (lifetimeRef.current === lifetime) lifetimeRef.current = undefined;
     };
-  }, [currentDocument, messageApi]);
+  }, [currentDocument, messageApi, ownerSession]);
 
   const onSelect = async (path: string) => {
     const lifetime = lifetimeRef.current;

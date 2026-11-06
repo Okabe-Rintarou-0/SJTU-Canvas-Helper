@@ -9,12 +9,15 @@ import { useTasks } from "../lib/task_hooks";
 import { isTaskActive, taskKindLabels, taskSourceLabels, taskManager, type Task } from "../lib/task_manager";
 import type { File } from "../lib/model";
 import PreviewModal from "./preview_modal";
+import { isSessionCurrent, useSessionEpoch } from "../lib/session";
+import { usePreviewState } from "../lib/preview_session";
 
 const statusText = { queued: "等待执行", running: "进行中", succeeded: "已完成", failed: "失败" };
 
 function TaskItem({ task, onPreview }: { task: Task; onPreview: (id: string) => void }) {
   const [showLog, setShowLog] = useState(false);
   const active = isTaskActive(task);
+  const session = useSessionEpoch();
   return (
     <Box sx={{ px: 1.75, py: 1.25 }}>
       <Stack direction="row" alignItems="flex-start" spacing={1}>
@@ -32,7 +35,7 @@ function TaskItem({ task, onPreview }: { task: Task; onPreview: (id: string) => 
         </Box>
         <Stack direction="row" spacing={0.25} sx={{ flexShrink: 0, mt: "-2px", "& .MuiIconButton-root": { width: 24, height: 24, borderRadius: "5px" }, "& .MuiSvgIcon-root": { fontSize: 16 } }}>
           {task.status === "failed" && <Tooltip title="重试"><IconButton size="small" aria-label={`重试 ${task.name}`} onClick={() => taskManager.retry(task.id)}><ReplayRoundedIcon fontSize="small" /></IconButton></Tooltip>}
-          {task.status === "succeeded" && task.result && <Tooltip title="预览"><IconButton size="small" aria-label={`预览 ${task.name}`} onClick={() => onPreview(task.id)}><VisibilityRoundedIcon fontSize="small" /></IconButton></Tooltip>}
+          {task.status === "succeeded" && task.result && task.ownerSession === session && <Tooltip title="预览"><IconButton size="small" aria-label={`预览 ${task.name}`} onClick={() => onPreview(task.id)}><VisibilityRoundedIcon fontSize="small" /></IconButton></Tooltip>}
           {task.status === "succeeded" && task.canOpen && <Tooltip title="打开文件"><IconButton size="small" aria-label={`打开 ${task.name}`} onClick={() => void taskManager.action(task.id, "open")}><OpenInNewRoundedIcon fontSize="small" /></IconButton></Tooltip>}
           {task.status === "succeeded" && task.canSave && <Tooltip title="保存结果"><IconButton size="small" aria-label={`保存 ${task.name}`} onClick={() => void taskManager.action(task.id, "save")}><SaveAltRoundedIcon fontSize="small" /></IconButton></Tooltip>}
           {!active && <Tooltip title={task.result ? "清除记录与未保存预览" : "清除记录，保留文件"}><IconButton size="small" aria-label={`清除记录 ${task.name}`} onClick={() => taskManager.remove(task.id)}><CloseRoundedIcon sx={{ fontSize: 16 }} /></IconButton></Tooltip>}
@@ -56,8 +59,14 @@ export default function TaskPopover({ anchorEl, onClose }: { anchorEl: HTMLEleme
   useEffect(() => {
     if (anchorEl) taskManager.markCompletionsRead();
   }, [anchorEl, tasks]);
-  const [previewId, setPreviewId] = useState<string>();
-  const preview = tasks.find((task) => task.id === previewId)?.result;
+  const session = useSessionEpoch();
+  const [previewId, setPreviewId] = usePreviewState<string | undefined>(session, undefined);
+  const previewTask = tasks.find((task) => task.id === previewId && task.ownerSession === session);
+  const preview = previewTask?.result;
+  const onPreview = (id: string) => {
+    const task = tasks.find((item) => item.id === id);
+    if (task && isSessionCurrent(task.ownerSession)) setPreviewId(id);
+  };
   const previewFiles = useMemo(() => preview ? [{ display_name: preview.name, url: preview.url } as File] : [], [preview]);
   const active = tasks.filter(isTaskActive).length;
   const failed = tasks.filter((task) => task.status === "failed").length;
@@ -86,7 +95,7 @@ export default function TaskPopover({ anchorEl, onClose }: { anchorEl: HTMLEleme
       </Stack>
       <Divider />
       <Stack divider={<Divider sx={{ mx: 1.75 }} />} sx={{ maxHeight: "min(360px, 55vh)", overflowY: "auto", overscrollBehavior: "contain" }}>
-        {sorted.map((task) => <TaskItem key={task.id} task={task} onPreview={setPreviewId} />)}
+        {sorted.map((task) => <TaskItem key={task.id} task={task} onPreview={onPreview} />)}
         {!sorted.length && <Typography variant="body2" color="text.secondary" sx={{ px: 3, py: 4, textAlign: "center" }}>暂无任务</Typography>}
       </Stack>
       {!!tasks.length && <><Divider /><Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 1.75, py: 0.75 }}>
@@ -94,6 +103,6 @@ export default function TaskPopover({ anchorEl, onClose }: { anchorEl: HTMLEleme
         <Tooltip title="保留已保存的文件和未保存的合并预览"><span><Button size="small" color="inherit" sx={{ px: 0.75, py: 0.25, minHeight: 26, fontSize: 12, fontWeight: 400, borderRadius: "5px" }} disabled={!completed.length} onClick={() => completed.forEach((task) => taskManager.remove(task.id))}>清除已完成记录</Button></span></Tooltip>
       </Stack></>}
     </Popover>
-    {preview && <PreviewModal open files={previewFiles} title={preview.name} handleCancelPreview={() => setPreviewId(undefined)} />}
+    {preview && previewTask && <PreviewModal ownerSession={previewTask.ownerSession} open files={previewFiles} title={preview.name} handleCancelPreview={() => setPreviewId(undefined)} />}
   </>;
 }

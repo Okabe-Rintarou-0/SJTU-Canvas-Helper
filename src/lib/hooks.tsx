@@ -54,6 +54,7 @@ import {
   useSessionEpoch,
 } from "./session";
 import { consoleLog, isMergableFileType, moduleItem2File } from "./utils";
+import { usePreviewState } from "./preview_session";
 
 const UPDATE_QRCODE_MESSAGE = '{ "type": "UPDATE_QR_CODE" }';
 const SEND_INTERVAL = 1000 * 25;
@@ -68,29 +69,27 @@ export function usePreview(
   bodyStyle?: CSSProperties,
   monitorBlankKey = true
 ) {
-  const [entries, setEntries] = useState<Entry[]>([]);
-  const [previewEntry, setPreviewEntry] = useState<Entry | undefined>(
-    undefined
-  );
-  const [hoveredEntry, setHoveredEntry] = useState<Entry | undefined>(
-    undefined
-  );
+  const session = useSessionEpoch();
+  const [entries, setEntries] = usePreviewState<Entry[]>(session, EMPTY_ARRAY);
+  const [previewEntry, setPreviewEntry] = usePreviewState<Entry | undefined>(session, undefined);
+  const [hoveredEntry, setHoveredEntry] = usePreviewState<Entry | undefined>(session, undefined);
 
   const onHoverEntry = useCallback((entry: Entry) => {
     if (!previewEntry) {
       setHoveredEntry(entry);
     }
-  }, [previewEntry]);
+  }, [previewEntry, setHoveredEntry]);
 
   const onLeaveEntry = useCallback(() => {
     if (!previewEntry) {
       setHoveredEntry(undefined);
     }
-  }, [previewEntry]);
+  }, [previewEntry, setHoveredEntry]);
 
   const previewer = useMemo(
     () => (
       <Previewer
+        session={session}
         previewEntry={previewEntry}
         setPreviewEntry={setPreviewEntry}
         hoveredEntry={hoveredEntry}
@@ -101,7 +100,7 @@ export function usePreview(
         monitorBlankKey={monitorBlankKey}
       />
     ),
-    [bodyStyle, entries, footer, hoveredEntry, monitorBlankKey, previewEntry]
+    [bodyStyle, entries, footer, hoveredEntry, monitorBlankKey, previewEntry, session, setHoveredEntry, setPreviewEntry]
   );
 
   return {
@@ -118,6 +117,7 @@ export function usePreview(
 type EntryType = Entry | undefined;
 
 function Previewer({
+  session,
   previewEntry,
   setPreviewEntry,
   hoveredEntry,
@@ -127,6 +127,7 @@ function Previewer({
   bodyStyle,
   monitorBlankKey,
 }: {
+  session: number;
   previewEntry: EntryType;
   setPreviewEntry: Dispatch<SetStateAction<EntryType>>;
   hoveredEntry: EntryType;
@@ -190,6 +191,7 @@ function Previewer({
 
   useEffect(() => {
     const handleKeyDownEvent = (ev: KeyboardEvent) => {
+      if (!isSessionCurrent(session)) return;
       const currentPreviewEntry = previewEntryRef.current;
       const currentHoveredEntry = hoveredEntryRef.current;
 
@@ -239,7 +241,7 @@ function Previewer({
     return () => {
       document.body.removeEventListener("keydown", handleKeyDownEvent, true);
     };
-  }, [getNextEntry, getPrevEntry, setHoveredEntry, setPreviewEntry]);
+  }, [getNextEntry, getPrevEntry, session, setHoveredEntry, setPreviewEntry]);
 
   const currentFile = useMemo(() => {
     if (previewEntry && isFile(previewEntry)) {
@@ -261,6 +263,7 @@ function Previewer({
     <>
       {shouldOpen && (
         <PreviewModal
+          ownerSession={session}
           open={shouldOpen}
           files={previewFiles}
           footer={footer}
@@ -285,7 +288,9 @@ export function useMerger({
   course?: DownloadCourse;
 }) {
   const tasks = useTasks();
+  const session = useSessionEpoch();
   const latest = [...tasks].reverse().find((task) => task.kind === "pdf-merge");
+  const canPreviewResult = latest?.ownerSession === session;
   const [outFileName, setOutFileName] = useState("");
   const result = useMemo(() => latest?.result ? ({
     url: latest.result.url, display_name: latest.result.name,
@@ -339,12 +344,12 @@ export function useMerger({
       {result && (
         <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }}>
           <a
-            onMouseEnter={() => onHoverEntry(result)}
+            onMouseEnter={canPreviewResult ? () => onHoverEntry(result) : undefined}
             onMouseLeave={onLeaveEntry}
           >
             {result.display_name}
           </a>
-          <Button variant="outlined" onClick={() => setPreviewEntry(result)}>预览</Button>
+          {canPreviewResult && <Button variant="outlined" onClick={() => setPreviewEntry(result)}>预览</Button>}
           <Button variant="contained" onClick={handleDownloadResult}>下载</Button>
         </Stack>
       )}
