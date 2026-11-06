@@ -83,6 +83,15 @@ pub struct File {
     pub external_type: Option<String>,
 }
 
+/// A pending file and the folder path used by the same sync completeness check.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PendingCourseFile {
+    pub file: File,
+    // Some("") is the course root. None means no valid folder path was resolved;
+    // serialize it as null so callers cannot mistake a missing path for root.
+    pub folder_path: Option<String>,
+}
+
 impl File {
     pub fn expected_download_size(&self) -> Option<u64> {
         // The frontend's external-link adapter uses size=0 for unknown length.

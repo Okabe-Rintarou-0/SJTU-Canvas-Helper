@@ -71,6 +71,12 @@ export interface File {
     external_title?: string;
 }
 
+/** Native sync entries keep the folder path from their completeness-check snapshot. */
+export interface PendingCourseFile {
+    file: File;
+    folder_path: string | null;
+}
+
 export interface Folder {
     key: string;
     id: number;

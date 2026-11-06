@@ -1821,7 +1821,7 @@ impl App {
         Ok(())
     }
 
-    pub async fn sync_course_files(&self, course: &Course) -> Result<Vec<File>> {
+    pub async fn sync_course_files(&self, course: &Course) -> Result<Vec<PendingCourseFile>> {
         let guard = self.config.read().await;
         let save_dir = guard.save_path.clone();
         let token = guard.token.clone();

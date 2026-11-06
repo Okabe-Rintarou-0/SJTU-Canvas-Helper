@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useCallback, type ReactNode } from "react";
 import FilesPage from "../../page/files";
 import { invalidateSession, useSessionEpoch } from "../../lib/session";
+import { TaskManager } from "../../lib/task_manager";
 import { usePreviewState } from "../../lib/preview_session";
 import type { Entry, Course, File } from "../../lib/model";
 
@@ -54,7 +55,7 @@ function backend(files: () => unknown) {
   mocks.invoke.mockImplementation((command: string) => {
     if (command === "list_my_folders") return Promise.resolve([{ id: 1, name: "my files", full_name: "my files", parent_folder_id: null }]);
     if (command === "list_course_folders") return Promise.resolve([{ id: 1, name: "course files", full_name: "course files", parent_folder_id: null }]);
-    if (command === "sync_course_files") return Promise.resolve(files());
+    if (command === "sync_course_files") return Promise.resolve(files()).then((result) => (result as typeof oldFile[]).map((file) => ({ file, folder_path: file.folder_id === 1 ? "" : null })));
     if (command === "list_folder_folders") return Promise.resolve([]);
     if (command === "list_folder_files") return Promise.resolve(files());
     return Promise.resolve(undefined);
@@ -401,16 +402,15 @@ it("refuses a sync result with an unknown folder instead of downloading it into 
 it("does not create a direct download with an unknown folder path", async () => {
   backend(() => [{ ...oldFile, folder_id: 77 }]); showCourseFiles();
   await screen.findByText(oldFile.display_name);
-  fireEvent.click(within(screen.getByText(oldFile.display_name).closest("tr")!).getByRole("button", { name: "下载" }));
-  fireEvent.click(screen.getByRole("menuitem", { name: "下载原文件" }));
+  const download = within(screen.getByText(oldFile.display_name).closest("tr")!).getByRole("button", { name: "下载" });
+  expect(download).toBeDisabled(); fireEvent.click(download);
   expect(mocks.enqueue).not.toHaveBeenCalled();
-  expect(mocks.messages.warning).toHaveBeenCalledWith(expect.stringContaining("目录"));
 });
 
 it("keeps a queued sync's original course and subfolder after same-session navigation", async () => {
   navigationBackend((command) => command === "list_course_folders"
     ? Promise.resolve([{ ...rootFolder, name: "course files", full_name: "course files" }, { ...branchFolder, full_name: "course files/Branch" }])
-    : command === "sync_course_files" ? Promise.resolve([{ ...branchFile, folder_id: 2 }]) : undefined);
+    : command === "sync_course_files" ? Promise.resolve([{ file: { ...branchFile, folder_id: 2 }, folder_path: "Branch" }]) : undefined);
   const view = showCourseFiles();
   await screen.findByText(rootFile.display_name);
   fireEvent.click(screen.getByRole("button", { name: "一键同步" }));
@@ -423,4 +423,88 @@ it("keeps a queued sync's original course and subfolder after same-session navig
   expect(download.outputPath).toBe("Test course/Branch/branch.zip");
   await download.run();
   expect(mocks.invoke).toHaveBeenCalledWith("download_course_file", expect.objectContaining({ course: expect.objectContaining({ id: 7 }), folderPath: "Branch" }));
+});
+
+it("uses fresh folder metadata and a distinct destination identity after a same-ID rename", async () => {
+  let renamed = false;
+  navigationBackend((command, id) => command === "get_folder_by_id" && id === 2
+    ? Promise.resolve(renamed ? { ...branchFolder, name: "Renamed", full_name: "my files/Renamed" } : branchFolder)
+    : command === "list_folder_folders" && id === 1
+      ? Promise.resolve([renamed ? { ...branchFolder, name: "Renamed", full_name: "my files/Renamed" } : branchFolder])
+      : command === "list_folder_files" && id === 2 ? Promise.resolve([{ ...branchFile, folder_id: 2 }]) : undefined);
+  await openBranch(); await screen.findByText(branchFile.display_name);
+  const download = () => {
+    fireEvent.click(within(screen.getByText(branchFile.display_name).closest("tr")!).getByRole("button", { name: "下载" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "下载原文件" }));
+  };
+  download(); const first = mocks.enqueue.mock.calls[0][0];
+  renamed = true;
+  fireEvent.click(screen.getByRole("button", { name: "根目录" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Renamed" }));
+  await screen.findByText("当前目录：my files/Renamed");
+  download(); const second = mocks.enqueue.mock.calls[1][0];
+  expect(second.outputPath).toBe("我的Canvas文件/Renamed/branch.zip");
+  expect(second.id).not.toBe(first.id);
+  await second.run();
+  expect(mocks.invoke).toHaveBeenCalledWith("download_my_file", expect.objectContaining({ folderPath: "Renamed" }));
+});
+
+it("does not download from the old folder map while current metadata is pending", async () => {
+  const metadata = pending<typeof branchFolder>();
+  navigationBackend((command, id) => command === "get_folder_by_id" && id === 2 ? metadata.promise
+    : command === "list_folder_files" && id === 2 ? Promise.resolve([{ ...branchFile, folder_id: 2 }]) : undefined);
+  await openBranch(); await screen.findByText(branchFile.display_name);
+  const download = within(screen.getByText(branchFile.display_name).closest("tr")!).getByRole("button", { name: "下载" });
+  expect(download).toBeDisabled(); fireEvent.click(download);
+  expect(mocks.enqueue).not.toHaveBeenCalled();
+  await act(async () => metadata.resolve({ ...branchFolder, full_name: "my files/Renamed" }));
+  expect(download).toBeEnabled();
+});
+
+
+it("uses native sync-plan paths for renamed and new folders rather than the queued UI map", async () => {
+  const renamed = { ...branchFile, folder_id: 2 };
+  const created = { ...oldFile, uuid: "new-folder-file", display_name: "new.zip", folder_id: 77 };
+  navigationBackend((command) => command === "sync_course_files" ? Promise.resolve([
+    { file: renamed, folder_path: "Renamed" }, { file: created, folder_path: "New/Nested" },
+  ]) : undefined);
+  showCourseFiles(); await screen.findByText(rootFile.display_name);
+  fireEvent.click(screen.getByRole("button", { name: "一键同步" }));
+  await act(async () => mocks.enqueue.mock.calls[0][0].run({ update: vi.fn() }));
+  expect(mocks.enqueue).toHaveBeenCalledTimes(3);
+  const tasks = mocks.enqueue.mock.calls.slice(1).map(([task]) => task);
+  expect(tasks.map((task) => task.outputPath)).toEqual(["Test course/Renamed/branch.zip", "Test course/New/Nested/new.zip"]);
+  expect(tasks.every((task) => task.resubmitSucceeded)).toBe(true);
+  await tasks[0].run(); await tasks[1].run();
+  expect(mocks.invoke).toHaveBeenCalledWith("download_course_file", expect.objectContaining({ folderPath: "Renamed" }));
+  expect(mocks.invoke).toHaveBeenCalledWith("download_course_file", expect.objectContaining({ folderPath: "New/Nested" }));
+});
+
+it("rejects an unsafe native sync plan before enqueueing even its valid entries", async () => {
+  navigationBackend((command) => command === "sync_course_files" ? Promise.resolve([
+    { file: rootFile, folder_path: "" }, { file: branchFile, folder_path: "../outside" },
+  ]) : undefined);
+  showCourseFiles(); await screen.findByText(rootFile.display_name);
+  fireEvent.click(screen.getByRole("button", { name: "一键同步" }));
+  const update = vi.fn();
+  await expect(mocks.enqueue.mock.calls[0][0].run({ update })).rejects.toThrow("目录");
+  expect(mocks.enqueue).toHaveBeenCalledOnce(); expect(update).not.toHaveBeenCalled();
+});
+
+
+it("reruns a completed download when a later native sync plan reports the output missing", async () => {
+  const manager = new TaskManager();
+  mocks.enqueue.mockImplementation((task) => manager.enqueue(task));
+  try {
+    backend(() => [oldFile]); showCourseFiles(); await screen.findByText(oldFile.display_name);
+    fireEvent.click(within(screen.getByText(oldFile.display_name).closest("tr")!).getByRole("button", { name: "下载" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "下载原文件" }));
+    await waitFor(() => expect(manager.getSnapshot().find((task) => task.kind === "file")?.status).toBe("succeeded"));
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "download_course_file")).toHaveLength(1);
+    // The mocked native planner now reports that this output is missing again.
+    fireEvent.click(screen.getByRole("button", { name: "一键同步" }));
+    await waitFor(() => expect(manager.getSnapshot().find((task) => task.kind === "file")).toMatchObject({ status: "succeeded", attempt: 2 }));
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "download_course_file")).toHaveLength(2);
+    expect(manager.getSnapshot().filter((task) => task.kind === "file")).toHaveLength(1);
+  } finally { mocks.enqueue.mockReset(); }
 });

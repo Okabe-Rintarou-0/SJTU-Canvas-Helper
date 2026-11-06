@@ -14,15 +14,68 @@ use crate::{
     error::{AppError, Result},
     model::{
         Assignment, CalendarEvent, Colors, Course, DiscussionTopic, File, Folder, FoldersAndFiles,
-        FullDiscussion, Module, ModuleItem, ProgressPayload, RelationshipEdge, RelationshipNode,
-        RelationshipNodeType, RelationshipTopo, Submission, SubmissionUploadResult,
-        SubmissionUploadSuccessResponse, User, UserSubmissions,
+        FullDiscussion, Module, ModuleItem, PendingCourseFile, ProgressPayload, RelationshipEdge,
+        RelationshipNode, RelationshipNodeType, RelationshipTopo, Submission,
+        SubmissionUploadResult, SubmissionUploadSuccessResponse, User, UserSubmissions,
     },
     utils::{
-        self,
+        self, download as outputs,
         file::{checked_download_path, get_file_name},
     },
 };
+
+// Resolve once from the freshly fetched folder/file data. The returned relative
+// path must travel with the file through the frontend queue, rather than being
+// looked up again in an older folder map. This is not an atomic server snapshot
+// or a guarantee against filesystem changes after the completeness check.
+fn pending_course_files(
+    course: &Course,
+    save_dir: &Path,
+    folders_and_files: FoldersAndFiles,
+) -> Vec<PendingCourseFile> {
+    let folders_map = &folders_and_files.folders_map;
+    tracing::info!(folder_count = folders_map.len(), "Prepared folder map");
+    let mut pending = Vec::new();
+    for file in folders_and_files.files {
+        let folder_path = folders_map.get(&file.folder_id).and_then(|folder| {
+            if folder.full_name == "course files" {
+                Some("")
+            } else {
+                folder
+                    .full_name
+                    .strip_prefix("course files/")
+                    .filter(|path| !path.is_empty())
+            }
+        });
+        let resolved = folder_path.and_then(|folder_path| {
+            let relative = outputs::relative_path(folder_path).ok()?;
+            // A malformed non-root folder such as "course files/." must not
+            // collapse to the root directory.
+            if !folder_path.is_empty() && relative.as_os_str().is_empty() {
+                return None;
+            }
+            let path = outputs::course_file_path(save_dir, course, folder_path, &file.display_name)
+                .ok()?;
+            Some((folder_path.to_owned(), path))
+        });
+        let (folder_path, complete) = match resolved {
+            Some((folder_path, path)) => {
+                let complete = fs::metadata(path).is_ok_and(|metadata| {
+                    metadata.is_file()
+                        && file
+                            .expected_download_size()
+                            .is_some_and(|size| metadata.len() == size)
+                });
+                (Some(folder_path), complete)
+            }
+            None => (None, false),
+        };
+        if !complete {
+            pending.push(PendingCourseFile { file, folder_path });
+        }
+    }
+    pending
+}
 
 // Apis here are for canvas
 impl Client {
@@ -614,56 +667,13 @@ impl Client {
         course: &Course,
         save_dir: &str,
         token: &str,
-    ) -> Result<Vec<File>> {
+    ) -> Result<Vec<PendingCourseFile>> {
         let folders_and_files = self.get_folders_and_files(course.id, token).await?;
-        let folders_map = &folders_and_files.folders_map;
-        tracing::info!(folder_count = folders_map.len(), "Prepared folder map");
-        let mut pending = Vec::new();
-        for file in folders_and_files.files {
-            let folder = folders_map.get(&file.folder_id);
-            let folder_path = match folder {
-                Some(folder) if folder.full_name == "course files" => "",
-                Some(folder) => match folder.full_name.strip_prefix("course files/") {
-                    Some(path) => path,
-                    None => {
-                        pending.push(file);
-                        continue;
-                    }
-                },
-                None => "",
-            };
-            let path = match crate::utils::download::course_file_path(
-                Path::new(save_dir),
-                course,
-                folder_path,
-                &file.display_name,
-            ) {
-                Ok(path) => path,
-                // Keep per-file failures in the queue; the download entry rejects
-                // the invalid path without blocking unrelated course files.
-                Err(_) => {
-                    pending.push(file);
-                    continue;
-                }
-            };
-            if folder.is_none() {
-                pending.push(file);
-                continue;
-            }
-            let complete = match fs::metadata(path) {
-                Ok(metadata) => {
-                    metadata.is_file()
-                        && file
-                            .expected_download_size()
-                            .is_some_and(|size| metadata.len() == size)
-                }
-                Err(_) => false,
-            };
-            if !complete {
-                pending.push(file);
-            }
-        }
-        Ok(pending)
+        Ok(pending_course_files(
+            course,
+            Path::new(save_dir),
+            folders_and_files,
+        ))
     }
 
     pub async fn get_colors(&self, token: &str) -> Result<Colors> {
@@ -1115,6 +1125,214 @@ impl Client {
         }
         let topo = RelationshipTopo { nodes, edges };
         Ok(topo)
+    }
+}
+
+#[cfg(test)]
+mod sync_tests {
+    use super::*;
+
+    fn course() -> Course {
+        Course {
+            id: 42,
+            name: "同步测试".into(),
+            ..Default::default()
+        }
+    }
+
+    fn folder(id: i64, full_name: &str) -> Folder {
+        Folder {
+            id,
+            full_name: full_name.into(),
+            ..Default::default()
+        }
+    }
+
+    fn file(id: i64, folder_id: i64) -> File {
+        File {
+            id,
+            folder_id,
+            display_name: format!("{id}.pdf"),
+            size: 4,
+            ..Default::default()
+        }
+    }
+
+    fn write_output(root: &Path, course: &Course, folder_path: &str, file: &File, body: &[u8]) {
+        let path =
+            outputs::course_file_path(root, course, folder_path, &file.display_name).unwrap();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, body).unwrap();
+    }
+
+    #[test]
+    fn pending_sync_keeps_explicit_root_and_nested_paths() {
+        let root = tempfile::tempdir().unwrap();
+        let root_file = file(1, 10);
+        let nested_file = file(2, 20);
+        let pending = pending_course_files(
+            &course(),
+            root.path(),
+            FoldersAndFiles::new(
+                vec![
+                    folder(10, "course files"),
+                    folder(20, "course files/第一章/练习"),
+                ],
+                vec![root_file.clone(), nested_file.clone()],
+            ),
+        );
+        assert_eq!(
+            pending,
+            vec![
+                PendingCourseFile {
+                    file: root_file,
+                    folder_path: Some("".into())
+                },
+                PendingCourseFile {
+                    file: nested_file,
+                    folder_path: Some("第一章/练习".into())
+                },
+            ]
+        );
+        let wire = serde_json::to_value(&pending).unwrap();
+        assert_eq!(wire[0]["folder_path"], "");
+        assert_eq!(wire[1]["folder_path"], "第一章/练习");
+        assert_eq!(wire[1]["file"]["id"], 2);
+    }
+
+    #[test]
+    fn pending_sync_uses_renamed_folder_with_same_id_for_check_and_plan() {
+        let root = tempfile::tempdir().unwrap();
+        let course = course();
+        let file = file(1, 20);
+        write_output(root.path(), &course, "旧目录/练习", &file, b"done");
+        let snapshot = |name| FoldersAndFiles::new(vec![folder(20, name)], vec![file.clone()]);
+        assert!(
+            pending_course_files(&course, root.path(), snapshot("course files/旧目录/练习"))
+                .is_empty()
+        );
+        let pending =
+            pending_course_files(&course, root.path(), snapshot("course files/新目录/练习"));
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].file, file);
+        assert_eq!(pending[0].folder_path.as_deref(), Some("新目录/练习"));
+
+        // Completing the returned destination makes the same fresh snapshot
+        // complete; an existing file in the old destination does not.
+        write_output(
+            root.path(),
+            &course,
+            pending[0].folder_path.as_deref().unwrap(),
+            &file,
+            b"done",
+        );
+        assert!(
+            pending_course_files(&course, root.path(), snapshot("course files/新目录/练习"))
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn pending_sync_keeps_missing_and_invalid_paths_as_null_without_root_fallback() {
+        let root = tempfile::tempdir().unwrap();
+        let course = course();
+        let folders = vec![
+            folder(10, "other files/lesson"),
+            folder(11, "course files/../outside"),
+            folder(12, "course files//absolute"),
+            folder(13, r"course files/C:\outside"),
+            folder(14, "course files/"),
+            folder(15, "course files/."),
+            folder(16, "course files/./"),
+        ];
+        // Folder 99 is absent. Every invalid file has a complete namesake at
+        // root, which must neither suppress it nor become its destination.
+        let files: Vec<_> = [10, 11, 12, 13, 14, 15, 16, 99]
+            .into_iter()
+            .map(|id| file(id, id))
+            .collect();
+        for file in &files {
+            write_output(root.path(), &course, "", file, b"done");
+        }
+        let pending = pending_course_files(
+            &course,
+            root.path(),
+            FoldersAndFiles::new(folders, files.clone()),
+        );
+        assert_eq!(pending.len(), files.len());
+        for (item, file) in pending.iter().zip(files) {
+            assert_eq!(item.file, file);
+            assert_eq!(item.folder_path, None);
+            let wire = serde_json::to_value(item).unwrap();
+            assert_eq!(wire.get("folder_path"), Some(&serde_json::Value::Null));
+        }
+    }
+
+    #[test]
+    fn pending_sync_checks_size_file_type_and_unknown_length() {
+        let root = tempfile::tempdir().unwrap();
+        let course = course();
+        let complete = file(1, 10);
+        let partial = file(2, 10);
+        let missing = file(3, 10);
+        let directory = file(4, 10);
+        let empty = File {
+            size: 0,
+            ..file(5, 10)
+        };
+        let unknown = File {
+            size: 0,
+            external_type: Some("File".into()),
+            ..file(6, 10)
+        };
+        for (file, contents) in [
+            (&complete, b"done".as_slice()),
+            (&partial, b"x".as_slice()),
+            (&empty, b"".as_slice()),
+            (&unknown, b"".as_slice()),
+        ] {
+            write_output(root.path(), &course, "", file, contents);
+        }
+        let directory_path =
+            outputs::course_file_path(root.path(), &course, "", &directory.display_name).unwrap();
+        fs::create_dir_all(directory_path).unwrap();
+        let pending = pending_course_files(
+            &course,
+            root.path(),
+            FoldersAndFiles::new(
+                vec![folder(10, "course files")],
+                vec![complete, partial, missing, directory, empty, unknown],
+            ),
+        );
+        assert_eq!(
+            pending.iter().map(|item| item.file.id).collect::<Vec<_>>(),
+            vec![2, 3, 4, 6]
+        );
+        assert!(pending
+            .iter()
+            .all(|item| item.folder_path.as_deref() == Some("")));
+    }
+
+    #[test]
+    fn pending_sync_still_recognizes_complete_legacy_outputs() {
+        let root = tempfile::tempdir().unwrap();
+        let course = course();
+        let file = file(1, 20);
+        let legacy = root
+            .path()
+            .join("课程文件")
+            .join(outputs::safe_name(&outputs::legacy_course_identifier(
+                &course,
+            )))
+            .join("第一章/练习");
+        fs::create_dir_all(&legacy).unwrap();
+        fs::write(legacy.join(&file.display_name), b"done").unwrap();
+        assert!(pending_course_files(
+            &course,
+            root.path(),
+            FoldersAndFiles::new(vec![folder(20, "course files/第一章/练习")], vec![file]),
+        )
+        .is_empty());
     }
 }
 

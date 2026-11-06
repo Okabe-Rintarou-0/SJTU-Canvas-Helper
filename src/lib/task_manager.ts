@@ -54,6 +54,8 @@ export interface TaskSpec {
   locks?: string[];
   event?: { channel: string; id: string };
   stage?: string;
+  /** Explicit new download requests may replace a completed record; active jobs still deduplicate. */
+  resubmitSucceeded?: boolean;
   run: (context: TaskContext) => Promise<unknown>;
   open?: () => Promise<unknown>;
   save?: () => Promise<unknown>;
@@ -101,7 +103,7 @@ export class TaskManager {
   enqueue(spec: TaskSpec): string {
     const existing = this.tasks.find((task) => task.id === spec.id);
     if (existing) {
-      if (existing.status === "failed" && !this.executing.has(existing.id)) {
+      if ((existing.status === "failed" || (existing.status === "succeeded" && spec.resubmitSucceeded)) && !this.executing.has(existing.id)) {
         const previous = this.specs.get(existing.id);
         this.specs.set(existing.id, spec);
         this.failureStages.delete(existing.id);

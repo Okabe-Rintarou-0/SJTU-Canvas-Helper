@@ -1,4 +1,5 @@
 import AccountSessionBoundary from "../components/account_session_boundary";
+import { isRelativeFolderPath, relativeFolderPath } from "../lib/file_folder_path";
 import { downloadCourseContext } from "../lib/downloads";
 import { DownloadCourseContext } from "../lib/download_context";
 import PageTaskLists from "../components/page_task_lists";
@@ -83,7 +84,7 @@ import {
   FileDownloadTask,
   Folder,
   LOG_LEVEL_ERROR,
-  Option,
+  PendingCourseFile,
   entryName,
   isFile,
 } from "../lib/model";
@@ -134,9 +135,9 @@ function FilesPageContent() {
   const [showExternal, setShowExternal] = useState<boolean>(false);
   const downloadTasks = useLegacyTasks<FileDownloadTask>("files", ["file", "conversion", "upload", "upload-pdf"]);
   const [operating, setOperating] = useState<boolean>(false);
-  const [currentFolderFullName, setCurrentFolderFullName] =
-    useState<Option<string>>("");
-  const [parentFolderId, setParentFolderId] = useState<Option<number>>(null);
+  const [currentFolder, setCurrentFolder] = useState<Folder>();
+  const currentFolderFullName = currentFolder?.full_name;
+  const parentFolderId = currentFolder?.parent_folder_id;
   const [keyword, setKeyword] = useState<string>("");
   const [openFileOrderSelectModal, setOpenFileOrderSelectModal] =
     useState<boolean>(false);
@@ -227,8 +228,7 @@ function FilesPageContent() {
     setSelectedEntries([]);
     setFiles([]);
     setFolders([]);
-    setCurrentFolderFullName(undefined);
-    setParentFolderId(null);
+    setCurrentFolder(undefined);
     setFileActionMenu(null);
   };
 
@@ -254,12 +254,12 @@ function FilesPageContent() {
       try {
         const folder = knownFolder ?? await invoke<Folder>("get_folder_by_id", { folderId });
         if (!isCurrent()) return;
-        setCurrentFolderFullName(folder.full_name);
-        setParentFolderId(folder.parent_folder_id);
+        // Rows can arrive first. Authorize their destination only from metadata
+        // belonging to this exact navigation, not the initial folder-map snapshot.
+        setCurrentFolder(folder.id === folderId && relativeFolderPath(folder.full_name, section) !== undefined ? folder : undefined);
       } catch {
         if (!isCurrent()) return;
-        setCurrentFolderFullName(undefined);
-        setParentFolderId(null);
+        setCurrentFolder(undefined);
       }
     };
     await Promise.all([loadFiles(), loadFolders(), loadPath()]);
@@ -303,14 +303,10 @@ function FilesPageContent() {
   };
 
   const getFolderPath = (file: File) => {
-    if (file.external_type) {
-      return allFolders
-        .find((folder) => folder.name === section)
-        ?.full_name.slice(section.length + 1);
-    }
-    return allFolders
-      .find((folder) => folder.id === file.folder_id)
-      ?.full_name.slice(section.length + 1);
+    const folder = file.external_type
+      ? allFolders.find((folder) => folder.name === section)
+      : currentFolder?.id === file.folder_id ? currentFolder : undefined;
+    return folder ? relativeFolderPath(folder.full_name, section) : undefined;
   };
 
   const handleSyncFiles = async () => {
@@ -326,38 +322,43 @@ function FilesPageContent() {
       locks: [`sync:${course.id}`], stage: "正在检查文件差异",
       run: async ({ update }) => {
         ensureOwner();
-        const filesToSync = await invoke<File[]>("sync_course_files", { course });
+        const plan = await invoke<PendingCourseFile[]>("sync_course_files", { course });
         ensureOwner();
-        // Sync may discover folders created after this page loaded. Fail before
-        // enqueueing any downloads rather than silently flattening their paths.
-        if (filesToSync.some((file) => getFolderPath(file) === undefined)) {
-          throw new Error("文件目录已更新，请切换课程或重新进入文件页面，刷新目录后再同步。");
-        }
-        filesToSync.forEach((file) => handleAddDownloadFileTask(file));
-        update({ log: filesToSync.length ? `已创建 ${filesToSync.length} 个文件下载任务。请查看对应下载任务的进度。` : "文件已同步，无需下载。" });
-        notify(filesToSync.length ? `共 ${filesToSync.length} 个文件需要下载，已加入队列。` : "已同步，无需下载。", "success");
+        // Paths come from the very same native snapshot used to check outputs.
+        // Validate the whole plan before enqueueing any child downloads.
+        const downloads = plan.map((entry) => {
+          if (!entry.file || !isRelativeFolderPath(entry.folder_path)) {
+            throw new Error("文件目录无法确定，请刷新课程目录后再同步。");
+          }
+          return { file: entry.file, folderPath: entry.folder_path };
+        });
+        downloads.forEach(({ file, folderPath }) => handleAddDownloadFileTask(file, "original", folderPath));
+        const filesToSync = downloads;
+        update({ log: filesToSync.length ? `已安排 ${filesToSync.length} 个文件下载，进行中的相同任务将复用。请查看对应下载任务的进度。` : "文件已同步，无需下载。" });
+        notify(filesToSync.length ? `共 ${filesToSync.length} 个文件需要下载，已安排下载。` : "已同步，无需下载。", "success");
       },
     });
   };
 
   const handleAddDownloadFileTask = (
     inputFile: File,
-    outputFormat: FileOutputFormat = "original"
+    outputFormat: FileOutputFormat = "original",
+    plannedFolderPath?: string
   ) => {
     const session = currentSession();
     const config = captureOperationConfig();
     const file = structuredClone(inputFile);
     const selectedCourse = section === COURSE_FILES ? getSelectedCourse() : undefined;
     const course = selectedCourse ? structuredClone(selectedCourse) : undefined;
-    const folderPath = getFolderPath(file);
+    const folderPath = plannedFolderPath ?? getFolderPath(file);
     if (folderPath === undefined) {
       notify("无法确定文件目录，请重新进入文件页面，刷新目录后再下载。", "warning");
       return;
     }
     const output = getOutputFile(file, outputFormat);
     const scope = course ? `course:${course.id}` : "my";
-    const id = `files:${session}:${scope}:${file.uuid}:${outputFormat}`;
     const name = output.display_name;
+    const id = `files:${JSON.stringify([session, config.__config_owner, scope, file.uuid, outputFormat, config.save_path, course?.term.name, course?.name, folderPath, name])}`;
     const ensureOwner = () => {
       if (!isSessionCurrent(session) || !isConfigOwnerCurrent(config))
         throw new Error("账号已切换，请在当前账号重新创建下载任务。");
@@ -365,6 +366,7 @@ function FilesPageContent() {
     const event = { channel: "download://progress", id: crypto.randomUUID() };
     enqueueTask({
       id, name, source: "files", kind: outputFormat === "pdf" ? "conversion" : "file",
+      resubmitSucceeded: true,
       context: course?.name ?? "我的 Canvas 文件",
       outputPath: `${course?.name ?? "我的Canvas文件"}/${folderPath}/${name}`,
       // Keep physical-destination serialization independent of account identity.
@@ -404,7 +406,9 @@ function FilesPageContent() {
     // Child file rows may arrive before their path, or path lookup may fail.
     // Never silently upload them into the root directory.
     if (!currentFolderFullName) return;
-    const subDir = currentFolderFullName.replace(section, "");
+    const folderPath = relativeFolderPath(currentFolderFullName, section);
+    if (folderPath === undefined) return;
+    const subDir = folderPath ? `/${folderPath}` : "";
     const course = getSelectedCourse();
     if (section === COURSE_FILES && !course) return;
     const saveDir =
@@ -790,6 +794,7 @@ function FilesPageContent() {
                                   <Button
                                     size="small"
                                     startIcon={<DownloadRoundedIcon />}
+                                    disabled={getFolderPath(file) === undefined}
                                     endIcon={<ArrowDropDownRoundedIcon />}
                                     onClick={(event) =>
                                       openFileActionMenu(event, file, "download")
@@ -926,7 +931,7 @@ function FilesPageContent() {
                   <Button
                     variant="contained"
                     startIcon={<DownloadRoundedIcon />}
-                    disabled={operating || selectedEntries.length === 0}
+                    disabled={operating || selectedEntries.length === 0 || selectedEntries.some((entry) => isFile(entry) && getFolderPath(entry as File) === undefined)}
                     onClick={handleDownloadSelectedFiles}
                   >
                     下载所选文件

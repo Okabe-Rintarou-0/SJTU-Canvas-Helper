@@ -8,9 +8,9 @@ use model::{
     Account, AccountInfo, AnnualReport, AppConfig, Assignment, CalendarEvent, CanvasLiveInfo,
     CanvasLiveList, CanvasVideo, Colors, Course, DiscussionTopic, File, FileChatStreamChunkPayload,
     FileChatStreamDonePayload, FileChatStreamErrorPayload, Folder, FullDiscussion, LLMChatMessage,
-    LogLevel, ModuleItem, NetworkRequestLog, QRCodeScanReport, QRCodeScanResult, RelationshipTopo,
-    Submission, User, UserSubmissions, VideoAggregateParams, VideoCourse, VideoInfo, VideoPlayInfo,
-    VideoSource,
+    LogLevel, ModuleItem, NetworkRequestLog, PendingCourseFile, QRCodeScanReport, QRCodeScanResult,
+    RelationshipTopo, Submission, User, UserSubmissions, VideoAggregateParams, VideoCourse,
+    VideoInfo, VideoPlayInfo, VideoSource,
 };
 use serde::{Deserialize, Serialize};
 
@@ -377,7 +377,7 @@ async fn get_full_discussion(course_id: i64, topic_id: i64) -> Result<FullDiscus
 }
 
 #[tauri::command]
-async fn sync_course_files(course: Course) -> Result<Vec<File>> {
+async fn sync_course_files(course: Course) -> Result<Vec<PendingCourseFile>> {
     APP.sync_course_files(&course).await
 }
 
