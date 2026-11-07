@@ -476,7 +476,10 @@ impl App {
         if current.as_str() != Some(&expected_account) {
             return Err("账号已切换，请重新打开当前页面".into());
         }
-        let config = PathBuf::from(Self::config_dir().map_err(|e| e.to_string())?);
+        // Use the same validated store as account/configuration persistence.
+        // A poisoned store must not fall back to the process-global directory.
+        let store = self.store_ready().map_err(|e| e.to_string())?;
+        let config = PathBuf::from(store.root_str().map_err(|e| e.to_string())?);
         if matches!(request, DataRequest::Open) {
             let _lock = STORAGE_LOCK.lock().map_err(|_| "应用数据存储锁不可用")?;
             let store = Store::load(config).map_err(|e| e.to_string())?;

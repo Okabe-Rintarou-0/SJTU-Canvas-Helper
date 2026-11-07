@@ -1,9 +1,13 @@
+import AccountSessionBoundary from "../components/account_session_boundary";
+import { isRelativeFolderPath, relativeFolderPath } from "../lib/file_folder_path";
 import { downloadCourseContext } from "../lib/downloads";
 import { DownloadCourseContext } from "../lib/download_context";
 import PageTaskLists from "../components/page_task_lists";
 import { enqueueTask } from "../lib/task_runtime";
 import { createCloudUploadTask } from "../lib/upload_tasks";
 import { useLegacyTasks } from "../lib/task_hooks";
+import { currentSession, isSessionCurrent } from "../lib/session";
+import { captureOperationConfig, isConfigOwnerCurrent } from "../lib/config";
 import { invoke } from "@tauri-apps/api/core";
 import ArrowDropDownRoundedIcon from "@mui/icons-material/ArrowDropDownRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
@@ -48,7 +52,9 @@ import { alpha, useTheme } from "@mui/material/styles";
 import {
   MouseEvent as ReactMouseEvent,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -78,7 +84,7 @@ import {
   FileDownloadTask,
   Folder,
   LOG_LEVEL_ERROR,
-  Option,
+  PendingCourseFile,
   entryName,
   isFile,
 } from "../lib/model";
@@ -114,6 +120,10 @@ function isExplainableFile(file: File) {
 }
 
 export default function FilesPage() {
+  return <AccountSessionBoundary><FilesPageContent /></AccountSessionBoundary>;
+}
+
+function FilesPageContent() {
   const theme = useTheme();
   const [section, setSection] = useState<string>(COURSE_FILES);
   const { selectedCourseId, setSelectedCourseId } = useSelectedCourse();
@@ -125,10 +135,9 @@ export default function FilesPage() {
   const [showExternal, setShowExternal] = useState<boolean>(false);
   const downloadTasks = useLegacyTasks<FileDownloadTask>("files", ["file", "conversion", "upload", "upload-pdf"]);
   const [operating, setOperating] = useState<boolean>(false);
-  const [currentFolderId, setCurrentFolderId] = useState(0);
-  const [currentFolderFullName, setCurrentFolderFullName] =
-    useState<Option<string>>("");
-  const [parentFolderId, setParentFolderId] = useState<Option<number>>(null);
+  const [currentFolder, setCurrentFolder] = useState<Folder>();
+  const currentFolderFullName = currentFolder?.full_name;
+  const parentFolderId = currentFolder?.parent_folder_id;
   const [keyword, setKeyword] = useState<string>("");
   const [openFileOrderSelectModal, setOpenFileOrderSelectModal] =
     useState<boolean>(false);
@@ -139,7 +148,7 @@ export default function FilesPage() {
   const courses = useCourses();
   const selectedDownloadCourse = section === COURSE_FILES ? courses.data.find((course) => course.id === selectedCourseId) : undefined;
   const downloadCourse = selectedDownloadCourse ? downloadCourseContext(selectedDownloadCourse) : undefined;
-  const { previewer, onHoverEntry, onLeaveEntry, setPreviewEntry, setEntries } =
+  const { previewer, resetPreview, onHoverEntry, onLeaveEntry, setPreviewEntry, setEntries } =
     usePreview();
   const { merger, mergePDFs } = useMerger({
     setPreviewEntry,
@@ -148,7 +157,9 @@ export default function FilesPage() {
     course: downloadCourse,
   });
   const baseURL = useBaseURL();
-  const externalFiles = useExternalFiles(showExternal ? selectedCourseId : -1);
+  const showCourseExternal = section === COURSE_FILES && showExternal && Boolean(selectedDownloadCourse);
+  const externalFiles = useExternalFiles(showCourseExternal ? selectedCourseId : -1);
+  const courseFoldersReady = section === COURSE_FILES && allFolders.some((folder) => folder.name === COURSE_FILES);
 
   const notify = (message: string, severity: SnackSeverity = "info") => {
     if (severity === "success") {
@@ -170,21 +181,30 @@ export default function FilesPage() {
     setEntries(files);
   }, [files]);
 
-  useEffect(() => {
-    if (currentFolderId > 0) {
-      void handleGetFoldersAndFiles(currentFolderId);
-    }
-  }, [currentFolderId]);
+  // A folder ID is not a request identity: A -> B -> A must reject the first A.
+  // Source ownership is invalidated at commit, before passive loading effects.
+  const browseCourseId = section === COURSE_FILES ? selectedCourseId : undefined;
+  const courseAvailable = courses.data.some((course) => course.id === browseCourseId);
+  const browseSource = useMemo(() => ({ section, courseId: browseCourseId, courseAvailable, session: currentSession() }),
+    [section, browseCourseId, courseAvailable]);
+  const activeBrowseSource = useRef<typeof browseSource>();
+  const browseGeneration = useRef(0);
+  useLayoutEffect(() => {
+    activeBrowseSource.current = browseSource;
+    resetPreview();
+    setOpenFileOrderSelectModal(false);
+    clearFolderView();
+    setAllFolders([]);
+    setOperating(false);
+    return () => {
+      activeBrowseSource.current = undefined;
+      browseGeneration.current += 1;
+    };
+  }, [browseSource, resetPreview]);
 
   useEffect(() => {
-    if (section === MY_FILES) {
-      void initAllMyFolders();
-    } else if (selectedCourseId > 0) {
-      void handleCourseSelect(selectedCourseId);
-    } else {
-      clearFilesAndFolders();
-    }
-  }, [section, selectedCourseId, courses.data.length]);
+    void initAllFolders();
+  }, [browseSource]);
 
   const handleExplainFile = fileAISession.explain;
   const handleSendChatMessage = fileAISession.send;
@@ -196,167 +216,186 @@ export default function FilesPage() {
     return courses.data.find((course) => course.id === selectedCourseId);
   };
 
-  const initWithFolders = (nextFolders: Folder[]) => {
-    setAllFolders(nextFolders);
-    const folder = nextFolders.find((item) => item.name === section)!;
-    setCurrentFolderId(folder.id);
-    setCurrentFolderFullName(section);
-    setParentFolderId(null);
+  const beginBrowse = () => {
+    if (activeBrowseSource.current !== browseSource || !isSessionCurrent(browseSource.session)) return () => false;
+    const generation = ++browseGeneration.current;
+    return () => activeBrowseSource.current === browseSource
+      && browseGeneration.current === generation
+      && isSessionCurrent(browseSource.session);
   };
 
-  const clearFilesAndFolders = () => {
+  const clearFolderView = () => {
     setSelectedEntries([]);
-    setAllFolders([]);
     setFiles([]);
     setFolders([]);
-    setCurrentFolderId(0);
+    setCurrentFolder(undefined);
+    setFileActionMenu(null);
   };
 
-  const initAllMyFolders = async () => {
-    try {
-      const myFolders = (await invoke("list_my_folders")) as Folder[];
-      initWithFolders(myFolders);
-    } catch (error) {
-      consoleLog(LOG_LEVEL_ERROR, error);
-      clearFilesAndFolders();
-    }
-  };
-
-  const initAllCourseFolders = async (courseId: number) => {
-    try {
-      const courseFolders = (await invoke("list_course_folders", {
-        courseId,
-      })) as Folder[];
-      initWithFolders(courseFolders);
-    } catch {
-      clearFilesAndFolders();
-    }
-  };
-
-  const getParentFolder = async (
-    folderId: number
-  ): Promise<Folder | undefined> => {
-    try {
-      return (await invoke("get_folder_by_id", { folderId })) as Folder;
-    } catch {
-      return undefined;
-    }
-  };
-
-  const handleGetFolderFiles = async (folderId: number) => {
-    try {
-      const nextFiles = (await invoke("list_folder_files", { folderId })) as File[];
-      if (folderId !== currentFolderId) {
-        return;
+  const loadFolder = async (folderId: number, isCurrent: () => boolean, knownFolder?: Folder) => {
+    if (!isCurrent()) return;
+    const loadFiles = async () => {
+      try {
+        const nextFiles = await invoke<File[]>("list_folder_files", { folderId });
+        if (isCurrent()) setFiles(nextFiles.map((file) => ({ ...file, key: file.uuid })));
+      } catch {
+        if (isCurrent()) setFiles([]);
       }
-      nextFiles.forEach((file) => {
-        file.key = file.uuid;
-      });
-      setFiles(nextFiles);
-    } catch {
-      setFiles([]);
-    }
+    };
+    const loadFolders = async () => {
+      try {
+        const nextFolders = await invoke<Folder[]>("list_folder_folders", { folderId });
+        if (isCurrent()) setFolders(nextFolders.map((folder) => ({ ...folder, key: folder.id.toString() })));
+      } catch {
+        if (isCurrent()) setFolders([]);
+      }
+    };
+    const loadPath = async () => {
+      try {
+        const folder = knownFolder ?? await invoke<Folder>("get_folder_by_id", { folderId });
+        if (!isCurrent()) return;
+        // Rows can arrive first. Authorize their destination only from metadata
+        // belonging to this exact navigation, not the initial folder-map snapshot.
+        setCurrentFolder(folder.id === folderId && relativeFolderPath(folder.full_name, section) !== undefined ? folder : undefined);
+      } catch {
+        if (!isCurrent()) return;
+        setCurrentFolder(undefined);
+      }
+    };
+    await Promise.all([loadFiles(), loadFolders(), loadPath()]);
+    if (isCurrent()) setOperating(false);
   };
 
-  const handleGetFolderFolders = async (folderId: number) => {
-    try {
-      const nextFolders = (await invoke("list_folder_folders", {
-        folderId,
-      })) as Folder[];
-      nextFolders.forEach((folder) => {
-        folder.key = folder.id.toString();
-      });
-      setFolders(nextFolders);
-    } catch {
-      setFolders([]);
-    }
-  };
-
-  const handleGetFoldersAndFiles = async (folderId: number) => {
+  const initAllFolders = async () => {
+    const isCurrent = beginBrowse();
+    if (!isCurrent()) return;
+    clearFolderView();
+    setAllFolders([]);
+    setOperating(false);
+    if (section !== MY_FILES && !courseAvailable) return;
     setOperating(true);
     try {
-      await Promise.all([
-        handleGetFolderFolders(folderId),
-        handleGetFolderFiles(folderId),
-      ]);
-    } catch (error) {
-      consoleLog(LOG_LEVEL_ERROR, error);
-      setFiles([]);
-      setFolders([]);
-    }
-    setOperating(false);
-  };
-
-  const handleCourseSelect = async (courseId: number) => {
-    if (courses.data.find((course) => course.id === courseId)) {
-      setSelectedCourseId(courseId);
-      setSelectedEntries([]);
-      await initAllCourseFolders(courseId);
+      const nextFolders = section === MY_FILES
+        ? await invoke<Folder[]>("list_my_folders")
+        : await invoke<Folder[]>("list_course_folders", { courseId: selectedCourseId });
+      if (!isCurrent()) return;
+      setAllFolders(nextFolders);
+      const root = nextFolders.find((folder) => folder.name === section);
+      if (!root) {
+        setOperating(false);
+        return;
+      }
+      await loadFolder(root.id, isCurrent, root);
+    } catch {
+      if (!isCurrent()) return;
+      if (section === MY_FILES) consoleLog(LOG_LEVEL_ERROR, "Personal folder loading failed");
+      setOperating(false);
     }
   };
 
-  const handleFolderOpen = async (folderId: number) => {
-    setSelectedEntries([]);
-    setFiles([]);
-    setFolders([]);
-    setCurrentFolderId(folderId);
-    const parentFolder = await getParentFolder(folderId);
-    setCurrentFolderFullName(parentFolder?.full_name);
-    setParentFolderId(parentFolder?.parent_folder_id);
-    scrollToTop();
+  const handleFolderOpen = async (folderId: number, knownFolder?: Folder) => {
+    const isCurrent = beginBrowse();
+    if (!isCurrent()) return;
+    clearFolderView();
+    setOperating(true);
+    await loadFolder(folderId, isCurrent, knownFolder);
+    if (isCurrent()) scrollToTop();
   };
 
   const getFolderPath = (file: File) => {
-    if (file.external_type) {
-      return allFolders
-        .find((folder) => folder.name === section)
-        ?.full_name.slice(section.length + 1);
-    }
-    return allFolders
-      .find((folder) => folder.id === file.folder_id)
-      ?.full_name.slice(section.length + 1);
+    const folder = file.external_type
+      ? allFolders.find((folder) => folder.name === section)
+      : currentFolder?.id === file.folder_id ? currentFolder : undefined;
+    return folder ? relativeFolderPath(folder.full_name, section) : undefined;
   };
 
   const handleSyncFiles = async () => {
     const course = getSelectedCourse();
-    if (!course) return;
+    if (!course || !courseFoldersReady) return;
+    const owner = currentSession();
+    const ensureOwner = () => {
+      if (!isSessionCurrent(owner)) throw new Error("账号已切换，请重新同步文件。");
+    };
     enqueueTask({
       id: `sync:${course.id}:${crypto.randomUUID()}`, name: `${course.name} · 同步检查`,
       source: "files", kind: "sync", context: course.name,
       locks: [`sync:${course.id}`], stage: "正在检查文件差异",
       run: async ({ update }) => {
-        const filesToSync = await invoke<File[]>("sync_course_files", { course });
-        filesToSync.forEach((file) => handleAddDownloadFileTask(file));
-        update({ log: filesToSync.length ? `已创建 ${filesToSync.length} 个文件下载任务。请查看对应下载任务的进度。` : "文件已同步，无需下载。" });
-        notify(filesToSync.length ? `共 ${filesToSync.length} 个文件需要下载，已加入队列。` : "已同步，无需下载。", "success");
+        ensureOwner();
+        const plan = await invoke<PendingCourseFile[]>("sync_course_files", { course });
+        ensureOwner();
+        // Paths come from the very same native snapshot used to check outputs.
+        // Validate the whole plan before enqueueing any child downloads.
+        const downloads = plan.map((entry) => {
+          if (!entry.file || !isRelativeFolderPath(entry.folder_path)) {
+            throw new Error("文件目录无法确定，请刷新课程目录后再同步。");
+          }
+          return { file: entry.file, folderPath: entry.folder_path };
+        });
+        downloads.forEach(({ file, folderPath }) => handleAddDownloadFileTask(file, "original", folderPath));
+        const filesToSync = downloads;
+        update({ log: filesToSync.length ? `已安排 ${filesToSync.length} 个文件下载，进行中的相同任务将复用。请查看对应下载任务的进度。` : "文件已同步，无需下载。" });
+        notify(filesToSync.length ? `共 ${filesToSync.length} 个文件需要下载，已安排下载。` : "已同步，无需下载。", "success");
       },
     });
   };
 
   const handleAddDownloadFileTask = (
-    file: File,
-    outputFormat: FileOutputFormat = "original"
+    inputFile: File,
+    outputFormat: FileOutputFormat = "original",
+    plannedFolderPath?: string
   ) => {
-    const course = section === COURSE_FILES ? getSelectedCourse() : undefined;
-    const folderPath = getFolderPath(file) ?? "";
+    const session = currentSession();
+    const config = captureOperationConfig();
+    const file = structuredClone(inputFile);
+    const selectedCourse = section === COURSE_FILES ? getSelectedCourse() : undefined;
+    const course = selectedCourse ? structuredClone(selectedCourse) : undefined;
+    const folderPath = plannedFolderPath ?? getFolderPath(file);
+    if (folderPath === undefined) {
+      notify("无法确定文件目录，请重新进入文件页面，刷新目录后再下载。", "warning");
+      return;
+    }
     const output = getOutputFile(file, outputFormat);
     const scope = course ? `course:${course.id}` : "my";
-    const id = `files:${scope}:${file.uuid}:${outputFormat}`;
     const name = output.display_name;
+    const id = `files:${JSON.stringify([session, config.__config_owner, scope, file.uuid, outputFormat, config.save_path, course?.term.name, course?.name, folderPath, name])}`;
+    const ensureOwner = () => {
+      if (!isSessionCurrent(session) || !isConfigOwnerCurrent(config))
+        throw new Error("账号已切换，请在当前账号重新创建下载任务。");
+    };
+    const event = { channel: "download://progress", id: crypto.randomUUID() };
     enqueueTask({
       id, name, source: "files", kind: outputFormat === "pdf" ? "conversion" : "file",
+      resubmitSucceeded: true,
       context: course?.name ?? "我的 Canvas 文件",
       outputPath: `${course?.name ?? "我的Canvas文件"}/${folderPath}/${name}`,
+      // Keep physical-destination serialization independent of account identity.
       locks: [`output:${scope}:${folderPath}:${name}`],
-      event: outputFormat === "original" ? { channel: "download://progress", id: file.uuid } : undefined,
+      event: outputFormat === "original" ? event : undefined,
       stage: outputFormat === "pdf" ? "正在转换 PDF" : "正在下载",
-      data: { file, outputFormat },
-      run: () => invoke(course
-        ? outputFormat === "pdf" ? "download_course_file_as_pdf" : "download_course_file"
-        : outputFormat === "pdf" ? "download_my_file_as_pdf" : "download_my_file",
-        course ? { file, course, folderPath } : { file, folderPath }),
-      open: () => invoke(course ? "open_course_file" : "open_my_file",
-        course ? { name, course, folderPath } : { name, folderPath }),
+      data: { file: structuredClone(file), outputFormat },
+      run: async () => {
+        ensureOwner();
+        event.id = crypto.randomUUID();
+        try {
+          await invoke(course
+            ? outputFormat === "pdf" ? "download_course_file_as_pdf" : "download_course_file"
+            : outputFormat === "pdf" ? "download_my_file_as_pdf" : "download_my_file",
+            course
+              ? { file, course, folderPath, expectedOwner: config.__config_owner, operationId: event.id }
+              : { file, folderPath, expectedOwner: config.__config_owner, operationId: event.id });
+        } catch (error) {
+          ensureOwner();
+          throw error;
+        }
+        ensureOwner();
+      },
+      // Do not open a same-named file through a different current account.
+      open: async () => {
+        ensureOwner();
+        return invoke(course ? "open_course_file" : "open_my_file",
+          course ? { name, course, folderPath, expectedOwner: config.__config_owner, expectedSavePath: config.save_path } : { name, folderPath, expectedOwner: config.__config_owner, expectedSavePath: config.save_path });
+      },
     });
   };
 
@@ -364,7 +403,12 @@ export default function FilesPage() {
     file: File,
     outputFormat: FileOutputFormat = "original"
   ) => {
-    const subDir = currentFolderFullName?.replace(section, "") ?? "";
+    // Child file rows may arrive before their path, or path lookup may fail.
+    // Never silently upload them into the root directory.
+    if (!currentFolderFullName) return;
+    const folderPath = relativeFolderPath(currentFolderFullName, section);
+    if (folderPath === undefined) return;
+    const subDir = folderPath ? `/${folderPath}` : "";
     const course = getSelectedCourse();
     if (section === COURSE_FILES && !course) return;
     const saveDir =
@@ -416,20 +460,12 @@ export default function FilesPage() {
   };
 
   const backToParentDir = async () => {
-    setFiles([]);
-    setFolders([]);
-    const nextFolderId = parentFolderId as number;
-    setCurrentFolderId(nextFolderId);
-    const parentFolder = await getParentFolder(nextFolderId);
-    setCurrentFolderFullName(parentFolder?.full_name);
-    setParentFolderId(parentFolder?.parent_folder_id);
+    if (typeof parentFolderId === "number") await handleFolderOpen(parentFolderId);
   };
 
   const backToRootDir = async () => {
-    const mainFolder = allFolders.find((folder) => folder.name === section)!;
-    setCurrentFolderId(mainFolder.id);
-    setCurrentFolderFullName(section);
-    setParentFolderId(null);
+    const root = allFolders.find((folder) => folder.name === section);
+    if (root) await handleFolderOpen(root.id, root);
   };
 
   const shouldShow = (entry: Entry) => {
@@ -446,10 +482,10 @@ export default function FilesPage() {
 
   const filteredEntries = useMemo(
     () =>
-      ([...(folders as Entry[]), ...(files as Entry[]), ...externalFiles.data] as Entry[]).filter(
+      ([...(folders as Entry[]), ...(files as Entry[]), ...(showCourseExternal ? externalFiles.data : [])] as Entry[]).filter(
         shouldShow
       ),
-    [folders, files, externalFiles.data, keyword, downloadableOnly]
+    [folders, files, externalFiles.data, showCourseExternal, keyword, downloadableOnly]
   );
 
   const selectedFileCount = selectedEntries.filter(isFile).length;
@@ -667,7 +703,7 @@ export default function FilesPage() {
                     根目录
                   </Button>
                   {section === COURSE_FILES && selectedCourseId > 0 && (
-                    <Button variant="contained" onClick={() => void handleSyncFiles()}>
+                    <Button variant="contained" disabled={!courseFoldersReady} onClick={() => void handleSyncFiles()}>
                       一键同步
                     </Button>
                   )}
@@ -758,6 +794,7 @@ export default function FilesPage() {
                                   <Button
                                     size="small"
                                     startIcon={<DownloadRoundedIcon />}
+                                    disabled={getFolderPath(file) === undefined}
                                     endIcon={<ArrowDropDownRoundedIcon />}
                                     onClick={(event) =>
                                       openFileActionMenu(event, file, "download")
@@ -770,6 +807,7 @@ export default function FilesPage() {
                                   <Button
                                     size="small"
                                     startIcon={<UploadFileRoundedIcon />}
+                                    disabled={!currentFolderFullName}
                                     endIcon={<ArrowDropDownRoundedIcon />}
                                     onClick={(event) =>
                                       openFileActionMenu(event, file, "upload")
@@ -893,7 +931,7 @@ export default function FilesPage() {
                   <Button
                     variant="contained"
                     startIcon={<DownloadRoundedIcon />}
-                    disabled={operating || selectedEntries.length === 0}
+                    disabled={operating || selectedEntries.length === 0 || selectedEntries.some((entry) => isFile(entry) && getFolderPath(entry as File) === undefined)}
                     onClick={handleDownloadSelectedFiles}
                   >
                     下载所选文件

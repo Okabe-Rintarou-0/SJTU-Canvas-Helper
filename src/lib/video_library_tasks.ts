@@ -5,15 +5,40 @@ import { enqueueTask } from "./task_runtime";
 import { taskManager } from "./task_manager";
 import { defaultDownloadPath, downloadDirectory, type DownloadCourse } from "./downloads";
 import { recordingKey, type VideoExportOptions, type VideoSession, type VideoMaterial } from "./video_library";
+import { captureOperationConfig, isConfigOwnerCurrent } from "./config";
+import { currentSession, isSessionCurrent } from "./session";
 
 export function enqueueVideoTrack(video: CanvasVideo, track: VideoPlayInfo, index: number, course?: DownloadCourse) {
-  const name = `${Array.from(video.videoName, (c) => c.charCodeAt(0) < 32 ? "_" : c).join("").replace(/[<>:"/\\|?*]/g, "_")}_机位${index + 1}.mp4`;
+  const session = currentSession();
+  const config = captureOperationConfig();
+  const capturedCourse = course ? structuredClone(course) : undefined;
+  const capturedTrack = structuredClone(track);
+  const name = `${Array.from(video.videoName, (c) => c.charCodeAt(0) < 32 ? "_" : c).join("").replace(/[<>:"/\\|?*]/g, '_')}_机位${index + 1}.mp4`;
+  const ensureOwner = () => {
+    if (!isSessionCurrent(session) || !isConfigOwnerCurrent(config))
+      throw new Error("账号已切换，请在当前账号重新创建视频任务。");
+  };
+  const event = { channel: "video_download://progress", id: crypto.randomUUID() };
   enqueueTask({
-    id: `video:${course?.id ?? "other"}:${track.id}:${name}`, name, source: "video", kind: "video", context: course?.name,
-    event: { channel: "video_download://progress", id: String(track.id) },
-    locks: [`save:${name}`], stage: "正在下载",
-    run: () => invoke("download_video", { video: { ...track, name, key: track.id, index }, saveName: name, ...(course ? { course } : {}) }),
-    open: () => invoke("open_file", { name, kind: "video", ...(course ? { course } : {}) }),
+    id: `video:${session}:${capturedCourse?.id ?? "other"}:${capturedTrack.id}:${name}`, name, source: "video", kind: "video",
+    context: capturedCourse?.name, event, locks: [`save:${name}`], stage: "正在下载",
+    run: async () => {
+      ensureOwner();
+      event.id = crypto.randomUUID();
+      try {
+        await invoke("download_video", {
+          video: { ...capturedTrack, name, key: capturedTrack.id, index }, saveName: name,
+          expectedOwner: config.__config_owner, expectedSavePath: config.save_path,
+          operationId: event.id, ...(capturedCourse ? { course: capturedCourse } : {}),
+        });
+      } catch (error) { ensureOwner(); throw error; }
+      ensureOwner();
+    },
+    open: async () => {
+      ensureOwner();
+      return invoke("open_file", { name, kind: "video", ...(capturedCourse ? { course: capturedCourse } : {}), expectedOwner: config.__config_owner,
+        expectedSavePath: config.save_path });
+    },
   });
 }
 

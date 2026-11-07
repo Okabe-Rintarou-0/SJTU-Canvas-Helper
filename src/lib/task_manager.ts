@@ -1,3 +1,4 @@
+import { currentSession } from "./session";
 import { logDiagnostic } from "./diagnostics";
 import { LOG_LEVEL_ERROR, LOG_LEVEL_INFO } from "./model";
 
@@ -12,6 +13,8 @@ export const taskKindLabels: Record<TaskKind, string> = {
 export const taskSourceLabels: Record<TaskSource, string> = { files: "文件管理", submissions: "提交批改", video: "视频管理" };
 export interface Task {
   id: string;
+  /** Ownership of local preview results, retained across retries. */
+  ownerSession: number;
   name: string;
   kind: TaskKind;
   source: TaskSource;
@@ -51,6 +54,8 @@ export interface TaskSpec {
   locks?: string[];
   event?: { channel: string; id: string };
   stage?: string;
+  /** Explicit new download requests may replace a completed record; active jobs still deduplicate. */
+  resubmitSucceeded?: boolean;
   run: (context: TaskContext) => Promise<unknown>;
   open?: () => Promise<unknown>;
   save?: () => Promise<unknown>;
@@ -61,7 +66,7 @@ export const isTaskActive = (task: Task) => task.status === "queued" || task.sta
 
 const diagnosticStages = new Set([
   "等待执行", "等待重试", "正在处理", "正在下载", "正在上传至云盘", "正在合并 PDF",
-  "正在转换 PDF", "正在转换 PDF 并上传", "正在重新登录交大云盘", "正在检查文件差异",
+  "正在转换 PDF", "正在转换 PDF 并上传", "正在重新登录交大云盘", "正在登录交大云盘", "正在检查文件差异",
   "准备合并", "正在生成合并结果", "正在保存 PDF", "正在合成视频", "准备资料",
   "正在下载 PPT 切片", "正在导出视频", "正在导出PPT 切片 PDF", "正在导出字幕 SRT", "正在导出整堂课字幕文本",
 ]);
@@ -98,12 +103,33 @@ export class TaskManager {
   enqueue(spec: TaskSpec): string {
     const existing = this.tasks.find((task) => task.id === spec.id);
     if (existing) {
-      if (existing.status === "failed") this.retry(existing.id);
+      if ((existing.status === "failed" || (existing.status === "succeeded" && spec.resubmitSucceeded)) && !this.executing.has(existing.id)) {
+        const previous = this.specs.get(existing.id);
+        this.specs.set(existing.id, spec);
+        this.failureStages.delete(existing.id);
+        // Explicit resubmission replaces the operation; retry(id) retains it.
+        this.patch(existing.id, {
+          name: spec.name, kind: spec.kind, source: spec.source, ownerSession: currentSession(),
+          context: spec.context, outputPath: spec.outputPath,
+          outputDirectory: spec.outputDirectory, data: spec.data,
+          canOpen: !!spec.open, canSave: !!spec.save, result: undefined,
+          unreadCompletion: false, status: "queued", stage: "等待重试",
+          progress: undefined, error: undefined, actionError: undefined,
+          finishedAt: undefined, log: undefined,
+        });
+        // Commit replacement first so disposal callbacks cannot restart the old spec.
+        try {
+          if (previous !== spec && previous?.dispose !== spec.dispose) previous?.dispose?.();
+        } catch (error) {
+          this.patch(existing.id, { actionError: `Previous task cleanup failed: ${String(error)}` });
+        }
+        this.drain();
+      }
       return existing.id;
     }
     this.specs.set(spec.id, spec);
     this.tasks = [...this.tasks, {
-      id: spec.id, name: spec.name, kind: spec.kind, source: spec.source,
+      id: spec.id, name: spec.name, kind: spec.kind, source: spec.source, ownerSession: currentSession(),
       context: spec.context, outputPath: spec.outputPath, outputDirectory: spec.outputDirectory, data: spec.data,
       status: "queued", stage: "等待执行", createdAt: Date.now(), attempt: 0,
       canOpen: !!spec.open, canSave: !!spec.save,
@@ -185,15 +211,19 @@ export class TaskManager {
     } finally { this.draining = false; }
   }
   private async execute(task: Task, spec: TaskSpec) {
+    let active = true;
+    const ownsExecution = () => active && this.specs.get(task.id) === spec && this.executing.has(task.id);
     this.patch(task.id, { status: "running", stage: spec.stage ?? "正在处理", attempt: task.attempt + 1 });
     try {
       await spec.run({
-        update: (patch) => this.patch(task.id, patch),
-        setOpen: (action) => { spec.open = action; this.patch(task.id, { canOpen: true }); },
-        setSave: (action) => { spec.save = action; this.patch(task.id, { canSave: true }); },
+        update: (patch) => { if (ownsExecution()) this.patch(task.id, patch); },
+        setOpen: (action) => { if (ownsExecution()) { spec.open = action; this.patch(task.id, { canOpen: true }); } },
+        setSave: (action) => { if (ownsExecution()) { spec.save = action; this.patch(task.id, { canSave: true }); } },
       });
+      active = false;
       this.patch(task.id, { status: "succeeded", stage: "已完成", progress: 100, finishedAt: Date.now(), unreadCompletion: true });
     } catch (error) {
+      active = false;
       const current = this.tasks.find((item) => item.id === task.id) ?? task;
       const stage = diagnosticStage(current.stage);
       this.failureStages.set(task.id, stage);
@@ -202,6 +232,7 @@ export class TaskManager {
       }, error);
       this.patch(task.id, { status: "failed", stage: "执行失败", error: String(error), finishedAt: Date.now() });
     } finally {
+      active = false;
       this.executing.delete(task.id);
       this.drain();
     }

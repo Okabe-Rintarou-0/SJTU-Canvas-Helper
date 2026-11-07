@@ -199,3 +199,25 @@ describe("application task executor", () => {
     expect(manager.getSnapshot()[0]).toMatchObject({ status: "succeeded", actionError: "Error: missing file" });
   });
 });
+
+it("only resubmits a successful task when the new submission explicitly requests it", async () => {
+  const manager = new TaskManager(); const first = vi.fn(async () => {}); const second = vi.fn(async () => {}); const dispose = vi.fn();
+  manager.enqueue(spec("download", first, { dispose })); await flush();
+  manager.enqueue(spec("download", second)); await flush();
+  expect(second).not.toHaveBeenCalled();
+  manager.enqueue({ ...spec("download", second, { name: "fresh output" }), resubmitSucceeded: true }); await flush();
+  expect(first).toHaveBeenCalledOnce(); expect(second).toHaveBeenCalledOnce(); expect(dispose).toHaveBeenCalledOnce();
+  expect(manager.getSnapshot()).toHaveLength(1);
+  expect(manager.getSnapshot()[0]).toMatchObject({ status: "succeeded", name: "fresh output", attempt: 2 });
+});
+
+it("still deduplicates active downloads when successful resubmission is enabled", async () => {
+  const manager = new TaskManager(1); const blocked = deferred(); const first = vi.fn(() => blocked.promise); const replacement = vi.fn(async () => {});
+  manager.enqueue({ ...spec("download", first), resubmitSucceeded: true });
+  manager.enqueue({ ...spec("download", replacement), resubmitSucceeded: true });
+  expect(first).toHaveBeenCalledOnce(); expect(replacement).not.toHaveBeenCalled();
+  blocked.resolve(); await flush();
+  manager.enqueue({ ...spec("download", replacement), resubmitSucceeded: true });
+  manager.enqueue({ ...spec("download", replacement), resubmitSucceeded: true });
+  await flush(); expect(replacement).toHaveBeenCalledOnce();
+});

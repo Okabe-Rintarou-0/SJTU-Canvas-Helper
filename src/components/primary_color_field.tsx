@@ -3,9 +3,10 @@ import { useEffect, useRef, useState } from "react";
 
 export const DEFAULT_PRIMARY = "#00b96b";
 
-export default function PrimaryColorField({ value, onChange }: {
+export default function PrimaryColorField({ value, onChange, canEdit }: {
   value: string;
   onChange: (value: string) => void;
+  canEdit?: () => boolean;
 }) {
   const [draft, setDraft] = useState(value);
   const pickerRef = useRef<HTMLInputElement>(null);
@@ -19,11 +20,12 @@ export default function PrimaryColorField({ value, onChange }: {
     // React's onChange also fires for native input events while dragging.
     // Only the native change event commits the selection to the global theme.
     const commit = () => {
+      if (canEdit && !canEdit()) return;
       if (picker.value !== value) onChange(picker.value);
     };
     picker.addEventListener("change", commit);
     return () => picker.removeEventListener("change", commit);
-  }, [onChange, value]);
+  }, [onChange, value, canEdit]);
 
   return (
     <TextField size="small" fullWidth
@@ -31,6 +33,7 @@ export default function PrimaryColorField({ value, onChange }: {
       name="color_primary"
       value={draft}
       onChange={(event) => {
+        if (canEdit && !canEdit()) return;
         setDraft(event.target.value);
         onChange(event.target.value);
       }}
@@ -52,14 +55,16 @@ export default function PrimaryColorField({ value, onChange }: {
               aria-label="选择主色"
               type="color"
               value={draft}
-              onChange={(event) => setDraft(event.target.value)}
+              onChange={(event) => { if (!canEdit || canEdit()) setDraft(event.target.value); }}
               onBlur={(event) => {
+                if (canEdit && !canEdit()) return;
                 if (event.target.value !== value) onChange(event.target.value);
               }}
               style={{ width: 28, height: 28, padding: 0, border: "none", background: "transparent", cursor: "pointer" }}
             />
             <Button size="small" aria-label="恢复默认主色调"
               onClick={() => {
+                if (canEdit && !canEdit()) return;
                 setDraft(DEFAULT_PRIMARY);
                 if (value !== DEFAULT_PRIMARY) onChange(DEFAULT_PRIMARY);
               }}

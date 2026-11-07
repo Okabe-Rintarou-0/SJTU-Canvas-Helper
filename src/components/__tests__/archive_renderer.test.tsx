@@ -8,10 +8,10 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("../../lib/message", () => ({ useAppMessage: () => [mocks.message, null] }));
 vi.mock("../../lib/utils", () => ({ consoleLog: vi.fn(), dataURLtoFile: vi.fn(), formatSize: () => "5 B", getFileType: async () => "txt" }));
 vi.mock("../renderers", () => ({ ArchiveSupportedRenderers: [] }));
-vi.mock("libarchive.js", () => ({ Archive: { init: vi.fn(), open: async () => ({ getFilesObject: async () => ({
+vi.mock("../../lib/archive_open", () => ({ openArchive: async () => ({ close: vi.fn(), getFilesObject: async () => ({
   "课件.txt": { name: "课件.txt", size: 5, extract: async () => new File(["notes"], "课件.txt") },
   "其他资料": {},
-}) }) } }));
+}) }) }));
 vi.mock("@cyntler/react-doc-viewer", async () => {
   const { useEffect } = await import("react");
   return { default: function DocumentViewer({ documents, config }: { documents: unknown[]; config: unknown }) {

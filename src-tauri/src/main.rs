@@ -5,11 +5,12 @@ use std::sync::Arc;
 
 use error::{AppError, Result};
 use model::{
-    Account, AccountInfo, AnnualReport, AppConfig, Assignment, CalendarEvent, CanvasVideo, Colors,
-    Course, DiscussionTopic, File, FileChatStreamChunkPayload, FileChatStreamDonePayload,
-    FileChatStreamErrorPayload, Folder, FullDiscussion, LLMChatMessage, LogLevel, ModuleItem,
-    NetworkRequestLog, QRCodeScanResult, QRCodeScanReport, RelationshipTopo, Submission, User, UserSubmissions,
-    VideoAggregateParams, VideoCourse, VideoInfo, VideoPlayInfo, VideoSource, CanvasLiveList, CanvasLiveInfo,
+    Account, AccountInfo, AnnualReport, AppConfig, Assignment, CalendarEvent, CanvasLiveInfo,
+    CanvasLiveList, CanvasVideo, Colors, Course, DiscussionTopic, File, FileChatStreamChunkPayload,
+    FileChatStreamDonePayload, FileChatStreamErrorPayload, Folder, FullDiscussion, LLMChatMessage,
+    LogLevel, ModuleItem, NetworkRequestLog, PendingCourseFile, QRCodeScanReport, QRCodeScanResult,
+    RelationshipTopo, Submission, User, UserSubmissions, VideoAggregateParams, VideoCourse,
+    VideoInfo, VideoPlayInfo, VideoSource,
 };
 use serde::{Deserialize, Serialize};
 
@@ -33,17 +34,24 @@ lazy_static! {
 }
 
 #[tauri::command]
-async fn app_data(account: String, request: app::data::DataRequest) -> std::result::Result<serde_json::Value, String> {
+async fn app_data(
+    account: String,
+    request: app::data::DataRequest,
+) -> std::result::Result<serde_json::Value, String> {
     APP.application_data(account, request).await
 }
 
 #[tauri::command]
-async fn get_video_subtitle_versions(request: app::video_library::RecordingRequest) -> Result<app::video_library::VideoSubtitleVersions> {
+async fn get_video_subtitle_versions(
+    request: app::video_library::RecordingRequest,
+) -> Result<app::video_library::VideoSubtitleVersions> {
     APP.get_video_subtitle_versions(request).await
 }
 
 #[tauri::command]
-async fn inspect_video_recording(request: app::video_library::RecordingRequest) -> Result<app::video_library::VideoRecordingStatus> {
+async fn inspect_video_recording(
+    request: app::video_library::RecordingRequest,
+) -> Result<app::video_library::VideoRecordingStatus> {
     APP.inspect_video_recording(request).await
 }
 
@@ -52,11 +60,16 @@ async fn proofread_video_subtitles(
     request: app::video_library::RecordingRequest,
     on_status: tauri::ipc::Channel<String>,
 ) -> Result<app::video_library::ProofreadVideoResult> {
-    APP.proofread_video_subtitles(request, &move |status| { let _ = on_status.send(status); }).await
+    APP.proofread_video_subtitles(request, &move |status| {
+        let _ = on_status.send(status);
+    })
+    .await
 }
 
 #[tauri::command]
-async fn reset_video_subtitle_proofread(request: app::video_library::RecordingRequest) -> Result<app::video_library::VideoMaterial> {
+async fn reset_video_subtitle_proofread(
+    request: app::video_library::RecordingRequest,
+) -> Result<app::video_library::VideoMaterial> {
     APP.reset_video_subtitle_proofread(request).await
 }
 
@@ -65,7 +78,10 @@ async fn transcribe_video_material(
     request: app::video_library::RecordingRequest,
     on_status: tauri::ipc::Channel<String>,
 ) -> Result<app::video_library::VideoMaterial> {
-    APP.transcribe_video_material(request, &move |status| { let _ = on_status.send(status); }).await
+    APP.transcribe_video_material(request, &move |status| {
+        let _ = on_status.send(status);
+    })
+    .await
 }
 
 #[tauri::command]
@@ -157,13 +173,17 @@ struct ZhipuBalanceData {
 
 #[derive(Debug, Deserialize)]
 struct ZhipuBalanceResponse {
-data: ZhipuBalanceData,
+    data: ZhipuBalanceData,
 }
 
 #[derive(Debug, Default, Deserialize)]
 struct MiniMaxBalanceData {
     #[serde(default)]
-    #[serde(alias = "remain_count", alias = "remaining", alias = "available_balance")]
+    #[serde(
+        alias = "remain_count",
+        alias = "remaining",
+        alias = "available_balance"
+    )]
     available_balance: f64,
 }
 
@@ -173,17 +193,24 @@ struct MiniMaxBalanceResponse {
     data: Option<MiniMaxBalanceData>,
 }
 
-async fn check_deepseek_balance(cli: &reqwest::Client, base: &str, auth: &str) -> Result<UserBalance> {
+async fn check_deepseek_balance(
+    cli: &reqwest::Client,
+    base: &str,
+    auth: &str,
+) -> Result<UserBalance> {
     let resp = cli
         .get(format!("{}/user/balance", base))
         .header("Authorization", auth)
         .send()
         .await?;
     if !resp.status().is_success() {
-        return Err(AppError::LLMError("DeepSeek 余额查询失败，请检查 API Key。".into()));
+        return Err(AppError::LLMError(
+            "DeepSeek 余额查询失败，请检查 API Key。".into(),
+        ));
     }
     let body: DeepSeekBalanceResponse = serde_json::from_str(&resp.text().await?)?;
-    let available: f64 = body.balance_infos
+    let available: f64 = body
+        .balance_infos
         .iter()
         .filter_map(|i| i.total_balance.parse::<f64>().ok())
         .sum();
@@ -194,14 +221,20 @@ async fn check_deepseek_balance(cli: &reqwest::Client, base: &str, auth: &str) -
     })
 }
 
-async fn check_moonshot_balance(cli: &reqwest::Client, base: &str, auth: &str) -> Result<UserBalance> {
+async fn check_moonshot_balance(
+    cli: &reqwest::Client,
+    base: &str,
+    auth: &str,
+) -> Result<UserBalance> {
     let resp = cli
         .get(format!("{}/users/me/balance", base))
         .header("Authorization", auth)
         .send()
         .await?;
     if !resp.status().is_success() {
-        return Err(AppError::LLMError("Kimi 余额查询失败，请检查 API Key。".into()));
+        return Err(AppError::LLMError(
+            "Kimi 余额查询失败，请检查 API Key。".into(),
+        ));
     }
     let body: MoonshotBalanceResponse = serde_json::from_str(&resp.text().await?)?;
     Ok(UserBalance {
@@ -219,7 +252,9 @@ async fn check_zhipu_balance(cli: &reqwest::Client, api_key: &str) -> Result<Use
         .send()
         .await?;
     if !resp.status().is_success() {
-        return Err(AppError::LLMError("智谱余额查询失败，请检查 API Key。".into()));
+        return Err(AppError::LLMError(
+            "智谱余额查询失败，请检查 API Key。".into(),
+        ));
     }
     let text = resp.text().await?;
     tracing::info!("Zhipu balance request completed");
@@ -238,19 +273,21 @@ async fn check_minimax_balance(cli: &reqwest::Client, auth: &str) -> Result<User
         .header("Content-Type", "application/json")
         .send()
         .await?;
-            if !resp.status().is_success() {
-                return Err(AppError::LLMError("MiniMax 余额查询失败，请检查 API Key。".into()));
-            }
-            let text = resp.text().await?;
-            tracing::info!("MiniMax balance request completed");
-            let body: MiniMaxBalanceResponse = serde_json::from_str(&text)?;
-            let d = body.data.unwrap_or_default();
-            Ok(UserBalance {
-                available_balance: d.available_balance,
-                voucher_balance: None,
-                cash_balance: None,
-            })
-        }
+    if !resp.status().is_success() {
+        return Err(AppError::LLMError(
+            "MiniMax 余额查询失败，请检查 API Key。".into(),
+        ));
+    }
+    let text = resp.text().await?;
+    tracing::info!("MiniMax balance request completed");
+    let body: MiniMaxBalanceResponse = serde_json::from_str(&text)?;
+    let d = body.data.unwrap_or_default();
+    Ok(UserBalance {
+        available_balance: d.available_balance,
+        voucher_balance: None,
+        cash_balance: None,
+    })
+}
 
 #[tauri::command]
 async fn run_video_aggregate<R: Runtime>(
@@ -259,7 +296,11 @@ async fn run_video_aggregate<R: Runtime>(
 ) -> Result<i32> {
     let output = APP.download_output().await?;
     let code = App::run_video_aggregate(window, &params).await?;
-    if code == 0 { output.register(&std::path::Path::new(&params.output_dir).join(&params.output_name)).await?; }
+    if code == 0 {
+        output
+            .register(&std::path::Path::new(&params.output_dir).join(&params.output_name))
+            .await?;
+    }
     Ok(code)
 }
 
@@ -269,13 +310,13 @@ async fn collect_relationship() -> Result<RelationshipTopo> {
 }
 
 #[tauri::command]
-fn create_account(account: Account) -> Result<()> {
-    App::create_account(&account)
+async fn create_account(account: Account) -> Result<()> {
+    APP.create_account(&account).await
 }
 
 #[tauri::command]
 fn read_account_info() -> Result<AccountInfo> {
-    App::read_account_info()
+    APP.active_account_info()
 }
 
 #[tauri::command]
@@ -290,7 +331,7 @@ async fn delete_account(account: Account) -> Result<()> {
 
 #[tauri::command]
 fn list_accounts() -> Result<Vec<Account>> {
-    App::list_accounts()
+    APP.active_accounts()
 }
 
 #[tauri::command]
@@ -336,7 +377,7 @@ async fn get_full_discussion(course_id: i64, topic_id: i64) -> Result<FullDiscus
 }
 
 #[tauri::command]
-async fn sync_course_files(course: Course) -> Result<Vec<File>> {
+async fn sync_course_files(course: Course) -> Result<Vec<PendingCourseFile>> {
     APP.sync_course_files(&course).await
 }
 
@@ -434,8 +475,8 @@ async fn get_me() -> Result<User> {
 }
 
 #[tauri::command]
-async fn get_config() -> AppConfig {
-    APP.get_config().await
+async fn get_config() -> Result<app::ConfigSnapshot> {
+    APP.get_config_snapshot().await
 }
 
 #[tauri::command]
@@ -599,23 +640,59 @@ async fn start_subtitle_chat_stream(
 }
 
 #[tauri::command]
-async fn export_users(users: Vec<User>, save_name: String, course: Option<utils::download::DownloadCourse>) -> Result<()> {
+async fn export_users(
+    users: Vec<User>,
+    save_name: String,
+    course: Option<utils::download::DownloadCourse>,
+) -> Result<()> {
     APP.export_users(&users, &save_name, course.as_ref()).await
 }
 
 #[tauri::command]
-async fn open_file(name: String, kind: Option<String>, course: Option<utils::download::DownloadCourse>) -> Result<()> {
-    APP.open_file(&name, kind.as_deref().unwrap_or("attachment"), course.as_ref()).await
+async fn open_file(
+    name: String,
+    kind: Option<String>,
+    course: Option<utils::download::DownloadCourse>,
+    expected_owner: String,
+    expected_save_path: String,
+) -> Result<()> {
+    APP.open_file(
+        &name,
+        kind.as_deref().unwrap_or("attachment"),
+        course.as_ref(),
+        &expected_owner,
+        &expected_save_path,
+    )
+    .await
 }
 
 #[tauri::command]
-async fn open_course_file(name: String, course: Course, folder_path: String) -> Result<()> {
-    APP.open_course_file(&name, &course, &folder_path).await
+async fn open_course_file(
+    name: String,
+    course: Course,
+    folder_path: String,
+    expected_owner: String,
+    expected_save_path: String,
+) -> Result<()> {
+    APP.open_course_file(
+        &name,
+        &course,
+        &folder_path,
+        &expected_owner,
+        &expected_save_path,
+    )
+    .await
 }
 
 #[tauri::command]
-async fn open_my_file(name: String, folder_path: String) -> Result<()> {
-    APP.open_my_file(&name, &folder_path).await
+async fn open_my_file(
+    name: String,
+    folder_path: String,
+    expected_owner: String,
+    expected_save_path: String,
+) -> Result<()> {
+    APP.open_my_file(&name, &folder_path, &expected_owner, &expected_save_path)
+        .await
 }
 
 #[tauri::command]
@@ -649,7 +726,10 @@ async fn delete_my_file(file: File, folder_path: String) -> Result<()> {
 }
 
 #[tauri::command]
-async fn delete_file_with_name(name: String, course: Option<utils::download::DownloadCourse>) -> Result<()> {
+async fn delete_file_with_name(
+    name: String,
+    course: Option<utils::download::DownloadCourse>,
+) -> Result<()> {
     APP.delete_file_with_name(&name, course.as_ref()).await
 }
 
@@ -668,12 +748,20 @@ async fn save_path_file(path: String, content: Vec<u8>) -> Result<()> {
 }
 
 #[tauri::command]
-async fn download_directory(kind: String, course: Option<utils::download::DownloadCourse>, root: Option<String>) -> Result<String> {
-    APP.download_directory(&kind, course.as_ref(), root.as_deref()).await
+async fn download_directory(
+    kind: String,
+    course: Option<utils::download::DownloadCourse>,
+    root: Option<String>,
+) -> Result<String> {
+    APP.download_directory(&kind, course.as_ref(), root.as_deref())
+        .await
 }
 
 #[tauri::command]
-async fn downloaded_files(account: String, request: app::downloads::DownloadRequest) -> std::result::Result<serde_json::Value, String> {
+async fn downloaded_files(
+    account: String,
+    request: app::downloads::DownloadRequest,
+) -> std::result::Result<serde_json::Value, String> {
     APP.downloaded_files(account, request).await
 }
 
@@ -687,10 +775,22 @@ async fn export_excel(
 }
 
 #[tauri::command]
-async fn download_file<R: Runtime>(window: Window<R>, file: File, course: Option<utils::download::DownloadCourse>) -> Result<()> {
-    APP.download_file(&file, course.as_ref(), &|progress| {
-        let _ = window.emit("download://progress", progress);
-    })
+async fn download_file<R: Runtime>(
+    window: Window<R>,
+    file: File,
+    course: Option<utils::download::DownloadCourse>,
+    expected_owner: String,
+    operation_id: String,
+) -> Result<()> {
+    APP.download_file(
+        &file,
+        course.as_ref(),
+        &expected_owner,
+        &|mut progress: model::ProgressPayload| {
+            progress.uuid = operation_id.clone();
+            let _ = window.emit("download://progress", progress);
+        },
+    )
     .await
 }
 
@@ -700,10 +800,19 @@ async fn download_course_file<R: Runtime>(
     file: File,
     course: Course,
     folder_path: String,
+    expected_owner: String,
+    operation_id: String,
 ) -> Result<()> {
-    APP.download_course_file(&file, &course, &folder_path, &|progress| {
-        let _ = window.emit("download://progress", progress);
-    })
+    APP.download_course_file(
+        &file,
+        &course,
+        &folder_path,
+        &expected_owner,
+        &|mut progress: model::ProgressPayload| {
+            progress.uuid = operation_id.clone();
+            let _ = window.emit("download://progress", progress);
+        },
+    )
     .await
 }
 
@@ -712,10 +821,18 @@ async fn download_my_file<R: Runtime>(
     window: Window<R>,
     file: File,
     folder_path: String,
+    expected_owner: String,
+    operation_id: String,
 ) -> Result<()> {
-    APP.download_my_file(&file, &folder_path, &|progress| {
-        let _ = window.emit("download://progress", progress);
-    })
+    APP.download_my_file(
+        &file,
+        &folder_path,
+        &expected_owner,
+        &|mut progress: model::ProgressPayload| {
+            progress.uuid = operation_id.clone();
+            let _ = window.emit("download://progress", progress);
+        },
+    )
     .await
 }
 
@@ -724,19 +841,31 @@ async fn download_course_file_as_pdf(
     file: File,
     course: Course,
     folder_path: String,
+    expected_owner: String,
 ) -> Result<()> {
-    APP.download_course_file_as_pdf(&file, &course, &folder_path)
+    APP.download_course_file_as_pdf(&file, &course, &folder_path, &expected_owner)
         .await
 }
 
 #[tauri::command]
-async fn download_my_file_as_pdf(file: File, folder_path: String) -> Result<()> {
-    APP.download_my_file_as_pdf(&file, &folder_path).await
+async fn download_my_file_as_pdf(
+    file: File,
+    folder_path: String,
+    expected_owner: String,
+) -> Result<()> {
+    APP.download_my_file_as_pdf(&file, &folder_path, &expected_owner)
+        .await
 }
 
 #[tauri::command]
-async fn save_file_content(content: Vec<u8>, file_name: String, course: Option<utils::download::DownloadCourse>) -> Result<()> {
-    APP.save_file_content(&content, &file_name, course.as_ref()).await
+async fn save_file_content(
+    content: Vec<u8>,
+    file_name: String,
+    course: Option<utils::download::DownloadCourse>,
+    expected_owner: String,
+) -> Result<()> {
+    APP.save_file_content(&content, &file_name, course.as_ref(), &expected_owner)
+        .await
 }
 
 #[tauri::command]
@@ -772,10 +901,10 @@ async fn get_colors() -> Result<Colors> {
 }
 
 #[tauri::command]
-async fn save_config(config: AppConfig) -> Result<()> {
+async fn save_config(config: AppConfig, expected_owner: String) -> Result<String> {
     diagnostics::protect_config(&config);
     tracing::info!("Saving application configuration");
-    APP.save_config(config).await
+    APP.save_config(config, &expected_owner).await
 }
 
 #[tauri::command]
@@ -935,13 +1064,22 @@ async fn get_canvas_videos(course_id: i64) -> Result<Vec<CanvasVideo>> {
 }
 
 #[tauri::command]
-async fn get_video_live_sessions(canvas_course_id: Option<i64>, teaching_class_id: Option<i64>) -> Result<CanvasLiveList> {
-    APP.get_video_live_sessions(canvas_course_id, teaching_class_id).await
+async fn get_video_live_sessions(
+    canvas_course_id: Option<i64>,
+    teaching_class_id: Option<i64>,
+) -> Result<CanvasLiveList> {
+    APP.get_video_live_sessions(canvas_course_id, teaching_class_id)
+        .await
 }
 
 #[tauri::command]
-async fn get_video_live_info(course_id: String, canvas_course_id: Option<i64>, teaching_class_id: Option<i64>) -> Result<CanvasLiveInfo> {
-    APP.get_video_live_info(&course_id, canvas_course_id, teaching_class_id).await
+async fn get_video_live_info(
+    course_id: String,
+    canvas_course_id: Option<i64>,
+    teaching_class_id: Option<i64>,
+) -> Result<CanvasLiveInfo> {
+    APP.get_video_live_info(&course_id, canvas_course_id, teaching_class_id)
+        .await
 }
 
 #[tauri::command]
@@ -1011,11 +1149,22 @@ async fn download_video<R: Runtime>(
     video: VideoPlayInfo,
     save_name: String,
     course: Option<utils::download::DownloadCourse>,
+    expected_owner: String,
+    expected_save_path: String,
+    operation_id: String,
 ) -> Result<()> {
     let window = Arc::new(window);
-    APP.download_video(&video, &save_name, course.as_ref(), move |progress| {
-        let _ = window.clone().emit("video_download://progress", progress);
-    })
+    APP.download_video(
+        &video,
+        &save_name,
+        course.as_ref(),
+        &expected_owner,
+        &expected_save_path,
+        move |mut progress: model::ProgressPayload| {
+            progress.uuid = operation_id.clone();
+            let _ = window.clone().emit("video_download://progress", progress);
+        },
+    )
     .await
 }
 
@@ -1031,14 +1180,39 @@ async fn prepare_video_material(
     include_ocr: Option<bool>,
     clean_up_ppt: Option<bool>,
 ) -> Result<app::video_library::VideoMaterial> {
-    APP.prepare_video_material(request, prefer_before.unwrap_or(false), include_ocr.unwrap_or(true), clean_up_ppt).await
+    APP.prepare_video_material(
+        request,
+        prefer_before.unwrap_or(false),
+        include_ocr.unwrap_or(true),
+        clean_up_ppt,
+    )
+    .await
 }
 
 #[tauri::command]
-async fn chat_video_materials(text: String, messages: Vec<LLMChatMessage>, options: Option<model::VideoSummaryOptions>, prepared_context: Option<model::VideoPreparedContext>, on_chunk: tauri::ipc::Channel<String>, on_status: tauri::ipc::Channel<String>) -> Result<model::VideoChatResponse> {
-    let mut callback = move |chunk| { let _ = on_chunk.send(chunk); };
-    let mut status_callback = move |status| { let _ = on_status.send(status); };
-    APP.chat_video_materials(text, messages, options, prepared_context, Some(&mut callback), &mut status_callback).await
+async fn chat_video_materials(
+    text: String,
+    messages: Vec<LLMChatMessage>,
+    options: Option<model::VideoSummaryOptions>,
+    prepared_context: Option<model::VideoPreparedContext>,
+    on_chunk: tauri::ipc::Channel<String>,
+    on_status: tauri::ipc::Channel<String>,
+) -> Result<model::VideoChatResponse> {
+    let mut callback = move |chunk| {
+        let _ = on_chunk.send(chunk);
+    };
+    let mut status_callback = move |status| {
+        let _ = on_status.send(status);
+    };
+    APP.chat_video_materials(
+        text,
+        messages,
+        options,
+        prepared_context,
+        Some(&mut callback),
+        &mut status_callback,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -1050,8 +1224,17 @@ async fn export_video_materials(
     all_tracks: bool,
     on_progress: tauri::ipc::Channel<app::video_library::ExportProgress>,
 ) -> Result<app::video_library::ExportResult> {
-    APP.export_video_materials(requests, kind, directory, name, all_tracks, Arc::new(move |progress| { let _ = on_progress.send(progress); }))
-        .await
+    APP.export_video_materials(
+        requests,
+        kind,
+        directory,
+        name,
+        all_tracks,
+        Arc::new(move |progress| {
+            let _ = on_progress.send(progress);
+        }),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -1079,13 +1262,21 @@ async fn download_ppt<R: Runtime>(
 
 // Apis for jbox
 #[tauri::command]
-async fn login_jbox() -> Result<()> {
-    APP.login_jbox().await
+async fn login_jbox(expected_owner: String) -> Result<app::ConfigSnapshot> {
+    APP.login_jbox(&expected_owner).await
 }
 
 #[tauri::command]
-async fn upload_file<R: Runtime>(window: Window<R>, file: File, save_dir: String) -> Result<()> {
-    APP.upload_file(&file, &save_dir, |progress| {
+async fn upload_file<R: Runtime>(
+    window: Window<R>,
+    file: File,
+    save_dir: String,
+    expected_owner: String,
+    operation_id: String,
+) -> Result<()> {
+    APP.upload_file(&file, &save_dir, &expected_owner, |progress| {
+        let mut progress = progress;
+        progress.uuid = operation_id.clone();
         let _ = window.emit("file_upload://progress", progress);
     })
     .await
@@ -1096,8 +1287,12 @@ async fn upload_file_as_pdf<R: Runtime>(
     window: Window<R>,
     file: File,
     save_dir: String,
+    expected_owner: String,
+    operation_id: String,
 ) -> Result<()> {
-    APP.upload_file_as_pdf(&file, &save_dir, |progress| {
+    APP.upload_file_as_pdf(&file, &save_dir, &expected_owner, |progress| {
+        let mut progress = progress;
+        progress.uuid = operation_id.clone();
         let _ = window.emit("file_upload://progress", progress);
     })
     .await
@@ -1148,13 +1343,14 @@ async fn start_mcp_server() -> Result<bool> {
 }
 
 #[tauri::command]
-async fn stop_mcp_server() {
+async fn stop_mcp_server() -> Result<()> {
     APP.stop_mcp().await
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let log_directory = App::config_dir().map(std::path::PathBuf::from)
+    let log_directory = App::config_dir()
+        .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| std::env::temp_dir().join("SJTU-Canvas-Helper"));
     diagnostics::init(log_directory);
     if let Err(error) = APP.init().await {
@@ -1312,7 +1508,9 @@ async fn main() -> Result<()> {
                 let handle = std::thread::spawn(|| {
                     let rt = tokio::runtime::Runtime::new().unwrap();
                     rt.block_on(async {
-                        APP.stop_mcp().await;
+                        if let Err(error) = APP.stop_mcp().await {
+                            tracing::error!(%error, "MCP shutdown incomplete");
+                        }
                         APP.stop_proxy().await;
                     });
                 });

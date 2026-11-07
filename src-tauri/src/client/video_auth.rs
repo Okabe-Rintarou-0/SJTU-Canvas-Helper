@@ -42,15 +42,14 @@ impl Client {
                 ja_auth_cookie: cookie.into(),
                 ..Default::default()
             };
-            self.token.write().await.clear();
+            self.reset_video_tokens(String::new()).await;
         }
     }
 
     // One lock covers the whole login chain so concurrent course/live requests
     // share the authenticated browser session instead of consuming the same ticket.
     pub(super) async fn authenticated_video_launch(&self, launch_url: &str) -> Result<String> {
-        self.authenticated_video_launch_with_sso(launch_url, CANVAS_LOGIN_URL)
-            .await
+        super::authentication(self.authenticated_video_launch_with_sso(launch_url, CANVAS_LOGIN_URL)).await
     }
 
     async fn authenticated_video_launch_with_sso(

@@ -2,7 +2,7 @@ import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Card
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import FolderOpenRoundedIcon from "@mui/icons-material/FolderOpenRounded";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { appDataRequest, currentDataAccount, type DataOverview } from "../lib/app_data";
 import { displayLocalPath } from "../lib/downloads";
 import { deleteSummaryCache, readSummaryCache, type VideoSummaryCache } from "../lib/video_summary_cache";
@@ -10,6 +10,8 @@ import { videoSummarySession } from "../lib/video_summary_session";
 import { useAISession } from "../lib/ai_session_store";
 import { surfaceCardSx } from "../lib/styles";
 import VideoSummaryScope from "./video_summary_scope";
+import { useSessionEpoch } from "../lib/session";
+import { useActiveSessionOperation } from "../lib/use_active_session_operation";
 
 function dataSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -19,6 +21,13 @@ function dataSize(bytes: number) {
 type Action = { category: "cache" | "history" } | { entry: VideoSummaryCache } | { directory: string };
 
 export default function AppDataSettings({ active }: { active: boolean }) {
+  const session = useSessionEpoch();
+  return <AppDataSession key={session} session={session} active={active} />;
+}
+
+function AppDataSession({ active, session }: { active: boolean; session: number }) {
+  const captureOwner = useActiveSessionOperation(session, active);
+  const generation = useRef(0);
   const [account, setAccount] = useState("");
   const [overview, setOverview] = useState<DataOverview>();
   const [directory, setDirectory] = useState<string>();
@@ -35,35 +44,46 @@ export default function AppDataSettings({ active }: { active: boolean }) {
   const directoryChanged = targetDirectory !== currentDirectory;
 
   const refresh = useCallback(async () => {
-    const current = await currentDataAccount();
-    setAccount(current);
-    const [history] = await Promise.allSettled([readSummaryCache(current)]);
-    // Measure after migration completes, including when migration reports an error.
-    const [usage] = await Promise.allSettled([appDataRequest<DataOverview>(current, { op: "overview" })]);
-    setHistories(history.status === "fulfilled" ? history.value : []);
-    setOverview(usage.status === "fulfilled" ? usage.value : undefined);
-    setError([history, usage].flatMap((result) => result.status === "rejected" ? [String(result.reason)] : []).join("；"));
-  }, []);
+    const owns = captureOwner();
+    if (!owns()) return;
+    const request = ++generation.current;
+    const currentRequest = () => owns() && request === generation.current;
+    try {
+      const current = await currentDataAccount();
+      if (!currentRequest()) return;
+      const [history] = await Promise.allSettled([readSummaryCache(current)]);
+      if (!currentRequest()) return;
+      // Measure after migration completes, including when migration reports an error.
+      const [usage] = await Promise.allSettled([appDataRequest<DataOverview>(current, { op: "overview" })]);
+      if (!currentRequest()) return;
+      setAccount(current);
+      setHistories(history.status === "fulfilled" ? history.value : []);
+      setOverview(usage.status === "fulfilled" ? usage.value : undefined);
+      setError([history, usage].flatMap((result) => result.status === "rejected" ? [String(result.reason)] : []).join("；"));
+    } catch (e) { if (currentRequest()) setError(String(e)); }
+  }, [captureOwner]);
   useEffect(() => {
-    if (!active) return;
-    let disposed = false;
-    void refresh().catch((e) => { if (!disposed) setError(String(e)); });
-    return () => { disposed = true; };
+    if (!active) { setAction(undefined); setPreview(undefined); setWorking(false); return; }
+    void refresh();
+    return () => { generation.current += 1; };
   }, [active, refresh, summary.loading, summary.cacheEntry]);
 
-  const run = async (operation: () => Promise<void>) => {
+  const run = async (operation: (owns: () => boolean) => Promise<void>) => {
+    const owns = captureOwner();
+    if (!owns()) return;
     setWorking(true); setError(""); setNotice("");
-    try { await operation(); await refresh(); }
-    catch (e) { setError(String(e)); }
-    finally { setWorking(false); }
+    try { await operation(owns); if (owns()) await refresh(); }
+    catch (e) { if (owns()) setError(String(e)); }
+    finally { if (owns()) setWorking(false); }
   };
   const confirm = async () => {
     if (!action || blocked) return;
     const confirmed = action;
     setAction(undefined);
-    await run(async () => {
+    await run(async (owns) => {
       if ("directory" in confirmed) {
         const result = await appDataRequest<{ previousDirectory: string }>(account, { op: "relocate", directory: confirmed.directory });
+        if (!owns()) return;
         setDirectory(undefined);
         setNotice(`应用数据已迁移并立即生效。原目录保留为副本，可确认后自行删除：${displayLocalPath(result.previousDirectory)}`);
       } else {
@@ -71,8 +91,10 @@ export default function AppDataSettings({ active }: { active: boolean }) {
           if (!await deleteSummaryCache(confirmed.entry.key, account)) throw new Error("删除总结历史失败");
         } else {
           if (confirmed.category === "history") await readSummaryCache(account);
+          if (!owns()) return;
           await appDataRequest(account, { op: "clear", category: confirmed.category });
         }
+        if (!owns()) return;
         if (("entry" in confirmed && summary.cacheEntry?.key === confirmed.entry.key) || ("category" in confirmed && confirmed.category === "history")) {
           videoSummarySession.update({ cacheEntry: undefined, cacheNotice: "已删除保存的历史，当前会话仍可阅读" });
         }
@@ -82,17 +104,21 @@ export default function AppDataSettings({ active }: { active: boolean }) {
     });
   };
   const choose = async (backup: boolean) => {
+    const owns = captureOwner();
+    if (!owns()) return;
     try {
       const selected = await open({ directory: true, multiple: false, title: backup ? "选择空文件夹保存备份" : "选择新的空应用数据文件夹", defaultPath: backup ? undefined : currentDirectory });
-      if (typeof selected !== "string") return;
-      if (backup) await run(async () => {
+      if (!owns() || typeof selected !== "string") return;
+      if (backup) await run(async (ownsBackup) => {
         await appDataRequest(account, { op: "backup", directory: selected });
+        if (!ownsBackup()) return;
         setNotice(`全部账号的应用数据已备份到：${selected}`);
       });
       else setDirectory(displayLocalPath(selected));
-    } catch (e) { setError(String(e)); }
+    } catch (e) { if (owns()) setError(String(e)); }
   };
 
+  if (!active) return null;
   return <Stack spacing={2}>
     <Card sx={surfaceCardSx}><CardContent><Stack spacing={2}>
       <Box><Typography variant="h5">应用数据</Typography>

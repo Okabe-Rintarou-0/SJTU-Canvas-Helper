@@ -1,3 +1,4 @@
+import AccountSessionBoundary from "../components/account_session_boundary";
 import { downloadCourseContext } from "../lib/downloads";
 import { DownloadCourseContext } from "../lib/download_context";
 import PageTaskLists from "../components/page_task_lists";
@@ -41,7 +42,7 @@ import {
   Typography,
 } from "@mui/material";
 import { html, pinyin } from "pinyin-pro";
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import ClosableAlert from "../components/closable_alert";
 import CommentPanel from "../components/comment_panel";
@@ -51,7 +52,8 @@ import FileDownloadTable from "../components/file_download_table";
 import GradeStatisticChart from "../components/grade_statistic";
 import BasicLayout from "../components/layout";
 import { WorkspaceHero } from "../components/workspace_hero";
-import { getConfig, saveConfig } from "../lib/config";
+import { getConfig, saveConfig, StaleConfigSessionError, captureOperationConfig, isConfigOwnerCurrent } from "../lib/config";
+import { currentSession, isSessionCurrent, useSessionEpoch } from "../lib/session";
 import { SUBMISSION_PAGE_HINT_ALERT_KEY } from "../lib/constants";
 import { useAppMessage } from "../lib/message";
 import {
@@ -141,11 +143,27 @@ function SubmissionGrade({
 import { surfaceCardSx } from "../lib/styles";
 
 export default function SubmissionsPage() {
+  return <AccountSessionBoundary><SubmissionsPageContent /></AccountSessionBoundary>;
+}
+
+function SubmissionsPageContent() {
   const [messageApi, contextHolder] = useAppMessage();
   const [operating, setOperating] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const { selectedCourseId, setSelectedCourseId } = useSelectedCourse();
+  const session = useSessionEpoch();
+  const selectionOperation = useRef(0);
+  useEffect(() => {
+    selectionOperation.current += 1;
+    setOperating(false);
+    return () => { selectionOperation.current += 1; };
+  }, [session]);
+  const beginSelectionOperation = () => {
+    const request = ++selectionOperation.current;
+    const owner = currentSession();
+    return () => isSessionCurrent(owner) && request === selectionOperation.current;
+  };
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const downloadTasks = useLegacyTasks<FileDownloadTask>("submissions", ["attachment"]);
   const [selectedAssignment, setSelectedAssignment] = useState<
@@ -254,9 +272,13 @@ export default function SubmissionsPage() {
     );
   }, [previewEntry, attachments, selectedAssignment, readonlyGrade, me.data]);
 
+  // A new preview setter must not relabel the unchanged previous account list.
+  const previewSource = useMemo(() => ({
+    owner: currentSession(), entries: attachments.map(attachmentToFile),
+  }), [attachments]);
   useEffect(() => {
-    setEntries(attachments.map(attachmentToFile));
-  }, [attachments, setEntries]);
+    if (isSessionCurrent(previewSource.owner)) setEntries(previewSource.entries);
+  }, [previewSource, setEntries]);
 
   useEffect(() => {
     if (attachments.length > 0) {
@@ -307,12 +329,12 @@ export default function SubmissionsPage() {
       updateGradeStatistic(attachments);
       messageApi.success("打分成功", 0.5);
     } catch (error) {
-      consoleLog(LOG_LEVEL_ERROR, error);
+      consoleLog(LOG_LEVEL_ERROR, "Submission grading failed");
       messageApi.error(error as string);
     }
   };
 
-  const handleGetUsers = async (courseId: number) => {
+  const handleGetUsers = async (courseId: number, ownsRequest: () => boolean = () => true) => {
     if (courseId === -1) {
       return;
     }
@@ -320,14 +342,15 @@ export default function SubmissionsPage() {
       const nextUsers = (await invoke("list_course_students", {
         courseId,
       })) as User[];
+      if (!ownsRequest()) return;
       nextUsers.forEach((user) => (user.key = user.id));
       setUsers(nextUsers);
     } catch (error) {
-      messageApi.error(error as string);
+      if (ownsRequest()) messageApi.error(error as string);
     }
   };
 
-  const handleGetAssignments = async (courseId: number) => {
+  const handleGetAssignments = async (courseId: number, ownsRequest: () => boolean = () => true) => {
     if (courseId === -1) {
       return;
     }
@@ -335,14 +358,15 @@ export default function SubmissionsPage() {
       const nextAssignments = (await invoke("list_course_assignments", {
         courseId,
       })) as Assignment[];
+      if (!ownsRequest()) return;
       nextAssignments.forEach((assignment) => (assignment.key = assignment.id));
       setAssignments(nextAssignments);
     } catch (error) {
-      messageApi.error(error as string);
+      if (ownsRequest()) messageApi.error(error as string);
     }
   };
 
-  const handleGetSubmissions = async (courseId: number, assignmentId: number) => {
+  const handleGetSubmissions = async (courseId: number, assignmentId: number, ownsRequest: () => boolean = () => true) => {
     if (courseId === -1 || assignmentId === -1) {
       return;
     }
@@ -351,6 +375,7 @@ export default function SubmissionsPage() {
         courseId,
         assignmentId,
       })) as Submission[];
+      if (!ownsRequest()) return;
       const nextAttachments: Attachment[] = [];
       submissions.forEach((submission) => {
         const thisAttachments = submission.attachments;
@@ -368,39 +393,59 @@ export default function SubmissionsPage() {
       setAttachments(nextAttachments);
       updateGradeStatistic(nextAttachments);
     } catch (error) {
-      messageApi.error(error as string);
+      if (ownsRequest()) messageApi.error(error as string);
     }
   };
 
   const handleDownloadAttachment = async (attachment: Attachment) => {
-    const file = attachmentToFile(attachment);
+    const session = currentSession();
+    const config = captureOperationConfig();
+    const file = structuredClone(attachmentToFile(attachment));
+    const ensureOwner = () => {
+      if (!isSessionCurrent(session) || !isConfigOwnerCurrent(config))
+        throw new Error("账号已切换，请在当前账号重新创建下载任务。");
+    };
+    const event = { channel: "download://progress", id: crypto.randomUUID() };
     const selected = courses.data.find((item) => item.id === selectedCourseId);
     const course = selected ? downloadCourseContext(selected) : undefined;
     enqueueTask({
-      id: `attachment:${selectedCourseId}:${file.uuid}`, name: file.display_name,
-      source: "submissions", kind: "attachment", data: { file },
+      id: `attachment:${session}:${selectedCourseId}:${file.uuid}`, name: file.display_name,
+      source: "submissions", kind: "attachment", data: { file: structuredClone(file) },
       context: courses.data.find((course) => course.id === selectedCourseId)?.name,
-      event: { channel: "download://progress", id: file.uuid },
+      event,
       locks: [`save:${file.display_name}`], stage: "正在下载",
-      run: () => invoke("download_file", { file, ...(course ? { course } : {}) }),
-      open: () => invoke("open_file", { name: file.display_name, ...(course ? { course } : {}) }),
+      run: async () => {
+        ensureOwner();
+        event.id = crypto.randomUUID();
+        try { await invoke("download_file", { file, expectedOwner: config.__config_owner, operationId: event.id, ...(course ? { course } : {}) }); }
+        catch (error) { ensureOwner(); throw error; }
+        ensureOwner();
+      },
+      open: async () => {
+        ensureOwner();
+        return invoke("open_file", { name: file.display_name, expectedOwner: config.__config_owner, expectedSavePath: config.save_path, ...(course ? { course } : {}) });
+      },
     });
   };
 
   const handleCourseSelect = async (courseId: number) => {
+    const ownsRequest = beginSelectionOperation();
     setOperating(true);
-    if (courses.data.find((course) => course.id === courseId)) {
-      setAttachments([]);
-      setSelectedAttachments([]);
-      setStatistic(undefined);
-      setSelectedAssignment(undefined);
-      setSelectedCourseId(courseId);
-      setExpandedRowKeys([]);
-      setAttachmentToComment(-1);
-      setBoundFiles([]);
-      await Promise.all([handleGetAssignments(courseId), handleGetUsers(courseId)]);
+    try {
+      if (courses.data.find((course) => course.id === courseId)) {
+        setAttachments([]);
+        setSelectedAttachments([]);
+        setStatistic(undefined);
+        setSelectedAssignment(undefined);
+        setSelectedCourseId(courseId);
+        setExpandedRowKeys([]);
+        setAttachmentToComment(-1);
+        setBoundFiles([]);
+        await Promise.all([handleGetAssignments(courseId, ownsRequest), handleGetUsers(courseId, ownsRequest)]);
+      }
+    } finally {
+      if (ownsRequest()) setOperating(false);
     }
-    setOperating(false);
   };
 
   useAutoLoadCourse(
@@ -409,23 +454,29 @@ export default function SubmissionsPage() {
   );
 
   const handleAssignmentSelect = async (assignmentId: number) => {
+    const ownsRequest = beginSelectionOperation();
     setOperating(true);
-    setStatistic(undefined);
-    setSelectedAttachments([]);
-    setExpandedRowKeys([]);
-    setAttachmentToComment(-1);
-    const assignment = assignments.find((item) => item.id === assignmentId);
-    if (assignment) {
-      setSelectedAssignment(assignment);
-      await handleGetSubmissions(selectedCourseId, assignmentId);
+    try {
+      setStatistic(undefined);
+      setSelectedAttachments([]);
+      setExpandedRowKeys([]);
+      setAttachmentToComment(-1);
+      const assignment = assignments.find((item) => item.id === assignmentId);
+      if (assignment) {
+        setSelectedAssignment(assignment);
+        await handleGetSubmissions(selectedCourseId, assignmentId, ownsRequest);
+        if (!ownsRequest()) return;
+      }
+      const config = await getConfig(true);
+      if (!ownsRequest()) return;
+      setBoundFiles(config.course_assignment_file_bindings[assignmentId] ?? []);
+    } catch (error: unknown) {
+      if (!(error instanceof StaleConfigSessionError) && ownsRequest()) {
+        console.error("Failed to select assignment:", error);
+      }
+    } finally {
+      if (ownsRequest()) setOperating(false);
     }
-    const config = await getConfig(true);
-    if (assignmentId in config.course_assignment_file_bindings) {
-      setBoundFiles(config.course_assignment_file_bindings[assignmentId]);
-    } else {
-      setBoundFiles([]);
-    }
-    setOperating(false);
   };
 
   const handleDownloadSelectedAttachments = () => {
@@ -465,10 +516,20 @@ export default function SubmissionsPage() {
   };
 
   const bindCourseAssignmentFiles = async (files: File[]) => {
-    const config = await getConfig(true);
-    if (selectedAssignment) {
-      config.course_assignment_file_bindings[selectedAssignment.id] = files;
+    const owner = currentSession();
+    const request = selectionOperation.current;
+    const assignment = selectedAssignment;
+    const ownsRequest = () => isSessionCurrent(owner) && request === selectionOperation.current;
+    if (!assignment) return;
+    try {
+      const config = await getConfig(true);
+      if (!ownsRequest()) return;
+      config.course_assignment_file_bindings[assignment.id] = files;
       await saveConfig(config);
+    } catch (error: unknown) {
+      if (!(error instanceof StaleConfigSessionError) && ownsRequest()) {
+        console.error("Failed to bind assignment files:", error);
+      }
     }
   };
 

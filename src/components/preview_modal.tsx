@@ -26,73 +26,61 @@ import {
 } from "../lib/file_conversion";
 import { getFileType } from "../lib/utils";
 import { BasicRenderers } from "./renderers";
+import { isSessionCurrent, subscribeSession, useSessionEpoch } from "../lib/session";
+import { PreviewSessionContext } from "../lib/preview_session";
 
 type ResolvedPreview =
   | { kind: "document"; document: IDocument }
   | { kind: "window" };
 
-const localDocumentCache = new Map<string, Promise<IDocument>>();
-
-async function resolveLocalDocument(file: File): Promise<IDocument> {
-  const cacheKey = `${file.display_name}|${file.url}`;
-  const cached = localDocumentCache.get(cacheKey);
-  if (cached) {
-    return cached;
-  }
-
-  const task = (async () => {
-    if (isPowerPointFile(file)) {
-      const content = await invoke<number[]>("convert_pptx_to_pdf", { file });
-      const pdfBlob = new Blob([new Uint8Array(content).buffer as ArrayBuffer], {
-        type: "application/pdf",
-      });
-      return {
-        uri: URL.createObjectURL(pdfBlob),
-        fileName: getPdfFileName(file.display_name),
-        fileType: "pdf",
-      } satisfies IDocument;
-    }
-
-    const fileType = await getFileType(file.display_name);
-    return {
-      uri: file.url,
-      fileName: file.display_name,
-      fileType,
-    } satisfies IDocument;
-  })();
-
-  localDocumentCache.set(cacheKey, task);
-  void task.catch(() => localDocumentCache.delete(cacheKey));
-  return task;
+interface PreviewLifetime {
+  owns: () => boolean;
+  urls: Set<string>;
 }
 
-async function resolvePreview(file: File): Promise<ResolvedPreview> {
+function requireOwner(lifetime: PreviewLifetime) {
+  if (!lifetime.owns()) throw new Error("Preview session expired");
+}
+
+async function resolveLocalDocument(file: File, lifetime: PreviewLifetime): Promise<IDocument> {
+  requireOwner(lifetime);
+  if (isPowerPointFile(file)) {
+    const content = await invoke<number[]>("convert_pptx_to_pdf", { file });
+    requireOwner(lifetime);
+    const pdfBlob = new Blob([new Uint8Array(content).buffer as ArrayBuffer], {
+      type: "application/pdf",
+    });
+    const uri = URL.createObjectURL(pdfBlob);
+    lifetime.urls.add(uri);
+    return { uri, fileName: getPdfFileName(file.display_name), fileType: "pdf" };
+  }
+
+  const fileType = await getFileType(file.display_name);
+  requireOwner(lifetime);
+  return { uri: file.url, fileName: file.display_name, fileType };
+}
+
+async function resolvePreview(file: File, lifetime: PreviewLifetime): Promise<ResolvedPreview> {
+  requireOwner(lifetime);
   if (file.url?.startsWith("blob:")) {
-    return { kind: "document", document: await resolveLocalDocument(file) };
+    return { kind: "document", document: await resolveLocalDocument(file, lifetime) };
   }
   if (canConvertFileToPdf(file) || isPdfFile(file)) {
     try {
-      await invoke("open_file_preview_window", {
-        fileId: file.id,
-        title: file.display_name,
-      });
+      await invoke("open_file_preview_window", { fileId: file.id, title: file.display_name });
+      requireOwner(lifetime);
       return { kind: "window" };
     } catch (onlinePreviewError) {
-      if (!isPowerPointFile(file) && !isPdfFile(file)) {
-        throw onlinePreviewError;
-      }
-
-      return {
-        kind: "document",
-        document: await resolveLocalDocument(file),
-      };
+      requireOwner(lifetime);
+      if (!isPowerPointFile(file) && !isPdfFile(file)) throw onlinePreviewError;
+      return { kind: "document", document: await resolveLocalDocument(file, lifetime) };
     }
   }
-
-  return { kind: "document", document: await resolveLocalDocument(file) };
+  return { kind: "document", document: await resolveLocalDocument(file, lifetime) };
 }
 
 export default function PreviewModal({
+  ownerSession,
   open,
   files,
   handleCancelPreview,
@@ -100,6 +88,7 @@ export default function PreviewModal({
   footer,
   bodyStyle,
 }: {
+  ownerSession: number;
   open: boolean;
   files: File[];
   handleCancelPreview?: () => void;
@@ -108,48 +97,53 @@ export default function PreviewModal({
   bodyStyle?: CSSProperties;
 }) {
   const theme = useTheme();
-  const [previews, setPreviews] = useState<ResolvedPreview[]>([]);
+  const session = useSessionEpoch();
+  const request = useMemo(() => ({ files, ownerSession, open }), [files, ownerSession, open]);
+  const [resolved, setResolved] = useState<{ request: typeof request; previews: ResolvedPreview[] }>();
+  const previews = useMemo(() => resolved?.request === request ? resolved.previews : [], [resolved, request]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const cancelPreviewRef = useRef(handleCancelPreview);
   useLayoutEffect(() => { cancelPreviewRef.current = handleCancelPreview; }, [handleCancelPreview]);
 
   useEffect(() => {
-    if (!open || files.length === 0) {
-      return;
-    }
-
+    if (!open || files.length === 0 || !isSessionCurrent(ownerSession)) return;
     let cancelled = false;
-    setPreviews([]);
+    const urls = new Set<string>();
+    const lifetime = { owns: () => !cancelled && isSessionCurrent(ownerSession), urls };
+    const stop = () => {
+      cancelled = true;
+      urls.forEach((uri) => URL.revokeObjectURL(uri));
+      urls.clear();
+    };
+    const unsubscribe = subscribeSession(() => {
+      if (isSessionCurrent(ownerSession)) return;
+      stop();
+      setResolved(undefined);
+      setLoading(false);
+    });
+    setResolved(undefined);
     setLoadError(null);
     setLoading(true);
     void (async () => {
       try {
-        const nextPreviews = await Promise.all(
-          files.map((file) => resolvePreview(file))
-        );
-        if (!cancelled) {
-          if (nextPreviews.some((preview) => preview.kind === "window")) {
-            cancelPreviewRef.current?.();
-          } else {
-            setPreviews(nextPreviews);
-          }
+        const nextPreviews = await Promise.all(files.map((file) => resolvePreview(file, lifetime)));
+        if (lifetime.owns()) {
+          if (nextPreviews.some((preview) => preview.kind === "window")) cancelPreviewRef.current?.();
+          else setResolved({ request, previews: nextPreviews });
         }
       } catch (error) {
-        if (!cancelled) {
+        if (lifetime.owns()) {
           setLoadError(String(error));
+          setLoading(false);
+          stop();
         }
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (lifetime.owns()) setLoading(false);
       }
     })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [files, open]);
+    return () => { unsubscribe(); stop(); };
+  }, [files, open, ownerSession, request]);
 
   const docs = useMemo(
     () =>
@@ -177,6 +171,8 @@ export default function PreviewModal({
       />
     );
   }, [bodyStyle, docs, files]);
+
+  if (!open || session !== ownerSession) return null;
 
   return (
     <Dialog
@@ -282,7 +278,7 @@ export default function PreviewModal({
             </Alert>
           </Box>
         ) : docs.length > 0 ? (
-          <Box>{viewer}</Box>
+          <PreviewSessionContext.Provider value={ownerSession}><Box>{viewer}</Box></PreviewSessionContext.Provider>
         ) : null}
         {footer ? (
           <Box

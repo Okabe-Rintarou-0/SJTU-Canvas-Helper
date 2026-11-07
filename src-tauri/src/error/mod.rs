@@ -38,6 +38,10 @@ pub enum AppError {
     AccountAlreadyExists,
     #[error("Account not exists")]
     AccountNotExists,
+    #[error("Stale or unavailable configuration owner")]
+    StaleConfigOwner,
+    #[error("Configuration persistence is uncertain; recovery is required before further changes")]
+    PersistenceUncertain,
     #[error("Not allowed to delete default account")]
     NotAllowedToDeleteDefaultAccount,
     #[error("Not allowed to create default account")]

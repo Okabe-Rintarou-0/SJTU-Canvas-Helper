@@ -8,25 +8,39 @@ use crate::{
 };
 pub mod annual;
 pub mod basic;
+pub mod cache;
+mod config_store;
+mod constants;
 pub mod data;
 pub mod downloads;
-mod qrcode;
-pub mod cache;
-mod constants;
 pub mod jbox;
-pub mod video;
-pub mod video_library;
-mod video_artifacts;
 pub(crate) mod ppt;
 #[cfg(test)]
 mod ppt_audit;
+mod qrcode;
+mod session;
+pub mod video;
+mod video_artifacts;
+pub mod video_library;
+
+#[derive(serde::Serialize)]
+pub struct ConfigSnapshot {
+    #[serde(flatten)]
+    pub config: AppConfig,
+    #[serde(rename = "__config_owner")]
+    pub owner: String,
+}
 
 pub struct App {
+    config_store: Option<config_store::ConfigStore>,
     client: Arc<Client>,
+    canvas_session: tokio::sync::Mutex<Option<Arc<session::CanvasSession>>>,
+    login_attempt: tokio::sync::Mutex<Option<session::LoginAttempt>>,
     current_account: RwLock<Account>,
     config: RwLock<AppConfig>,
+    config_owner: tokio::sync::Mutex<Option<String>>,
     handle: RwLock<Option<JoinHandle<()>>>,
-    mcp_handle: RwLock<Option<JoinHandle<()>>>,
+    mcp_handle: tokio::sync::Mutex<Option<crate::mcp::McpRuntime>>,
     cache: Cache,
 }
 
@@ -77,7 +91,7 @@ mod test {
         assert!(app.delete_account(&default_account).await.is_err());
 
         // Step 1: create account
-        App::create_account(&custom_account)?;
+        app.create_account(&custom_account).await?;
         current_account = App::read_account_info()?;
         assert!(App::account_exists(&custom_account)?);
         assert_eq!(
@@ -87,7 +101,7 @@ mod test {
         assert_eq!(App::list_accounts()?, current_account.all_accounts);
 
         // cannot create duplicate accounts
-        assert!(App::create_account(&custom_account).is_err());
+        assert!(app.create_account(&custom_account).await.is_err());
 
         // Step 2: switch account
         app.switch_account(&custom_account).await?;
@@ -142,10 +156,13 @@ mod test {
             .await?;
         tracing::info!("video = {:?}", video);
 
+        let snapshot = app.get_config_snapshot().await?;
         app.download_video(
             &video.video_play_response_vo_list[0],
             "download.mp4",
             None,
+            &snapshot.owner,
+            &snapshot.config.save_path,
             |_| {},
         )
         .await?;
@@ -176,7 +193,8 @@ mod test {
         tracing_subscriber::fmt::init();
         let app = App::new();
         app.init().await?;
-        app.login_jbox().await?;
+        app.login_jbox(&app.get_config_snapshot().await.unwrap().owner)
+            .await?;
         let info = app.get_config().await.jbox_login_info.clone();
         app.client
             .create_jbox_directory("/test/nested", &info)

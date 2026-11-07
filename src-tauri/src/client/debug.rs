@@ -53,6 +53,10 @@ impl NetworkDebugStore {
             return;
         }
         let mut logs = self.logs.write().await;
+        // Diagnostic mode may have been disabled while this capture awaited the lock.
+        if !self.enabled.load(Ordering::Relaxed) {
+            return;
+        }
         if let Some(log) = logs.iter_mut().find(|log| log.id == request_id.0) {
             // Never accept the body itself: diagnostic mode only records its size.
             log.response_body = Some(body_omitted(byte_count));
@@ -474,4 +478,63 @@ mod tests {
         assert_eq!(logs.first().unwrap().id, (MAX_NETWORK_LOGS + 4).to_string());
         assert_eq!(logs.last().unwrap().id, "5");
     }
+    fn response_log_fixture() -> NetworkRequestLog {
+        NetworkRequestLog {
+            id: "capture-lock-test".to_owned(),
+            timestamp: String::new(),
+            source: "test".to_owned(),
+            method: "GET".to_owned(),
+            url: "https://example.com/".to_owned(),
+            status: Some(200),
+            ok: Some(true),
+            duration_ms: Some(0),
+            request_headers: vec![],
+            response_headers: vec![],
+            request_body: None,
+            request_body_truncated: false,
+            response_body: None,
+            response_body_truncated: false,
+            error: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn body_capture_stops_if_diagnostics_disabled_while_waiting_for_lock() {
+        use std::{future::Future, task::Poll};
+
+        let store = NetworkDebugStore::new(true);
+        let log = response_log_fixture();
+        let request_id = RequestLogId(log.id.clone());
+        let mut guard = store.logs.write().await;
+        guard.push_back(log);
+        let mut capture = Box::pin(store.capture_response_body(&request_id, 42));
+        // Poll once while holding the write lock: the initial enabled check passes,
+        // and capture must suspend before it can update the record.
+        std::future::poll_fn(|cx| {
+            assert!(capture.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+        store.set_enabled(false);
+        drop(guard);
+        capture.await;
+        let logs = store.list_logs().await;
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].response_body, None);
+        assert!(!logs[0].response_body_truncated);
+        assert_eq!(logs[0].ok, Some(true));
+    }
+
+    #[tokio::test]
+    async fn body_capture_still_records_size_when_diagnostics_remain_enabled() {
+        let store = NetworkDebugStore::new(true);
+        let log = response_log_fixture();
+        let request_id = RequestLogId(log.id.clone());
+        store.push_log(log).await;
+        store.capture_response_body(&request_id, 42).await;
+        let logs = store.list_logs().await;
+        assert_eq!(logs[0].response_body, Some(body_omitted(42)));
+        assert!(!logs[0].response_body_truncated);
+    }
+
 }

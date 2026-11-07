@@ -185,102 +185,119 @@ impl App {
         &self,
         request: RecordingRequest,
     ) -> Result<VideoSubtitleVersions> {
-        use crate::client::subtitle_proofread::{display_subtitles, playback_subtitles};
-        let account = self.video_data_account().await?;
-        let mut errors = Vec::new();
-        let mut warnings = Vec::new();
-        for id in recording_material_ids(&request) {
-            let (subtitles, optimized) = match self.client.get_subtitle_with_source(id).await {
-                Ok(value) => value,
-                Err(error) => {
-                    errors.push(error.to_string());
-                    continue;
-                }
-            };
-            let selected = preferred_subtitles(subtitles.clone(), true);
-            let original = if optimized {
-                match self.client.get_original_subtitle(id).await {
-                    Ok(original) => preferred_subtitles(original, true),
-                    Err(error) => {
-                        warnings.push(format!("原始字幕读取失败：{error}"));
-                        Vec::new()
-                    }
-                }
-            } else {
-                selected.clone()
-            };
-            let mut tracks = Vec::new();
-            if optimized && !selected.is_empty() {
-                let srt = self.client.convert_to_srt(&selected)?;
-                tracks.push(VideoSubtitleTrack {
-                    source: "canvasAi",
-                    full_srt: srt.clone(),
-                    srt,
-                    chatter_count: 0,
-                });
-            }
-            if !original.is_empty() {
-                let report = match self
-                    .saved_video_proofread(&account, &request.key, &original)
-                    .await
+        let session = self.canvas_session().await?;
+        let result = async {
+            use crate::client::subtitle_proofread::{display_subtitles, playback_subtitles};
+            let account = self.video_data_account().await?;
+            let mut errors = Vec::new();
+            let mut warnings = Vec::new();
+            for id in recording_material_ids(&request) {
+                let login = session.prepare().await;
+                self.finish_session(&session, login).await?;
+                let (subtitles, optimized) = match session.client.get_subtitle_with_source(id).await
                 {
-                    Ok(Some(report)) => Some(report),
-                    Ok(None) => self.client.cached_proofread_subtitles(&original).await,
+                    Ok(value) => value,
                     Err(error) => {
-                        warnings.push(format!("本地精校读取失败：{error}"));
-                        None
+                        errors.push(error.to_string());
+                        continue;
                     }
                 };
-                if let Some(report) = report {
+                let selected = preferred_subtitles(subtitles.clone(), true);
+                let original = if optimized {
+                    match session.client.get_original_subtitle(id).await {
+                        Ok(original) => preferred_subtitles(original, true),
+                        Err(error) => {
+                            warnings.push(format!("原始字幕读取失败：{error}"));
+                            Vec::new()
+                        }
+                    }
+                } else {
+                    selected.clone()
+                };
+                let mut tracks = Vec::new();
+                if optimized && !selected.is_empty() {
+                    let srt = self.client.convert_to_srt(&selected)?;
                     tracks.push(VideoSubtitleTrack {
-                        source: "local",
-                        srt: self
-                            .client
-                            .convert_to_srt(&playback_subtitles(&report, false))?,
-                        full_srt: self
-                            .client
-                            .convert_to_srt(&display_subtitles(&report.lines, &report.join_next))?,
-                        chatter_count: report.exclude_from_summary.len(),
+                        source: "canvasAi",
+                        full_srt: srt.clone(),
+                        srt,
+                        chatter_count: 0,
                     });
                 }
-                let srt = self.client.convert_to_srt(&original)?;
-                tracks.push(VideoSubtitleTrack {
-                    source: "canvas",
-                    full_srt: srt.clone(),
-                    srt,
-                    chatter_count: 0,
-                });
+                if !original.is_empty() {
+                    let report = match self
+                        .saved_video_proofread(&account, &request.key, &original)
+                        .await
+                    {
+                        Ok(Some(report)) => Some(report),
+                        Ok(None) => self.client.cached_proofread_subtitles(&original).await,
+                        Err(error) => {
+                            warnings.push(format!("本地精校读取失败：{error}"));
+                            None
+                        }
+                    };
+                    if let Some(report) = report {
+                        tracks.push(VideoSubtitleTrack {
+                            source: "local",
+                            srt: self
+                                .client
+                                .convert_to_srt(&playback_subtitles(&report, false))?,
+                            full_srt: self.client.convert_to_srt(&display_subtitles(
+                                &report.lines,
+                                &report.join_next,
+                            ))?,
+                            chatter_count: report.exclude_from_summary.len(),
+                        });
+                    }
+                    let srt = self.client.convert_to_srt(&original)?;
+                    tracks.push(VideoSubtitleTrack {
+                        source: "canvas",
+                        full_srt: srt.clone(),
+                        srt,
+                        chatter_count: 0,
+                    });
+                }
+                if !tracks.is_empty() {
+                    return Ok(VideoSubtitleVersions { tracks, warnings });
+                }
             }
-            if !tracks.is_empty() {
-                return Ok(VideoSubtitleVersions { tracks, warnings });
+            if !errors.is_empty() {
+                return Err(failure(errors.join("；")));
             }
+            Ok(VideoSubtitleVersions {
+                tracks: Vec::new(),
+                warnings,
+            })
         }
-        if !errors.is_empty() {
-            return Err(failure(errors.join("；")));
-        }
-        Ok(VideoSubtitleVersions {
-            tracks: Vec::new(),
-            warnings,
-        })
+        .await;
+        self.finish_session(&session, result).await
     }
 
     pub async fn inspect_video_recording(
         &self,
         request: RecordingRequest,
     ) -> Result<VideoRecordingStatus> {
+        let session = self.canvas_session().await?;
         let versions = self.get_video_subtitle_versions(request.clone()).await?;
-        let account = self.video_data_account().await?;
-        Ok(VideoRecordingStatus {
-            subtitle_available: !versions.tracks.is_empty(),
-            transcript_available: self
-                .saved_video_transcript(&account, &request)
-                .await?
-                .is_some(),
-        })
+        let account = self
+            .with_session_owner(&session, self.video_data_account())
+            .await?;
+        self.finish_session(
+            &session,
+            Ok(VideoRecordingStatus {
+                subtitle_available: !versions.tracks.is_empty(),
+                transcript_available: self
+                    .saved_video_transcript(&account, &request)
+                    .await?
+                    .is_some(),
+            }),
+        )
+        .await
     }
     async fn recording_infos(
         &self,
         request: &RecordingRequest,
+        session: &super::session::CanvasSession,
         enrichment: bool,
     ) -> Result<Vec<VideoInfo>> {
         let mut infos = Vec::new();
@@ -289,11 +306,26 @@ impl App {
             if enrichment && candidate.source == VideoSource::Legacy {
                 continue;
             }
-            match self
-                .get_video_play_info(candidate.source, &candidate.video_id)
-                .await
-            {
+            self.ensure_config_owner(&session.owner).await?;
+            let login = session.prepare().await;
+            self.finish_session(session, login).await?;
+            let result = match candidate.source {
+                VideoSource::Canvas | VideoSource::VideoSpace => {
+                    session
+                        .client
+                        .get_canvas_video_info(&candidate.video_id)
+                        .await
+                }
+                VideoSource::Legacy => {
+                    session
+                        .client
+                        .get_legacy_video_info(&candidate.video_id)
+                        .await
+                }
+            };
+            match self.finish_session(session, result).await {
                 Ok(info) => infos.push(info),
+                Err(AppError::StaleConfigOwner) => return Err(AppError::StaleConfigOwner),
                 Err(e) => errors.push(e.to_string()),
             }
         }
@@ -311,8 +343,9 @@ impl App {
         &self,
         request: &RecordingRequest,
         prefer_before: bool,
+        session: &super::session::CanvasSession,
     ) -> Result<SelectedSubtitles> {
-        self.recording_subtitle_version(request, prefer_before, true)
+        self.recording_subtitle_version(request, prefer_before, true, session)
             .await
     }
 
@@ -321,14 +354,20 @@ impl App {
         request: &RecordingRequest,
         prefer_before: bool,
         use_local: bool,
+        session: &super::session::CanvasSession,
     ) -> Result<SelectedSubtitles> {
         if request.candidates.is_empty() {
             return Err(failure("该录像来源不提供此资料"));
         }
+        self.ensure_config_owner(&session.owner).await?;
         let account = self.video_data_account().await?;
+        self.ensure_config_owner(&session.owner).await?;
         let mut errors = Vec::new();
         for id in recording_material_ids(request) {
-            match self.client.get_subtitle_with_source(id).await {
+            let login = session.prepare().await;
+            self.finish_session(session, login).await?;
+            let fetched = session.client.get_subtitle_with_source(id).await;
+            match self.finish_session(session, fetched).await {
                 Ok((sub, canvas_optimized)) => {
                     let mut warnings = Vec::new();
                     if use_local && !canvas_optimized {
@@ -364,6 +403,7 @@ impl App {
                         });
                     }
                 }
+                Err(AppError::StaleConfigOwner) => return Err(AppError::StaleConfigOwner),
                 Err(e) => errors.push(e.to_string()),
             }
         }
@@ -383,15 +423,20 @@ impl App {
     async fn recording_slides_raw(
         &self,
         request: &RecordingRequest,
+        session: &super::session::CanvasSession,
     ) -> Result<Vec<CanvasVideoPPT>> {
         if request.candidates.is_empty() {
             return Err(failure("该录像来源不提供此资料"));
         }
         let mut errors = Vec::new();
         for id in recording_material_ids(request) {
-            match self.client.get_ppt(id).await {
+            let login = session.prepare().await;
+            self.finish_session(session, login).await?;
+            let fetched = session.client.get_ppt(id).await;
+            match self.finish_session(session, fetched).await {
                 Ok(slides) if !slides.is_empty() => return Ok(slides),
                 Ok(_) => {}
+                Err(AppError::StaleConfigOwner) => return Err(AppError::StaleConfigOwner),
                 Err(e) => errors.push(e.to_string()),
             }
         }
@@ -408,6 +453,7 @@ impl App {
         include_ocr: bool,
         clean_up_ppt: Option<bool>,
     ) -> Result<VideoMaterial> {
+        let session = self.canvas_session().await?;
         let enabled = clean_up_ppt.unwrap_or(self.config.read().await.experimental_ppt_cleanup);
         let mut material = VideoMaterial {
             key: request.key.clone(),
@@ -422,14 +468,17 @@ impl App {
             proofread_available: false,
             subtitle_source: None,
         };
-        let (subtitles, slides) =
-            tokio::join!(self.recording_subtitle(&request, prefer_before), async {
+        let (subtitles, slides) = tokio::join!(
+            self.recording_subtitle(&request, prefer_before, &session),
+            async {
                 if include_ocr {
-                    self.recording_slides_raw(&request).await
+                    self.recording_slides_raw(&request, &session).await
                 } else {
                     Ok(Vec::new())
                 }
-            });
+            }
+        );
+        self.ensure_config_owner(&session.owner).await?;
         let lines = match subtitles {
             Ok(selected) => {
                 material.proofread_available = selected.proofread;
@@ -487,6 +536,7 @@ impl App {
                 Err(error) => material.warnings.push(format!("本地转录读取失败：{error}")),
             }
         }
+        self.ensure_config_owner(&session.owner).await?;
         Ok(material)
     }
 
@@ -495,26 +545,51 @@ impl App {
         request: RecordingRequest,
         on_status: &(dyn Fn(String) + Send + Sync),
     ) -> Result<VideoMaterial> {
-        let account = self.video_data_account().await?;
-        if let Some(text) = self.saved_video_transcript(&account, &request).await? {
+        // Resolve every angle and submit audio with the same immutable client.
+        // Account display names cannot fence A -> B -> A or credential rotation.
+        let session = self.canvas_session().await?;
+        let account = self
+            .with_session_owner(&session, self.video_data_account())
+            .await?;
+        let saved = self
+            .with_session_owner(&session, self.saved_video_transcript(&account, &request))
+            .await?;
+        if let Some(text) = saved {
             on_status("已读取本地保存的音视频转录".into());
-            return Ok(untimed_transcript_material(&request, &text));
+            return self
+                .finish_session(&session, Ok(untimed_transcript_material(&request, &text)))
+                .await;
         }
         // Camera angles share the same audio. Resolve only until one usable
-        // angle is found, then extract it once; do not retry entire other angles.
+        // angle is found; do not retry entire other angles or replay submission.
         let mut audio_url = None;
         let mut errors = Vec::new();
         for candidate in &request.candidates {
-            match self
-                .get_video_play_info(candidate.source, &candidate.video_id)
-                .await
-            {
+            self.ensure_config_owner(&session.owner).await?;
+            let login = session.prepare().await;
+            self.finish_session(&session, login).await?;
+            let result = match candidate.source {
+                VideoSource::Canvas | VideoSource::VideoSpace => {
+                    session
+                        .client
+                        .get_canvas_video_info(&candidate.video_id)
+                        .await
+                }
+                VideoSource::Legacy => {
+                    session
+                        .client
+                        .get_legacy_video_info(&candidate.video_id)
+                        .await
+                }
+            };
+            match self.finish_session(&session, result).await {
                 Ok(info) => {
                     audio_url = first_audio_url(&info);
                     if audio_url.is_some() {
                         break;
                     }
                 }
+                Err(AppError::StaleConfigOwner) => return Err(AppError::StaleConfigOwner),
                 Err(error) => errors.push(error.to_string()),
             }
         }
@@ -525,17 +600,27 @@ impl App {
                 format!("读取录像播放信息失败：{}", errors.join("；"))
             })
         })?;
-        let text = self
+        self.ensure_config_owner(&session.owner).await?;
+        let result = session
             .client
             .transcribe_recording_audio(&request.key, &audio_url, on_status)
-            .await?;
+            .await;
+        let text = self.finish_session(&session, result).await?;
         let mut material = untimed_transcript_material(&request, &text);
-        if let Err(error) = self.save_video_transcript(&account, &request, text).await {
-            material
+        match self
+            .with_session_owner(
+                &session,
+                self.save_video_transcript(&account, &request, text),
+            )
+            .await
+        {
+            Err(AppError::StaleConfigOwner) => return Err(AppError::StaleConfigOwner),
+            Err(error) => material
                 .warnings
-                .push(format!("转录已完成，但本地保存失败：{error}"));
+                .push(format!("转录已完成，但本地保存失败：{error}")),
+            Ok(()) => {}
         }
-        Ok(material)
+        self.finish_session(&session, Ok(material)).await
     }
 
     pub async fn proofread_video_subtitles(
@@ -543,11 +628,20 @@ impl App {
         request: RecordingRequest,
         on_status: &(dyn Fn(String) + Send + Sync),
     ) -> Result<ProofreadVideoResult> {
-        let generation = self.client.subtitle_proofread_generation().await;
-        let account = self.video_data_account().await?;
+        let session = self.canvas_session().await?;
+        let (generation, account, options, snapshot) = self
+            .with_session_owner(&session, async {
+                Ok((
+                    self.client.subtitle_proofread_generation().await,
+                    self.video_data_account().await?,
+                    crate::model::VideoProofreadOptions::from(&*self.config.read().await),
+                    self.client.llm_snapshot().await?,
+                ))
+            })
+            .await?;
         on_status("正在读取 Canvas 优先版本字幕".into());
         let selected = self
-            .recording_subtitle_version(&request, true, false)
+            .recording_subtitle_version(&request, true, false, &session)
             .await?;
         if selected.canvas_optimized {
             return Err(failure("已采用 Canvas AI+ 字幕，无需再次精校"));
@@ -556,13 +650,12 @@ impl App {
         if lines.is_empty() {
             return Err(failure("暂无可精校的字幕"));
         }
-        let options = crate::model::VideoProofreadOptions::from(&*self.config.read().await);
-        let identity = crate::client::subtitle_proofread::config_hash(
-            &self.client.llm_snapshot().await?,
-            &options,
-        );
+        let identity = crate::client::subtitle_proofread::config_hash(&snapshot, &options);
         let saved = self
-            .saved_video_proofread(&account, &request.key, &lines)
+            .with_session_owner(
+                &session,
+                self.saved_video_proofread(&account, &request.key, &lines),
+            )
             .await?;
         let (report, from_disk) = if let Some(report) = saved.filter(|r| r.config_hash == identity)
         {
@@ -570,18 +663,30 @@ impl App {
         } else {
             (
                 self.client
-                    .proofread_subtitles(&request.title, &lines, on_status, generation, &options)
+                    .proofread_subtitles_with_snapshot(
+                        &request.title,
+                        &lines,
+                        on_status,
+                        generation,
+                        &options,
+                        snapshot,
+                    )
                     .await?,
                 false,
             )
         };
         let mut warnings = Vec::new();
         if !from_disk {
-            if let Err(error) = self
-                .save_video_proofread(&account, &request.key, lines, &report)
+            match self
+                .with_session_owner(
+                    &session,
+                    self.save_video_proofread(&account, &request.key, lines, &report),
+                )
                 .await
             {
-                warnings.push(format!("精校已完成，但本地保存失败：{error}"));
+                Err(AppError::StaleConfigOwner) => return Err(AppError::StaleConfigOwner),
+                Err(error) => warnings.push(format!("精校已完成，但本地保存失败：{error}")),
+                Ok(()) => {}
             }
         }
         let summary = crate::client::subtitle_proofread::summary_subtitles(
@@ -615,43 +720,57 @@ impl App {
             proofread_available: true,
             subtitle_source: Some("local"),
         };
-        Ok(ProofreadVideoResult {
-            material,
-            report,
-            track,
-        })
+        self.finish_session(
+            &session,
+            Ok(ProofreadVideoResult {
+                material,
+                report,
+                track,
+            }),
+        )
+        .await
     }
 
     pub async fn reset_video_subtitle_proofread(
         &self,
         request: RecordingRequest,
     ) -> Result<VideoMaterial> {
-        let account = self.video_data_account().await?;
+        let session = self.canvas_session().await?;
+        let account = self
+            .with_session_owner(&session, self.video_data_account())
+            .await?;
         let selected = self
-            .recording_subtitle_version(&request, true, false)
+            .recording_subtitle_version(&request, true, false, &session)
             .await?;
         let canvas_optimized = selected.canvas_optimized;
         let lines = selected.lines;
-        self.remove_video_proofread(&account, &request.key, &lines)
-            .await?;
+        self.with_session_owner(
+            &session,
+            self.remove_video_proofread(&account, &request.key, &lines),
+        )
+        .await?;
         let (timeline, _, _) = super::ppt::material_timeline(&request.key, &lines, &[]);
-        Ok(VideoMaterial {
-            key: request.key,
-            title: request.title.clone(),
-            text: format!("## {}\n{timeline}", request.title),
-            warnings: vec![],
-            srt: self.client.convert_to_srt(&lines)?,
-            subtitle_available: true,
-            summary_subtitle_available: !lines.is_empty(),
-            ocr_available: false,
-            transcript_available: false,
-            proofread_available: false,
-            subtitle_source: Some(if canvas_optimized {
-                "canvasAi"
-            } else {
-                "canvas"
+        self.finish_session(
+            &session,
+            Ok(VideoMaterial {
+                key: request.key,
+                title: request.title.clone(),
+                text: format!("## {}\n{timeline}", request.title),
+                warnings: vec![],
+                srt: self.client.convert_to_srt(&lines)?,
+                subtitle_available: true,
+                summary_subtitle_available: !lines.is_empty(),
+                ocr_available: false,
+                transcript_available: false,
+                proofread_available: false,
+                subtitle_source: Some(if canvas_optimized {
+                    "canvasAi"
+                } else {
+                    "canvas"
+                }),
             }),
-        })
+        )
+        .await
     }
 
     pub async fn chat_video_materials(
@@ -695,7 +814,8 @@ impl App {
         all_tracks: bool,
         progress: Arc<dyn Fn(ExportProgress) + Send + Sync>,
     ) -> Result<ExportResult> {
-        let output = self.download_output().await?;
+        let session = self.canvas_session().await?;
+        let output = self.download_output_for_owner(&session.owner).await?;
         let mut result = ExportResult {
             paths: vec![],
             warnings: vec![],
@@ -709,7 +829,7 @@ impl App {
                 let mut slides = Vec::new();
                 let enabled = self.config.read().await.experimental_ppt_cleanup;
                 for (request_index, request) in requests.iter().enumerate() {
-                    match self.recording_slides_raw(request).await {
+                    match self.recording_slides_raw(request, &session).await {
                         Ok(next) if next.is_empty() => {
                             error_warnings.push(format!("第 {} 小节：暂无课件", request_index + 1));
                             result.warnings.push(format!("{}：暂无课件", request.title));
@@ -740,9 +860,10 @@ impl App {
                     } else {
                         "（部分资料）"
                     };
+                    self.ensure_config_owner(&session.owner).await?;
                     let path = reserve_output(&directory, &format!("{name}{suffix}"), "pdf")?;
                     let report = progress.clone();
-                    if let Err(e) = self
+                    if let Err(e) = session
                         .client
                         .clone()
                         .download_ppt_pdf(&slides, &path.to_string_lossy(), move |p| {
@@ -767,7 +888,7 @@ impl App {
             "subtitle" | "reading" => {
                 let mut reading = String::new();
                 for (request_index, request) in requests.iter().enumerate() {
-                    match self.recording_subtitle(request, true).await {
+                    match self.recording_subtitle(request, true, &session).await {
                         Ok(selected) if selected.lines.is_empty() => {
                             error_warnings.push(format!("第 {} 小节：暂无字幕", request_index + 1));
                             result.warnings.push(format!("{}：暂无字幕", request.title));
@@ -775,6 +896,7 @@ impl App {
                         Ok(selected) => {
                             result.warnings.extend(selected.warnings);
                             if kind == "subtitle" {
+                                self.ensure_config_owner(&session.owner).await?;
                                 let path = reserve_output(&directory, &request.title, "srt")?;
                                 fs::write(&path, self.client.convert_to_srt(&selected.display)?)?;
                                 result.paths.push(path.to_string_lossy().into_owned());
@@ -796,6 +918,7 @@ impl App {
                     }
                 }
                 if kind == "reading" && !reading.is_empty() {
+                    self.ensure_config_owner(&session.owner).await?;
                     let path = reserve_output(&directory, &name, "txt")?;
                     fs::write(
                         &path,
@@ -809,7 +932,7 @@ impl App {
             }
             "video" => {
                 for (request_index, request) in requests.iter().enumerate() {
-                    let infos = self.recording_infos(request, false).await?;
+                    let infos = self.recording_infos(request, &session, false).await?;
                     let info = infos
                         .into_iter()
                         .find(|i| !i.video_play_response_vo_list.is_empty())
@@ -818,6 +941,7 @@ impl App {
                         if !all_tracks && index > 0 {
                             break;
                         }
+                        self.ensure_config_owner(&session.owner).await?;
                         let path = reserve_output(
                             &directory,
                             &format!("{} 机位{}", request.title, index + 1),
@@ -829,7 +953,7 @@ impl App {
                         } else {
                             1
                         };
-                        match self
+                        match session
                             .client
                             .clone()
                             .download_video(track, &path.to_string_lossy(), move |p| {
@@ -861,6 +985,7 @@ impl App {
             }
             _ => return Err(failure("未知资料类型")),
         }
+        self.ensure_config_owner(&session.owner).await?;
         if result.paths.is_empty() && !result.notes.is_empty() && result.warnings.is_empty() {
             return Err(failure(format!(
                 "没有可导出的 PPT 页面。{}；可关闭“导出 PPT 时去除无用页面”后重试",
@@ -1043,8 +1168,15 @@ mod tests {
         .is_empty());
     }
 
-    fn offline_app() -> App {
-        App {
+    fn offline_app() -> (tempfile::TempDir, App) {
+        // The fixture owns an isolated store; never read the real user configuration.
+        let directory = tempfile::tempdir().unwrap();
+        let store = super::super::config_store::ConfigStore::open(directory.path()).unwrap();
+        let app = App {
+            canvas_session: Default::default(),
+            login_attempt: Default::default(),
+            config_store: Some(store),
+            config_owner: tokio::sync::Mutex::new(Some("offline-test-owner".to_owned())),
             client: Arc::new(crate::client::Client::new_without_proxy(
                 "http://127.0.0.1",
                 "",
@@ -1057,7 +1189,8 @@ mod tests {
             handle: Default::default(),
             mcp_handle: Default::default(),
             cache: Default::default(),
-        }
+        };
+        (directory, app)
     }
 
     #[tokio::test]
@@ -1066,10 +1199,8 @@ mod tests {
             display_name: "张同学_202612345_私人课程作业".into(),
             ..Default::default()
         };
-        let error = offline_app()
-            .convert_office_file_to_pdf(&file)
-            .await
-            .unwrap_err();
+        let (_directory, app) = offline_app();
+        let error = app.convert_office_file_to_pdf(&file).await.unwrap_err();
         assert!(
             matches!(&error, AppError::UnsupportedFileExtensionError(extension) if extension == "(missing)")
         );
@@ -1081,7 +1212,7 @@ mod tests {
 
     #[tokio::test]
     async fn failed_exports_identify_sections_without_recording_titles() {
-        let app = offline_app();
+        let (_directory, app) = offline_app();
         let titles = ["张老师的私人课程", "李同学的私人课堂"];
         for kind in ["ppt", "subtitle", "reading"] {
             let requests = titles

@@ -771,6 +771,7 @@ impl Client {
             .cloned()
     }
 
+    #[cfg(test)]
     pub async fn proofread_subtitles(
         &self,
         title: &str,
@@ -779,9 +780,24 @@ impl Client {
         generation: u64,
         options: &VideoProofreadOptions,
     ) -> Result<ProofreadResult> {
+        let snapshot = self.llm_snapshot().await?;
+        self.proofread_subtitles_with_snapshot(
+            title, source, on_status, generation, options, snapshot,
+        )
+        .await
+    }
+
+    pub async fn proofread_subtitles_with_snapshot(
+        &self,
+        title: &str,
+        source: &[CanvasVideoSubTitle],
+        on_status: &(dyn Fn(String) + Send + Sync),
+        generation: u64,
+        options: &VideoProofreadOptions,
+        snapshot: LlmSnapshot,
+    ) -> Result<ProofreadResult> {
         let _work = self.subtitle_proofread.work.lock().await;
         let key = source_hash(source);
-        let snapshot = self.llm_snapshot().await?;
         {
             let state = self.subtitle_proofread.state.lock().await;
             if state.generation != generation {
@@ -1093,10 +1109,21 @@ mod tests {
         let options = VideoProofreadOptions {
             generate_topics: true,
         };
+        // A captured operation must not reread mutable credentials after waiting.
+        let snapshot = client.llm_snapshot().await.unwrap();
+        client.restore_llm_snapshot(None).await;
         let result = client
-            .proofread_subtitles("课程", &lines, &|_| {}, 0, &options)
+            .proofread_subtitles_with_snapshot(
+                "课程",
+                &lines,
+                &|_| {},
+                0,
+                &options,
+                snapshot.clone(),
+            )
             .await
             .unwrap();
+        client.restore_llm_snapshot(Some(snapshot)).await;
         assert_eq!(result.lines[1].res, "移入规约");
         assert_eq!(result.topic.as_deref(), Some("移入规约与语法分析"));
         assert_eq!(

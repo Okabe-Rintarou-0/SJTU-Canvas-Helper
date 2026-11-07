@@ -1,19 +1,15 @@
-use axum::{Router, response::Json};
+mod lifecycle;
+pub(crate) use lifecycle::{start_mcp_server, McpRuntime};
+
 use rmcp::{
     ErrorData, ServerHandler,
     handler::server::wrapper::Parameters,
     model::*,
     tool, tool_handler, tool_router,
-    transport::streamable_http_server::{
-        StreamableHttpServerConfig, StreamableHttpService,
-        session::local::LocalSessionManager,
-    },
 };
 use serde_json::{json, Value, Map};
-use tokio_util::sync::CancellationToken;
 
 use serde::Serialize;
-use std::net::SocketAddr;
 
 use crate::{model::File, APP};
 
@@ -350,38 +346,4 @@ impl ServerHandler for McpServer {
                 .to_string(),
         )
     }
-}
-
-pub fn start_mcp_server(port: u16) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        let ct = CancellationToken::new();
-
-        let service = StreamableHttpService::new(
-            || Ok(McpServer),
-            LocalSessionManager::default().into(),
-            StreamableHttpServerConfig::default()
-                .with_sse_keep_alive(Some(std::time::Duration::from_secs(15)))
-                .with_stateful_mode(true)
-                .with_cancellation_token(ct.child_token()),
-        );
-
-        let router = Router::new()
-            .route(
-                "/health",
-                axum::routing::get(|| async { Json(json!({"status": "ok"})) }),
-            )
-            .fallback_service(service);
-
-        let addr = SocketAddr::from(([127, 0, 0, 1], port));
-        let listener = tokio::net::TcpListener::bind(addr)
-            .await
-            .expect("Failed to bind MCP server address");
-
-        tracing::info!("MCP SSE server started on port {port}");
-
-        axum::serve(listener, router)
-            .with_graceful_shutdown(async move { ct.cancelled().await; })
-            .await
-            .expect("MCP server failed");
-    })
 }

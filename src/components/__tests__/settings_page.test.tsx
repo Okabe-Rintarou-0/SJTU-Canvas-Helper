@@ -1,20 +1,26 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { PropsWithChildren } from "react";
 import SettingsPage from "../../page/settings";
 import type { AppConfig } from "../../lib/model";
+import { ConfigReadFailure, StaleConfigSessionError } from "../../lib/config";
+import { currentSession, invalidateSession } from "../../lib/session";
 import { MemoryRouter } from "react-router-dom";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(), getConfig: vi.fn(), saveConfig: vi.fn(), dispatch: vi.fn(), open: vi.fn(),
-  validatePath: vi.fn(), changeAccount: vi.fn(async (action: () => Promise<unknown>) => action()),
+  validatePath: vi.fn(), changeAccount: vi.fn(), isOwnerCurrent: vi.fn(),
   message: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), open: vi.fn(), destroy: vi.fn() },
   showQRCode: vi.fn(),
   writeClipboard: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.open }));
-vi.mock("../../lib/config", () => ({ getConfig: mocks.getConfig, saveConfig: mocks.saveConfig, updateConfig: (data: unknown) => data }));
+vi.mock("../../lib/config", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../lib/config")>(),
+  getConfig: mocks.getConfig, saveConfig: mocks.saveConfig, isConfigOwnerCurrent: mocks.isOwnerCurrent,
+  updateConfig: (data: unknown) => data,
+}));
 vi.mock("../../lib/hooks", () => ({ useConfigDispatch: () => mocks.dispatch,
   useQRCode: () => ({ qrcode: null, showQRCode: mocks.showQRCode, refreshQRCode: vi.fn(), loading: false, error: "测试二维码" }) }));
 vi.mock("../../lib/utils", () => ({ consoleLog: vi.fn(), savePathValidator: mocks.validatePath }));
@@ -26,20 +32,43 @@ vi.mock("@lobehub/icons", () => ({ ProviderIcon: () => null }));
 vi.mock("react-json-view-ts", () => ({ default: ({ src }: { src: unknown }) => <pre>{JSON.stringify(src)}</pre> }));
 
 let config: AppConfig;
+let ownerSession: number;
 beforeEach(() => {
   vi.clearAllMocks();
+  // Provider-model discovery is triggered by settings interactions. Keep these
+  // component tests fully offline; no synthetic keys or URLs leave the process.
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ data: [] }), {
+    status: 200, headers: { "Content-Type": "application/json" },
+  })));
+
   HTMLElement.prototype.scrollIntoView = vi.fn();
   Object.defineProperty(navigator, "clipboard", { value: { writeText: mocks.writeClipboard }, configurable: true });
   mocks.writeClipboard.mockResolvedValue(undefined);
   config = {
+    __config_owner: "owner:Default:0",
     token: "test-token", account_type: "Default", save_path: "D:\\Downloads", serve_as_plaintext: "md,txt",
     oauth_consumer_key: "", ja_auth_cookie: "", video_cookies: "", proxy_port: 3030,
     course_assignment_file_bindings: {}, show_alert_map: {}, llm_api_key: "", llm_base_url: "https://example.com/v1",
     llm_model: "test-model", llm_temperature: null, llm_api_keys: [], llm_active_api_key: "",
     theme: "light", color_primary: "#00b96b", compact_mode: false, mcp_enabled: false, mcp_port: 3100, debug_mode: false,
   };
-  mocks.getConfig.mockImplementation(async () => structuredClone(config));
-  mocks.saveConfig.mockResolvedValue(undefined);
+  ownerSession = currentSession();
+  mocks.isOwnerCurrent.mockImplementation((candidate: AppConfig) =>
+    candidate?.__config_owner === config.__config_owner && ownerSession === currentSession());
+  mocks.getConfig.mockImplementation(async () => {
+    ownerSession = currentSession();
+    return structuredClone(config);
+  });
+  mocks.saveConfig.mockImplementation(async (submitted: AppConfig) => {
+    if (!mocks.isOwnerCurrent(submitted)) throw new StaleConfigSessionError();
+    config = { ...structuredClone(submitted), __config_owner: `${submitted.__config_owner}:saved` };
+    invalidateSession();
+    ownerSession = currentSession();
+    return structuredClone(config);
+  });
+  mocks.changeAccount.mockImplementation(async (action: () => Promise<unknown>, reconcile?: () => Promise<void>) => {
+    try { return await action(); } finally { await reconcile?.(); }
+  });
   mocks.validatePath.mockResolvedValue(undefined);
   mocks.open.mockResolvedValue("D:\\Selected");
   mocks.invoke.mockImplementation(async (command: string, args?: { request?: { op: string } }) => {
@@ -52,13 +81,23 @@ beforeEach(() => {
     if (command === "app_data") return args?.request?.op === "overview" ? { directory: "D:/应用数据", totalBytes: 0, categories: [] } : [];
   });
 });
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 async function openSettings() {
   render(<MemoryRouter><SettingsPage /></MemoryRouter>);
   await screen.findByRole("tab", { name: "账号与连接" });
 }
 function section(name: string) { fireEvent.click(screen.getByRole("tab", { name })); }
 function save() { fireEvent.click(screen.getAllByRole("button", { name: "保存全部设置" })[0]); }
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+async function switchAccount(account: string) {
+  fireEvent.mouseDown(screen.getByRole("combobox", { name: "选择账号" }));
+  fireEvent.click(await screen.findByRole("option", { name: account }));
+}
 
 it("keeps the footer save status across categories and failed saves, then clears it on success", async () => {
   await openSettings();
@@ -87,18 +126,16 @@ it("opens and focuses the playback proxy setting from a playback error link", as
   await waitFor(() => expect(mocks.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ proxy_port: 3031 })));
 });
 
-it("rejects empty, out-of-range and fractional playback ports before saving", async () => {
+it.each(["", "0", "-1", "65536", "3030.5"])("rejects invalid playback port %j and accepts its correction", async (value) => {
   await openSettings();
   section("高级与实验");
   const port = screen.getByLabelText("播放代理端口");
-  for (const value of ["", "0", "-1", "65536", "3030.5"]) {
-    fireEvent.change(port, { target: { value } });
-    section("工具与诊断");
-    save();
-    await waitFor(() => expect(screen.getByRole("tab", { name: "高级与实验" })).toHaveAttribute("aria-selected", "true"));
-    expect(screen.getByText("请输入 1–65535 之间的整数端口。")).toBeVisible();
-    expect(mocks.saveConfig).not.toHaveBeenCalled();
-  }
+  fireEvent.change(port, { target: { value } });
+  section("工具与诊断");
+  save();
+  await waitFor(() => expect(screen.getByRole("tab", { name: "高级与实验" })).toHaveAttribute("aria-selected", "true"));
+  expect(screen.getByText("请输入 1–65535 之间的整数端口。")).toBeVisible();
+  expect(mocks.saveConfig).not.toHaveBeenCalled();
   fireEvent.change(port, { target: { value: "65535" } });
   save();
   await waitFor(() => expect(mocks.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ proxy_port: 65535 })));
@@ -199,7 +236,7 @@ it("returns to the invalid category when saving from another category", async ()
   expect(mocks.saveConfig).not.toHaveBeenCalled();
 });
 
-it("retains token visibility, token test, folder selection and account creation", async () => {
+it("retains token visibility and token test", async () => {
   await openSettings();
   expect(within(screen.getByRole("group", { name: "Canvas Token 与校验" })).getByRole("button", { name: "测试 Canvas Token" })).toBeVisible();
   expect(within(screen.getByRole("group", { name: "额外登录状态与检查" })).getByText("额外登录已连接")).toBeVisible();
@@ -209,9 +246,17 @@ it("retains token visibility, token test, folder selection and account creation"
   fireEvent.click(screen.getByRole("button", { name: "测试 Canvas Token" }));
   await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("test_token", { token: "test-token" }));
   expect(await screen.findByText("Token 校验通过，已连接到 测试用户 的 Canvas。")).toBeVisible();
+});
+
+it("retains folder selection", async () => {
+  await openSettings();
   section("存储与数据");
   fireEvent.click(screen.getByRole("button", { name: "选择目录" }));
   await waitFor(() => expect(screen.getByLabelText("下载保存目录")).toHaveValue("D:\\Selected"));
+});
+
+it("retains account creation", async () => {
+  await openSettings();
   section("账号与连接");
   expect(screen.getByRole("button", { name: "删除当前账号" })).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "新建账号" }));
@@ -305,6 +350,137 @@ it("can switch existing accounts and recover an unavailable extra login", async 
   expect(mocks.changeAccount).toHaveBeenCalled();
 }, 15000);
 
+it("adopts successor ownership after each inline API Key edit", async () => {
+  config.llm_api_keys = [{ name: "Original", key: "old-key", base_url: "https://example.com/v1", model: "test-model" }];
+  config.llm_active_api_key = "Original";
+  await openSettings(); section("AI 与模型");
+  // Settings keeps every category mounted. Scope label queries to the active
+  // panel instead of repeatedly traversing all hidden MUI controls in jsdom.
+  const ai = within(screen.getByRole("tabpanel", { name: "AI 与模型" }));
+  const saveAll = screen.getAllByText("保存全部设置", { selector: "button" })[0];
+  expect(saveAll).toBeVisible();
+  for (const [label, value, field] of [
+    ["名称", "Renamed", "llm_active_api_key"],
+    ["API Key", "new-key", "llm_api_key"],
+    ["Base URL", "https://new.example.com/v1", "llm_base_url"],
+  ]) {
+    const previousOwner = config.__config_owner;
+    const input = ai.getByLabelText(label);
+    fireEvent.change(input, { target: { value } });
+    // The save fixture resolves immediately; await its React update directly
+    // rather than polling the entire document and then flushing a second time.
+    await act(async () => { fireEvent.blur(input); });
+    expect(mocks.saveConfig).toHaveBeenLastCalledWith(expect.objectContaining({ [field]: value, __config_owner: previousOwner }));
+    expect(config).toMatchObject({ [field]: value, __config_owner: `${previousOwner}:saved` });
+  }
+  const previousOwner = config.__config_owner;
+  fireEvent.change(ai.getByLabelText("Temperature"), { target: { value: "0.7" } });
+  await act(async () => { fireEvent.click(saveAll); });
+  expect(config).toMatchObject({ llm_temperature: 0.7, __config_owner: `${previousOwner}:saved` });
+  expect(mocks.saveConfig).toHaveBeenCalledTimes(4);
+  expect(mocks.message.error).not.toHaveBeenCalled();
+});
+
+it("does not apply edits or restore visual settings after the form owner expires", async () => {
+  await openSettings(); section("界面偏好");
+  fireEvent.change(screen.getByLabelText("主色调"), { target: { value: "#336699" } });
+  expect(mocks.dispatch).toHaveBeenCalledWith(expect.objectContaining({ color_primary: "#336699" }));
+  act(() => invalidateSession());
+  mocks.dispatch.mockClear();
+  fireEvent.change(screen.getByLabelText("主色调"), { target: { value: "#112233" } });
+  expect(screen.getByLabelText("主色调")).toHaveValue("#336699");
+  cleanup();
+  expect(mocks.dispatch).not.toHaveBeenCalled();
+});
+
+it.each(["switch_account", "delete_account"])("reconciles authoritative settings after %s rejects", async (operation) => {
+  let activeAccount = operation === "delete_account" ? "Study" : "Default";
+  const invoke = mocks.invoke.getMockImplementation()!;
+  mocks.invoke.mockImplementation(async (command: string, ...args: unknown[]) => {
+    if (command === "read_account_info") return { current_account: activeAccount };
+    if (command === operation) {
+      activeAccount = operation === "delete_account" ? "Default" : "Study";
+      config = { ...config, token: "reconciled-token", __config_owner: "owner:reconciled" };
+      throw new Error("mutation rejected after changing active account");
+    }
+    return invoke(command, ...args);
+  });
+  await openSettings();
+  if (operation === "delete_account") fireEvent.click(screen.getByRole("button", { name: "删除当前账号" }));
+  else await switchAccount("Study");
+  await waitFor(() => expect(screen.getByLabelText("Canvas Token")).toHaveValue("reconciled-token"));
+  expect(screen.getByText(`当前账号：${activeAccount}`)).toBeVisible();
+  expect(mocks.changeAccount).toHaveBeenCalledWith(expect.any(Function), expect.any(Function));
+  expect(mocks.message.error).toHaveBeenCalledWith(expect.stringContaining("mutation rejected"));
+  fireEvent.change(screen.getByLabelText("Canvas Token"), { target: { value: "fresh-draft" } });
+  save();
+  await waitFor(() => expect(config.token).toBe("fresh-draft"));
+});
+
+it.each(["resolve", "reject"])("ignores an older initialization that completes with %s after a newer switch", async (completion) => {
+  let activeAccount = "Default";
+  let reads = 0;
+  const late = deferred<{ current_account: string }>();
+  const invoke = mocks.invoke.getMockImplementation()!;
+  mocks.invoke.mockImplementation(async (command: string, args?: { account?: string }) => {
+    if (command === "list_accounts") return ["Default", "Study", "Research"];
+    if (command === "switch_account") {
+      activeAccount = args!.account!;
+      config = { ...config, token: `${activeAccount}-token`, __config_owner: `owner:${activeAccount}` };
+      return;
+    }
+    if (command === "read_account_info") {
+      reads += 1;
+      return reads === 2 ? late.promise : { current_account: activeAccount };
+    }
+    return invoke(command, args);
+  });
+  await openSettings();
+  await switchAccount("Study");
+  await waitFor(() => expect(reads).toBe(2));
+  await switchAccount("Research");
+  await waitFor(() => expect(screen.getByLabelText("Canvas Token")).toHaveValue("Research-token"));
+  await act(async () => {
+    if (completion === "resolve") late.resolve({ current_account: "Study" });
+    else late.reject(new Error("obsolete account info failed"));
+  });
+  expect(screen.getByLabelText("Canvas Token")).toHaveValue("Research-token");
+  expect(screen.getByText("当前账号：Research")).toBeVisible();
+  expect(mocks.message.error).not.toHaveBeenCalled();
+});
+
+it("does not reconcile a pending account mutation after settings is disposed", async () => {
+  const pending = deferred<void>();
+  const invoke = mocks.invoke.getMockImplementation()!;
+  mocks.invoke.mockImplementation((command: string, ...args: unknown[]) => command === "switch_account" ? pending.promise : invoke(command, ...args));
+  await openSettings();
+  await switchAccount("Study");
+  const reads = mocks.getConfig.mock.calls.length;
+  cleanup();
+  await act(async () => pending.resolve());
+  expect(mocks.getConfig).toHaveBeenCalledTimes(reads);
+  expect(mocks.message.error).not.toHaveBeenCalled();
+});
+
+it("suppresses initialization failures delivered after disposal", async () => {
+  const late = deferred<{ current_account: string }>();
+  const invoke = mocks.invoke.getMockImplementation()!;
+  mocks.invoke.mockImplementation((command: string, ...args: unknown[]) => command === "read_account_info" ? late.promise : invoke(command, ...args));
+  const view = render(<MemoryRouter><SettingsPage /></MemoryRouter>);
+  await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("read_account_info"));
+  view.unmount();
+  await act(async () => late.reject(new Error("disposed initialization failed")));
+  expect(mocks.message.error).not.toHaveBeenCalled();
+});
+
+it("reports a current configuration read failure without leaking stale initialization errors", async () => {
+  mocks.getConfig.mockImplementation(async () => { throw new ConfigReadFailure(currentSession()); });
+  render(<MemoryRouter><SettingsPage /></MemoryRouter>);
+  await waitFor(() => expect(mocks.message.error).toHaveBeenCalledWith("读取配置失败，请重试。"));
+  expect(mocks.message.error).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole("tab", { name: "账号与连接" })).not.toBeInTheDocument();
+});
+
 it("defaults recording topics off and saves the experiment setting", async () => {
   await openSettings();
   section("高级与实验");
@@ -315,4 +491,197 @@ it("defaults recording topics off and saves the experiment setting", async () =>
   await waitFor(() => expect(mocks.saveConfig).toHaveBeenCalledWith(expect.objectContaining({
     experimental_video_topics: true,
   })));
+});
+
+
+it.each([
+  ["unmount", "resolve"], ["unmount", "reject"],
+  ["session", "resolve"], ["session", "reject"],
+])("ignores pending save-path validation after %s with %s", async (boundary, outcome) => {
+  const validation = deferred<void>();
+  mocks.validatePath.mockReturnValueOnce(validation.promise);
+  const view = render(<MemoryRouter><SettingsPage /></MemoryRouter>);
+  await screen.findByRole("tab", { name: "账号与连接" });
+  fireEvent.change(screen.getByLabelText("Canvas Token"), { target: { value: "old-draft-token" } });
+  save();
+  expect(mocks.validatePath).toHaveBeenCalledExactlyOnceWith(undefined, "D:\\Downloads");
+  expect(mocks.saveConfig).not.toHaveBeenCalled();
+  if (boundary === "unmount") view.unmount();
+  else act(() => invalidateSession());
+  await act(async () => {
+    if (outcome === "resolve") validation.resolve();
+    else validation.reject(new Error("obsolete path validation"));
+  });
+  expect(mocks.saveConfig).not.toHaveBeenCalled();
+  expect(mocks.message.error).not.toHaveBeenCalled();
+  expect(mocks.message.success).not.toHaveBeenCalled();
+  if (boundary === "session") {
+    expect(screen.queryByText("obsolete path validation")).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "账号与连接" })).toHaveAttribute("aria-selected", "true");
+  }
+});
+
+it.each([
+  ["unmount", "resolve"], ["unmount", "reject"],
+  ["session", "resolve"], ["session", "reject"],
+])("does not publish save UI after %s when the native save will %s", async (boundary, outcome) => {
+  const pending = deferred<AppConfig>();
+  mocks.saveConfig.mockReturnValueOnce(pending.promise);
+  const view = render(<MemoryRouter><SettingsPage /></MemoryRouter>);
+  await screen.findByRole("tab", { name: "账号与连接" });
+  fireEvent.change(screen.getByLabelText("Canvas Token"), { target: { value: "submitted-token" } });
+  save();
+  await waitFor(() => expect(mocks.saveConfig).toHaveBeenCalledTimes(1));
+  const submitted = mocks.saveConfig.mock.calls[0][0] as AppConfig;
+  if (boundary === "unmount") view.unmount();
+  else act(() => invalidateSession());
+  await act(async () => {
+    if (outcome === "resolve") pending.resolve(submitted);
+    // Real saveConfig maps failures from an expired session to this error.
+    else pending.reject(boundary === "session" ? new StaleConfigSessionError() : new Error("late native save failure"));
+  });
+  expect(mocks.message.success).not.toHaveBeenCalled();
+  expect(mocks.message.error).not.toHaveBeenCalled();
+});
+
+it("retains newer edits when the earlier validated snapshot saves and changes owner", async () => {
+  const validation = deferred<void>();
+  mocks.validatePath.mockReturnValueOnce(validation.promise);
+  await openSettings();
+  fireEvent.change(screen.getByLabelText("Canvas Token"), { target: { value: "submitted-token" } });
+  save();
+  expect(mocks.saveConfig).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText("Canvas Token"), { target: { value: "newer-draft-token" } });
+  await act(async () => validation.resolve());
+  expect(config.token).toBe("submitted-token");
+  expect(config.__config_owner).toBe("owner:Default:0:saved");
+  expect(screen.getByLabelText("Canvas Token")).toHaveValue("newer-draft-token");
+  expect(screen.getByText("修改尚未保存")).toBeVisible();
+  expect(mocks.message.success).toHaveBeenCalledWith("保存成功！");
+});
+
+it("suppresses a save-triggered raw-config refresh failure after unmount", async () => {
+  const refresh = deferred<string>();
+  let reads = 0;
+  const invoke = mocks.invoke.getMockImplementation()!;
+  mocks.invoke.mockImplementation((command: string, ...args: unknown[]) => {
+    if (command === "get_raw_config" && ++reads === 2) return refresh.promise;
+    return invoke(command, ...args);
+  });
+  const view = render(<MemoryRouter><SettingsPage /></MemoryRouter>);
+  await screen.findByRole("tab", { name: "账号与连接" });
+  fireEvent.change(screen.getByLabelText("Canvas Token"), { target: { value: "submitted-token" } });
+  section("工具与诊断");
+  fireEvent.click(screen.getByRole("button", { name: "加载原始配置" }));
+  expect(await screen.findByText('{"theme":"light"}')).toBeVisible();
+  save();
+  await waitFor(() => expect(reads).toBe(2));
+  expect(mocks.message.success).toHaveBeenCalledWith("保存成功！");
+  view.unmount();
+  await act(async () => refresh.reject(new Error("obsolete raw config refresh")));
+  expect(mocks.message.error).not.toHaveBeenCalled();
+});
+
+it("reports a current native save failure even when that failure invalidates the session", async () => {
+  mocks.saveConfig.mockImplementationOnce(async () => {
+    invalidateSession();
+    throw new Error("current native save failed");
+  });
+  await openSettings();
+  fireEvent.change(screen.getByLabelText("Canvas Token"), { target: { value: "submitted-token" } });
+  save();
+  await waitFor(() => expect(mocks.message.error).toHaveBeenCalledWith(expect.objectContaining({ message: "current native save failed" })));
+  expect(screen.getByText("修改尚未保存")).toBeVisible();
+  expect(mocks.message.success).not.toHaveBeenCalled();
+});
+
+
+it.each(["resolve", "reject"])("resets raw-config loading across a session change and ignores the old %s", async outcome => {
+  const stale = deferred<string>();
+  const current = deferred<string>();
+  let reads = 0;
+  const invoke = mocks.invoke.getMockImplementation()!;
+  mocks.invoke.mockImplementation((command: string, ...args: unknown[]) => {
+    if (command === "get_raw_config") return ++reads === 1 ? stale.promise : current.promise;
+    return invoke(command, ...args);
+  });
+  await openSettings();
+  section("工具与诊断");
+  fireEvent.click(screen.getByRole("button", { name: "加载原始配置" }));
+  expect(screen.getByRole("button", { name: "加载中…" })).toBeDisabled();
+  act(() => invalidateSession());
+  fireEvent.click(screen.getByRole("button", { name: "加载原始配置" }));
+  expect(reads).toBe(2);
+  await act(async () => {
+    if (outcome === "resolve") stale.resolve('{"source":"stale"}');
+    else stale.reject(new Error("obsolete raw config"));
+  });
+  expect(screen.getByRole("button", { name: "加载中…" })).toBeDisabled();
+  expect(screen.queryByText('{"source":"stale"}')).not.toBeInTheDocument();
+  expect(mocks.message.error).not.toHaveBeenCalled();
+  await act(async () => current.resolve('{"source":"current"}'));
+  expect(screen.getByText('{"source":"current"}')).toBeVisible();
+  expect(screen.getByRole("button", { name: "隐藏原始配置" })).toBeEnabled();
+});
+
+it.each([
+  ["debug", "resolve"], ["debug", "reject"],
+  ["add-key", "resolve"], ["add-key", "reject"],
+])("discards inline-save notifications after unmount for %s with %s", async (action, outcome) => {
+  const pending = deferred<AppConfig>();
+  mocks.saveConfig.mockReturnValueOnce(pending.promise);
+  const view = render(<MemoryRouter><SettingsPage /></MemoryRouter>);
+  await screen.findByRole("tab", { name: "账号与连接" });
+  if (action === "debug") {
+    section("高级与实验");
+    fireEvent.click(screen.getByRole("switch", { name: "启用 Debug 模式" }));
+  } else {
+    section("AI 与模型");
+    fireEvent.click(screen.getByRole("button", { name: "添加 Key" }));
+    const dialog = within(screen.getByRole("dialog"));
+    fireEvent.change(dialog.getByLabelText("名称"), { target: { value: "Test provider" } });
+    fireEvent.change(dialog.getByLabelText("API Key"), { target: { value: "synthetic-key" } });
+    fireEvent.click(dialog.getByRole("button", { name: "添加" }));
+  }
+  await waitFor(() => expect(mocks.saveConfig).toHaveBeenCalledTimes(1));
+  const submitted = mocks.saveConfig.mock.calls[0][0] as AppConfig;
+  view.unmount();
+  await act(async () => {
+    if (outcome === "resolve") pending.resolve(submitted);
+    else pending.reject(new Error("obsolete inline save"));
+  });
+  expect(mocks.message.success).not.toHaveBeenCalled();
+  expect(mocks.message.error).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["名称", "Renamed"], ["API Key", "synthetic-new-key"], ["Base URL", "https://new.example.com/v1"],
+])("discards an inline %s save error after unmount", async (label, value) => {
+  config.llm_api_keys = [{ name: "Original", key: "synthetic-key", base_url: "https://example.com/v1", model: "test-model" }];
+  config.llm_active_api_key = "Original";
+  const pending = deferred<AppConfig>();
+  mocks.saveConfig.mockReturnValueOnce(pending.promise);
+  const view = render(<MemoryRouter><SettingsPage /></MemoryRouter>);
+  await screen.findByRole("tab", { name: "账号与连接" });
+  section("AI 与模型");
+  const ai = within(screen.getByRole("tabpanel", { name: "AI 与模型" }));
+  const input = ai.getByLabelText(label);
+  fireEvent.change(input, { target: { value } });
+  fireEvent.blur(input);
+  await waitFor(() => expect(mocks.saveConfig).toHaveBeenCalledTimes(1));
+  view.unmount();
+  await act(async () => pending.reject(new Error("obsolete inline edit")));
+  expect(mocks.message.error).not.toHaveBeenCalled();
+});
+
+it("reports a current debug autosave failure even when the save invalidates the session", async () => {
+  mocks.saveConfig.mockImplementationOnce(async () => {
+    invalidateSession();
+    throw new Error("current debug save failed");
+  });
+  await openSettings();
+  section("高级与实验");
+  fireEvent.click(screen.getByRole("switch", { name: "启用 Debug 模式" }));
+  await waitFor(() => expect(mocks.message.error).toHaveBeenCalledWith("保存失败：Error: current debug save failed"));
+  expect(mocks.message.success).not.toHaveBeenCalled();
 });

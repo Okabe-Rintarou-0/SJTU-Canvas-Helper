@@ -35,6 +35,7 @@ import BasicLayout from "../components/layout";
 import GradeStatisticChart from "../components/grade_statistic";
 import { WorkspaceHero } from "../components/workspace_hero";
 import { TableSkeleton } from "../components/skeleton";
+import { currentSession, isSessionCurrent } from "../lib/session";
 import { useAppMessage } from "../lib/message";
 import {
   useAssignments,
@@ -93,18 +94,18 @@ export default function GradePage() {
   );
 
   useEffect(() => {
+    const owner = currentSession();
     let disposed = false;
+    const ownsRequest = () => !disposed && isSessionCurrent(owner);
     const initExportInfo = async (course: Course) => {
       const folderPath = await downloadDirectory("export", downloadCourseContext(course));
-      if (disposed) return;
-      setExportInfo({
-        fileName: `${course.name}_成绩`,
-        folderPath,
-      });
+      if (!ownsRequest()) return;
+      setExportInfo({ fileName: `${course.name}_成绩`, folderPath });
     };
-
     if (selectedCourse) {
-      void initExportInfo(selectedCourse).catch((error) => { if (!disposed) messageApi.error(`读取导出目录失败：${error}`); });
+      void initExportInfo(selectedCourse).catch((error) => {
+        if (ownsRequest()) messageApi.error(`读取导出目录失败：${error}`);
+      });
     }
     return () => { disposed = true; };
   }, [selectedCourse, messageApi]);
@@ -288,7 +289,7 @@ export default function GradePage() {
       });
       messageApi.success("打分成功", 0.5);
     } catch (error) {
-      consoleLog(LOG_LEVEL_ERROR, error);
+      consoleLog(LOG_LEVEL_ERROR, "Submission grading failed");
       messageApi.error(`打分时出错：${error}`);
     }
   };
@@ -347,7 +348,7 @@ export default function GradePage() {
       });
       messageApi.success("导出成功", 0.5);
     } catch (error) {
-      consoleLog(LOG_LEVEL_ERROR, error);
+      consoleLog(LOG_LEVEL_ERROR, "Grades export failed");
       messageApi.error(`导出失败：${error}`);
     }
   };

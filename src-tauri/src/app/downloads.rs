@@ -338,13 +338,25 @@ impl Catalog {
 }
 
 impl App {
+    pub(super) async fn download_output_for_owner(
+        &self,
+        expected_owner: &str,
+    ) -> Result<DownloadOutput> {
+        let owner = self.config_owner.lock().await;
+        self.store_ready()?;
+        if owner.as_deref() != Some(expected_owner) {
+            return Err(crate::error::AppError::StaleConfigOwner);
+        }
+        self.download_output().await
+    }
+
     pub async fn download_output(&self) -> Result<DownloadOutput> {
         let account = self.current_account.read().await;
         let name = serde_json::to_value(&*account)?
             .as_str()
             .unwrap_or_default()
             .to_owned();
-        let config = PathBuf::from(Self::config_dir()?);
+        let config = PathBuf::from(self.store_ready()?.root_str()?);
         *WRITERS.lock().map_err(|_| invalid("下载管理锁不可用"))? += 1;
         Ok(DownloadOutput {
             account: name,

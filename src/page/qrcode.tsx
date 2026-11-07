@@ -12,8 +12,14 @@ import { WorkspaceHero } from "../components/workspace_hero";
 import { useCourses, useSelectedCourse } from "../lib/hooks";
 import { QRCodeScanReport, QRCodeScanResult } from "../lib/model";
 import { surfaceCardSx } from "../lib/styles";
+import { isSessionCurrent, useSessionEpoch } from "../lib/session";
 
 export default function QRCodePage() {
+  const session = useSessionEpoch();
+  return <QRCodeSession key={session} session={session} />;
+}
+
+function QRCodeSession({ session }: { session: number }) {
   const { selectedCourseId, setSelectedCourseId } = useSelectedCourse();
   const courses = useCourses();
   const selectedCourse = courses.data.find((course) => course.id === selectedCourseId);
@@ -26,6 +32,7 @@ export default function QRCodePage() {
   const requestId = useRef(0);
 
   const scanCourse = useCallback(async (courseId?: number) => {
+    if (!isSessionCurrent(session)) return;
     const currentRequest = ++requestId.current;
     setReport(null);
     setError("");
@@ -35,13 +42,13 @@ export default function QRCodePage() {
     if (!courseId || courseId <= 0) return;
     try {
       const next = await invoke<QRCodeScanReport>("scan_course_qrcodes", { courseId });
-      if (requestId.current === currentRequest) setReport(next);
+      if (isSessionCurrent(session) && requestId.current === currentRequest) setReport(next);
     } catch {
-      if (requestId.current === currentRequest) setError("无法扫描该课程的图片，请检查网络和 Canvas 登录状态后重试。");
+      if (isSessionCurrent(session) && requestId.current === currentRequest) setError("无法扫描该课程的图片，请检查网络和 Canvas 登录状态后重试。");
     } finally {
-      if (requestId.current === currentRequest) setOperating(false);
+      if (isSessionCurrent(session) && requestId.current === currentRequest) setOperating(false);
     }
-  }, []);
+  }, [session]);
 
   useEffect(() => {
     setKeyword("");
@@ -56,11 +63,14 @@ export default function QRCodePage() {
   }, [keyword, report]);
 
   const copyContent = async (content: string) => {
+    if (!isSessionCurrent(session)) return;
+    const ownerRequest = requestId.current;
+    const ownsNotice = () => isSessionCurrent(session) && requestId.current === ownerRequest;
     try {
       await navigator.clipboard.writeText(content);
-      setNotice({ severity: "success", text: "二维码内容已复制。" });
+      if (ownsNotice()) setNotice({ severity: "success", text: "二维码内容已复制。" });
     } catch {
-      setNotice({ severity: "error", text: "复制失败，请手动选择下方内容复制。" });
+      if (ownsNotice()) setNotice({ severity: "error", text: "复制失败，请手动选择下方内容复制。" });
     }
   };
 

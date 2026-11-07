@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { enqueueVideoExports, enqueueVideoTrack, resolveRecording, saveRecordingMaterial } from "./video_library_tasks";
 import { taskManager } from "./task_manager";
+import { getConfig } from "./config";
+import { invalidateSession } from "./session";
 import type { CanvasVideo, VideoPlayInfo } from "./model";
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), open: vi.fn(), save: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke, Channel: class { onmessage = () => {}; } }));
@@ -12,13 +14,21 @@ const video = { source: "canvas", videoId: "a", videoName: "第一小节", cours
 const course = { id: "10", name: "课程", term: "2026-2027 秋" };
 describe("batch video tasks", () => {
   it("retains the course when downloading and reopening a single track", async () => {
-    mocks.invoke.mockResolvedValue(undefined);
+    invalidateSession();
+    mocks.invoke.mockImplementation(async (command: string) => command === "get_config"
+      ? { __config_owner: "track-owner", save_path: "D:/downloads" } : undefined);
+    await getConfig();
     const track = { id: 42 } as VideoPlayInfo;
     enqueueVideoTrack(video, track, 0, course);
     await vi.waitFor(() => expect(taskManager.getSnapshot()[0].status).toBe("succeeded"));
-    expect(mocks.invoke).toHaveBeenCalledWith("download_video", expect.objectContaining({ course, saveName: "第一小节_机位1.mp4" }));
+    expect(mocks.invoke).toHaveBeenCalledWith("download_video", expect.objectContaining({ course, saveName: "第一小节_机位1.mp4", expectedOwner: "track-owner", expectedSavePath: "D:/downloads" }));
     await taskManager.action(taskManager.getSnapshot()[0].id, "open");
-    expect(mocks.invoke).toHaveBeenCalledWith("open_file", { name: "第一小节_机位1.mp4", kind: "video", course });
+    expect(mocks.invoke).toHaveBeenCalledWith("open_file", { name: "第一小节_机位1.mp4", kind: "video", course, expectedOwner: "track-owner", expectedSavePath: "D:/downloads" });
+    const opens = mocks.invoke.mock.calls.filter(([command]) => command === "open_file").length;
+    invalidateSession();
+    await taskManager.action(taskManager.getSnapshot()[0].id, "open");
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "open_file")).toHaveLength(opens);
+    expect(taskManager.getSnapshot()[0].actionError).toContain("账号已切换");
   });
   it("logs intentional PPT exclusions without treating them as failed exports", async () => {
     mocks.invoke.mockImplementation(async (command: string) => ["download_directory", "create_video_export_directory"].includes(command) ? "D:/课程/课堂" : { paths: ["D:/课程/课堂/ppt.pdf"], warnings: [], notes: ["实验性过滤：第 2 张切片识别为签到页面，未导出"] });

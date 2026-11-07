@@ -1,9 +1,10 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import TaskPopover from "../task_popover";
+import { invalidateSession } from "../../lib/session";
 import { taskManager } from "../../lib/task_manager";
 
-vi.mock("../preview_modal", () => ({ default: () => null }));
+vi.mock("../preview_modal", () => ({ default: () => <div data-testid="task-preview" /> }));
 afterEach(() => {
   cleanup();
   taskManager.getSnapshot().forEach((task) => taskManager.remove(task.id));
@@ -42,4 +43,23 @@ describe("minimal task popover", () => {
     expect(taskManager.getSnapshot().some((task) => task.unreadCompletion)).toBe(false);
     anchor.remove();
   });
+});
+
+it("cannot first-open or reopen a result owned by an invalidated session", async () => {
+  await act(async () => { taskManager.enqueue({ id: "old-preview", name: "old.pdf", kind: "pdf-merge", source: "files", run: async ({ update }) => { update({ result: { url: "blob:old", name: "old.pdf" } }); } }); });
+  const anchor = document.createElement("button"); document.body.appendChild(anchor);
+  anchor.getBoundingClientRect = () => ({ x: 10, y: 10, width: 20, height: 20, top: 10, left: 10, right: 30, bottom: 30, toJSON: () => ({}) });
+  const view = render(<TaskPopover anchorEl={anchor} onClose={() => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "预览 old.pdf" }));
+  expect(screen.getByTestId("task-preview")).toBeInTheDocument();
+  act(() => invalidateSession());
+  expect(screen.queryByTestId("task-preview")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "预览 old.pdf" })).not.toBeInTheDocument();
+  view.unmount();
+  render(<TaskPopover anchorEl={anchor} onClose={() => {}} />);
+  expect(screen.queryByRole("button", { name: "预览 old.pdf" })).not.toBeInTheDocument();
+  await act(async () => { taskManager.enqueue({ id: "new-preview", name: "new.pdf", kind: "pdf-merge", source: "files", run: async ({ update }) => { update({ result: { url: "blob:new", name: "new.pdf" } }); } }); });
+  fireEvent.click(screen.getByRole("button", { name: "预览 new.pdf" }));
+  expect(screen.getByTestId("task-preview")).toBeInTheDocument();
+  anchor.remove();
 });

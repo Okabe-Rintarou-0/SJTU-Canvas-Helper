@@ -14,50 +14,54 @@ use tauri::Url;
 use crate::{
     error::{AppError, Result},
     model::{
-        ConfirmChunkUploadResult, File, JBoxErrorMessage, JBoxLoginInfo, JboxLoginResult,
+        ConfirmChunkUploadResult, JBoxErrorMessage, JBoxLoginInfo, JboxLoginResult,
         PersonalSpaceInfo, ProgressPayload, StartChunkUploadContext,
     },
     utils,
 };
 
+#[cfg(test)]
+use crate::model::File;
+
 // Apis here are for jbox
 // Check https://pan.sjtu.edu.cn/
 impl Client {
-    pub async fn login_jbox(&self, cookie: &str) -> Result<String> {
-        self.jar
-            .add_cookie_str(cookie, &Url::parse(AUTH_URL).unwrap());
-        let resp = self
-            .get_request(JBOX_LOGIN_URL, None::<&str>)
-            .await?
-            .error_for_status()?;
+    pub(crate) fn jbox_client_for_cookie(cookie: &str) -> Result<reqwest::Client> {
+        let jar = std::sync::Arc::new(reqwest::cookie::Jar::default());
+        jar.add_cookie_str(cookie, &Url::parse(AUTH_URL).unwrap());
+        Ok(reqwest::Client::builder()
+            .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36")
+            .cookie_provider(jar)
+            .build()?)
+    }
+
+    async fn jbox_post_with_client<D: serde::de::DeserializeOwned>(&self, client: &reqwest::Client, url: &str) -> Result<D> {
+        let request = client.post(url).body("").header(reqwest::header::CONTENT_TYPE, "application/json").build()?;
+        let response = self.debug_store.send(client, request).await?;
+        self.parse_response_json(response).await
+    }
+
+    pub(crate) async fn login_jbox_with_client(&self, client: &reqwest::Client) -> Result<String> {
+        let request = client.get(JBOX_LOGIN_URL).build()?;
+        let resp = self.debug_store.send(client, request).await?.error_for_status()?;
         let re = Regex::new(r"code=(.+?)&state=").unwrap();
         let url = resp.url().to_string();
-        let Some(captures) = re.captures(&url) else {
-            return Err(AppError::LoginError);
-        };
-
-        let Some(m) = captures.get(1) else {
-            return Err(AppError::LoginError);
-        };
-
+        let Some(captures) = re.captures(&url) else { return Err(AppError::LoginError); };
+        let Some(m) = captures.get(1) else { return Err(AppError::LoginError); };
         let code = m.as_str().to_owned();
         let next_url = format!("{JBOX_LOGIN_URL2}{code}");
-        let login_result = self
-            .post_request::<JboxLoginResult, _>(&next_url, "")
-            .await?;
-
+        let login_result = self.jbox_post_with_client::<JboxLoginResult>(client, &next_url).await?;
         if login_result.status != 0 || login_result.user_token.len() != 128 {
             return Err(AppError::LoginError);
         }
         Ok(login_result.user_token)
     }
 
-    pub async fn get_user_space_info(&self, user_token: &str) -> Result<PersonalSpaceInfo> {
+    pub(crate) async fn get_user_space_info_with_client(&self, user_token: &str, client: &reqwest::Client) -> Result<PersonalSpaceInfo> {
         crate::diagnostics::protect_secret(user_token);
         let url = format!("{JBOX_USER_SPACE_URL}?user_token={user_token}");
-        let info = self.post_request::<PersonalSpaceInfo, _>(&url, "").await?;
+        let info = self.jbox_post_with_client::<PersonalSpaceInfo>(client, &url).await?;
         if info.status != 0 {
-            tracing::error!(status = info.status, "JBox user space request failed");
             return Err(AppError::JBoxError(info.message));
         }
         Ok(info)
@@ -165,6 +169,7 @@ impl Client {
         Ok(())
     }
 
+    #[cfg(test)]
     pub async fn upload_file<F: Fn(ProgressPayload) + Send>(
         &self,
         file: &File,

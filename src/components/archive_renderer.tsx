@@ -21,9 +21,12 @@ import {
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
-import { Archive } from "libarchive.js";
 import { Fragment, ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { DownloadCourseContext } from "../lib/download_context";
+import { openArchive, type ArchiveFile, type ArchiveTree, type OpenArchive } from "../lib/archive_open";
+import { currentSession, isSessionCurrent, subscribeSession } from "../lib/session";
+import { PreviewSessionContext } from "../lib/preview_session";
+import { captureOperationConfig } from "../lib/config";
 
 import { useAppMessage } from "../lib/message";
 import { LOG_LEVEL_ERROR } from "../lib/model";
@@ -44,15 +47,89 @@ interface ArchiveTreeNode {
 }
 const BLACK_LIST: BlackListEntry[] = [{ name: "node_modules", dir: true }];
 
+interface ArchiveLifetime {
+  active: boolean;
+  session: number;
+  controller: AbortController;
+  archive?: OpenArchive;
+  files: Map<string, ArchiveFile>;
+  selection: number;
+  cancelRead?: () => void;
+  previewUrl?: string;
+}
+
+function releaseArchive(lifetime: ArchiveLifetime) {
+  if (!lifetime.active) return;
+  lifetime.active = false;
+  lifetime.selection += 1;
+  lifetime.cancelRead?.();
+  lifetime.controller.abort();
+  lifetime.archive?.close();
+  lifetime.archive = undefined;
+  lifetime.files.clear();
+  if (lifetime.previewUrl) URL.revokeObjectURL(lifetime.previewUrl);
+  lifetime.previewUrl = undefined;
+}
+
+function readArchiveFile(file: File, lifetime: ArchiveLifetime): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reader.onload = reader.onerror = reader.onabort = null;
+      lifetime.cancelRead = undefined;
+      if (error) {
+        reject(error);
+        if (reader.readyState === FileReader.LOADING) reader.abort();
+      } else resolve(String(reader.result ?? ""));
+    };
+    const timer = setTimeout(() => finish(new Error("读取压缩包子文件超时")), 10000);
+    lifetime.cancelRead = () => finish(new Error("Archive selection cancelled"));
+    reader.onload = () => finish();
+    reader.onerror = () => finish(reader.error ?? new Error("读取压缩包子文件失败"));
+    reader.onabort = () => finish(new Error("Archive selection cancelled"));
+    try { reader.readAsDataURL(file); }
+    catch (error: unknown) { finish(error instanceof Error ? error : new Error(String(error))); }
+  });
+}
+
+function parseArchiveTree(root: ArchiveTree, banned: (name: string) => void) {
+  const tree: ArchiveTreeNode = { title: "", key: "", children: [], isDir: true };
+  const fileMap = new Map<string, ArchiveFile>();
+  const queue: [ArchiveTree, ArchiveTreeNode][] = [[root, tree]];
+  for (let index = 0; index < queue.length; index += 1) {
+    const [source, parent] = queue[index];
+    for (const [name, entry] of Object.entries(source)) {
+      const isDir = typeof entry.extract !== "function";
+      if (BLACK_LIST.some((value) => value.name === name && value.dir === isDir)) {
+        banned(name);
+        continue;
+      }
+      const key = `${parent.key}/${name}`;
+      const node: ArchiveTreeNode = { title: name, key, children: [], isDir,
+        size: isDir ? undefined : (entry as ArchiveFile).size };
+      parent.children.push(node);
+      if (isDir) queue.push([entry as ArchiveTree, node]);
+      else fileMap.set(key, entry as ArchiveFile);
+    }
+  }
+  return { tree, fileMap };
+}
+
 export default function ArchiveRenderer({
   mainState: { currentDocument },
 }: DocRendererProps) {
   const theme = useTheme();
   const course = useContext(DownloadCourseContext);
+  const inheritedSession = useContext(PreviewSessionContext);
+  const [mountSession] = useState(currentSession);
+  const ownerSession = inheritedSession ?? mountSession;
   const [selectedPath, setSelectedPath] = useState("");
   const [messageApi, contextHolder] = useAppMessage();
   const [treeData, setTreeData] = useState<ArchiveTreeNode | undefined>();
-  const [fileMap, setFileMap] = useState<Map<string, any> | undefined>();
   const [selectedDoc, setSelectedDoc] = useState<IDocument | undefined>();
   const selectedViewer = useMemo(() => selectedDoc ? (
     <DocViewer
@@ -66,184 +143,115 @@ export default function ArchiveRenderer({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | undefined>();
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
-  const archiveInitializedRef = useRef(false);
-
-  const archiveWorkerUrl = new URL(
-    "libarchive.js/dist/worker-bundle.js",
-    import.meta.url
-  ).toString();
+  const lifetimeRef = useRef<ArchiveLifetime>();
 
   useEffect(() => {
-    if (!currentDocument || !currentDocument.fileData) {
-      return;
-    }
-    if (!archiveInitializedRef.current) {
-      Archive.init({ workerUrl: archiveWorkerUrl });
-      archiveInitializedRef.current = true;
-    }
-    void parse();
-  }, [currentDocument]);
-
-  useEffect(() => {
-    return () => {
-      if (selectedDoc) {
-        URL.revokeObjectURL(selectedDoc.uri);
-      }
+    const lifetime: ArchiveLifetime = {
+      active: true, session: ownerSession, controller: new AbortController(),
+      selection: 0, files: new Map(),
     };
-  }, [selectedDoc]);
-
-  const checkIsBanned = (fileName: string, isDir: boolean) => {
-    if (
-      BLACK_LIST.find(
-        (banned) => banned.name === fileName && banned.dir === isDir
-      )
-    ) {
-      messageApi.warning(`文件或目录 "${fileName}" 已被屏蔽`, 2);
-      return true;
-    }
-    return false;
-  };
-
-  const parseArchiveStructureBFS = async (root: any) => {
-    const nextTreeData: ArchiveTreeNode = {
-      title: "",
-      key: "",
-      children: [],
-      isDir: true,
+    lifetimeRef.current = lifetime;
+    const owns = () => lifetime.active && isSessionCurrent(lifetime.session);
+    const clearPreview = () => {
+      setSelectedDoc(undefined);
+      setSelectedPath("");
+      setTreeData(undefined);
+      setExpandedKeys(new Set());
     };
-    const nextFileMap = new Map<string, File | null>();
-    const queue: [any, ArchiveTreeNode][] = [[root, nextTreeData]];
-
-    while (queue.length > 0) {
-      const [currentNode, currentTreeData] = queue.shift()!;
-      const currentDir = currentTreeData.key;
-      for (const fileName in currentNode) {
-        const entry = currentNode[fileName];
-        const path = `${currentDir}/${fileName}`;
-        const isDir = !entry.name;
-        if (checkIsBanned(fileName, isDir)) {
-          continue;
-        }
-
-        const nextNode: ArchiveTreeNode = {
-          title: fileName,
-          key: path,
-          children: [],
-          isDir,
-          size: isDir ? undefined : entry.size,
-        };
-
-        if (isDir) {
-          queue.push([entry, nextNode]);
-        } else {
-          try {
-            nextFileMap.set(path, entry);
-          } catch (e) {
-            nextFileMap.set(path, null);
-            messageApi.error(`文件 ${path} 解压失败`);
-          }
-        }
-        currentTreeData.children.push(nextNode);
-      }
-    }
-
-    setFileMap(nextFileMap);
-    return nextTreeData;
-  };
-
-  const setDocAndGC = (
-    oldDoc: IDocument | undefined,
-    newDoc: IDocument | undefined
-  ) => {
-    if (oldDoc) {
-      URL.revokeObjectURL(oldDoc.uri);
-    }
-    return newDoc;
-  };
-
-  async function parse() {
-    if (!currentDocument || !currentDocument.fileData) return;
-    setLoading(true);
+    clearPreview();
     setError(undefined);
-    setSelectedDoc((oldDoc) => setDocAndGC(oldDoc, undefined));
-    setSelectedPath("");
-    setTreeData(undefined);
-    setFileMap(undefined);
-    setExpandedKeys(new Set());
-    try {
-      const base64Content = currentDocument.fileData as string;
-      const file = dataURLtoFile(
-        base64Content,
-        currentDocument.fileName ?? "tmp"
-      );
-      const archive = await Archive.open(file);
-      const files = await archive.getFilesObject();
-      const nextTreeData = await parseArchiveStructureBFS(files);
-      setTreeData(nextTreeData);
-      setExpandedKeys(new Set([""]));
-    } catch (e) {
-      const errorMsg = e instanceof Error ? e.message : String(e);
-      consoleLog(LOG_LEVEL_ERROR, e);
-      messageApi.error(errorMsg);
-      setError(errorMsg);
-    } finally {
+    setLoading(Boolean(currentDocument?.fileData));
+    const unsubscribe = subscribeSession(() => {
+      if (!lifetime.active || isSessionCurrent(lifetime.session)) return;
+      releaseArchive(lifetime);
+      clearPreview();
       setLoading(false);
+      setError("账号会话已变更，请重新打开压缩包");
+    });
+    if (!isSessionCurrent(lifetime.session)) {
+      releaseArchive(lifetime);
+      setLoading(false);
+      setError("账号会话已变更，请重新打开压缩包");
+    } else if (currentDocument?.fileData) {
+      void (async () => {
+        try {
+          const file = dataURLtoFile(currentDocument.fileData as string, currentDocument.fileName ?? "tmp");
+          const archive = await openArchive(file, lifetime.controller.signal);
+          if (!owns()) { archive.close(); return; }
+          lifetime.archive = archive;
+          const files = await archive.getFilesObject();
+          if (!owns()) return;
+          const { tree, fileMap } = parseArchiveTree(files, (name) => {
+            messageApi.warning(`文件或目录 "${name}" 已被屏蔽`, 2);
+          });
+          lifetime.files = fileMap;
+          setTreeData(tree);
+          setExpandedKeys(new Set([""]));
+        } catch (error: unknown) {
+          if (!owns()) return;
+          releaseArchive(lifetime);
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          consoleLog(LOG_LEVEL_ERROR, "Archive parsing failed");
+          messageApi.error(errorMsg);
+          setError(errorMsg);
+        } finally {
+          if (lifetimeRef.current === lifetime && isSessionCurrent(lifetime.session)) setLoading(false);
+        }
+      })();
     }
-  };
+    return () => {
+      unsubscribe();
+      releaseArchive(lifetime);
+      if (lifetimeRef.current === lifetime) lifetimeRef.current = undefined;
+    };
+  }, [currentDocument, messageApi, ownerSession]);
 
   const onSelect = async (path: string) => {
-    const fileReader = fileMap?.get(path);
-    if (fileReader) {
-      try {
-        const file = await fileReader.extract();
-        const fileData = await Promise.race([
-          new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result ?? ""));
-            reader.onerror = () => reject(reader.error ?? new Error("读取压缩包子文件失败"));
-            reader.readAsDataURL(file);
-          }),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("读取压缩包子文件超时")), 10000)
-          ),
-        ]);
-        const doc = {
-          uri: URL.createObjectURL(file),
-          fileName: file.name,
-          fileType: await getFileType(file.name),
-          fileData,
-        } as IDocument;
-        setSelectedDoc((oldDoc) => setDocAndGC(oldDoc, doc));
-        setSelectedPath(path);
-      } catch (e) {
-        consoleLog(LOG_LEVEL_ERROR, e);
-        messageApi.error(`文件 "${path}" 加载失败：${e instanceof Error ? e.message : String(e)}`);
-      }
-    } else {
-      setSelectedDoc((oldDoc) => setDocAndGC(oldDoc, undefined));
-      if (fileReader === null) {
-        messageApi.warning(`当前文件 ${path} 解压失败，无法预览`);
-      }
+    const lifetime = lifetimeRef.current;
+    if (!lifetime || !lifetime.active || !isSessionCurrent(lifetime.session)) return;
+    const selection = ++lifetime.selection;
+    lifetime.cancelRead?.();
+    const owns = () => lifetime.active && isSessionCurrent(lifetime.session) && lifetime.selection === selection;
+    const entry = lifetime.files.get(path);
+    if (!entry) return;
+    try {
+      const file = await entry.extract();
+      if (!owns()) return;
+      const fileData = await readArchiveFile(file, lifetime);
+      if (!owns()) return;
+      const fileType = await getFileType(file.name);
+      if (!owns()) return;
+      const uri = URL.createObjectURL(file);
+      if (lifetime.previewUrl) URL.revokeObjectURL(lifetime.previewUrl);
+      lifetime.previewUrl = uri;
+      setSelectedDoc({ uri, fileName: file.name, fileType, fileData });
+      setSelectedPath(path);
+    } catch (error: unknown) {
+      if (!owns()) return;
+      consoleLog(LOG_LEVEL_ERROR, "Archive entry loading failed");
+      messageApi.error(`文件 "${path}" 加载失败：${error instanceof Error ? error.message : String(error)}`);
     }
   };
 
   const handleDownloadSubFile = async () => {
-    if (!selectedDoc) {
-      return;
-    }
-    const fileReader = fileMap?.get(selectedPath);
-    if (!fileReader) {
-      return;
-    }
+    const lifetime = lifetimeRef.current;
+    if (!lifetime || !selectedDoc) return;
+    const selection = lifetime.selection;
+    const owns = () => lifetime.active && isSessionCurrent(lifetime.session) && lifetime.selection === selection;
+    const entry = lifetime.files.get(selectedPath);
+    if (!entry || !owns()) return;
     try {
-      const file = await fileReader.extract();
+      const config = captureOperationConfig();
+      const file = await entry.extract();
+      if (!owns()) return;
       const buffer = await file.arrayBuffer();
-      const content = Array.from<number>(new Uint8Array(buffer));
+      if (!owns()) return;
+      const content = Array.from(new Uint8Array(buffer));
       const fileName = selectedDoc.fileName ?? "downloaded";
-      await invoke("save_file_content", { content, fileName, ...(course ? { course } : {}) });
-      messageApi.success("下载成功", 0.5);
-    } catch (e) {
-      messageApi.error(`下载失败：${e}`);
+      await invoke("save_file_content", { content, fileName, expectedOwner: config.__config_owner, ...(course ? { course } : {}) });
+      if (owns()) messageApi.success("下载成功", 0.5);
+    } catch (error: unknown) {
+      if (owns()) messageApi.error(`下载失败：${error}`);
     }
   };
 
@@ -259,7 +267,7 @@ export default function ArchiveRenderer({
     });
   };
 
-  const treeContent = useMemo(() => {
+  const treeContent = (() => {
     const renderTree = (nodes: ArchiveTreeNode[], depth = 0): ReactNode =>
       nodes.map((node) => {
         const expanded = expandedKeys.has(node.key);
@@ -318,7 +326,7 @@ export default function ArchiveRenderer({
       });
 
     return treeData ? renderTree(treeData.children) : null;
-  }, [treeData, expandedKeys, selectedPath, theme.palette.mode]);
+  })();
 
   if (!currentDocument || !currentDocument.fileData) return null;
 
