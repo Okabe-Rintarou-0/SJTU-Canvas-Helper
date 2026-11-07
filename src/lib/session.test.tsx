@@ -25,7 +25,7 @@ vi.mock("./message", () => ({
   AppMessageProvider: ({ children }: { children: unknown }) => children,
 }));
 
-import { getConfig, saveConfig } from "./config";
+import { captureOperationConfig, getConfig, saveConfig } from "./config";
 import { useAutoLoadCourse, useData, useBaseURL } from "./hooks";
 import { currentSession, invalidateSession } from "./session";
 import { configStore, courseSlice } from "./store";
@@ -424,4 +424,42 @@ it("a successful read and an explicit session change each reopen the failure inv
   invalidateSession(); const changed = currentSession();
   await expect(getConfig(true)).rejects.toMatchObject({name: "ConfigReadFailure"});
   expect(currentSession()).toBe(changed + 1);
+});
+
+
+describe("configuration result isolation", () => {
+  it.each(["fresh", "cached"])("keeps %s read edits out of the published owner snapshot", async kind => {
+    const backend = { ...configFixture("A token"), show_alert_map: { saved: true } };
+    mocks.invoke.mockImplementation((command: string) =>
+      command === "get_config" ? Promise.resolve(structuredClone(backend)) : Promise.resolve(undefined)
+    );
+    const first = await getConfig(true);
+    const draft = kind === "fresh" ? first : await getConfig();
+    draft.save_path = "/unsaved";
+    draft.show_alert_map.saved = false;
+
+    for (const snapshot of [captureOperationConfig(), await getConfig(), configStore.getState().config.data]) {
+      expect(snapshot?.save_path).toBe("/tmp/canvas");
+      expect(snapshot?.show_alert_map.saved).toBe(true);
+      expect(snapshot?.__config_owner).toBe(backend.__config_owner);
+    }
+    expect(countCalls("get_config")).toBe(1);
+  });
+
+  it("keeps returned save-result edits out of the committed owner snapshot", async () => {
+    const backend = { ...configFixture("A token"), show_alert_map: { saved: true } };
+    mocks.invoke.mockImplementation((command: string) =>
+      Promise.resolve(command === "get_config" ? structuredClone(backend) : "synthetic-successor")
+    );
+    const saved = await saveConfig(await getConfig(true));
+    saved.save_path = "/unsaved";
+    saved.show_alert_map.saved = false;
+
+    for (const snapshot of [captureOperationConfig(), await getConfig(), configStore.getState().config.data]) {
+      expect(snapshot?.save_path).toBe("/tmp/canvas");
+      expect(snapshot?.show_alert_map.saved).toBe(true);
+      expect(snapshot?.__config_owner).toBe("synthetic-successor");
+    }
+    expect(countCalls("save_config")).toBe(1);
+  });
 });

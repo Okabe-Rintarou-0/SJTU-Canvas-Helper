@@ -64,7 +64,7 @@ export async function getConfig(revalidate = false): Promise<AppConfig> {
   const session = currentSession();
   return enqueueConfig(async () => {
     if (!isSessionCurrent(session)) throw new StaleConfigSessionError();
-    if (CONFIG && !revalidate && CONFIG_SESSION === session) return CONFIG;
+    if (CONFIG && !revalidate && CONFIG_SESSION === session) return cloneDeep(CONFIG);
     let config: AppConfig;
     try {
       config = await invoke("get_config") as AppConfig;
@@ -79,7 +79,7 @@ export async function getConfig(revalidate = false): Promise<AppConfig> {
       throw new ConfigReadFailure(currentSession());
     }
     publishConfig(config);
-    return config;
+    return cloneDeep(config);
   });
 }
 
@@ -121,7 +121,7 @@ export async function saveConfig(
         console.error("Configuration completion callback failed");
       }
     }
-    return saved;
+    return cloneDeep(saved);
   });
 }
 
