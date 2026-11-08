@@ -6,6 +6,11 @@ export interface VideoCourseOption extends Course {
   sourceLabel: string;
 }
 
+export function videoCourseKey(canvasId?: number, teachingClassId?: number): string | undefined {
+  if (canvasId !== undefined) return `canvas:${canvasId}`;
+  if (teachingClassId !== undefined) return `videoSpace:${teachingClassId}`;
+}
+
 const normalize = (value: string) => value.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
 
 export function normalizeVideoTermName(name: string): string {
