@@ -50,6 +50,8 @@ pub enum AppError {
     OpenStderrError,
     #[error("Failed to download video {0}")]
     VideoDownloadError(String),
+    #[error("Failed to download video {0}")]
+    VideoAuthorizationError(String),
     #[error("Unsupported file extension {0}")]
     UnsupportedFileExtensionError(String),
     #[error("PDF extract output error: {0}")]
