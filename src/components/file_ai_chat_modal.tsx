@@ -16,11 +16,10 @@ import {
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import { useEffect, useMemo, useRef, useState } from "react";
-import Markdown from "react-markdown";
 import type { Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
 
 import { formatDate } from "../lib/utils";
+import MarkdownContent from "./markdown_content";
 
 export interface FileAIChatMessage {
   id: string;
@@ -71,12 +70,13 @@ function TypingDots({ mine = false }: { mine?: boolean }) {
 
 function ChatBubble({
   markdownComponents,
+  recoverWrappedMath,
   role,
   content,
   createdAt,
   pending,
   error,
-}: FileAIChatMessage & { markdownComponents?: Components }) {
+}: FileAIChatMessage & { markdownComponents?: Components; recoverWrappedMath: boolean }) {
   const theme = useTheme();
   const mine = role === "user";
   const label = mine ? "你" : "AI 助教";
@@ -101,6 +101,7 @@ function ChatBubble({
       <Box
         sx={{
           maxWidth: { xs: "100%", md: "82%" },
+          minWidth: 0,
           px: 2,
           py: 1.5,
           borderRadius: mine ? "22px 8px 22px 22px" : "8px 22px 22px 22px",
@@ -195,9 +196,9 @@ function ChatBubble({
               },
             }}
           >
-            <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+            <MarkdownContent components={markdownComponents} recoverWrappedMath={!mine && recoverWrappedMath}>
               {content}
-            </Markdown>
+            </MarkdownContent>
           </Box>
         )}
       </Box>
@@ -209,6 +210,7 @@ export default function FileAIChatModal({
   open,
   title,
   messages,
+  restoredMessageCount = 0,
   loading,
   loadingLabel,
   onClose,
@@ -230,6 +232,7 @@ export default function FileAIChatModal({
   open: boolean;
   title: string;
   messages: FileAIChatMessage[];
+  restoredMessageCount?: number;
   loading: boolean;
   loadingLabel?: string;
   onClose: () => void;
@@ -380,11 +383,12 @@ export default function FileAIChatModal({
                   />
                 </Box>
               ) : null}
-              {messages.map((message) => (
+              {messages.map((message, index) => (
                 <ChatBubble
                   key={message.id}
                   {...message}
                   markdownComponents={markdownComponents}
+                  recoverWrappedMath={index >= restoredMessageCount}
                 />
               ))}
             </Stack>

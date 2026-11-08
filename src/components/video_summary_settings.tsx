@@ -16,7 +16,7 @@ export default function VideoSummarySettings({ config, onChange }: { config: Fie
     <TextField size="small" label="课堂总结要求" multiline minRows={4} fullWidth
       value={config.video_summary_prompt ?? DEFAULT_VIDEO_SUMMARY_PROMPT}
       onChange={(event) => onChange({ ...config, video_summary_prompt: event.target.value })}
-      helperText="自定义详略、关注重点、输出结构和引用密度；留空使用默认要求。资料真实性与时间引用规则始终保留。追问以当前问题为主。" />
+      helperText="自定义详略、关注重点、输出结构和引用密度，留空使用默认要求。已保存的自定义要求会继续使用。新生成的总结和追问会自动遵循最新的公式格式、资料真实性和时间引用规则。追问以当前问题为主。" />
     <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
       <TextField size="small" label="上下文容量（tokens）" type="number" fullWidth value={options.contextTokens}
         onChange={(event) => onChange({ ...config, video_summary_context_tokens: Number(event.target.value) })}

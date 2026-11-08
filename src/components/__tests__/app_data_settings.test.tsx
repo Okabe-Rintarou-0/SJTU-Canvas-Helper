@@ -12,10 +12,14 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.open }));
 vi.mock("../../lib/video_summary_session", () => ({ videoSummarySession: { update: mocks.update, clearMaterials: mocks.clear } }));
 vi.mock("../../lib/ai_session_store", () => ({ useAISession: () => mocks.summary }));
 const data = createDataMock();
+const whilePremise = "\\{P\\land e\\}\\,c\\,\\{P\\}";
 const entry: VideoSummaryCache = {
   key: "summary", namespace: "legacy-test", title: "测试总结", text: "原始上下文", coverage: "1/1", organization: "combined", savedAt: "2026-10-29T00:00:00Z",
-  scopes: [{ id: "day", title: "课堂（部分小节）", videos: [{ source: "canvas", videoId: "b", videoName: "第二小节录像", playable: true, courseBeginTime: "2026-09-28 08:55", courseEndTime: "2026-09-28 09:40" } as CanvasVideo] }],
-  messages: [{ id: "m", role: "assistant", content: "完整总结正文", createdAt: "2026-10-29T00:00:00Z" }],
+  scopes: [
+    { id: "first", title: "第一堂课", videos: [{ source: "canvas", videoId: "a", videoName: "第一堂课录像", playable: true, courseBeginTime: "2026-09-25 08:00", courseEndTime: "2026-09-25 08:45" } as CanvasVideo] },
+    { id: "day", title: "课堂（部分小节）", videos: [{ source: "canvas", videoId: "b", videoName: "第二小节录像", playable: true, courseBeginTime: "2026-09-28 08:55", courseEndTime: "2026-09-28 09:40" } as CanvasVideo] },
+  ],
+  messages: [{ id: "m", role: "assistant", content: `完整总结正文\n\n若 \`$${whilePremise}$\`，不变量为 $P$。\n\n[00:00:12](#video=canvas%3Ab&t=12)`, createdAt: "2026-10-29T00:00:00Z" }],
 };
 const state = defineDataCollection({ category: "state", name: "positions", version: 1, validate: (v: unknown): v is number => typeof v === "number" }).forAccount("Default");
 
@@ -35,8 +39,13 @@ it("previews and deletes a saved summary only after explicit confirmation", asyn
   expect(screen.getByText("2026-09-28 08:55 — 2026-09-28 09:40")).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "查看" }));
   expect(await screen.findByText("完整总结正文")).toBeVisible();
-  expect(within(screen.getByRole("dialog")).getByText("第二小节录像")).toBeVisible();
-  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "关闭" }));
+  const preview = screen.getByRole("dialog");
+  expect(preview.querySelector("math annotation")?.textContent).toBe("P");
+  expect(within(preview).getByText(`$${whilePremise}$`, { selector: "code" })).toBeVisible();
+  expect(within(preview).getByText("第二小节录像")).toBeVisible();
+  expect(within(preview).getByText("节2 · 00:00:12")).toBeVisible();
+  expect(within(preview).queryByRole("button", { name: /00:00:12/ })).not.toBeInTheDocument();
+  fireEvent.click(within(preview).getByRole("button", { name: "关闭" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   fireEvent.click(screen.getByRole("button", { name: /^删除$/ }));
   expect(await readSummaryCache()).toHaveLength(1);

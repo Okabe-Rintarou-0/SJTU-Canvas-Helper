@@ -37,8 +37,21 @@ vi.mock("../course_select", async (importOriginal) => {
 });
 vi.mock("../task_popover", () => ({ default: () => <div data-testid="task-center" /> }));
 vi.mock("../video_aggregator", () => ({ default: () => <div>合成工具内容</div> }));
-vi.mock("../video_library_player", () => ({ default: ({ onClose, onMiniChange }: { onClose: () => void; onMiniChange: (mini: boolean) => void }) => <div>播放器内容<button onClick={onClose}>测试关闭播放器</button><button onClick={() => onMiniChange(true)}>测试迷你播放</button></div> }));
-vi.mock("../file_ai_chat_modal", () => ({ default: ({ open, dialogDescription, messages, onSend }: { open: boolean; dialogDescription: string; messages: { content: string }[]; onSend: (text: string) => void }) => open ? <div data-testid="chat">{dialogDescription}{messages.map((m, i) => <p key={i}>{m.content}</p>)}<button onClick={() => onSend("解释解析树")}>测试追问</button></div> : null }));
+vi.mock("../video_library_player", () => ({ default: ({ initialKey, seconds, onClose, onMiniChange }: { initialKey: string; seconds: number; onClose: () => void; onMiniChange: (mini: boolean) => void }) => <div data-recording={initialKey} data-seconds={seconds}>播放器内容<button onClick={onClose}>测试关闭播放器</button><button onClick={() => onMiniChange(true)}>测试迷你播放</button></div> }));
+vi.mock("../file_ai_chat_modal", async () => {
+  const { default: MarkdownContent } = await import("../markdown_content");
+  return { default: ({ open, dialogDescription, messages, onSend, markdownComponents, restoredMessageCount = 0 }: Parameters<typeof import("../file_ai_chat_modal").default>[0]) => open ? (
+    <div data-testid="chat">
+      {dialogDescription}
+      {messages.map((message, index) => (
+        <MarkdownContent key={message.id} components={markdownComponents} recoverWrappedMath={message.role === "assistant" && index >= restoredMessageCount}>
+          {message.content}
+        </MarkdownContent>
+      ))}
+      <button onClick={() => onSend("解释解析树")}>测试追问</button>
+    </div>
+  ) : null };
+});
 
 const dataMock = createDataMock();
 
@@ -359,6 +372,7 @@ describe("video library workflows", () => {
     const original = mocks.invoke.getMockImplementation()!;
     mocks.invoke.mockImplementation((command, args) => {
       if (command === "prepare_video_material") return Promise.resolve({ key: args.request.key, title: args.request.title, text: "[00:00:10](#video=canvas%3Aa&t=10) [PPT OCR] 解析树", subtitleAvailable: false, ocrAvailable: true, srt: "", warnings: ["缺少字幕"] });
+      if (command === "chat_video_materials") return Promise.resolve("公式 $x^2$，见 [00:00:10](#video=canvas%3Aa&t=10) 和 [00:00:10](#video=canvas%3Ab&t=10)。");
       return original(command, args);
     });
     fireEvent.click(within(screen.getByText("2026-09-28").closest("tr")!).getByRole("button", { name: "AI 总结" }));
@@ -370,6 +384,14 @@ describe("video library workflows", () => {
     const initial = mocks.invoke.mock.calls.find(([command]) => command === "chat_video_materials")![1].text;
     expect(initial).toContain("[PPT OCR] 解析树");
     expect(initial).toContain("#video=canvas%3Aa&t=10");
+    expect(screen.getByTestId("chat").querySelector("math annotation")?.textContent).toBe("x^2");
+    expect(screen.getByText("节1 · 00:00:10")).toBeVisible();
+    const secondCitation = screen.getByRole("button", { name: /跳转到 .*第 2 小节 · 00:00:10/ });
+    expect(secondCitation).toHaveTextContent("节2 · 00:00:10");
+    fireEvent.click(secondCitation);
+    const player = await screen.findByText("播放器内容");
+    expect(player).toHaveAttribute("data-recording", "canvas:b");
+    expect(player).toHaveAttribute("data-seconds", "10");
     const reads = mocks.invoke.mock.calls.filter(([command]) => command === "prepare_video_material").length;
     fireEvent.click(await screen.findByRole("button", { name: "测试追问" }));
     await waitFor(() => expect(mocks.invoke.mock.calls.filter(([command]) => command === "chat_video_materials")).toHaveLength(2));
@@ -489,10 +511,13 @@ describe("video library workflows", () => {
   });
   it("restores persisted summaries without another request and explicitly regenerates", async () => {
     await load();
+    const original = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation((command, args) => command === "chat_video_materials" ? "整堂课总结 `$P$`" : original(command, args));
     const openSummary = () => fireEvent.click(within(screen.getByText("2026-09-28").closest("tr")!).getByRole("button", { name: "AI 总结" }));
     openSummary();
     await beginSummary();
     await screen.findByText(/已保存到本地/);
+    expect(screen.getByTestId("chat").querySelector("math annotation")?.textContent).toBe("P");
     const calls = mocks.invoke.mock.calls.filter(([c]) => c === "chat_video_materials").length;
     cleanup();
     await load();
@@ -511,6 +536,7 @@ describe("video library workflows", () => {
     await screen.findByText(/已读取本地历史/);
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.getByTestId("chat")).toHaveTextContent("整堂课总结");
+    expect(within(screen.getByTestId("chat")).getByText("$P$", { selector: "code" })).toBeVisible();
     expect(mocks.invoke.mock.calls.filter(([c]) => c === "chat_video_materials")).toHaveLength(calls);
     const row = screen.getByText("2026-09-28").closest("tr")!;
     fireEvent.click(within(row).getByRole("button", { name: "播放" }));
@@ -519,6 +545,7 @@ describe("video library workflows", () => {
     fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
     await waitFor(() => expect(mocks.invoke.mock.calls.filter(([c]) => c === "chat_video_materials")).toHaveLength(calls + 1));
     await screen.findByText(/已保存到本地/);
+    expect(screen.getByTestId("chat").querySelector("math annotation")?.textContent).toBe("P");
     fireEvent.click(screen.getByRole("button", { name: "删除历史" }));
     expect(await screen.findByText(/本地历史已删除/)).toBeInTheDocument();
   });

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import type { IMainState } from "@cyntler/react-doc-viewer/dist/cjs/store/mainStateReducer";
 import MarkdownRenderer from "../markdown_renderer";
 
-vi.mock("../../lib/utils", () => ({ decodeBase64Data: () => "`inline`\n\n```ts\nconst value = 1;\n```" }));
+vi.mock("../../lib/utils", () => ({ decodeBase64Data: () => "`inline` `$literal$`\n\n公式 $x^2$\n\n$$\nx^2+1\n$$\n\n```ts\nconst value = '$x^2$';\n```" }));
 vi.mock("../renderer_shell", () => ({ default: ({ children }: { children: ReactNode }) => <>{children}</> }));
 vi.mock("react-syntax-highlighter", () => ({ Prism: ({ children }: { children: ReactNode }) => <pre data-testid="code-block">{children}</pre> }));
 afterEach(cleanup);
@@ -15,6 +15,10 @@ it("preserves code nodes and horizontal scroll when the document rerenders", () 
   const view = render(<MarkdownRenderer mainState={mainState} />);
   const inline = screen.getByText("inline");
   const block = screen.getByTestId("code-block");
+  expect(screen.getByText("$literal$", { selector: "code" })).toBeVisible();
+  expect(view.container.querySelectorAll("math")).toHaveLength(2);
+  expect(view.container.querySelector(".katex-display math annotation")?.textContent).toBe("x^2+1");
+  expect(block).toHaveTextContent("const value = '$x^2$';");
   block.scrollLeft = 480;
   view.rerender(<MarkdownRenderer mainState={mainState} />);
   expect(screen.getByText("inline")).toBe(inline);

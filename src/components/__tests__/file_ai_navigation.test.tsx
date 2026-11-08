@@ -67,12 +67,16 @@ it("restores the real file conversation after leaving, including chunks received
   const requestId = mocks.invoke.mock.calls[0][1].requestId;
   expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
   view.unmount();
-  handlers.get("file_ai_chat://chunk")!({ payload: { request_id: requestId, chunk: "后台片段" } });
+  handlers.get("file_ai_chat://chunk")!({ payload: { request_id: requestId, chunk: "后台片段\n\n$$\n\\frac{1}{" } });
   const returned = render(<FilesPage />);
   expect(screen.getByText("后台片段")).toBeInTheDocument();
+  expect(screen.getByText("\\frac{1}{")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
-  act(() => handlers.get("file_ai_chat://done")!({ payload: { request_id: requestId, content: "完整文件总结" } }));
+  act(() => handlers.get("file_ai_chat://chunk")!({ payload: { request_id: requestId, chunk: "2}\n$$" } }));
+  expect(screen.getByRole("dialog").querySelector(".katex-display math annotation")?.textContent).toBe("\\frac{1}{2}");
+  act(() => handlers.get("file_ai_chat://done")!({ payload: { request_id: requestId, content: "完整文件总结\n\n不变量为 `$P$`。\n\n$$\n\\frac{1}{2}\n$$" } }));
   expect(screen.getByText("完整文件总结")).toBeInTheDocument();
+  expect(screen.getByRole("dialog").querySelector("math annotation")?.textContent).toBe("P");
   fireEvent.change(screen.getByPlaceholderText(/继续追问这份文件/), { target: { value: "未发送的追问" } });
   returned.unmount(); render(<FilesPage />);
   expect(screen.getByPlaceholderText(/继续追问这份文件/)).toHaveValue("未发送的追问");
