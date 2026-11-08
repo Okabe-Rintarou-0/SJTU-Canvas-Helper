@@ -87,6 +87,30 @@ async function beginSummary(name: string | RegExp = /开始总结|转录音频�
 }
 
 describe("video library workflows", () => {
+  it("shows recordings while another source is pending and reuses requests when the catalog adds that source", async () => {
+    const original = mocks.invoke.getMockImplementation()!;
+    let finishCatalog!: (courses: typeof mocks.courses) => void;
+    let finishCanvas!: (recordings: typeof videos) => void;
+    let finishSpace!: (recordings: unknown[]) => void;
+    mocks.invoke.mockImplementation((command, args) => {
+      if (command === "list_video_space_courses") return new Promise((resolve) => { finishCatalog = resolve; });
+      if (command === "get_canvas_videos") return new Promise((resolve) => { finishCanvas = resolve; });
+      if (command === "get_video_space_videos") return new Promise((resolve) => { finishSpace = resolve; });
+      return original(command, args);
+    });
+    render(<VideoPage />);
+    await waitFor(() => expect(finishCatalog).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: "选择测试课程" }));
+    await act(async () => finishCatalog([{ ...mocks.courses[0], id: 80 }]));
+    expect(mocks.invoke).toHaveBeenCalledWith("get_video_space_videos", { teachingClassId: 80 });
+    expect(screen.getByRole("progressbar", { name: "正在读取录像" })).toBeVisible();
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "get_canvas_videos")).toHaveLength(1);
+    await act(async () => finishCanvas(videos));
+    expect(screen.getByText("2 小节")).toBeVisible();
+    await act(async () => finishSpace([]));
+    expect(screen.queryByRole("progressbar", { name: "正在读取录像" })).not.toBeInTheDocument();
+  });
+
   it("downloads directly to the configured root", async () => {
     await load();
     fireEvent.click(within(screen.getByText("2026-09-28").closest("tr")!).getByRole("button", { name: "下载" }));

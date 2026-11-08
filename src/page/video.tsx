@@ -122,6 +122,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   const [courseLoading, setCourseLoading] = useState(false);
   const [courseError, setCourseError] = useState("");
   const [videos, setVideos] = useState<CanvasVideo[]>([]);
+  const recordingRequests = useRef<{ courseId: number; refresh: number; requests: Map<string, Promise<CanvasVideo[]>> }>();
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [selected, setSelected] = useState(new Set<string>());
@@ -195,16 +196,43 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
     if (!selectedCourse || login !== "ready") return;
     let cancelled = false;
     setLoading(true); setLoadError("");
-    void loadVideoCourse(selectedCourse,
-      (id) => withTimeout(invoke("get_canvas_videos", { courseId: id })),
-      (id) => withTimeout(invoke("get_video_space_videos", { teachingClassId: id })),
-      (id) => withTimeout(invoke("get_legacy_videos", { courseId: id, courseName: selectedCourse.name, termName: selectedCourse.term.name, teacherNames: selectedCourse.teachers.map((t) => t.display_name) })),
-    ).then((next) => {
+    if (recordingRequests.current?.courseId !== selectedCourse.id || recordingRequests.current.refresh !== refresh) {
+      recordingRequests.current = { courseId: selectedCourse.id, refresh, requests: new Map() };
+    }
+    // The course catalog can add a source while the existing requests are still running.
+    const { requests } = recordingRequests.current;
+    const load = (command: string, args: Record<string, unknown>) => {
+      const key = JSON.stringify([command, args]);
+      const existing = requests.get(key);
+      if (existing) return existing;
+      const request = withTimeout(invoke<CanvasVideo[]>(command, args));
+      requests.set(key, request);
+      return request;
+    };
+    const show = (next: CanvasVideo[], complete: boolean) => {
       if (cancelled) return;
       setVideos(next);
-      const keys = new Set(next.map(recordingKey));
-      setSelected((previous) => new Set([...previous].filter((key) => keys.has(key))));
-    }).catch((e) => { if (!cancelled) setLoadError(String(e)); })
+      setSelected((previous) => {
+        if (!previous.size) return previous;
+        const selection = new Set(previous);
+        const keys = new Set<string>();
+        for (const video of next) {
+          const key = recordingKey(video);
+          keys.add(key);
+          // A later response may promote another source for a selected recording.
+          for (const alternative of video.alternatives ?? []) {
+            if (selection.delete(recordingKey(alternative))) selection.add(key);
+          }
+        }
+        return complete ? new Set([...selection].filter((key) => keys.has(key))) : selection;
+      });
+    };
+    void loadVideoCourse(selectedCourse,
+      (id) => load("get_canvas_videos", { courseId: id }),
+      (id) => load("get_video_space_videos", { teachingClassId: id }),
+      (id) => load("get_legacy_videos", { courseId: id, courseName: selectedCourse.name, termName: selectedCourse.term.name, teacherNames: selectedCourse.teachers.map((t) => t.display_name) }),
+      (next) => show(next, false),
+    ).then((next) => show(next, true)).catch((e) => { if (!cancelled) setLoadError(String(e)); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [selectedCourse, login, refresh]);
@@ -213,6 +241,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   useEffect(() => { if (active && (!playerMini || chatOpen)) workspaceRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }); }, [active, player?.nonce, playerMini, chatOpen, chatSessionId]);
 
   const changeCourse = useCallback((id: number) => {
+    recordingRequests.current = undefined;
     setCourseId(id === -1 ? undefined : id); setVideos([]); setSelected(new Set()); setExpanded(new Map());
     setQuery(""); setStatus("all"); setPlayer(undefined); setLoadError(""); videoSummarySession.clearMaterials();
   }, []);
