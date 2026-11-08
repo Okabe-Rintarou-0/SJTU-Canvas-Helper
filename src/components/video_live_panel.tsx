@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Alert, Box, Button, Card, CardContent, Chip, LinearProgress, Stack, Typography } from "@mui/material";
 import { surfaceCardSx } from "../lib/styles";
-import { liveRequest, liveSessionStatus, liveStatusLabels, nextLiveSession } from "../lib/video_live";
+import { liveRequest, liveSessionStatus, liveStatusLabels, nextLiveSession, visibleLiveSessions } from "../lib/video_live";
 import type { CanvasLiveList, CanvasLiveSession } from "../lib/model";
 import VideoLivePlayer from "./video_live_player";
 
@@ -57,7 +57,7 @@ export default function VideoLivePanel({ canvasCourseId, teachingClassId, refres
     if (nextSession && now >= nextSession.startTime) setActive(nextSession);
   }, [followingLive, active, nextSession, now]);
 
-  const sessions = [...(list?.sessions ?? [])].sort((a, b) => a.startTime - b.startTime);
+  const sessions = visibleLiveSessions(list?.sessions ?? [], now);
   const liveCount = sessions.filter((session) => liveSessionStatus(session, now) === "live").length;
   return <Card sx={surfaceCardSx}><CardContent sx={{ p: { xs: 2, md: 2.5 } }}><Stack spacing={2}>
     <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1.5}>
@@ -81,6 +81,6 @@ export default function VideoLivePanel({ canvasCourseId, teachingClassId, refres
         </Stack>
       </Stack>;
     })}
-    {!sessions.length && !loading && !error && <Typography variant="body2" color="text.secondary">本课程当前暂无直播安排。</Typography>}
+    {!sessions.length && !loading && !error && <Typography variant="body2" color="text.secondary">本课程今天暂无待播或正在进行的直播。</Typography>}
   </Stack></CardContent></Card>;
 }
