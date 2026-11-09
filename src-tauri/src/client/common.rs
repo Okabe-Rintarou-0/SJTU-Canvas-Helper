@@ -152,21 +152,22 @@ impl Client {
         Ok(res)
     }
 
-    pub async fn get_json_with_cookie<T: Serialize + ?Sized, D: DeserializeOwned>(
+    pub(super) async fn get_json_with_cookie<T: Serialize + ?Sized, D: DeserializeOwned>(
         &self,
+        client: &reqwest::Client,
         url: &str,
         query: Option<&T>,
     ) -> Result<D> {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
-        let mut req = self.cli.get(url).headers(headers);
+        let mut req = client.get(url).headers(headers);
 
         if let Some(query) = query {
             req = req.query(query);
         }
 
         let req = req.build()?;
-        let response = self.execute_request(req).await?;
+        let response = self.debug_store.send(client, req).await?;
         self.parse_response_json(response).await
     }
 }
