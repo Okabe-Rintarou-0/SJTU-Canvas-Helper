@@ -11,6 +11,10 @@ const list: CanvasLiveList = { serverTime: now, sessions: [
   { id: "live", teachingClassId: 2, title: "课程", teacherName: "老师", classroomName: "教室", beginTime: "2026-10-12 13:55", endTime: "2026-10-12 14:50", startTime: now - 60_000, finishTime: now + 600_000, enabled: true },
   { id: "next", teachingClassId: 2, title: "课程", teacherName: "老师", classroomName: "教室", beginTime: "2026-10-12 14:50", endTime: "2026-10-12 15:45", startTime: now + 600_000, finishTime: now + 1200_000, enabled: true },
 ] };
+const tomorrow = {
+  ...list.sessions[1], id: "tomorrow", beginTime: "2026-10-13 08:00", endTime: "2026-10-13 08:45",
+  startTime: Date.parse("2026-10-13T08:00:00+08:00"), finishTime: Date.parse("2026-10-13T08:45:00+08:00"),
+};
 beforeEach(() => { vi.clearAllMocks(); mocks.invoke.mockResolvedValue(list); });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 describe("live course panel", () => {
@@ -72,11 +76,8 @@ describe("live course panel", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
     expect(mocks.invoke).toHaveBeenCalledTimes(calls);
   });
-  it("shows ongoing and same-day upcoming sections and prevents playing an upcoming section", async () => {
-    mocks.invoke.mockResolvedValue({ ...list, sessions: [...list.sessions, {
-      ...list.sessions[1], id: "tomorrow", beginTime: "2026-10-13 08:00", endTime: "2026-10-13 08:45",
-      startTime: Date.parse("2026-10-13T08:00:00+08:00"), finishTime: Date.parse("2026-10-13T08:45:00+08:00"),
-    }] });
+  it("shows today's lessons and lets users expand and collapse later lessons", async () => {
+    mocks.invoke.mockResolvedValue({ ...list, sessions: [...list.sessions, tomorrow] });
     const onPlay = vi.fn();
     const view = render(<VideoLivePanel canvasCourseId={10} refresh={0} playback="live" onPlay={onPlay} />);
     await screen.findByText("直播中");
@@ -84,6 +85,13 @@ describe("live course panel", () => {
     const buttons = screen.getAllByRole("button", { name: "观看直播" });
     expect(buttons).toHaveLength(2);
     expect(buttons[0]).toBeEnabled(); expect(buttons[1]).toBeDisabled();
+    const schedule = screen.getByRole("button", { name: "查看安排" });
+    expect(schedule).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(schedule);
+    expect(screen.getByText(/2026-10-13 08:00/)).toBeVisible();
+    expect(screen.getAllByRole("button", { name: "观看直播" })[2]).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "收起安排" }));
+    expect(screen.queryByText(/2026-10-13 08:00/)).not.toBeInTheDocument();
     fireEvent.click(buttons[0]); expect(onPlay).toHaveBeenCalledOnce();
     expect(screen.getByTestId("live-player")).toHaveTextContent("直播 live");
     view.rerender(<VideoLivePanel canvasCourseId={10} refresh={0} playback="recording" onPlay={onPlay} />);

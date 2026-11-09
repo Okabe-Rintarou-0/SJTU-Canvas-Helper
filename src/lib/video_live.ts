@@ -12,11 +12,17 @@ export const liveStatusLabels = { live: "直播中", upcoming: "未开始", ende
 // The service schedule uses Shanghai time even when the computer is abroad.
 const teachingDay = (time: number) => Math.floor((time + 8 * 60 * 60_000) / (24 * 60 * 60_000));
 
-export function visibleLiveSessions(sessions: CanvasLiveSession[], now: number): CanvasLiveSession[] {
+export function splitLiveSchedule(sessions: CanvasLiveSession[], now: number) {
   const today = teachingDay(now);
-  return sessions.filter((session) => session.enabled && session.finishTime > now
-    && (session.startTime <= now || teachingDay(session.startTime) === today))
+  const current: CanvasLiveSession[] = [];
+  const future: CanvasLiveSession[] = [];
+  const remaining = sessions.filter((session) => session.enabled && session.finishTime > now)
     .sort((a, b) => a.startTime - b.startTime);
+  for (const session of remaining) {
+    const group = teachingDay(session.startTime) > today ? future : current;
+    group.push(session);
+  }
+  return { current, future };
 }
 
 // Only follow the same teaching class on the same teaching day, not next week's lesson.

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Alert, Box, Button, Card, CardContent, Chip, LinearProgress, Stack, Typography } from "@mui/material";
 import { surfaceCardSx } from "../lib/styles";
-import { liveRequest, liveSessionStatus, liveStatusLabels, nextLiveSession, visibleLiveSessions } from "../lib/video_live";
+import { liveRequest, liveSessionStatus, liveStatusLabels, nextLiveSession, splitLiveSchedule } from "../lib/video_live";
 import type { CanvasLiveList, CanvasLiveSession } from "../lib/model";
 import VideoLivePlayer from "./video_live_player";
 
@@ -16,6 +16,7 @@ export default function VideoLivePanel({ canvasCourseId, teachingClassId, refres
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
   const [active, setActive] = useState<CanvasLiveSession>();
+  const [scheduleOpen, setScheduleOpen] = useState(false);
   const nextSession = active ? nextLiveSession(active, list?.sessions ?? [], now) : undefined;
   const followingLive = !!active && playback === "live" && (now < active.finishTime || !!nextSession);
   const shouldPoll = visible || followingLive;
@@ -57,30 +58,38 @@ export default function VideoLivePanel({ canvasCourseId, teachingClassId, refres
     if (nextSession && now >= nextSession.startTime) setActive(nextSession);
   }, [followingLive, active, nextSession, now]);
 
-  const sessions = visibleLiveSessions(list?.sessions ?? [], now);
-  const liveCount = sessions.filter((session) => liveSessionStatus(session, now) === "live").length;
+  const { current, future } = splitLiveSchedule(list?.sessions ?? [], now);
+  const liveCount = current.filter((session) => liveSessionStatus(session, now) === "live").length;
+  const renderSession = (session: CanvasLiveSession) => {
+    const status = liveSessionStatus(session, now);
+    return <Stack key={session.id} direction={{ xs: "column", sm: "row" }} alignItems={{ sm: "center" }} gap={1} sx={{ borderTop: "1px solid", borderColor: "divider", pt: 1.5 }}>
+      <Box sx={{ flex: 1 }}><Typography variant="body2">{session.beginTime}–{session.endTime.split(" ")[1]?.slice(0, 5)}</Typography>
+        <Typography variant="caption" color="text.secondary">{[session.teacherName, session.classroomName].filter(Boolean).join(" · ")}</Typography></Box>
+      <Stack direction="row" alignItems="center" gap={1}>
+        <Chip size="small" variant="outlined" color={status === "live" ? "primary" : "default"} label={liveStatusLabels[status]} />
+        <Button size="small" disabled={status !== "live"} onClick={() => { onPlay(); setActive(session); }}>观看直播</Button>
+      </Stack>
+    </Stack>;
+  };
   return <Card sx={surfaceCardSx}><CardContent sx={{ p: { xs: 2, md: 2.5 } }}><Stack spacing={2}>
     <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1.5}>
       <Box>
         <Typography variant="h6" sx={{ fontWeight: 700 }}>课堂直播</Typography>
         <Typography variant="body2" color="text.secondary">{liveCount > 0 ? `${liveCount} 节正在直播 · ` : ""}直播开始后可选择机位观看。</Typography>
       </Box>
-      <Button size="small" sx={{ flexShrink: 0 }} disabled={loading} onClick={() => setReload((value) => value + 1)}>刷新直播</Button>
+      <Stack direction="row" sx={{ flexShrink: 0 }}>
+        {future.length > 0 && <Button size="small" aria-expanded={scheduleOpen} onClick={() => setScheduleOpen((open) => !open)}>{scheduleOpen ? "收起安排" : "查看安排"}</Button>}
+        <Button size="small" disabled={loading} onClick={() => setReload((value) => value + 1)}>刷新直播</Button>
+      </Stack>
     </Stack>
     {loading && <LinearProgress aria-label="正在读取直播" />}
     {error && <Alert severity={list ? "warning" : "error"}>读取直播失败：{error}。可点击刷新直播重试。</Alert>}
     {active && playback === "live" && <VideoLivePlayer session={active} nextSession={nextSession} canvasCourseId={canvasCourseId} teachingClassId={teachingClassId} onClose={() => setActive(undefined)} />}
-    {sessions.map((session) => {
-      const status = liveSessionStatus(session, now);
-      return <Stack key={session.id} direction={{ xs: "column", sm: "row" }} alignItems={{ sm: "center" }} gap={1} sx={{ borderTop: "1px solid", borderColor: "divider", pt: 1.5 }}>
-        <Box sx={{ flex: 1 }}><Typography variant="body2">{session.beginTime}–{session.endTime.split(" ")[1]?.slice(0, 5)}</Typography>
-          <Typography variant="caption" color="text.secondary">{[session.teacherName, session.classroomName].filter(Boolean).join(" · ")}</Typography></Box>
-        <Stack direction="row" alignItems="center" gap={1}>
-          <Chip size="small" variant="outlined" color={status === "live" ? "primary" : "default"} label={liveStatusLabels[status]} />
-          <Button size="small" disabled={status !== "live"} onClick={() => { onPlay(); setActive(session); }}>观看直播</Button>
-        </Stack>
-      </Stack>;
-    })}
-    {!sessions.length && !loading && !error && <Typography variant="body2" color="text.secondary">本课程今天暂无待播或正在进行的直播。</Typography>}
+    {current.map(renderSession)}
+    {!current.length && !loading && !error && <Typography variant="body2" color="text.secondary">本课程今天暂无待播或正在进行的直播。</Typography>}
+    {scheduleOpen && future.length > 0 && <Stack spacing={1.5}>
+      <Typography variant="subtitle2">后续直播</Typography>
+      {future.map(renderSession)}
+    </Stack>}
   </Stack></CardContent></Card>;
 }
