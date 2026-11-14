@@ -23,10 +23,10 @@ import VideoSummaryScope from "../components/video_summary_scope";
 import FileAIChatModal from "../components/file_ai_chat_modal";
 import { useCourses, useConfigSelector } from "../lib/hooks";
 import { useAppMessage } from "../lib/message";
-import { compareVideoCourses, loadVideoCourse, mergeVideoCourses } from "../lib/video_courses";
+import { compareVideoCourses, loadVideoCourse, mergeVideoCourses, videoCourseKey } from "../lib/video_courses";
 import { canSummarizeRecording, groupVideoSessions, groupSessionsByDate, parseVideoCitation, formatVideoTimestamp, recordingKey, recordingTime, selectedSessionScopes, toggleRecordings, type VideoExportOptions, type VideoSession } from "../lib/video_library";
 import { enqueueVideoExports, saveRecordingMaterial } from "../lib/video_library_tasks";
-import { readSummaryCache, summaryCacheKey, withSummaryModelIdentity, PPT_CLEANUP_POLICY, type VideoSummaryCache } from "../lib/video_summary_cache";
+import { readSummaryCache, summaryAccount, summaryCacheKey, summaryCourseKey, withSummaryModelIdentity, PPT_CLEANUP_POLICY, type VideoSummaryCache } from "../lib/video_summary_cache";
 import type { AccountInfo, CanvasVideo, Course } from "../lib/model";
 import { useAISession } from "../lib/ai_session_store";
 import { videoSummarySession } from "../lib/video_summary_session";
@@ -83,7 +83,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   const modelIdentity = JSON.stringify([activeLlm?.base_url || aiConfig?.llm_base_url || DEFAULT_LLM_BASE_URL,
     activeLlm?.model || aiConfig?.llm_model || DEFAULT_LLM_MODEL, aiConfig?.llm_temperature ?? null]);
   const summary = useAISession(videoSummarySession);
-  const { open: chatOpen, title: chatTitle, scopes: chatScope, messages: chatMessages,
+  const { title: chatTitle, scopes: chatScope, messages: chatMessages,
     loading: chatLoading, progress: chatProgress, coverage, cacheNotice } = summary;
   const setChatOpen = (open: boolean) => videoSummarySession.update({ open });
   const [cachedSummaries, setCachedSummaries] = useState<VideoSummaryCache[]>([]);
@@ -111,17 +111,28 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   const [playerMini, setPlayerMini] = useState(false);
   const [playback, setPlayback] = useState<"live" | "recording">("recording");
   const workspaceRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { let cancelled = false; void invoke<AccountInfo>("read_account_info").then((info) => { if (!cancelled) setAccount(info.current_account); }).catch(() => {}); return () => { cancelled = true; }; }, []);
+  useEffect(() => { let cancelled = false; void invoke<AccountInfo>("read_account_info").then((info) => { if (!cancelled) setAccount(info.current_account); }).catch(() => {}); return () => { cancelled = true; }; }, [refresh]);
   const [space, setSpace] = useState<Course[]>([]);
   const courses = useMemo(() => mergeVideoCourses(canvas.data, space), [canvas.data, space]);
-  const [courseId, setCourseId] = useState<number>();
-  const selectedCourse = courses.find((course) => course.id === courseId);
+  const [courseKey, setCourseKey] = useState(() => summary.open ? summaryCourseKey(summary.namespace) : undefined);
+  const selectedCourse = courseKey ? courses.find((course) => videoCourseKey(course.canvasId, course.teachingClassId) === courseKey
+    || videoCourseKey(undefined, course.teachingClassId) === courseKey) : undefined;
+  const courseId = selectedCourse?.id;
   const cacheNamespace = account && selectedCourse ? `${JSON.stringify([account, selectedCourse.canvasId, selectedCourse.teachingClassId, selectedCourse.name, selectedCourse.term.name, modelIdentity])}:${PPT_CLEANUP_POLICY}=${Number(pptCleanupEnabled)}` : "";
-  const courseSummaries = cachedSummaries.filter((entry) => entry.namespace === cacheNamespace);
+  const canvasCourseKey = videoCourseKey(selectedCourse?.canvasId);
+  const spaceCourseKey = videoCourseKey(undefined, selectedCourse?.teachingClassId);
+  const isCurrentCourseSummary = useCallback((namespace: string) => {
+    const key = summaryCourseKey(namespace);
+    return !!account && summaryAccount(namespace) === account && !!key && (key === canvasCourseKey || key === spaceCourseKey);
+  }, [account, canvasCourseKey, spaceCourseKey]);
+  const hasCourseChat = isCurrentCourseSummary(summary.namespace);
+  const chatOpen = hasCourseChat && summary.open;
+  const courseSummaries = useMemo(() => cachedSummaries.filter((entry) => isCurrentCourseSummary(entry.namespace)), [cachedSummaries, isCurrentCourseSummary]);
   const [login, setLogin] = useState<"checking" | "ready" | "required">("checking");
   const [courseLoading, setCourseLoading] = useState(false);
   const [courseError, setCourseError] = useState("");
   const [videos, setVideos] = useState<CanvasVideo[]>([]);
+  const recordingRequests = useRef<{ courseId: number; refresh: number; requests: Map<string, Promise<CanvasVideo[]>> }>();
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [selected, setSelected] = useState(new Set<string>());
@@ -195,27 +206,61 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
     if (!selectedCourse || login !== "ready") return;
     let cancelled = false;
     setLoading(true); setLoadError("");
-    void loadVideoCourse(selectedCourse,
-      (id) => withTimeout(invoke("get_canvas_videos", { courseId: id })),
-      (id) => withTimeout(invoke("get_video_space_videos", { teachingClassId: id })),
-      (id) => withTimeout(invoke("get_legacy_videos", { courseId: id, courseName: selectedCourse.name, termName: selectedCourse.term.name, teacherNames: selectedCourse.teachers.map((t) => t.display_name) })),
-    ).then((next) => {
+    if (recordingRequests.current?.courseId !== selectedCourse.id || recordingRequests.current.refresh !== refresh) {
+      recordingRequests.current = { courseId: selectedCourse.id, refresh, requests: new Map() };
+    }
+    // The course catalog can add a source while the existing requests are still running.
+    const { requests } = recordingRequests.current;
+    const load = (command: string, args: Record<string, unknown>) => {
+      const key = JSON.stringify([command, args]);
+      const existing = requests.get(key);
+      if (existing) return existing;
+      const request = withTimeout(invoke<CanvasVideo[]>(command, args));
+      requests.set(key, request);
+      return request;
+    };
+    const show = (next: CanvasVideo[], complete: boolean) => {
       if (cancelled) return;
       setVideos(next);
-      const keys = new Set(next.map(recordingKey));
-      setSelected((previous) => new Set([...previous].filter((key) => keys.has(key))));
-    }).catch((e) => { if (!cancelled) setLoadError(String(e)); })
+      setSelected((previous) => {
+        if (!previous.size) return previous;
+        const selection = new Set(previous);
+        const keys = new Set<string>();
+        for (const video of next) {
+          const key = recordingKey(video);
+          keys.add(key);
+          // A later response may promote another source for a selected recording.
+          for (const alternative of video.alternatives ?? []) {
+            if (selection.delete(recordingKey(alternative))) selection.add(key);
+          }
+        }
+        return complete ? new Set([...selection].filter((key) => keys.has(key))) : selection;
+      });
+    };
+    void loadVideoCourse(selectedCourse,
+      (id) => load("get_canvas_videos", { courseId: id }),
+      (id) => load("get_video_space_videos", { teachingClassId: id }),
+      (id) => load("get_legacy_videos", { courseId: id, courseName: selectedCourse.name, termName: selectedCourse.term.name, teacherNames: selectedCourse.teachers.map((t) => t.display_name) }),
+      (next) => show(next, false),
+    ).then((next) => show(next, true)).catch((e) => { if (!cancelled) setLoadError(String(e)); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [selectedCourse, login, refresh]);
 
-  const chatSessionId = chatMessages[0]?.id;
+  const chatSessionId = chatOpen ? chatMessages[0]?.id : undefined;
   useEffect(() => { if (active && (!playerMini || chatOpen)) workspaceRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }); }, [active, player?.nonce, playerMini, chatOpen, chatSessionId]);
 
   const changeCourse = useCallback((id: number) => {
-    setCourseId(id === -1 ? undefined : id); setVideos([]); setSelected(new Set()); setExpanded(new Map());
-    setQuery(""); setStatus("all"); setPlayer(undefined); setLoadError(""); videoSummarySession.clearMaterials();
-  }, []);
+    const next = id === -1 ? undefined : id;
+    if (next === courseId) return;
+    const course = courses.find((option) => option.id === next);
+    recordingRequests.current = undefined;
+    setCourseKey(videoCourseKey(course?.canvasId, course?.teachingClassId)); setVideos([]); setSelected(new Set()); setExpanded(new Map());
+    setQuery(""); setStatus("all"); setPlayer(undefined); setLoadError("");
+    setAiScopes(undefined); setCacheListOpen(false);
+    videoSummarySession.update({ open: false });
+    videoSummarySession.clearMaterials();
+  }, [courses, courseId]);
   const play = (session: VideoSession, key?: string, seconds = 0) => {
     if (!player) setPlayerMini(false);
     const video = key ? session.videos.find((v) => recordingKey(v) === key) : session.videos.find(isPlayable);
@@ -259,7 +304,12 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
     setAiOrganization(entry.organization); setAiTranscribe(entry.transcribeMissing !== false); setAiScopes(undefined); setCacheListOpen(false);
   };
   const summarize = (next: VideoSession[]) => {
-    if (chatLoading) { setChatOpen(true); messageApi.info("请等待当前总结完成后再切换范围"); return; }
+    if (!cacheNamespace) { messageApi.info("当前账号信息不可用，请刷新后重试"); return; }
+    if (chatLoading) {
+      if (hasCourseChat) setChatOpen(true);
+      messageApi.info(hasCourseChat ? "请等待当前总结完成后再切换范围" : "另一门课程正在生成总结，请等待完成后再试");
+      return;
+    }
     const organization = next.length > 1 ? "sessions" : "combined";
     setAiScopes(next); setAiOrganization(organization); setAiTranscribe(true);
   };
@@ -347,7 +397,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
                 </Typography>
               </Box>
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                {chatMessages.length > 0 && <Button onClick={() => setChatOpen(true)}>{chatLoading ? "AI 处理中" : "上次总结"}</Button>}
+                {hasCourseChat && chatMessages.length > 0 && <Button onClick={() => setChatOpen(true)}>{chatLoading ? "AI 处理中" : "上次总结"}</Button>}
                 {!!courseSummaries.length && <Button disabled={chatLoading} onClick={() => setCacheListOpen(true)}>已保存总结 · {courseSummaries.length}</Button>}
                 <Button variant="outlined" startIcon={<MoreHorizRoundedIcon />} onClick={(e) => setToolsAnchor(e.currentTarget)}>更多工具</Button>
               </Stack>
@@ -484,6 +534,6 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
       <DialogActions><Button onClick={() => setCacheListOpen(false)}>关闭</Button></DialogActions>
     </Dialog>
     <Dialog open={active && aggregator} onClose={() => setAggregator(false)} maxWidth="lg" fullWidth><DialogTitle><Stack direction="row" justifyContent="space-between">视频合成工具<Button onClick={() => setAggregator(false)}>关闭</Button></Stack></DialogTitle><DialogContent>{active && aggregator && <VideoAggregator course={selectedCourse ? downloadCourseContext(selectedCourse) : undefined} />}</DialogContent></Dialog>
-    {chatLoading && !chatOpen && <Box sx={{ ...surfaceCardSx, position: "fixed", bottom: 20, right: 24, zIndex: 8, bgcolor: "background.paper", p: 1 }}><Button startIcon={<CircularProgress size={14} />} onClick={() => setChatOpen(true)}>{chatProgress}</Button></Box>}
+    {hasCourseChat && chatLoading && !chatOpen && <Box sx={{ ...surfaceCardSx, position: "fixed", bottom: 20, right: 24, zIndex: 8, bgcolor: "background.paper", p: 1 }}><Button startIcon={<CircularProgress size={14} />} onClick={() => setChatOpen(true)}>{chatProgress}</Button></Box>}
   </BasicLayout>;
 }

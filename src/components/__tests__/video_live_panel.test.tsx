@@ -6,12 +6,12 @@ import type { CanvasLiveList } from "../../lib/model";
 const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("../video_live_player", () => ({ default: ({ session, onClose }: { session: { id: string }; onClose: () => void }) => <div data-testid="live-player">直播 {session.id}<button onClick={onClose}>关闭直播</button></div> }));
-const now = Date.now();
+const now = Date.parse("2026-10-12T14:00:00+08:00");
 const list: CanvasLiveList = { serverTime: now, sessions: [
   { id: "live", teachingClassId: 2, title: "课程", teacherName: "老师", classroomName: "教室", beginTime: "2026-10-12 13:55", endTime: "2026-10-12 14:50", startTime: now - 60_000, finishTime: now + 600_000, enabled: true },
   { id: "next", teachingClassId: 2, title: "课程", teacherName: "老师", classroomName: "教室", beginTime: "2026-10-12 14:50", endTime: "2026-10-12 15:45", startTime: now + 600_000, finishTime: now + 1200_000, enabled: true },
 ] };
-beforeEach(() => { vi.clearAllMocks(); mocks.invoke.mockImplementation(async () => ({ ...list, serverTime: Date.now() })); });
+beforeEach(() => { vi.clearAllMocks(); mocks.invoke.mockResolvedValue(list); });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 describe("live course panel", () => {
   it("keeps following the live schedule off-page and pauses polling after closing", async () => {
@@ -72,12 +72,17 @@ describe("live course panel", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
     expect(mocks.invoke).toHaveBeenCalledTimes(calls);
   });
-  it("shows live and upcoming sections and prevents playing an upcoming section", async () => {
+  it("shows ongoing and same-day upcoming sections and prevents playing an upcoming section", async () => {
+    mocks.invoke.mockResolvedValue({ ...list, sessions: [...list.sessions, {
+      ...list.sessions[1], id: "tomorrow", beginTime: "2026-10-13 08:00", endTime: "2026-10-13 08:45",
+      startTime: Date.parse("2026-10-13T08:00:00+08:00"), finishTime: Date.parse("2026-10-13T08:45:00+08:00"),
+    }] });
     const onPlay = vi.fn();
     const view = render(<VideoLivePanel canvasCourseId={10} refresh={0} playback="live" onPlay={onPlay} />);
     await screen.findByText("直播中");
     expect(mocks.invoke).toHaveBeenCalledWith("get_video_live_sessions", { canvasCourseId: 10, teachingClassId: undefined });
     const buttons = screen.getAllByRole("button", { name: "观看直播" });
+    expect(buttons).toHaveLength(2);
     expect(buttons[0]).toBeEnabled(); expect(buttons[1]).toBeDisabled();
     fireEvent.click(buttons[0]); expect(onPlay).toHaveBeenCalledOnce();
     expect(screen.getByTestId("live-player")).toHaveTextContent("直播 live");
@@ -90,7 +95,7 @@ describe("live course panel", () => {
     await screen.findByText(/读取直播失败/);
     mocks.invoke.mockResolvedValueOnce({ sessions: [], serverTime: now });
     fireEvent.click(screen.getByRole("button", { name: "刷新直播" }));
-    await screen.findByText("本课程当前暂无直播安排。");
+    await screen.findByText("本课程今天暂无待播或正在进行的直播。");
     expect(screen.queryByText(/读取直播失败/)).not.toBeInTheDocument();
   });
   it("ignores stale list requests when the course changes", async () => {

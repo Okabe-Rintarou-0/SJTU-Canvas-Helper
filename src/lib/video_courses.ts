@@ -6,6 +6,11 @@ export interface VideoCourseOption extends Course {
   sourceLabel: string;
 }
 
+export function videoCourseKey(canvasId?: number, teachingClassId?: number): string | undefined {
+  if (canvasId !== undefined) return `canvas:${canvasId}`;
+  if (teachingClassId !== undefined) return `videoSpace:${teachingClassId}`;
+}
+
 const normalize = (value: string) => value.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
 
 export function normalizeVideoTermName(name: string): string {
@@ -126,6 +131,7 @@ export async function loadVideoCourse(
   canvas: (id: number) => Promise<CanvasVideo[]>,
   space: (id: number) => Promise<CanvasVideo[]>,
   legacy: (id: number) => Promise<CanvasVideo[]> = async () => [],
+  onProgress?: (videos: CanvasVideo[]) => void,
 ): Promise<CanvasVideo[]> {
   const requests: Array<{ label: string; load: () => Promise<CanvasVideo[]> }> = [];
   if (course.canvasId !== undefined) {
@@ -134,49 +140,58 @@ export async function loadVideoCourse(
   if (course.teachingClassId !== undefined) {
     requests.push({ label: "视频空间", load: () => space(course.teachingClassId!) });
   }
-  if (course.canvasId !== undefined) {
+  const standardTerm = /^(20\d{2})-(20\d{2}) [秋春夏]$/.exec(normalizeVideoTermName(course.term.name));
+  const modernOnly = standardTerm && Number(standardTerm[2]) === Number(standardTerm[1]) + 1 && Number(standardTerm[1]) >= 2026;
+  if (course.canvasId !== undefined && !modernOnly) {
     requests.push({ label: "旧版课堂视频", load: () => legacy(course.canvasId!) });
   }
 
-  const results = await Promise.allSettled(requests.map((request) => request.load()));
+  const batches = requests.map((): CanvasVideo[] => []);
+  let videos: CanvasVideo[] | undefined;
+  const results = await Promise.allSettled(requests.map(async (request, index) => {
+    const batch = await request.load();
+    batches[index] = batch;
+    if (batch.length && onProgress) {
+      videos = mergeRecordings(batches.flat());
+      onProgress(videos);
+    }
+  }));
   const errors: string[] = [];
-  const videos: CanvasVideo[] = [];
   results.forEach((result, index) => {
-    if (result.status === "fulfilled") videos.push(...result.value);
-    else {
+    if (result.status === "rejected") {
       const message = String(result.reason);
       const unavailable = message.includes("当前课程暂未安排直录播")
         || message.includes("Teaching class id is missing");
       if (!unavailable) errors.push(`${requests[index].label}：${message}`);
     }
   });
-  if (videos.length) {
-    const seen = new Map<string, CanvasVideo>();
-    for (const video of videos) {
-      const digits = video.courseBeginTime.match(/\d+/g) ?? [];
-      const [year] = digits;
-      const time = digits.length >= 5 && year?.length === 4
-        ? `${year}${digits.slice(1, 5).map((part) => part.padStart(2, "0")).join("")}`
-        : "";
-      // Canvas, video-space and legacy IDs belong to different namespaces.
-      // The scheduled start minute is the stable cross-service identity for a
-      // recording; request order makes the newer Canvas source win duplicates.
-      const name = normalize(video.videoName);
-      const end = normalize(video.courseEndTime);
-      const key = time
-        ? `time:${time}`
-        : (name || end
-          ? `fallback:${name}:${end}`
-          : `id:${video.source}:${video.videoId}`);
-      const existing = seen.get(key);
-      if (existing) {
-        if (existing.source !== video.source || existing.videoId !== video.videoId) {
-          existing.alternatives = [...(existing.alternatives ?? []), video];
-        }
-      } else seen.set(key, { ...video });
-    }
-    return [...seen.values()];
+  videos ??= mergeRecordings(batches.flat());
+  if (!videos.length && errors.length) throw new Error(errors.join("；"));
+  return videos;
+}
+
+function mergeRecordings(videos: CanvasVideo[]): CanvasVideo[] {
+  const seen = new Map<string, CanvasVideo>();
+  for (const video of videos) {
+    const digits = video.courseBeginTime.match(/\d+/g) ?? [];
+    const [year] = digits;
+    const time = digits.length >= 5 && year?.length === 4
+      ? `${year}${digits.slice(1, 5).map((part) => part.padStart(2, "0")).join("")}`
+      : "";
+    // Keep the preferred source independent of the order in which requests finish.
+    const name = normalize(video.videoName);
+    const end = normalize(video.courseEndTime);
+    const key = time
+      ? `time:${time}`
+      : (name || end
+        ? `fallback:${name}:${end}`
+        : `id:${video.source}:${video.videoId}`);
+    const existing = seen.get(key);
+    if (existing) {
+      if (existing.source !== video.source || existing.videoId !== video.videoId) {
+        existing.alternatives = [...(existing.alternatives ?? []), video];
+      }
+    } else seen.set(key, { ...video });
   }
-  if (errors.length) throw new Error(errors.join("；"));
-  return [];
+  return [...seen.values()];
 }

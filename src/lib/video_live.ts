@@ -9,13 +9,22 @@ export function liveSessionStatus(session: CanvasLiveSession, now: number): "liv
 
 export const liveStatusLabels = { live: "直播中", upcoming: "未开始", ended: "已结束", unavailable: "未开放" };
 
+// The service schedule uses Shanghai time even when the computer is abroad.
+const teachingDay = (time: number) => Math.floor((time + 8 * 60 * 60_000) / (24 * 60 * 60_000));
+
+export function visibleLiveSessions(sessions: CanvasLiveSession[], now: number): CanvasLiveSession[] {
+  const today = teachingDay(now);
+  return sessions.filter((session) => session.enabled && session.finishTime > now
+    && (session.startTime <= now || teachingDay(session.startTime) === today))
+    .sort((a, b) => a.startTime - b.startTime);
+}
+
 // Only follow the same teaching class on the same teaching day, not next week's lesson.
 export function nextLiveSession(current: CanvasLiveSession, sessions: CanvasLiveSession[], now: number): CanvasLiveSession | undefined {
-  const day = (time: number) => new Date(time + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
   return sessions.filter((session) => session.id !== current.id && session.enabled
     && session.teachingClassId === current.teachingClassId
     && session.startTime > current.startTime && session.finishTime > now
-    && day(session.startTime) === day(current.startTime))
+    && teachingDay(session.startTime) === teachingDay(current.startTime))
     .sort((a, b) => a.startTime - b.startTime)[0];
 }
 
