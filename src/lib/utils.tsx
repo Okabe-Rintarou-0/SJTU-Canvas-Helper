@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import AudioFileRoundedIcon from "@mui/icons-material/AudioFileRounded";
+import { Box, LinearProgress, Stack, Typography } from "@mui/material";
 import DescriptionRoundedIcon from "@mui/icons-material/DescriptionRounded";
 import FolderZipRoundedIcon from "@mui/icons-material/FolderZipRounded";
 import ImageRoundedIcon from "@mui/icons-material/ImageRounded";
@@ -303,6 +304,19 @@ export async function checkForUpdates(
   onAvailabilityChange?: (version: string | null) => void
 ) {
   const messageKey = "checking";
+  const renderProgress = (percent: number) => (
+    <Stack spacing={0.75} sx={{ width: "100%" }}>
+      <Box sx={{ display: "flex", justifyContent: "space-between" }}>
+        <Typography variant="body2">正在更新…</Typography>
+        <Typography variant="body2">{percent}%</Typography>
+      </Box>
+      <LinearProgress
+        variant="determinate"
+        value={percent}
+        sx={{ height: 6, borderRadius: 999 }}
+      />
+    </Stack>
+  );
   let update: Awaited<ReturnType<typeof check>> | null = null;
 
   try {
@@ -312,18 +326,25 @@ export async function checkForUpdates(
       content: "检查中🚀...",
     });
     update = await check();
-    messageApi.destroy(messageKey);
     if (!update) {
+      messageApi.destroy(messageKey);
       onAvailabilityChange?.(null);
       messageApi.warning("已经是最新版，无需更新😁");
       return;
     }
 
     onAvailabilityChange?.(update.version);
-    messageApi.info(`发现新版本 v${update.version}，正在下载并安装…`);
 
     let downloaded = 0;
     let contentLength: undefined | number = 0;
+    const report = (percent: number) =>
+      messageApi.open({
+        key: messageKey,
+        type: "loading",
+        content: renderProgress(percent),
+        duration: 0,
+      });
+    report(0);
     // alternatively we could also call update.download() and update.install() separately
     await update.downloadAndInstall((event) => {
       switch (event.event) {
@@ -334,12 +355,17 @@ export async function checkForUpdates(
         case 'Progress':
           downloaded += event.data.chunkLength;
           console.log(`downloaded ${downloaded} from ${contentLength}`);
+          if (contentLength) {
+            report(Math.min(100, Math.floor((downloaded / contentLength) * 100)));
+          }
           break;
         case 'Finished':
           console.log('download finished');
           break;
-        }
-      });
+      }
+    });
+    messageApi.destroy(messageKey);
+    messageApi.success("更新完成，即将重启🚀");
     await relaunch();
   } catch (error) {
     logDiagnostic(LOG_LEVEL_ERROR, "frontend.updater.check_or_install", error);
