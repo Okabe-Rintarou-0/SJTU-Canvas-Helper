@@ -24,8 +24,8 @@ import FileAIChatModal from "../components/file_ai_chat_modal";
 import { useCourses, useConfigSelector } from "../lib/hooks";
 import { useAppMessage } from "../lib/message";
 import { compareVideoCourses, loadVideoCourse, mergeVideoCourses, videoCourseKey } from "../lib/video_courses";
-import { canSummarizeRecording, groupVideoSessions, groupSessionsByDate, parseVideoCitation, formatVideoTimestamp, recordingKey, recordingTime, selectedSessionScopes, toggleRecordings, type VideoExportOptions, type VideoSession } from "../lib/video_library";
-import { enqueueVideoExports, saveRecordingMaterial } from "../lib/video_library_tasks";
+import { canSummarizeRecording, groupVideoSessions, groupSessionsByDate, parseVideoCitation, formatVideoTimestamp, recordingKey, recordingTime, recordingTrackLabel, selectedSessionScopes, toggleRecordings, type VideoExportOptions, type VideoSession } from "../lib/video_library";
+import { enqueueVideoExports, resolveRecording, saveRecordingMaterial } from "../lib/video_library_tasks";
 import { readSummaryCache, summaryAccount, summaryCacheKey, summaryCourseKey, withSummaryModelIdentity, PPT_CLEANUP_POLICY, type VideoSummaryCache } from "../lib/video_summary_cache";
 import type { AccountInfo, CanvasVideo, Course } from "../lib/model";
 import { useAISession } from "../lib/ai_session_store";
@@ -145,6 +145,29 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   const [downloadCourse, setDownloadCourse] = useState<DownloadCourse>();
   const [exporting, setExporting] = useState(false);
   const [exportOptions, setExportOptions] = useState<VideoExportOptions>({ video: true, ppt: false, subtitle: false, pptPerSession: true, tracks: "all" });
+  const [trackAvailability, setTrackAvailability] = useState<{ count: number; failed: number }>();
+  const [trackRetry, setTrackRetry] = useState(0);
+  const trackScopes = exportOptions.video ? downloadScopes : undefined;
+  useEffect(() => {
+    setTrackAvailability(undefined);
+    if (!trackScopes) return;
+    let cancelled = false;
+    const recordings = trackScopes.flatMap((scope) => scope.videos).filter(isPlayable);
+    const load = async () => {
+      let count = 0;
+      let failed = 0;
+      for (let i = 0; i < recordings.length && !cancelled; i += 4) {
+        const results = await Promise.allSettled(recordings.slice(i, i + 4).map((video) => withTimeout(resolveRecording(video))));
+        for (const result of results) {
+          if (result.status === "fulfilled") count = Math.max(count, result.value.info.videoPlayResponseVoList.length);
+          else failed++;
+        }
+      }
+      if (!cancelled) setTrackAvailability({ count, failed });
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [trackScopes, trackRetry]);
   const [player, setPlayer] = useState<{ session: VideoSession; key: string; seconds: number; nonce: string; course?: DownloadCourse }>();
   const [aiScopes, setAiScopes] = useState<VideoSession[]>();
   const [aiOrganization, setAiOrganization] = useState("sessions");
@@ -270,19 +293,29 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   };
   const download = (next: VideoSession[], kind?: "ppt" | "subtitle") => {
     setDownloadScopes(next); setDownloadCourse(selectedCourse ? downloadCourseContext(selectedCourse) : undefined);
-    if (kind) setExportOptions((previous) => ({ ...previous, video: false, ppt: kind === "ppt", subtitle: kind === "subtitle" }));
+    setTrackAvailability(undefined);
+    setExportOptions((previous) => ({
+      ...previous, tracks: "all",
+      ...(kind ? { video: false, ppt: kind === "ppt", subtitle: kind === "subtitle" } : {}),
+    }));
   };
   const downloadCount = downloadScopes?.reduce((count, scope) => count + scope.videos.length, 0) ?? 0;
   const singleDownload = downloadCount === 1 ? downloadScopes?.[0].videos[0] : undefined;
   const canMergePpt = downloadScopes?.some((scope) => scope.videos.length > 1) ?? false;
+  const trackCount = trackAvailability?.count ?? 0;
+  const trackNumbers = Array.from({ length: trackCount }, (_, index) => index + 1);
+  const selectedTracks = exportOptions.tracks === "all" ? trackNumbers : exportOptions.tracks.filter((number) => number <= trackCount);
+  const canDownload = (exportOptions.video || exportOptions.ppt || exportOptions.subtitle)
+    && (!exportOptions.video || selectedTracks.length > 0);
   const submitDownload = async (saveAs = false) => {
-    if (!downloadScopes || !downloadCourse || exporting) return;
+    if (!downloadScopes || !downloadCourse || exporting || !canDownload) return;
     setExporting(true);
     try {
       const defaultPath = saveAs ? await downloadDirectory("root").catch(() => undefined) : await downloadDirectory("root");
       const directory = saveAs ? await open({ directory: true, multiple: false, title: "选择本次下载根目录（其下按学期、课程和资料类型归档）", defaultPath }) : defaultPath;
       if (!directory || Array.isArray(directory)) return;
-      const count = await enqueueVideoExports(downloadScopes, exportOptions, directory, downloadCourse);
+      const options: VideoExportOptions = { ...exportOptions, tracks: selectedTracks.length === trackCount ? "all" : selectedTracks };
+      const count = await enqueueVideoExports(downloadScopes, options, directory, downloadCourse);
       messageApi.success(`已加入 ${count} 个导出任务，可在${centerOnly ? "任务中心" : "下方下载任务列表"}查看进度`); setDownloadScopes(undefined);
     } catch (e) { messageApi.error(`创建任务失败：${e}`); }
     finally { setExporting(false); }
@@ -476,14 +509,36 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
         <Typography variant="body2" color="text.secondary">{downloadScopes?.map((s) => s.title).join("；")}</Typography>
         <Stack direction="row" flexWrap="wrap">{([ ["video", "视频"], ["ppt", "PPT PDF"], ["subtitle", "字幕"] ] as const).map(([key, label]) => <FormControlLabel key={key} label={label} control={<Checkbox checked={exportOptions[key]} onChange={(_, checked) => setExportOptions((previous) => ({ ...previous, [key]: checked }))} />} />)}</Stack>
         {exportOptions.video && <Stack spacing={1}>
-          <Typography variant="subtitle2">视频</Typography>
-          <WorkspaceSelect label="视频机位" size="small" value={exportOptions.tracks} onChange={(e) => setExportOptions((p) => ({ ...p, tracks: e.target.value as "all" | "first" }))}><MenuItem value="all">全部可用机位</MenuItem><MenuItem value="first">仅首个机位</MenuItem></WorkspaceSelect>
-          <Typography variant="caption" color="text.secondary">每个机位保存为独立视频文件。</Typography>
+          <Typography variant="subtitle2">视频机位</Typography>
+          {!trackAvailability && <LinearProgress aria-label="正在读取可用机位" />}
+          {!!trackAvailability?.failed && <Alert severity="warning" action={<Button onClick={() => setTrackRetry((value) => value + 1)}>重试</Button>}>
+            {trackAvailability.failed} 小节的机位读取失败。
+          </Alert>}
+          {trackAvailability && !trackCount && !trackAvailability.failed && <Typography variant="body2">所选录像暂无可用机位。</Typography>}
+          {trackCount > 0 && <>
+            <Stack direction="row" flexWrap="wrap" role="group" aria-label="选择下载机位">
+              {trackNumbers.map((number) => <FormControlLabel
+                key={number} label={recordingTrackLabel(number)}
+                control={<Checkbox checked={selectedTracks.includes(number)} onChange={(_, checked) => {
+                  const tracks = checked ? [...selectedTracks, number] : selectedTracks.filter((track) => track !== number);
+                  setExportOptions((previous) => ({ ...previous, tracks }));
+                }} />}
+              />)}
+            </Stack>
+            <Typography variant="caption" color="text.secondary">
+              教师和屏幕为常见机位标注，以实际画面为准。每个机位保存为独立视频文件。
+              {downloadCount > 1 && "批量下载按编号选择，缺失机位会在任务结果中提示。"}
+            </Typography>
+          </>}
         </Stack>}
         {exportOptions.ppt && <Stack spacing={1}>
           <Typography variant="subtitle2">PPT PDF</Typography>
           {canMergePpt ? <WorkspaceSelect label="PPT 输出" size="small" value={exportOptions.pptPerSession ? "session" : "section"} onChange={(e) => setExportOptions((p) => ({ ...p, pptPerSession: e.target.value === "session" }))}><MenuItem value="session">每堂课一个 PDF</MenuItem><MenuItem value="section">每小节一个 PDF</MenuItem></WorkspaceSelect> : <Typography variant="body2">{singleDownload ? "一个 PDF。" : "每小节一个 PDF。"}</Typography>}
-          {pptCleanupEnabled && <Alert severity="info">已开启 PPT 页面清理，可在设置中关闭。</Alert>}
+          {pptCleanupEnabled && <Alert
+            severity="info"
+            sx={{ alignItems: "center", "& .MuiAlert-action": { pt: 0 } }}
+            action={<Button size="small" color="inherit" component={RouterLink} to="/settings?focus=ppt-cleanup" sx={{ whiteSpace: "nowrap" }}>前往设置</Button>}
+          >已开启 PPT 页面清理，可在设置中关闭。</Alert>}
         </Stack>}
         {exportOptions.subtitle && <Stack spacing={1}>
           <Typography variant="subtitle2">字幕</Typography>
@@ -495,8 +550,8 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
       </Stack></DialogContent>
       <DialogActions sx={{ flexWrap: "wrap", gap: 1 }}>
         <Button disabled={exporting} onClick={() => setDownloadScopes(undefined)}>取消</Button>
-        <Button variant="outlined" disabled={exporting || !(exportOptions.video || exportOptions.ppt || exportOptions.subtitle)} onClick={saveAsDownload}>另存为</Button>
-        <Button variant="contained" disabled={exporting || !(exportOptions.video || exportOptions.ppt || exportOptions.subtitle)} onClick={() => void submitDownload()}>{exporting ? "正在加入队列…" : "下载"}</Button>
+        <Button variant="outlined" disabled={exporting || !canDownload} onClick={saveAsDownload}>另存为</Button>
+        <Button variant="contained" disabled={exporting || !canDownload} onClick={() => void submitDownload()}>{exporting ? "正在加入队列…" : "下载"}</Button>
       </DialogActions>
     </Dialog>
     <Dialog open={active && !!aiScopes} onClose={() => setAiScopes(undefined)} fullWidth maxWidth="sm">
