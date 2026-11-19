@@ -91,7 +91,9 @@ async function load() {
 async function beginSummary(name: string | RegExp = /开始总结|转录音频后总结|查看总结/) {
   const button = await screen.findByRole("button", { name });
   await waitFor(() => expect(button).toBeEnabled());
+  const dialog = screen.getByRole("dialog", { name: /^总结所选/ });
   fireEvent.click(button);
+  await waitFor(() => expect(dialog).not.toBeInTheDocument());
 }
 
 describe("video library workflows", () => {
