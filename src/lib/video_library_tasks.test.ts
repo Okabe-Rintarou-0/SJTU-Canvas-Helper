@@ -78,14 +78,15 @@ describe("batch video tasks", () => {
   });
   it("reports transfer progress and retains the chosen output directory", async () => {
     let reported = false;
-    mocks.invoke.mockImplementation(async (command: string, args: { onProgress: { onmessage: (p: unknown) => void } }) => {
+    mocks.invoke.mockImplementation(async (command: string, args: { trackNumbers: number[]; onProgress: { onmessage: (p: unknown) => void } }) => {
       if (["download_directory", "create_video_export_directory"].includes(command)) return "D:/课程/课堂";
-      args.onProgress.onmessage({ processed: 50, total: 100, stage: "正在下载机位 1/2" });
-      expect(taskManager.getSnapshot()[0]).toMatchObject({ progress: 50, stage: "正在下载机位 1/2", outputDirectory: "D:/课程/课堂" });
+      expect(args.trackNumbers).toEqual([2, 3]);
+      args.onProgress.onmessage({ processed: 50, total: 100, stage: "正在下载机位 2（1/2）" });
+      expect(taskManager.getSnapshot()[0]).toMatchObject({ progress: 50, stage: "正在下载机位 2（1/2）", outputDirectory: "D:/课程/课堂" });
       reported = true;
       return { paths: ["D:/课程/课堂/video.mp4"], warnings: [] };
     });
-    await enqueueVideoExports([{ id: "session", title: "课堂", videos: [video] }], { video: true, ppt: false, subtitle: false, pptPerSession: true, tracks: "all" }, "D:/课程", course);
+    await enqueueVideoExports([{ id: "session", title: "课堂", videos: [video] }], { video: true, ppt: false, subtitle: false, pptPerSession: true, tracks: [2, 3] }, "D:/课程", course);
     await vi.waitFor(() => expect(taskManager.getSnapshot()[0].status).toBe("succeeded"));
     expect(reported).toBe(true);
   });

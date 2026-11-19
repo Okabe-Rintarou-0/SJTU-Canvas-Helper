@@ -87,6 +87,13 @@ it("opens and focuses the playback proxy setting from a playback error link", as
   await waitFor(() => expect(mocks.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ proxy_port: 3031 })));
 });
 
+it("focuses the PPT cleanup switch from the download settings link", async () => {
+  render(<MemoryRouter initialEntries={["/settings?focus=ppt-cleanup"]}><SettingsPage /></MemoryRouter>);
+  const cleanupSwitch = await screen.findByRole("switch", { name: "导出 PPT 时去除无用页面" });
+  expect(screen.getByText("导出 PPT 时去除无用页面")).toBeVisible();
+  await waitFor(() => expect(cleanupSwitch).toHaveFocus());
+});
+
 it("rejects empty, out-of-range and fractional playback ports before saving", async () => {
   await openSettings();
   section("高级与实验");

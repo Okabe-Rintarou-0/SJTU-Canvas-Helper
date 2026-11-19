@@ -62,7 +62,8 @@ describe("video course merging", () => {
 });
 
 describe("video course fallback", () => {
-  const merged = mergeVideoCourses([course(10)], [course(80)])[0];
+  const term = { ...course(10).term, name: "2025-2026-3" };
+  const merged = mergeVideoCourses([course(10, { term })], [course(80, { term })])[0];
   const video = (
     source: CanvasVideo["source"],
     videoId: string,
@@ -95,6 +96,18 @@ describe("video course fallback", () => {
     expect(canvas).toHaveBeenCalledWith(10);
     expect(space).toHaveBeenCalledWith(80);
     expect(legacy).toHaveBeenCalledWith(10);
+  });
+  it.each([
+    ["2026-2027-1", false],
+    ["2027-2028 第二学期", false],
+    ["2025-2026-3", true],
+    ["2026-2027 秋季短课", true],
+  ])("queries the legacy source for %s only when needed", async (name, usesLegacy) => {
+    const legacy = vi.fn().mockResolvedValue([]);
+    const canvas = vi.fn().mockResolvedValue([]);
+    await loadVideoCourse({ ...merged, term: { ...term, name } }, canvas, vi.fn().mockResolvedValue([]), legacy);
+    expect(canvas).toHaveBeenCalledWith(10);
+    expect(legacy).toHaveBeenCalledTimes(Number(usesLegacy));
   });
   it.each(["empty", "failure"])("keeps other sources after Canvas %s", async (mode) => {
     const canvas = mode === "empty" ? vi.fn().mockResolvedValue([]) : vi.fn().mockRejectedValue(new Error("offline"));

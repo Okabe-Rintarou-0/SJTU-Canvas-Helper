@@ -257,13 +257,16 @@ function InlineQRCodePanel({
 export default function SettingsPage() {
   const theme = useTheme();
   const location = useLocation();
-  const focusProxyPort = new URLSearchParams(location.search).get("focus") === "proxy-port";
-  const [activeSection, setActiveSection] = useState<SettingsSection>(focusProxyPort ? "advanced" : new URLSearchParams(location.search).get("section") === "storage" ? "storage" : "account");
+  const settingsParams = new URLSearchParams(location.search);
+  const focusProxyPort = settingsParams.get("focus") === "proxy-port";
+  const focusPptCleanup = settingsParams.get("focus") === "ppt-cleanup";
+  const [activeSection, setActiveSection] = useState<SettingsSection>(focusProxyPort || focusPptCleanup ? "advanced" : settingsParams.get("section") === "storage" ? "storage" : "account");
   const dispatch = useConfigDispatch();
   const [messageApi, contextHolder] = useAppMessage();
   const tokenFieldRef = useRef<HTMLDivElement>(null);
   const savePathFieldRef = useRef<HTMLDivElement>(null);
   const proxyPortFieldRef = useRef<HTMLInputElement>(null);
+  const pptCleanupFieldRef = useRef<HTMLInputElement>(null);
   const latestFormDataRef = useRef<AppConfig | null>(null);
   const initialSnapshotRef = useRef<string>("");
   const [accounts, setAccounts] = useState<string[]>([]);
@@ -363,14 +366,14 @@ export default function SettingsPage() {
     ? "请输入 1–65535 之间的整数端口。" : "";
 
   useEffect(() => {
-    if (focusProxyPort) setActiveSection("advanced");
-  }, [focusProxyPort]);
+    if (focusProxyPort || focusPptCleanup) setActiveSection("advanced");
+  }, [focusProxyPort, focusPptCleanup]);
 
   useEffect(() => {
-    if (!loading && activeSection === "advanced" && (focusProxyPort || proxyPortError)) {
-      proxyPortFieldRef.current?.focus();
-    }
-  }, [loading, activeSection, focusProxyPort, proxyPortError]);
+    if (loading || activeSection !== "advanced") return;
+    if (focusPptCleanup) pptCleanupFieldRef.current?.focus();
+    else if (focusProxyPort || proxyPortError) proxyPortFieldRef.current?.focus();
+  }, [loading, activeSection, focusProxyPort, focusPptCleanup, proxyPortError]);
 
   const mcpConnectionText = useMemo(() => {
     if (!formData?.token) return "// 请先配置 Canvas Token 并保存";
@@ -1826,7 +1829,7 @@ export default function SettingsPage() {
                     </Box>
                     <Box>
                       <FormControlLabel
-                        control={<Switch size="small" checked={formData?.experimental_ppt_cleanup ?? false} onChange={(event) => updateField("experimental_ppt_cleanup", event.target.checked)} />}
+                        control={<Switch size="small" inputRef={pptCleanupFieldRef} checked={formData?.experimental_ppt_cleanup ?? false} onChange={(event) => updateField("experimental_ppt_cleanup", event.target.checked)} />}
                         label="导出 PPT 时去除无用页面"
                       />
                       <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, pr: { sm: 6 } }}>
