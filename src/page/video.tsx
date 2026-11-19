@@ -216,7 +216,10 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   }, [refresh]);
 
   useEffect(() => {
-    if (login !== "ready") return;
+    if (login !== "ready") {
+      setCourseLoading(false);
+      return;
+    }
     let cancelled = false;
     setCourseLoading(true); setCourseError("");
     void withTimeout(invoke<Course[]>("list_video_space_courses")).then((next) => { if (!cancelled) setSpace(next); })
@@ -226,7 +229,10 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   }, [login, refresh]);
 
   useEffect(() => {
-    if (!selectedCourse || login !== "ready") return;
+    if (!selectedCourse || login !== "ready") {
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     setLoading(true); setLoadError("");
     if (recordingRequests.current?.courseId !== selectedCourse.id || recordingRequests.current.refresh !== refresh) {
@@ -415,7 +421,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
           </Box>
         }
       />
-      {selectedCourse && login === "ready" && <VideoLivePanel visible={active} key={selectedCourse.id} canvasCourseId={selectedCourse.canvasId} teachingClassId={selectedCourse.teachingClassId} refresh={refresh} playback={playback} onPlay={() => { setPlayer(undefined); setPlayback("live"); }} />}
+      {selectedCourse && <VideoLivePanel enabled={login === "ready"} visible={active} key={selectedCourse.id} canvasCourseId={selectedCourse.canvasId} teachingClassId={selectedCourse.teachingClassId} refresh={refresh} playback={playback} onPlay={() => { setPlayer(undefined); setPlayback("live"); }} />}
       {historyError && <Alert severity="warning">{historyError}</Alert>}
           {topicError && <Alert severity="warning">{topicError}</Alert>}
       {(player || chatOpen) && learningPanels}

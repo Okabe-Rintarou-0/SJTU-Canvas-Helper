@@ -6,8 +6,8 @@ import { liveRequest, liveSessionStatus, liveStatusLabels, nextLiveSession, spli
 import type { CanvasLiveList, CanvasLiveSession } from "../lib/model";
 import VideoLivePlayer from "./video_live_player";
 
-export default function VideoLivePanel({ canvasCourseId, teachingClassId, refresh, playback, onPlay, visible = true }: {
-  canvasCourseId?: number; teachingClassId?: number; refresh: number; playback: "live" | "recording"; onPlay: () => void; visible?: boolean;
+export default function VideoLivePanel({ canvasCourseId, teachingClassId, refresh, playback, onPlay, visible = true, enabled = true }: {
+  canvasCourseId?: number; teachingClassId?: number; refresh: number; playback: "live" | "recording"; onPlay: () => void; visible?: boolean; enabled?: boolean;
 }) {
   const [list, setList] = useState<CanvasLiveList>();
   const [clockOffset, setClockOffset] = useState(0);
@@ -22,7 +22,10 @@ export default function VideoLivePanel({ canvasCourseId, teachingClassId, refres
   const shouldPoll = visible || followingLive;
 
   useEffect(() => {
-    if (!shouldPoll) return;
+    if (!enabled || !shouldPoll) {
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     let inFlight = false;
     const load = async () => {
@@ -37,7 +40,7 @@ export default function VideoLivePanel({ canvasCourseId, teachingClassId, refres
     void load();
     const timer = window.setInterval(() => void load(), 60_000);
     return () => { cancelled = true; clearInterval(timer); };
-  }, [canvasCourseId, teachingClassId, refresh, reload, shouldPoll]);
+  }, [canvasCourseId, teachingClassId, refresh, reload, shouldPoll, enabled]);
 
   useEffect(() => {
     if (!shouldPoll) return;
@@ -67,7 +70,7 @@ export default function VideoLivePanel({ canvasCourseId, teachingClassId, refres
         <Typography variant="caption" color="text.secondary">{[session.teacherName, session.classroomName].filter(Boolean).join(" · ")}</Typography></Box>
       <Stack direction="row" alignItems="center" gap={1}>
         <Chip size="small" variant="outlined" color={status === "live" ? "primary" : "default"} label={liveStatusLabels[status]} />
-        <Button size="small" disabled={status !== "live"} onClick={() => { onPlay(); setActive(session); }}>观看直播</Button>
+        <Button size="small" disabled={!enabled || status !== "live"} onClick={() => { onPlay(); setActive(session); }}>观看直播</Button>
       </Stack>
     </Stack>;
   };
@@ -79,14 +82,14 @@ export default function VideoLivePanel({ canvasCourseId, teachingClassId, refres
       </Box>
       <Stack direction="row" sx={{ flexShrink: 0 }}>
         {future.length > 0 && <Button size="small" aria-expanded={scheduleOpen} onClick={() => setScheduleOpen((open) => !open)}>{scheduleOpen ? "收起安排" : "查看安排"}</Button>}
-        <Button size="small" disabled={loading} onClick={() => setReload((value) => value + 1)}>刷新直播</Button>
+        <Button size="small" disabled={!enabled || loading} onClick={() => setReload((value) => value + 1)}>刷新直播</Button>
       </Stack>
     </Stack>
     {loading && <LinearProgress aria-label="正在读取直播" />}
     {error && <Alert severity={list ? "warning" : "error"}>读取直播失败：{error}。可点击刷新直播重试。</Alert>}
     {active && playback === "live" && <VideoLivePlayer session={active} nextSession={nextSession} canvasCourseId={canvasCourseId} teachingClassId={teachingClassId} onClose={() => setActive(undefined)} />}
     {current.map(renderSession)}
-    {!current.length && !loading && !error && <Typography variant="body2" color="text.secondary">本课程今天暂无待播或正在进行的直播。</Typography>}
+    {enabled && !current.length && !loading && !error && <Typography variant="body2" color="text.secondary">本课程今天暂无待播或正在进行的直播。</Typography>}
     {scheduleOpen && future.length > 0 && <Stack spacing={1.5}>
       <Typography variant="subtitle2">后续直播</Typography>
       {future.map(renderSession)}

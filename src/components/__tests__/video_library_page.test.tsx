@@ -38,6 +38,12 @@ vi.mock("../course_select", async (importOriginal) => {
 });
 vi.mock("../task_popover", () => ({ default: () => <div data-testid="task-center" /> }));
 vi.mock("../video_aggregator", () => ({ default: () => <div>合成工具内容</div> }));
+vi.mock("../video_live_player", () => ({
+  default: ({ session, onClose }: Parameters<typeof import("../video_live_player").default>[0]) => <div>
+    <video data-testid="live-media" data-session={session.id} />
+    <button onClick={onClose}>测试关闭直播</button>
+  </div>,
+}));
 vi.mock("../video_library_player", () => ({ default: ({ onClose, onMiniChange }: { onClose: () => void; onMiniChange: (mini: boolean) => void }) => <div>播放器内容<button onClick={onClose}>测试关闭播放器</button><button onClick={() => onMiniChange(true)}>测试迷你播放</button></div> }));
 vi.mock("../file_ai_chat_modal", () => ({ default: ({ open, dialogDescription, messages, onSend }: { open: boolean; dialogDescription: string; messages: { content: string }[]; onSend: (text: string) => void }) => open ? <div data-testid="chat">{dialogDescription}{messages.map((m, i) => <p key={i}>{m.content}</p>)}<button onClick={() => onSend("解释解析树")}>测试追问</button></div> : null }));
 
@@ -89,6 +95,87 @@ async function beginSummary(name: string | RegExp = /开始总结|转录音频�
 }
 
 describe("video library workflows", () => {
+  it.each(["resolve", "reject"])("clears pending recording loading when deselecting a course before requests %s", async (outcome) => {
+    mocks.realCourseSelect = true;
+    const original = mocks.invoke.getMockImplementation()!;
+    let complete!: () => void;
+    mocks.invoke.mockImplementation((command, args) => command === "get_canvas_videos"
+      ? new Promise((resolve, reject) => {
+        complete = () => outcome === "resolve" ? resolve(videos) : reject(new Error("旧课程请求失败"));
+      }) : original(command, args));
+    render(<VideoPage />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled());
+    fireEvent.mouseDown(screen.getByPlaceholderText("请选择或搜索课程…"));
+    fireEvent.click(await screen.findByRole("option", { name: /测试课程/ }));
+    await waitFor(() => expect(complete).toBeDefined());
+    expect(screen.getByRole("progressbar", { name: "正在读取录像" })).toBeVisible();
+    fireEvent.click(screen.getByTitle("Clear"));
+    const loadingAfterClear = screen.queryByRole("progressbar", { name: "正在读取录像" });
+    await act(async () => complete());
+    expect(loadingAfterClear).toBeNull();
+    expect(screen.queryByRole("progressbar", { name: "正在读取录像" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled();
+    expect(screen.queryByText("2 小节")).not.toBeInTheDocument();
+    expect(screen.queryByText(/读取录像失败/)).not.toBeInTheDocument();
+
+    mocks.invoke.mockImplementation(original);
+    fireEvent.mouseDown(screen.getByPlaceholderText("请选择或搜索课程…"));
+    fireEvent.click(await screen.findByRole("option", { name: /测试课程/ }));
+    await screen.findByText("2 小节");
+    await waitFor(() => expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled());
+  });
+
+  it.each(["ready", "required"])("keeps live playback mounted while refreshing and login becomes %s", async (outcome) => {
+    const original = mocks.invoke.getMockImplementation()!;
+    const now = Date.now();
+    mocks.invoke.mockImplementation((command, args) => command === "get_video_live_sessions"
+      ? Promise.resolve({ serverTime: now, sessions: [{
+        id: "live-a", teachingClassId: 80, enabled: true,
+        startTime: now - 60_000, finishTime: now + 600_000,
+        beginTime: "2026-11-19 08:00", endTime: "2026-11-19 08:45",
+        teacherName: "教师", classroomName: "教室",
+      }] }) : original(command, args));
+    render(<MemoryRouter><VideoPage /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "选择测试课程" }));
+    await screen.findByText("2 小节");
+    await waitFor(() => expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled());
+    fireEvent.click(await screen.findByRole("button", { name: "观看直播" }));
+    const media = screen.getByTestId("live-media") as HTMLVideoElement;
+    media.currentTime = 42;
+    media.playbackRate = 1.5;
+
+    const withLive = mocks.invoke.getMockImplementation()!;
+    let completeLogin!: () => void;
+    mocks.invoke.mockImplementation((command, args) => command === "login_canvas_website"
+      ? new Promise<void>((resolve, reject) => {
+        completeLogin = () => outcome === "ready" ? resolve() : reject(new Error("登录检查失败"));
+      }) : withLive(command, args));
+    fireEvent.click(screen.getByRole("button", { name: "刷新" }));
+    await screen.findByRole("progressbar", { name: "检查视频登录" });
+    const mediaDuringRefresh = screen.queryByTestId("live-media");
+    expect(screen.getByRole("button", { name: "观看直播" })).toBeDisabled();
+    await act(async () => completeLogin());
+    await waitFor(() => expect(screen.queryByRole("progressbar", { name: "检查视频登录" })).not.toBeInTheDocument());
+    expect(mediaDuringRefresh).toBe(media);
+    expect(screen.getByTestId("live-media")).toBe(media);
+    expect(media.currentTime).toBe(42);
+    expect(media.playbackRate).toBe(1.5);
+    expect(screen.getByRole("button", { name: "观看直播" })).toHaveProperty("disabled", outcome === "required");
+    await waitFor(() => expect(screen.queryByRole("progressbar", { name: "正在读取直播" })).not.toBeInTheDocument());
+
+    mocks.realCourseSelect = true;
+    mocks.invoke.mockImplementation(withLive);
+    fireEvent.click(screen.getByRole("button", { name: "刷新" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled());
+    fireEvent.click(screen.getByTitle("Clear"));
+    expect(screen.queryByTestId("live-media")).not.toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByPlaceholderText("请选择或搜索课程…"));
+    fireEvent.click(await screen.findByRole("option", { name: /测试课程/ }));
+    await screen.findByRole("button", { name: "观看直播" });
+    expect(screen.queryByTestId("live-media")).not.toBeInTheDocument();
+  });
+
   it("shows recordings while another source is pending and reuses requests when the catalog adds that source", async () => {
     const original = mocks.invoke.getMockImplementation()!;
     let finishCatalog!: (courses: typeof mocks.courses) => void;
