@@ -1,4 +1,4 @@
-use super::Client;
+use super::{Client, MARKDOWN_ANSWER_FORMAT};
 use crate::{
     error::Result,
     model::{CanvasVideoSubTitle, File, LLMChatMessage},
@@ -8,7 +8,9 @@ use std::path::Path;
 
 impl Client {
     pub async fn chat<S: Into<String>>(&self, prompt: S) -> Result<String> {
-        self.llm_cli.chat(prompt.into()).await
+        self.llm_cli
+            .chat("You are a helpful assistant.", prompt.into())
+            .await
     }
 
     async fn read_file_content(&self, file: &File) -> Result<String> {
@@ -53,7 +55,7 @@ impl Client {
         let text = self.read_file_content(file).await?;
         let prompt = self.build_file_chat_prompt(file, &text, messages);
         tracing::info!("File chat prompt prepared");
-        self.llm_cli.chat(prompt).await
+        self.llm_cli.chat(MARKDOWN_ANSWER_FORMAT, prompt).await
     }
 
     pub async fn chat_with_file_stream(
@@ -65,7 +67,9 @@ impl Client {
         let text = self.read_file_content(file).await?;
         let prompt = self.build_file_chat_prompt(file, &text, messages);
         tracing::info!("File streaming chat prompt prepared");
-        self.llm_cli.chat_stream(prompt, on_chunk).await
+        self.llm_cli
+            .chat_stream(MARKDOWN_ANSWER_FORMAT, prompt, on_chunk)
+            .await
     }
 
     pub async fn explain_file(&self, file: &File) -> Result<String> {
@@ -152,7 +156,7 @@ impl Client {
         let compressed_subtitle = self.compress_subtitle(subtitle)?;
         let prompt = self.build_subtitle_chat_prompt(&compressed_subtitle, messages);
         tracing::info!("Subtitle chat prompt prepared");
-        self.llm_cli.chat(prompt).await
+        self.llm_cli.chat(MARKDOWN_ANSWER_FORMAT, prompt).await
     }
 
     pub async fn chat_with_subtitle_stream(
@@ -165,7 +169,9 @@ impl Client {
         let compressed_subtitle = self.compress_subtitle(subtitle)?;
         let prompt = self.build_subtitle_chat_prompt(&compressed_subtitle, messages);
         tracing::info!("Subtitle streaming chat prompt prepared");
-        self.llm_cli.chat_stream(prompt, on_chunk).await
+        self.llm_cli
+            .chat_stream(MARKDOWN_ANSWER_FORMAT, prompt, on_chunk)
+            .await
     }
 
     pub async fn summarize_subtitle(&self, canvas_course_id: i64) -> Result<String> {

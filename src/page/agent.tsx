@@ -18,10 +18,9 @@ import {
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import { useEffect, useMemo, useRef } from "react";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 
 import BasicLayout from "../components/layout";
+import MarkdownContent from "../components/markdown_content";
 import { WorkspaceHero } from "../components/workspace_hero";
 import { useCourses } from "../lib/hooks";
 import { useAISession } from "../lib/ai_session_store";
@@ -90,6 +89,7 @@ function ChatBubble(message: CanvasAgentChatMessage) {
       <Box
         sx={{
           maxWidth: { xs: "100%", md: "78%" },
+          minWidth: 0,
           px: 2,
           py: 1.5,
           borderRadius: mine ? "22px 8px 22px 22px" : "8px 22px 22px 22px",
@@ -154,7 +154,7 @@ function ChatBubble(message: CanvasAgentChatMessage) {
               },
             }}
           >
-            <Markdown remarkPlugins={[remarkGfm]}>{message.content}</Markdown>
+            <MarkdownContent recoverWrappedMath={!mine}>{message.content}</MarkdownContent>
           </Box>
         )}
       </Box>

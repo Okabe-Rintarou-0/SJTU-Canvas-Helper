@@ -2,13 +2,15 @@ import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Card
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import FolderOpenRoundedIcon from "@mui/icons-material/FolderOpenRounded";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { appDataRequest, currentDataAccount, type DataOverview } from "../lib/app_data";
 import { displayLocalPath } from "../lib/downloads";
 import { deleteSummaryCache, readSummaryCache, type VideoSummaryCache } from "../lib/video_summary_cache";
 import { videoSummarySession } from "../lib/video_summary_session";
 import { useAISession } from "../lib/ai_session_store";
 import { surfaceCardSx } from "../lib/styles";
+import MarkdownContent from "./markdown_content";
+import { videoSummaryMarkdownComponents } from "./video_summary_citations";
 import VideoSummaryScope from "./video_summary_scope";
 
 function dataSize(bytes: number) {
@@ -28,6 +30,7 @@ export default function AppDataSettings({ active }: { active: boolean }) {
   const [working, setWorking] = useState(false);
   const [action, setAction] = useState<Action>();
   const [preview, setPreview] = useState<VideoSummaryCache>();
+  const historyMarkdownComponents = useMemo(() => videoSummaryMarkdownComponents(preview?.scopes ?? []), [preview]);
   const summary = useAISession(videoSummarySession);
   const blocked = working || summary.loading;
   const currentDirectory = overview ? displayLocalPath(overview.directory) : "";
@@ -148,7 +151,9 @@ export default function AppDataSettings({ active }: { active: boolean }) {
       <DialogTitle>{preview?.title}</DialogTitle>
       <DialogContent><Stack spacing={2}>{preview && <VideoSummaryScope scopes={preview.scopes} />}{preview?.messages.map((message) => <Box key={message.id}>
         <Typography variant="subtitle2">{message.role === "user" ? "你" : "AI"}</Typography>
-        <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{message.content}</Typography>
+        <Box sx={{ typography: "body2", overflowWrap: "anywhere", "& p": { mt: 0 }, "& pre": { overflow: "auto" } }}>
+          <MarkdownContent components={historyMarkdownComponents}>{message.content}</MarkdownContent>
+        </Box>
       </Box>)}</Stack></DialogContent>
       <DialogActions><Button onClick={() => setPreview(undefined)}>关闭</Button></DialogActions>
     </Dialog>

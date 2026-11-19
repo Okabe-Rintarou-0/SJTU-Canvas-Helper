@@ -1,13 +1,12 @@
 import ArticleRoundedIcon from "@mui/icons-material/ArticleRounded";
 import { DocRendererProps } from "@cyntler/react-doc-viewer";
 import { Box } from "@mui/material";
-import Markdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { dracula } from "react-syntax-highlighter/dist/cjs/styles/prism";
-import remarkGfm from "remark-gfm";
 
 import styles from "../css/markdown.module.css";
 import { decodeBase64Data } from "../lib/utils";
+import MarkdownContent from "./markdown_content";
 import RendererShell from "./renderer_shell";
 
 // React treats these renderers as component types; keep their identity across renders.
@@ -43,12 +42,7 @@ export default function MarkdownRenderer({
       contentSx={{ p: 0 }}
     >
       <Box className={`${styles.markdownContainer} ${styles.markdown}`}>
-        <Markdown
-          remarkPlugins={[remarkGfm]}
-          components={markdownComponents}
-        >
-          {data}
-        </Markdown>
+        <MarkdownContent components={markdownComponents}>{data}</MarkdownContent>
       </Box>
     </RendererShell>
   );

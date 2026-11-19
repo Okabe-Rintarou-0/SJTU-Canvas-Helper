@@ -15,7 +15,6 @@ use tokio::sync::RwLock;
 pub const DEFAULT_LLM_BASE_URL: &str = "https://api.deepseek.com/v1";
 pub const DEFAULT_LLM_MODEL: &str = "deepseek-flash";
 const LEGACY_DEEPSEEK_MODEL: &str = "deepseek-chat";
-const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful assistant.";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct EffectiveLlmConfig {
@@ -145,12 +144,12 @@ impl LlmRuntime {
             .ok_or_else(|| AppError::LLMError("LLM API key is not configured.".to_string()))
     }
 
-    pub async fn chat(&self, prompt: String) -> Result<String> {
+    pub async fn chat(&self, system: &str, prompt: String) -> Result<String> {
         let snapshot = self.snapshot().await?;
         let mut builder = snapshot
             .client
             .agent(&snapshot.model)
-            .preamble(DEFAULT_SYSTEM_PROMPT);
+            .preamble(system);
         if let Some(temperature) = snapshot.temperature {
             builder = builder.temperature(f64::from(temperature));
         }
@@ -163,15 +162,17 @@ impl LlmRuntime {
 
     pub async fn chat_stream(
         &self,
+        system: &str,
         prompt: String,
         on_chunk: &mut (dyn FnMut(String) + Send),
     ) -> Result<String> {
-        self.chat_stream_with_progress(prompt, on_chunk, &mut |_| {})
+        self.chat_stream_with_progress(system, prompt, on_chunk, &mut |_| {})
             .await
     }
 
     pub async fn chat_stream_with_progress(
         &self,
+        system: &str,
         prompt: String,
         on_chunk: &mut (dyn FnMut(String) + Send),
         on_phase: &mut (dyn FnMut(&str) + Send),
@@ -180,7 +181,7 @@ impl LlmRuntime {
         let mut builder = snapshot
             .client
             .agent(&snapshot.model)
-            .preamble(DEFAULT_SYSTEM_PROMPT);
+            .preamble(system);
         if let Some(temperature) = snapshot.temperature {
             builder = builder.temperature(f64::from(temperature));
         }
@@ -361,6 +362,7 @@ impl LlmSnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client::MARKDOWN_ANSWER_FORMAT;
     use crate::model::LlmApiKeyEntry;
     use httpmock::{Method::POST, MockServer};
     use serde_json::json;
@@ -451,7 +453,8 @@ mod tests {
             when.method(POST)
                 .path("/chat/completions")
                 .header("authorization", "Bearer test-key")
-                .body_contains("\"model\":\"deepseek-flash\"");
+                .body_contains("\"model\":\"deepseek-flash\"")
+                .body_contains("例如 $E=mc^2$");
             then.status(200)
                 .header("content-type", "application/json")
                 .json_body(json!({
@@ -480,7 +483,10 @@ mod tests {
         ))
         .unwrap();
 
-        let response = runtime.chat("你好".to_string()).await.unwrap();
+        let response = runtime
+            .chat(MARKDOWN_ANSWER_FORMAT, "你好".to_string())
+            .await
+            .unwrap();
 
         assert_eq!(response, "测试成功");
         request.assert();
@@ -598,7 +604,8 @@ mod tests {
         let request = server.mock(|when, then| {
             when.method(POST)
                 .path("/chat/completions")
-                .body_contains("\"stream\":true");
+                .body_contains("\"stream\":true")
+                .body_contains("例如 $E=mc^2$");
             then.status(200)
                 .header("content-type", "text/event-stream")
                 .body(concat!(
@@ -618,7 +625,9 @@ mod tests {
         let mut chunks = Vec::new();
 
         let response = runtime
-            .chat_stream("你好".to_string(), &mut |chunk| chunks.push(chunk))
+            .chat_stream(MARKDOWN_ANSWER_FORMAT, "你好".to_string(), &mut |chunk| {
+                chunks.push(chunk)
+            })
             .await
             .unwrap();
 
@@ -655,6 +664,7 @@ mod tests {
 
         let response = runtime
             .chat_stream_with_progress(
+                MARKDOWN_ANSWER_FORMAT,
                 "你好".to_string(),
                 &mut |chunk| chunks.push(chunk),
                 &mut |phase| phases.push(phase.to_owned()),

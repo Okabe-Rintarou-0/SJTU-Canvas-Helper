@@ -55,6 +55,7 @@
     "js-base64": "^3.7.7",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
+    "katex": "^0.16.47",
     "libarchive.js": "^2.0.2",
     "lodash": "^4.17.21",
     "pdf-merger-js": "^5.1.2",
@@ -74,8 +75,11 @@
     "react-router-dom": "^7.11.0",
     "react-syntax-highlighter": "^16.1.0",
     "react-use-websocket": "3.0.0",
+    "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.0",
+    "remark-math": "^6.0.0",
     "ts-md5": "^2.0.1",
+    "unist-util-visit": "^5.0.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
@@ -85,6 +89,7 @@
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
+    "@types/hast": "^3.0.4",
     "@types/react": "^18.2.15",
     "@types/react-dom": "^18.2.7",
     "@vitejs/plugin-react": "^5.1.2",
