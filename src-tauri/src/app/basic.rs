@@ -1095,12 +1095,13 @@ impl App {
         let config_path = App::get_config_path(&account);
         fs::write(&config_path, serde_json::to_vec(&config).unwrap())?;
         let base_url = Self::get_base_url(&config.account_type);
-        if self.client.set_base_url(base_url).await {
+        let base_changed = self.client.set_base_url(base_url).await;
+        if base_changed {
             self.invalidate_cache()?;
         }
         Self::apply_llm_config(&config, &self.client).await?;
         self.client.set_debug_mode(config.debug_mode);
-        self.client.configure_video_auth(&config.token, &config.ja_auth_cookie, false).await;
+        self.client.configure_video_auth(&config.token, &config.ja_auth_cookie, base_changed).await;
         let was_enabled = self.update_runtime_config(config).await.mcp_enabled;
         let is_enabled = self.config.read().await.mcp_enabled;
         if was_enabled != is_enabled {

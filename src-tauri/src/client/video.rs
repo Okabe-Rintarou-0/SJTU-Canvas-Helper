@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     fs::File,
+    future::Future,
     io::Write,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -12,7 +13,7 @@ use super::{
         AUTH_URL, CANVAS_LOGIN_URL, EXPRESS_LOGIN_URL, MY_SJTU_ACCOUNT_URL, MY_SJTU_URL,
         VIDEO_APP_PATH, VIDEO_LOGIN_PATH, VIDEO_OAUTH_KEY_PATH, VIDEO_ORIGIN,
     },
-    video_auth::video_auth_rejected,
+    video_auth::{video_auth_rejected, video_token_rejected},
     Client,
 };
 use crate::{
@@ -50,6 +51,7 @@ use tokio::{sync::Mutex, task::JoinSet};
 
 const RESOURCE_MANAGE_BASE_URL: &str = "https://v.sjtu.edu.cn/jy-application-resourcemanage";
 const RESOURCE_MANAGE_UI_URL: &str = "https://v.sjtu.edu.cn/jy-application-resourcemanage-ui/";
+const VIDEO_JWT_REJECTED_STATUS: i64 = 10013;
 const VIDEO_SPACE_LAUNCH_URL: &str =
     "https://oc.sjtu.edu.cn/accounts/1/external_tools/3136?launch_type=global_navigation";
 const CANVAS_VIDEO_TOOL_ID: i64 = 8329;
@@ -406,11 +408,15 @@ fn optional_api_data(value: &Value) -> Result<Option<&Value>> {
     let status = value_as_i64(value.get("status")).unwrap_or(200);
     if status != 200 {
         let message = first_string(value, &["message", "msg", "code"]);
-        return Err(AppError::VideoDownloadError(if message.is_empty() {
+        let message = if message.is_empty() {
             format!("Video service returned status {status}")
         } else {
             message
-        }));
+        };
+        return Err(match status {
+            401 | 403 | VIDEO_JWT_REJECTED_STATUS => AppError::VideoAuthorizationError(message),
+            _ => AppError::VideoDownloadError(message),
+        });
     }
 
     Ok(value
@@ -877,14 +883,8 @@ impl Client {
         Ok(all_items)
     }
 
-    async fn get_video_space_token(&self) -> Result<String> {
-        self.authenticated_video_launch(VIDEO_SPACE_LAUNCH_URL).await
-    }
-
     pub async fn login_classroom_video(&self) -> Result<()> {
-        let token = self.get_video_space_token().await?;
-        *self.token.write().await = token;
-        Ok(())
+        self.with_video_launch(VIDEO_SPACE_LAUNCH_URL, |_| async { Ok(()) }).await
     }
 
     #[cfg(test)]
@@ -939,7 +939,12 @@ impl Client {
     }
 
     pub async fn list_video_space_courses(&self) -> Result<Vec<Course>> {
-        let token = self.get_video_space_token().await?;
+        self.with_video_launch(VIDEO_SPACE_LAUNCH_URL, |token| async move {
+            self.list_video_space_courses_with_token(&token).await
+        }).await
+    }
+
+    async fn list_video_space_courses_with_token(&self, token: &str) -> Result<Vec<Course>> {
         let mut courses = Vec::new();
         let mut seen = std::collections::HashSet::new();
         for page in 1..=1000 {
@@ -948,7 +953,7 @@ impl Client {
                 .get(format!(
                     "{RESOURCE_MANAGE_BASE_URL}/v1/group_subject_vod_list/t-1"
                 ))
-                .header("jwt-token", &token)
+                .header("jwt-token", token)
                 .header(REFERER, RESOURCE_MANAGE_UI_URL)
                 .query(&[
                     ("page.pageIndex", page.to_string()),
@@ -980,10 +985,9 @@ impl Client {
     }
 
     pub async fn get_video_space_videos(&self, teaching_class_id: i64) -> Result<Vec<CanvasVideo>> {
-        let token = self.get_video_space_token().await?;
-        *self.token.write().await = token.clone();
-        self.get_videos_for_teaching_class(teaching_class_id, token, VideoSource::VideoSpace)
-            .await
+        self.with_video_launch(VIDEO_SPACE_LAUNCH_URL, |token| async move {
+            self.get_videos_for_teaching_class(teaching_class_id, &token, VideoSource::VideoSpace).await
+        }).await
     }
 
     fn get_form_submission_from_doc(
@@ -1049,69 +1053,89 @@ impl Client {
         Ok(external_tool_urls_from_tabs(&value, &base_url))
     }
 
-    async fn get_video_launch_token(&self, course_id: i64) -> Result<String> {
-        let url = format!("https://oc.sjtu.edu.cn/courses/{course_id}/external_tools/{CANVAS_VIDEO_TOOL_ID}");
-        self.authenticated_video_launch(&url).await
-    }
-
-    async fn get_teaching_class_id_token(&self, course_id: i64) -> Result<(i64, String)> {
-        let token = self.get_video_launch_token(course_id).await?;
+    async fn get_video_teaching_class_id(&self, token: &str) -> Result<i64> {
         let url = format!("{RESOURCE_MANAGE_BASE_URL}/lms/launch-context");
         let response = self
             .cli
             .get(url)
-            .header("jwt-token", &token)
+            .header("jwt-token", token)
             .header(REFERER, RESOURCE_MANAGE_UI_URL)
             .send()
             .await?
             .error_for_status()?;
         let value: Value = serde_json::from_slice(&response.bytes().await?)?;
         let data = api_data(&value)?;
-        let teaching_class_id = value_as_i64(
+        value_as_i64(
             data.get("canvasRecord")
                 .and_then(|record| record.get("teachingClassId")),
         )
-        .ok_or_else(|| AppError::VideoDownloadError("Teaching class id is missing".to_string()))?;
-        Ok((teaching_class_id, token))
+        .ok_or_else(|| AppError::VideoDownloadError("Teaching class id is missing".to_string()))
     }
 
     pub async fn get_canvas_videos(&self, course_id: i64) -> Result<Vec<CanvasVideo>> {
-        let (teaching_class_id, token) = self.get_teaching_class_id_token(course_id).await?;
-        *self.token.write().await = token.to_owned();
-        self.get_videos_for_teaching_class(teaching_class_id, token, VideoSource::Canvas)
-            .await
+        self.with_canvas_video_launch(course_id, |id, token| async move {
+            self.get_videos_for_teaching_class(id, &token, VideoSource::Canvas).await
+        }).await
     }
 
-    async fn live_teaching_class_token(&self, canvas_course_id: Option<i64>, teaching_class_id: Option<i64>) -> Result<(i64, String)> {
-        let (id, token) = if let Some(id) = teaching_class_id.filter(|id| *id > 0) {
-            (id, self.get_video_space_token().await?)
+    async fn with_canvas_video_launch<T, F>(
+        &self,
+        course_id: i64,
+        request: impl Fn(i64, Arc<str>) -> F + Send + Sync,
+    ) -> Result<T>
+    where
+        T: Send,
+        F: Future<Output = Result<T>> + Send,
+    {
+        let url = format!("https://oc.sjtu.edu.cn/courses/{course_id}/external_tools/{CANVAS_VIDEO_TOOL_ID}");
+        self.with_video_launch(&url, |token| {
+            let request = &request;
+            async move {
+                let id = self.get_video_teaching_class_id(&token).await?;
+                request(id, token).await
+            }
+        }).await
+    }
+
+    async fn with_live_video_launch<T, F>(
+        &self,
+        canvas_course_id: Option<i64>,
+        teaching_class_id: Option<i64>,
+        request: impl Fn(i64, Arc<str>) -> F + Send + Sync,
+    ) -> Result<T>
+    where
+        T: Send,
+        F: Future<Output = Result<T>> + Send,
+    {
+        if let Some(id) = teaching_class_id.filter(|id| *id > 0) {
+            self.with_video_launch(VIDEO_SPACE_LAUNCH_URL, |token| request(id, token)).await
         } else if let Some(id) = canvas_course_id.filter(|id| *id > 0) {
-            self.get_teaching_class_id_token(id).await?
+            self.with_canvas_video_launch(id, request).await
         } else {
-            return Err(AppError::VideoDownloadError("当前课程没有可用的直播来源".into()));
-        };
-        *self.token.write().await = token.clone();
-        Ok((id, token))
+            Err(AppError::VideoDownloadError("当前课程没有可用的直播来源".into()))
+        }
     }
 
     pub async fn get_video_live_sessions(&self, canvas_course_id: Option<i64>, teaching_class_id: Option<i64>) -> Result<CanvasLiveList> {
-        let (id, token) = self.live_teaching_class_token(canvas_course_id, teaching_class_id).await?;
-        let response = self.cli.get(format!("{RESOURCE_MANAGE_BASE_URL}/v1/vod_live/t-1"))
-            .header(REFERER, RESOURCE_MANAGE_UI_URL).header("jwt-token", token)
-            .query(&[("page.pageIndex", "1".to_string()), ("page.pageSize", "1000".to_string()),
-                ("page.orders[0].asc", "true".to_string()), ("page.orders[0].field", "courBeginTime".to_string()),
-                ("liveDay", "0".to_string()), ("teclId", id.to_string())])
-            .send().await?.error_for_status()?;
-        live_sessions_from_response(&serde_json::from_slice(&response.bytes().await?)?)
+        self.with_live_video_launch(canvas_course_id, teaching_class_id, |id, token| async move {
+            let response = self.cli.get(format!("{RESOURCE_MANAGE_BASE_URL}/v1/vod_live/t-1"))
+                .header(REFERER, RESOURCE_MANAGE_UI_URL).header("jwt-token", token.as_ref())
+                .query(&[("page.pageIndex", "1".to_string()), ("page.pageSize", "1000".to_string()),
+                    ("page.orders[0].asc", "true".to_string()), ("page.orders[0].field", "courBeginTime".to_string()),
+                    ("liveDay", "0".to_string()), ("teclId", id.to_string())])
+                .send().await?.error_for_status()?;
+            live_sessions_from_response(&serde_json::from_slice(&response.bytes().await?)?)
+        }).await
     }
 
     pub async fn get_video_live_info(&self, course_id: &str, canvas_course_id: Option<i64>, teaching_class_id: Option<i64>) -> Result<CanvasLiveInfo> {
-        let (_, token) = self.live_teaching_class_token(canvas_course_id, teaching_class_id).await?;
-        let response = self.cli.get(format!("{RESOURCE_MANAGE_BASE_URL}/v1/course_vod_videoinfos"))
-            .header(REFERER, RESOURCE_MANAGE_UI_URL).header("jwt-token", token)
-            .query(&[("courseId", course_id), ("playType", "3")])
-            .send().await?.error_for_status()?;
-        live_info_from_response(&serde_json::from_slice(&response.bytes().await?)?)
+        self.with_live_video_launch(canvas_course_id, teaching_class_id, |_, token| async move {
+            let response = self.cli.get(format!("{RESOURCE_MANAGE_BASE_URL}/v1/course_vod_videoinfos"))
+                .header(REFERER, RESOURCE_MANAGE_UI_URL).header("jwt-token", token.as_ref())
+                .query(&[("courseId", course_id), ("playType", "3")])
+                .send().await?.error_for_status()?;
+            live_info_from_response(&serde_json::from_slice(&response.bytes().await?)?)
+        }).await
     }
 
     async fn get_legacy_canvas_course_id(
@@ -1331,7 +1355,7 @@ impl Client {
     async fn get_videos_for_teaching_class(
         &self,
         teaching_class_id: i64,
-        token: String,
+        token: &str,
         source: VideoSource,
     ) -> Result<Vec<CanvasVideo>> {
         let url = format!("{RESOURCE_MANAGE_BASE_URL}/v1/subject_vod_list_new");
@@ -1554,17 +1578,24 @@ impl Client {
     }
 
     pub async fn get_canvas_video_info(&self, video_id: &str) -> Result<VideoInfo> {
-        let token = self.token.read().await.clone();
-        let value = self.canvas_video_info_response(video_id, &token).await?;
+        let (generation, token) = self.current_video_launch().await;
         // Course launches can replace the shared JWT while the video remains
-        // playable. A successful but empty VOD response gets one fresh launch;
-        // HTTP/service errors and malformed payloads retain their real errors.
-        if value.get("data").is_some_and(Value::is_null) && optional_api_data(&value)?.is_none() {
-            let token = self.get_video_space_token().await?;
-            *self.token.write().await = token.clone();
-            return video_info_from_response(&self.canvas_video_info_response(video_id, &token).await?);
+        // playable. An empty VOD response or a rejected JWT gets one fresh launch.
+        let result = self.canvas_video_info_response(video_id, &token).await.and_then(|value| {
+            if value.get("data").is_some_and(Value::is_null) && optional_api_data(&value)?.is_none() {
+                Ok(None)
+            } else {
+                video_info_from_response(&value).map(Some)
+            }
+        });
+        match result {
+            Ok(Some(info)) => return Ok(info),
+            Ok(None) => (),
+            Err(error) if video_token_rejected(&error) => (),
+            Err(error) => return Err(error),
         }
-        video_info_from_response(&value)
+        let token = self.fresh_video_launch(VIDEO_SPACE_LAUNCH_URL, generation).await?;
+        video_info_from_response(&self.canvas_video_info_response(video_id, &token).await?)
     }
 
     async fn canvas_video_info_response(&self, video_id: &str, token: &str) -> Result<Value> {
@@ -1639,18 +1670,20 @@ impl Client {
     }
 
     pub async fn get_original_subtitle(&self, canvas_course_id: i64) -> Result<CanvasVideoSubTitleResponseBody> {
+        let token = self.token.read().await.clone();
         let response = self.cli.get(format!("{RESOURCE_MANAGE_BASE_URL}/v1/course/ai/translate/{canvas_course_id}"))
             .query(&[("useOriginal", true)])
-            .header("jwt-token", self.token.read().await.as_str()).header(REFERER, RESOURCE_MANAGE_UI_URL)
+            .header("jwt-token", token).header(REFERER, RESOURCE_MANAGE_UI_URL)
             .timeout(std::time::Duration::from_secs(15)).send().await?.error_for_status()?;
         subtitles_from_response(&response.json::<Value>().await?)
     }
 
     async fn get_subtitle_with_source_at(&self, base: &str, canvas_course_id: i64) -> Result<(CanvasVideoSubTitleResponseBody, bool)> {
         let status = async {
+            let token = self.token.read().await.clone();
             let response = self.cli.get(format!("{base}/v1/course/ai/transcript/optimize/tasks"))
                 .query(&[("courseId", canvas_course_id)])
-                .header("jwt-token", self.token.read().await.as_str())
+                .header("jwt-token", token)
                 .header(REFERER, RESOURCE_MANAGE_UI_URL)
                 .timeout(std::time::Duration::from_secs(5)).send().await?.error_for_status()?;
             let value: Value = response.json().await?;
@@ -1673,9 +1706,10 @@ impl Client {
         // unavailable/empty optimized response must not hide usable originals.
         for original in [false, true] {
             let result = async {
+                let token = self.token.read().await.clone();
                 let resp = self.cli.get(&url)
                     .query(&[("useOriginal", original)])
-                    .header("jwt-token", self.token.read().await.as_str())
+                    .header("jwt-token", token)
                     .header(REFERER, RESOURCE_MANAGE_UI_URL)
                     .timeout(std::time::Duration::from_secs(15))
                     .send().await?.error_for_status()?;
@@ -1882,6 +1916,13 @@ mod tests {
 
     use super::*;
     use reqwest::header::{HeaderMap, HeaderValue, ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE};
+
+    #[test]
+    fn video_service_reports_a_rejected_jwt_inside_a_successful_http_response() {
+        let response = serde_json::json!({"status": 10013, "data": null});
+        let error = canvas_videos_from_response(&response, VideoSource::VideoSpace).unwrap_err();
+        assert!(video_token_rejected(&error));
+    }
 
     #[tokio::test]
     async fn missing_subtitles_are_normal_results_but_service_failures_remain_errors() {

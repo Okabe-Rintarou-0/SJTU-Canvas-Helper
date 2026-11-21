@@ -95,6 +95,7 @@ export async function enqueueVideoExports(scopes: VideoSession[], options: Video
           onProgress.onmessage = (progress) => update({ stage: progress.stage, progress: progress.total > 0 && progress.stage !== "正在合并 PDF" ? Math.min(100, Math.floor(progress.processed / progress.total * 100)) : undefined });
           const result = await invoke<{ paths: string[]; warnings: string[]; notes?: string[] }>("export_video_materials", {
             requests: items, kind, directory: folder, name, onProgress, allTracks: options.tracks === "all",
+            ...(kind === "video" && Array.isArray(options.tracks) ? { trackNumbers: options.tracks } : {}),
           });
           setOpen(() => invoke("open_local_path", { path: result.paths.length === 1 ? result.paths[0] : folder }));
           if (result.warnings.length) {

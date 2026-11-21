@@ -1,5 +1,6 @@
 import type { FileAIChatMessage } from "../components/file_ai_chat_modal";
 import type { CanvasVideo } from "./model";
+import { videoCourseKey } from "./video_courses";
 import { recordingKey, type VideoSession } from "./video_library";
 import { videoSummaryOptions, videoSummaryOptionsError, type VideoSummaryOptions } from "./video_summary_config";
 import { currentDataAccount, defineDataCollection } from "./app_data";
@@ -71,12 +72,22 @@ export const videoSummaryHistory = defineDataCollection<VideoSummaryCache>({
   category: "history", name: "video-summaries", version: 1, validate: isSummaryCache,
 });
 
-export function summaryAccount(namespace: string): string | undefined {
+function summaryNamespaceParts(namespace: string): unknown[] | undefined {
   try {
     const match = /^(.*):ppt-(?:animation|cleanup)(?:-v\d+)?=[01]$/.exec(namespace);
     const parts: unknown = match && JSON.parse(match[1]);
-    if (Array.isArray(parts) && typeof parts[0] === "string") return parts[0];
+    if (Array.isArray(parts)) return parts;
   } catch { /* Unrecognized legacy entries stay in localStorage for recovery. */ }
+}
+
+export function summaryAccount(namespace: string): string | undefined {
+  const account = summaryNamespaceParts(namespace)?.[0];
+  if (typeof account === "string") return account;
+}
+
+export function summaryCourseKey(namespace: string): string | undefined {
+  const [, canvasId, teachingClassId] = summaryNamespaceParts(namespace) ?? [];
+  return videoCourseKey(typeof canvasId === "number" ? canvasId : undefined, typeof teachingClassId === "number" ? teachingClassId : undefined);
 }
 
 const migrations = new Map<string, Promise<void>>();

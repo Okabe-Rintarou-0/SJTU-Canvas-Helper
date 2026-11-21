@@ -127,7 +127,12 @@ export interface VideoExportOptions {
   ppt: boolean;
   subtitle: boolean;
   pptPerSession: boolean;
-  tracks: "all" | "first";
+  tracks: "all" | number[];
+}
+
+export function recordingTrackLabel(number: number): string {
+  const role = number === 1 ? "教师" : number === 2 ? "屏幕" : "";
+  return role ? `机位 ${number}（${role}）` : `机位 ${number}`;
 }
 
 export function parseVideoCitation(href: string | undefined): { key: string; seconds: number } | undefined {

@@ -24,7 +24,8 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: (command: string, ...args: [Par
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.open }));
 vi.mock("../../lib/hooks", () => ({ useConfigSelector: (selector: (state: unknown) => unknown) => selector({ config: { data: { experimental_task_center_only: mocks.centerOnly, experimental_ppt_cleanup: mocks.cleanUpPpt, experimental_video_topics: mocks.generateTopics } } }), useCourses: () => ({ data: mocks.courses, mutate: vi.fn() }) }));
 vi.mock("../../lib/message", () => ({ useAppMessage: () => [mocks.messages, null] }));
-vi.mock("../../lib/video_library_tasks", () => ({
+vi.mock("../../lib/video_library_tasks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/video_library_tasks")>()),
   enqueueVideoExports: mocks.exports,
   saveRecordingMaterial: mocks.saveMaterial,
   recordingRequest: (video: { videoId: string }, title: string) => ({ key: `canvas:${video.videoId}`, title, candidates: [video] }),
@@ -37,6 +38,12 @@ vi.mock("../course_select", async (importOriginal) => {
 });
 vi.mock("../task_popover", () => ({ default: () => <div data-testid="task-center" /> }));
 vi.mock("../video_aggregator", () => ({ default: () => <div>合成工具内容</div> }));
+vi.mock("../video_live_player", () => ({
+  default: ({ session, onClose }: Parameters<typeof import("../video_live_player").default>[0]) => <div>
+    <video data-testid="live-media" data-session={session.id} />
+    <button onClick={onClose}>测试关闭直播</button>
+  </div>,
+}));
 vi.mock("../video_library_player", () => ({ default: ({ onClose, onMiniChange }: { onClose: () => void; onMiniChange: (mini: boolean) => void }) => <div>播放器内容<button onClick={onClose}>测试关闭播放器</button><button onClick={() => onMiniChange(true)}>测试迷你播放</button></div> }));
 vi.mock("../file_ai_chat_modal", () => ({ default: ({ open, dialogDescription, messages, onSend }: { open: boolean; dialogDescription: string; messages: { content: string }[]; onSend: (text: string) => void }) => open ? <div data-testid="chat">{dialogDescription}{messages.map((m, i) => <p key={i}>{m.content}</p>)}<button onClick={() => onSend("解释解析树")}>测试追问</button></div> : null }));
 
@@ -59,6 +66,7 @@ beforeEach(() => {
     if (command === "read_account_info") return { current_account: "test-account", all_accounts: [] };
     if (command === "login_canvas_website") return;
     if (command === "download_directory") return "D:/下载";
+    if (command === "get_video_play_info") return { videoPlayResponseVoList: [{ id: 1 }] };
     if (command === "list_video_space_courses" || command === "get_legacy_videos") return [];
     if (command === "get_canvas_videos") return videos;
     if (command === "get_video_live_sessions") return { sessions: [], serverTime: Date.now() };
@@ -83,14 +91,123 @@ async function load() {
 async function beginSummary(name: string | RegExp = /开始总结|转录音频后总结|查看总结/) {
   const button = await screen.findByRole("button", { name });
   await waitFor(() => expect(button).toBeEnabled());
+  const dialog = screen.getByRole("dialog", { name: /^总结所选/ });
   fireEvent.click(button);
+  await waitFor(() => expect(dialog).not.toBeInTheDocument());
 }
 
 describe("video library workflows", () => {
+  it.each(["resolve", "reject"])("clears pending recording loading when deselecting a course before requests %s", async (outcome) => {
+    mocks.realCourseSelect = true;
+    const original = mocks.invoke.getMockImplementation()!;
+    let complete!: () => void;
+    mocks.invoke.mockImplementation((command, args) => command === "get_canvas_videos"
+      ? new Promise((resolve, reject) => {
+        complete = () => outcome === "resolve" ? resolve(videos) : reject(new Error("旧课程请求失败"));
+      }) : original(command, args));
+    render(<VideoPage />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled());
+    fireEvent.mouseDown(screen.getByPlaceholderText("请选择或搜索课程…"));
+    fireEvent.click(await screen.findByRole("option", { name: /测试课程/ }));
+    await waitFor(() => expect(complete).toBeDefined());
+    expect(screen.getByRole("progressbar", { name: "正在读取录像" })).toBeVisible();
+    fireEvent.click(screen.getByTitle("Clear"));
+    const loadingAfterClear = screen.queryByRole("progressbar", { name: "正在读取录像" });
+    await act(async () => complete());
+    expect(loadingAfterClear).toBeNull();
+    expect(screen.queryByRole("progressbar", { name: "正在读取录像" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled();
+    expect(screen.queryByText("2 小节")).not.toBeInTheDocument();
+    expect(screen.queryByText(/读取录像失败/)).not.toBeInTheDocument();
+
+    mocks.invoke.mockImplementation(original);
+    fireEvent.mouseDown(screen.getByPlaceholderText("请选择或搜索课程…"));
+    fireEvent.click(await screen.findByRole("option", { name: /测试课程/ }));
+    await screen.findByText("2 小节");
+    await waitFor(() => expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled());
+  });
+
+  it.each(["ready", "required"])("keeps live playback mounted while refreshing and login becomes %s", async (outcome) => {
+    const original = mocks.invoke.getMockImplementation()!;
+    const now = Date.now();
+    mocks.invoke.mockImplementation((command, args) => command === "get_video_live_sessions"
+      ? Promise.resolve({ serverTime: now, sessions: [{
+        id: "live-a", teachingClassId: 80, enabled: true,
+        startTime: now - 60_000, finishTime: now + 600_000,
+        beginTime: "2026-11-19 08:00", endTime: "2026-11-19 08:45",
+        teacherName: "教师", classroomName: "教室",
+      }] }) : original(command, args));
+    render(<MemoryRouter><VideoPage /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "选择测试课程" }));
+    await screen.findByText("2 小节");
+    await waitFor(() => expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled());
+    fireEvent.click(await screen.findByRole("button", { name: "观看直播" }));
+    const media = screen.getByTestId("live-media") as HTMLVideoElement;
+    media.currentTime = 42;
+    media.playbackRate = 1.5;
+
+    const withLive = mocks.invoke.getMockImplementation()!;
+    let completeLogin!: () => void;
+    mocks.invoke.mockImplementation((command, args) => command === "login_canvas_website"
+      ? new Promise<void>((resolve, reject) => {
+        completeLogin = () => outcome === "ready" ? resolve() : reject(new Error("登录检查失败"));
+      }) : withLive(command, args));
+    fireEvent.click(screen.getByRole("button", { name: "刷新" }));
+    await screen.findByRole("progressbar", { name: "检查视频登录" });
+    const mediaDuringRefresh = screen.queryByTestId("live-media");
+    expect(screen.getByRole("button", { name: "观看直播" })).toBeDisabled();
+    await act(async () => completeLogin());
+    await waitFor(() => expect(screen.queryByRole("progressbar", { name: "检查视频登录" })).not.toBeInTheDocument());
+    expect(mediaDuringRefresh).toBe(media);
+    expect(screen.getByTestId("live-media")).toBe(media);
+    expect(media.currentTime).toBe(42);
+    expect(media.playbackRate).toBe(1.5);
+    expect(screen.getByRole("button", { name: "观看直播" })).toHaveProperty("disabled", outcome === "required");
+    await waitFor(() => expect(screen.queryByRole("progressbar", { name: "正在读取直播" })).not.toBeInTheDocument());
+
+    mocks.realCourseSelect = true;
+    mocks.invoke.mockImplementation(withLive);
+    fireEvent.click(screen.getByRole("button", { name: "刷新" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled());
+    fireEvent.click(screen.getByTitle("Clear"));
+    expect(screen.queryByTestId("live-media")).not.toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByPlaceholderText("请选择或搜索课程…"));
+    fireEvent.click(await screen.findByRole("option", { name: /测试课程/ }));
+    await screen.findByRole("button", { name: "观看直播" });
+    expect(screen.queryByTestId("live-media")).not.toBeInTheDocument();
+  });
+
+  it("shows recordings while another source is pending and reuses requests when the catalog adds that source", async () => {
+    const original = mocks.invoke.getMockImplementation()!;
+    let finishCatalog!: (courses: typeof mocks.courses) => void;
+    let finishCanvas!: (recordings: typeof videos) => void;
+    let finishSpace!: (recordings: unknown[]) => void;
+    mocks.invoke.mockImplementation((command, args) => {
+      if (command === "list_video_space_courses") return new Promise((resolve) => { finishCatalog = resolve; });
+      if (command === "get_canvas_videos") return new Promise((resolve) => { finishCanvas = resolve; });
+      if (command === "get_video_space_videos") return new Promise((resolve) => { finishSpace = resolve; });
+      return original(command, args);
+    });
+    render(<VideoPage />);
+    await waitFor(() => expect(finishCatalog).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: "选择测试课程" }));
+    await act(async () => finishCatalog([{ ...mocks.courses[0], id: 80 }]));
+    expect(mocks.invoke).toHaveBeenCalledWith("get_video_space_videos", { teachingClassId: 80 });
+    expect(screen.getByRole("progressbar", { name: "正在读取录像" })).toBeVisible();
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "get_canvas_videos")).toHaveLength(1);
+    await act(async () => finishCanvas(videos));
+    expect(screen.getByText("2 小节")).toBeVisible();
+    await act(async () => finishSpace([]));
+    expect(screen.queryByRole("progressbar", { name: "正在读取录像" })).not.toBeInTheDocument();
+  });
+
   it("downloads directly to the configured root", async () => {
     await load();
     fireEvent.click(within(screen.getByText("2026-09-28").closest("tr")!).getByRole("button", { name: "下载" }));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "下载" }));
+    const dialog = within(screen.getByRole("dialog"));
+    expect(await dialog.findByRole("checkbox", { name: "机位 1（教师）" })).toBeChecked();
+    fireEvent.click(dialog.getByRole("button", { name: "下载" }));
     await waitFor(() => expect(mocks.exports).toHaveBeenCalledOnce());
     expect(mocks.exports.mock.calls[0][2]).toBe("D:/下载");
     expect(mocks.exports.mock.calls[0][3]).toEqual({ id: "10", name: "测试课程", term: "2026-2027 秋" });
@@ -321,14 +438,46 @@ describe("video library workflows", () => {
     view.unmount();
     act(() => chunk("后台生成的内容"));
     const returned = render(<VideoPage />);
-    expect(screen.getByTestId("chat")).toHaveTextContent("后台生成的内容");
+    expect(await screen.findByTestId("chat")).toHaveTextContent("后台生成的内容");
     expect(screen.getByRole("button", { name: "重新生成" })).toBeDisabled();
     returned.unmount();
     await act(async () => finish("离开页面后完成的总结"));
     render(<VideoPage />);
-    expect(screen.getByTestId("chat")).toHaveTextContent("离开页面后完成的总结");
+    expect(await screen.findByTestId("chat")).toHaveTextContent("离开页面后完成的总结");
     expect(screen.getByText(/已保存到本地/)).toBeInTheDocument();
     expect(mocks.invoke.mock.calls.filter(([command]) => command === "chat_video_materials")).toHaveLength(1);
+  });
+  it("keeps a running summary attached to its course when switching courses", async () => {
+    const courses = mocks.courses;
+    mocks.courses = [...courses, { ...courses[0], id: 11, name: "另一门课", course_code: "OTHER" }];
+    mocks.realCourseSelect = true;
+    const original = mocks.invoke.getMockImplementation()!;
+    let finish!: (value: string) => void;
+    mocks.invoke.mockImplementation((command, args) => command === "chat_video_materials"
+      ? new Promise((resolve) => { finish = resolve; }) : original(command, args));
+    render(<VideoPage />);
+    const picker = screen.getByPlaceholderText("请选择或搜索课程…");
+    const choose = (name: RegExp) => {
+      fireEvent.mouseDown(picker);
+      fireEvent.click(screen.getByRole("option", { name }));
+    };
+    try {
+      await waitFor(() => expect(picker).toBeEnabled());
+      choose(/测试课程/);
+      const date = await screen.findByText("2026-09-28");
+      fireEvent.click(within(date.closest("tr")!).getByRole("button", { name: "AI 总结" }));
+      await beginSummary();
+      await waitFor(() => expect(finish).toBeDefined());
+      choose(/另一门课/);
+      expect(screen.queryByTestId("chat")).not.toBeInTheDocument();
+      await act(async () => finish("第一门课的总结"));
+      expect(screen.queryByRole("button", { name: /上次总结|已保存总结/ })).not.toBeInTheDocument();
+      choose(/测试课程/);
+      fireEvent.click(screen.getByRole("button", { name: "上次总结" }));
+      expect(screen.getByTestId("chat")).toHaveTextContent("第一门课的总结");
+    } finally {
+      mocks.courses = courses;
+    }
   });
   it("separates summary and material caches when animation simplification changes", async () => {
     const view = await load();
@@ -443,6 +592,7 @@ describe("video library workflows", () => {
     expect(dialog.getByRole("combobox", { name: "PPT 输出" })).toBeInTheDocument();
     expect(dialog.queryByRole("button", { name: "单独下载 ▾" })).not.toBeInTheDocument();
     expect(dialog.queryByRole("button", { name: "另存为…" })).not.toBeInTheDocument();
+    expect(await dialog.findByRole("checkbox", { name: "机位 1（教师）" })).toBeChecked();
     mocks.open.mockResolvedValueOnce(null);
     fireEvent.click(dialog.getByRole("button", { name: "另存为" }));
     await waitFor(() => expect(mocks.open).toHaveBeenCalledOnce());
@@ -452,10 +602,36 @@ describe("video library workflows", () => {
     await waitFor(() => expect(mocks.exports).toHaveBeenCalledOnce());
     const [scopes, options, directory] = mocks.exports.mock.calls[0];
     expect(scopes[0].videos.map((v: { videoId: string }) => v.videoId)).toEqual(["a", "b"]);
-    expect(options.pptPerSession).toBe(true); expect(directory).toBe("D:/导出");
+    expect(options).toMatchObject({ pptPerSession: true, tracks: "all" }); expect(directory).toBe("D:/导出");
     expect(mocks.exports.mock.calls[0][3]).toEqual({ id: "10", name: "测试课程", term: "2026-2027 秋" });
     expect(mocks.invoke).toHaveBeenCalledWith("download_directory", { kind: "root" });
     expect(mocks.open).toHaveBeenCalledTimes(2);
+  });
+  it("downloads the selected camera numbers across recordings with different camera counts", async () => {
+    const original = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation((command, args) => command === "get_video_play_info"
+      ? Promise.resolve({ videoPlayResponseVoList: Array.from({ length: args.videoId === "a" ? 2 : 3 }, (_, id) => ({ id })) })
+      : original(command, args));
+    await load();
+    fireEvent.click(screen.getByRole("checkbox", { name: /选择日期 2026-09-28/ }));
+    fireEvent.click(screen.getByRole("button", { name: "下载…" }));
+    const dialog = within(screen.getByRole("dialog"));
+    const screenTrack = await dialog.findByRole("checkbox", { name: "机位 2（屏幕）" });
+    const teacherTrack = dialog.getByRole("checkbox", { name: "机位 1（教师）" });
+    const thirdTrack = dialog.getByRole("checkbox", { name: "机位 3" });
+    expect(dialog.queryByRole("combobox", { name: "视频机位" })).not.toBeInTheDocument();
+    for (const track of [teacherTrack, screenTrack, thirdTrack]) expect(track).toBeChecked();
+    fireEvent.click(teacherTrack);
+    fireEvent.click(screenTrack);
+    fireEvent.click(thirdTrack);
+    const downloadButton = dialog.getByRole("button", { name: "下载" });
+    expect(downloadButton).toBeDisabled();
+    fireEvent.click(screenTrack);
+    fireEvent.click(thirdTrack);
+    fireEvent.click(downloadButton);
+    await waitFor(() => expect(mocks.exports).toHaveBeenCalledWith(
+      expect.any(Array), expect.objectContaining({ tracks: [2, 3] }), "D:/下载", expect.any(Object),
+    ));
   });
   it.each(["ppt", "subtitle"] as const)("saves a single %s to a chosen file and preserves the dialog on cancellation", async (kind) => {
     await load();
