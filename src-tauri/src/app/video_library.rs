@@ -692,7 +692,7 @@ impl App {
         kind: String,
         directory: String,
         name: String,
-        all_tracks: bool,
+        track_numbers: Option<Vec<usize>>,
         progress: Arc<dyn Fn(ExportProgress) + Send + Sync>,
     ) -> Result<ExportResult> {
         let output = self.download_output().await?;
@@ -808,27 +808,55 @@ impl App {
                 }
             }
             "video" => {
+                let track_numbers = track_numbers.map(|mut numbers| {
+                    numbers.sort_unstable();
+                    numbers.dedup();
+                    numbers
+                });
+                if track_numbers
+                    .as_ref()
+                    .is_some_and(|numbers| numbers.is_empty() || numbers[0] == 0)
+                {
+                    return Err(failure("请选择有效的视频机位"));
+                }
                 for (request_index, request) in requests.iter().enumerate() {
                     let infos = self.recording_infos(request, false).await?;
                     let info = infos
                         .into_iter()
                         .find(|i| !i.video_play_response_vo_list.is_empty())
                         .ok_or_else(|| failure("暂无可下载机位"))?;
-                    for (index, track) in info.video_play_response_vo_list.iter().enumerate() {
-                        if !all_tracks && index > 0 {
-                            break;
-                        }
+                    let tracks = &info.video_play_response_vo_list;
+                    let default_numbers;
+                    let numbers = if let Some(numbers) = &track_numbers {
+                        numbers
+                    } else {
+                        default_numbers = (1..=tracks.len()).collect();
+                        &default_numbers
+                    };
+                    let track_count = numbers
+                        .iter()
+                        .take_while(|&&number| number <= tracks.len())
+                        .count();
+                    for (position, &number) in numbers.iter().enumerate() {
+                        let Some(track) = tracks.get(number - 1) else {
+                            error_warnings
+                                .push(format!("第 {} 小节 机位{number}：不可用", request_index + 1));
+                            result
+                                .warnings
+                                .push(format!("{} 机位{number}：不可用", request.title));
+                            continue;
+                        };
+                        let stage = if track_numbers.is_some() && numbers.as_slice() != [1] {
+                            format!("正在下载机位 {number}（{}/{track_count}）", position + 1)
+                        } else {
+                            format!("正在下载机位 {number}/{track_count}")
+                        };
                         let path = reserve_output(
                             &directory,
-                            &format!("{} 机位{}", request.title, index + 1),
+                            &format!("{} 机位{number}", request.title),
                             "mp4",
                         )?;
                         let report = progress.clone();
-                        let track_count = if all_tracks {
-                            info.video_play_response_vo_list.len()
-                        } else {
-                            1
-                        };
                         match self
                             .client
                             .clone()
@@ -836,7 +864,7 @@ impl App {
                                 report(ExportProgress {
                                     processed: p.processed,
                                     total: p.total,
-                                    stage: format!("正在下载机位 {}/{track_count}", index + 1),
+                                    stage: stage.clone(),
                                 })
                             })
                             .await
@@ -845,14 +873,12 @@ impl App {
                             Err(e) => {
                                 let _ = fs::remove_file(&path);
                                 error_warnings.push(format!(
-                                    "第 {} 小节 机位{}：{e}",
-                                    request_index + 1,
-                                    index + 1
+                                    "第 {} 小节 机位{number}：{e}",
+                                    request_index + 1
                                 ));
                                 result.warnings.push(format!(
-                                    "{} 机位{}：{e}",
-                                    request.title,
-                                    index + 1
+                                    "{} 机位{number}：{e}",
+                                    request.title
                                 ));
                             }
                         }
@@ -1098,7 +1124,7 @@ mod tests {
                     kind.into(),
                     String::new(),
                     "私人导出标题".into(),
-                    false,
+                    None,
                     Arc::new(|_| {}),
                 )
                 .await

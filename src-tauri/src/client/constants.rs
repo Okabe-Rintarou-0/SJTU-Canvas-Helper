@@ -1,12 +1,11 @@
 pub const BASE_URL: &str = "https://oc.sjtu.edu.cn";
 pub const JI_BASE_URL: &str = "https://jicanvas.com";
-pub const VIDEO_BASE_URL: &str = "https://courses.sjtu.edu.cn/app";
+pub const VIDEO_ORIGIN: &str = "https://courses.sjtu.edu.cn";
+pub const VIDEO_APP_PATH: &str = "/app";
 pub const CANVAS_LOGIN_URL: &str = "https://oc.sjtu.edu.cn/login/openid_connect";
-pub const VIDEO_LOGIN_URL: &str =
-    "https://courses.sjtu.edu.cn/app/oauth/2.0/login?login_type=outer";
-pub const VIDEO_OAUTH_KEY_URL: &str = "https://courses.sjtu.edu.cn/app/vodvideo/vodVideoPlay.d2j?ssoCheckToken=ssoCheckToken&refreshToken=&accessToken=&userId=&";
-pub const VIDEO_INFO_URL: &str =
-    "https://courses.sjtu.edu.cn/app/system/resource/vodVideo/getvideoinfos";
+pub const VIDEO_LOGIN_PATH: &str = "/app/oauth/2.0/login?login_type=outer";
+pub const VIDEO_OAUTH_KEY_PATH: &str = "/app/vodvideo/vodVideoPlay.d2j?ssoCheckToken=ssoCheckToken&refreshToken=&accessToken=&userId=&";
+pub const VIDEO_INFO_PATH: &str = "/app/system/resource/vodVideo/getvideoinfos";
 pub const AUTH_URL: &str = "https://jaccount.sjtu.edu.cn";
 pub const MY_SJTU_URL: &str = "https://my.sjtu.edu.cn/ui/appmyinfo";
 pub const MY_SJTU_ACCOUNT_URL: &str = "https://my.sjtu.edu.cn/api/account";

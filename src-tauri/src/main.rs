@@ -1048,9 +1048,11 @@ async fn export_video_materials(
     directory: String,
     name: String,
     all_tracks: bool,
+    track_numbers: Option<Vec<usize>>,
     on_progress: tauri::ipc::Channel<app::video_library::ExportProgress>,
 ) -> Result<app::video_library::ExportResult> {
-    APP.export_video_materials(requests, kind, directory, name, all_tracks, Arc::new(move |progress| { let _ = on_progress.send(progress); }))
+    let track_numbers = track_numbers.or_else(|| (!all_tracks).then(|| vec![1]));
+    APP.export_video_materials(requests, kind, directory, name, track_numbers, Arc::new(move |progress| { let _ = on_progress.send(progress); }))
         .await
 }
 

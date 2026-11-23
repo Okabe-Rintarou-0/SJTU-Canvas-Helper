@@ -26,7 +26,9 @@ pub struct Client {
     jar: Arc<Jar>,
     base_url: RwLock<String>,
     token: RwLock<String>,
-    video_auth: tokio::sync::Mutex<video_auth::VideoAuth>,
+    video_auth: video_auth::VideoAuth,
+    #[cfg(test)]
+    legacy_video_origin: Option<tauri::Url>,
     transcription: transcription::TranscriptionRuntime,
     subtitle_proofread: subtitle_proofread::ProofreadRuntime,
     llm_cli: LlmRuntime,

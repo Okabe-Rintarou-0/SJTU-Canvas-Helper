@@ -24,10 +24,10 @@ import { videoSummaryMarkdownComponents } from "../components/video_summary_cita
 import FileAIChatModal from "../components/file_ai_chat_modal";
 import { useCourses, useConfigSelector } from "../lib/hooks";
 import { useAppMessage } from "../lib/message";
-import { compareVideoCourses, loadVideoCourse, mergeVideoCourses } from "../lib/video_courses";
-import { canSummarizeRecording, groupVideoSessions, groupSessionsByDate, recordingKey, recordingTime, selectedSessionScopes, toggleRecordings, type VideoExportOptions, type VideoSession } from "../lib/video_library";
-import { enqueueVideoExports, saveRecordingMaterial } from "../lib/video_library_tasks";
-import { readSummaryCache, summaryCacheKey, withSummaryModelIdentity, PPT_CLEANUP_POLICY, type VideoSummaryCache } from "../lib/video_summary_cache";
+import { compareVideoCourses, loadVideoCourse, mergeVideoCourses, videoCourseKey } from "../lib/video_courses";
+import { canSummarizeRecording, groupVideoSessions, groupSessionsByDate, recordingKey, recordingTime, recordingTrackLabel, selectedSessionScopes, toggleRecordings, type VideoExportOptions, type VideoSession } from "../lib/video_library";
+import { enqueueVideoExports, resolveRecording, saveRecordingMaterial } from "../lib/video_library_tasks";
+import { readSummaryCache, summaryAccount, summaryCacheKey, summaryCourseKey, withSummaryModelIdentity, PPT_CLEANUP_POLICY, type VideoSummaryCache } from "../lib/video_summary_cache";
 import type { AccountInfo, CanvasVideo, Course } from "../lib/model";
 import { useAISession } from "../lib/ai_session_store";
 import { videoSummarySession } from "../lib/video_summary_session";
@@ -84,7 +84,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   const modelIdentity = JSON.stringify([activeLlm?.base_url || aiConfig?.llm_base_url || DEFAULT_LLM_BASE_URL,
     activeLlm?.model || aiConfig?.llm_model || DEFAULT_LLM_MODEL, aiConfig?.llm_temperature ?? null]);
   const summary = useAISession(videoSummarySession);
-  const { open: chatOpen, title: chatTitle, scopes: chatScope, messages: chatMessages,
+  const { title: chatTitle, scopes: chatScope, messages: chatMessages,
     loading: chatLoading, progress: chatProgress, coverage, cacheNotice } = summary;
   const setChatOpen = (open: boolean) => videoSummarySession.update({ open });
   const [cachedSummaries, setCachedSummaries] = useState<VideoSummaryCache[]>([]);
@@ -112,17 +112,28 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   const [playerMini, setPlayerMini] = useState(false);
   const [playback, setPlayback] = useState<"live" | "recording">("recording");
   const workspaceRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { let cancelled = false; void invoke<AccountInfo>("read_account_info").then((info) => { if (!cancelled) setAccount(info.current_account); }).catch(() => {}); return () => { cancelled = true; }; }, []);
+  useEffect(() => { let cancelled = false; void invoke<AccountInfo>("read_account_info").then((info) => { if (!cancelled) setAccount(info.current_account); }).catch(() => {}); return () => { cancelled = true; }; }, [refresh]);
   const [space, setSpace] = useState<Course[]>([]);
   const courses = useMemo(() => mergeVideoCourses(canvas.data, space), [canvas.data, space]);
-  const [courseId, setCourseId] = useState<number>();
-  const selectedCourse = courses.find((course) => course.id === courseId);
+  const [courseKey, setCourseKey] = useState(() => summary.open ? summaryCourseKey(summary.namespace) : undefined);
+  const selectedCourse = courseKey ? courses.find((course) => videoCourseKey(course.canvasId, course.teachingClassId) === courseKey
+    || videoCourseKey(undefined, course.teachingClassId) === courseKey) : undefined;
+  const courseId = selectedCourse?.id;
   const cacheNamespace = account && selectedCourse ? `${JSON.stringify([account, selectedCourse.canvasId, selectedCourse.teachingClassId, selectedCourse.name, selectedCourse.term.name, modelIdentity])}:${PPT_CLEANUP_POLICY}=${Number(pptCleanupEnabled)}` : "";
-  const courseSummaries = cachedSummaries.filter((entry) => entry.namespace === cacheNamespace);
+  const canvasCourseKey = videoCourseKey(selectedCourse?.canvasId);
+  const spaceCourseKey = videoCourseKey(undefined, selectedCourse?.teachingClassId);
+  const isCurrentCourseSummary = useCallback((namespace: string) => {
+    const key = summaryCourseKey(namespace);
+    return !!account && summaryAccount(namespace) === account && !!key && (key === canvasCourseKey || key === spaceCourseKey);
+  }, [account, canvasCourseKey, spaceCourseKey]);
+  const hasCourseChat = isCurrentCourseSummary(summary.namespace);
+  const chatOpen = hasCourseChat && summary.open;
+  const courseSummaries = useMemo(() => cachedSummaries.filter((entry) => isCurrentCourseSummary(entry.namespace)), [cachedSummaries, isCurrentCourseSummary]);
   const [login, setLogin] = useState<"checking" | "ready" | "required">("checking");
   const [courseLoading, setCourseLoading] = useState(false);
   const [courseError, setCourseError] = useState("");
   const [videos, setVideos] = useState<CanvasVideo[]>([]);
+  const recordingRequests = useRef<{ courseId: number; refresh: number; requests: Map<string, Promise<CanvasVideo[]>> }>();
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [selected, setSelected] = useState(new Set<string>());
@@ -135,6 +146,29 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   const [downloadCourse, setDownloadCourse] = useState<DownloadCourse>();
   const [exporting, setExporting] = useState(false);
   const [exportOptions, setExportOptions] = useState<VideoExportOptions>({ video: true, ppt: false, subtitle: false, pptPerSession: true, tracks: "all" });
+  const [trackAvailability, setTrackAvailability] = useState<{ count: number; failed: number }>();
+  const [trackRetry, setTrackRetry] = useState(0);
+  const trackScopes = exportOptions.video ? downloadScopes : undefined;
+  useEffect(() => {
+    setTrackAvailability(undefined);
+    if (!trackScopes) return;
+    let cancelled = false;
+    const recordings = trackScopes.flatMap((scope) => scope.videos).filter(isPlayable);
+    const load = async () => {
+      let count = 0;
+      let failed = 0;
+      for (let i = 0; i < recordings.length && !cancelled; i += 4) {
+        const results = await Promise.allSettled(recordings.slice(i, i + 4).map((video) => withTimeout(resolveRecording(video))));
+        for (const result of results) {
+          if (result.status === "fulfilled") count = Math.max(count, result.value.info.videoPlayResponseVoList.length);
+          else failed++;
+        }
+      }
+      if (!cancelled) setTrackAvailability({ count, failed });
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [trackScopes, trackRetry]);
   const [player, setPlayer] = useState<{ session: VideoSession; key: string; seconds: number; nonce: string; course?: DownloadCourse }>();
   const [aiScopes, setAiScopes] = useState<VideoSession[]>();
   const [aiOrganization, setAiOrganization] = useState("sessions");
@@ -183,7 +217,10 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   }, [refresh]);
 
   useEffect(() => {
-    if (login !== "ready") return;
+    if (login !== "ready") {
+      setCourseLoading(false);
+      return;
+    }
     let cancelled = false;
     setCourseLoading(true); setCourseError("");
     void withTimeout(invoke<Course[]>("list_video_space_courses")).then((next) => { if (!cancelled) setSpace(next); })
@@ -193,30 +230,67 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   }, [login, refresh]);
 
   useEffect(() => {
-    if (!selectedCourse || login !== "ready") return;
+    if (!selectedCourse || login !== "ready") {
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     setLoading(true); setLoadError("");
-    void loadVideoCourse(selectedCourse,
-      (id) => withTimeout(invoke("get_canvas_videos", { courseId: id })),
-      (id) => withTimeout(invoke("get_video_space_videos", { teachingClassId: id })),
-      (id) => withTimeout(invoke("get_legacy_videos", { courseId: id, courseName: selectedCourse.name, termName: selectedCourse.term.name, teacherNames: selectedCourse.teachers.map((t) => t.display_name) })),
-    ).then((next) => {
+    if (recordingRequests.current?.courseId !== selectedCourse.id || recordingRequests.current.refresh !== refresh) {
+      recordingRequests.current = { courseId: selectedCourse.id, refresh, requests: new Map() };
+    }
+    // The course catalog can add a source while the existing requests are still running.
+    const { requests } = recordingRequests.current;
+    const load = (command: string, args: Record<string, unknown>) => {
+      const key = JSON.stringify([command, args]);
+      const existing = requests.get(key);
+      if (existing) return existing;
+      const request = withTimeout(invoke<CanvasVideo[]>(command, args));
+      requests.set(key, request);
+      return request;
+    };
+    const show = (next: CanvasVideo[], complete: boolean) => {
       if (cancelled) return;
       setVideos(next);
-      const keys = new Set(next.map(recordingKey));
-      setSelected((previous) => new Set([...previous].filter((key) => keys.has(key))));
-    }).catch((e) => { if (!cancelled) setLoadError(String(e)); })
+      setSelected((previous) => {
+        if (!previous.size) return previous;
+        const selection = new Set(previous);
+        const keys = new Set<string>();
+        for (const video of next) {
+          const key = recordingKey(video);
+          keys.add(key);
+          // A later response may promote another source for a selected recording.
+          for (const alternative of video.alternatives ?? []) {
+            if (selection.delete(recordingKey(alternative))) selection.add(key);
+          }
+        }
+        return complete ? new Set([...selection].filter((key) => keys.has(key))) : selection;
+      });
+    };
+    void loadVideoCourse(selectedCourse,
+      (id) => load("get_canvas_videos", { courseId: id }),
+      (id) => load("get_video_space_videos", { teachingClassId: id }),
+      (id) => load("get_legacy_videos", { courseId: id, courseName: selectedCourse.name, termName: selectedCourse.term.name, teacherNames: selectedCourse.teachers.map((t) => t.display_name) }),
+      (next) => show(next, false),
+    ).then((next) => show(next, true)).catch((e) => { if (!cancelled) setLoadError(String(e)); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [selectedCourse, login, refresh]);
 
-  const chatSessionId = chatMessages[0]?.id;
+  const chatSessionId = chatOpen ? chatMessages[0]?.id : undefined;
   useEffect(() => { if (active && (!playerMini || chatOpen)) workspaceRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }); }, [active, player?.nonce, playerMini, chatOpen, chatSessionId]);
 
   const changeCourse = useCallback((id: number) => {
-    setCourseId(id === -1 ? undefined : id); setVideos([]); setSelected(new Set()); setExpanded(new Map());
-    setQuery(""); setStatus("all"); setPlayer(undefined); setLoadError(""); videoSummarySession.clearMaterials();
-  }, []);
+    const next = id === -1 ? undefined : id;
+    if (next === courseId) return;
+    const course = courses.find((option) => option.id === next);
+    recordingRequests.current = undefined;
+    setCourseKey(videoCourseKey(course?.canvasId, course?.teachingClassId)); setVideos([]); setSelected(new Set()); setExpanded(new Map());
+    setQuery(""); setStatus("all"); setPlayer(undefined); setLoadError("");
+    setAiScopes(undefined); setCacheListOpen(false);
+    videoSummarySession.update({ open: false });
+    videoSummarySession.clearMaterials();
+  }, [courses, courseId]);
   const play = useCallback((session: VideoSession, key?: string, seconds = 0) => {
     if (!player) setPlayerMini(false);
     const video = key ? session.videos.find((v) => recordingKey(v) === key) : session.videos.find(isPlayable);
@@ -227,19 +301,29 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   const markdownComponents = useMemo(() => videoSummaryMarkdownComponents(chatScope, play), [chatScope, play]);
   const download = (next: VideoSession[], kind?: "ppt" | "subtitle") => {
     setDownloadScopes(next); setDownloadCourse(selectedCourse ? downloadCourseContext(selectedCourse) : undefined);
-    if (kind) setExportOptions((previous) => ({ ...previous, video: false, ppt: kind === "ppt", subtitle: kind === "subtitle" }));
+    setTrackAvailability(undefined);
+    setExportOptions((previous) => ({
+      ...previous, tracks: "all",
+      ...(kind ? { video: false, ppt: kind === "ppt", subtitle: kind === "subtitle" } : {}),
+    }));
   };
   const downloadCount = downloadScopes?.reduce((count, scope) => count + scope.videos.length, 0) ?? 0;
   const singleDownload = downloadCount === 1 ? downloadScopes?.[0].videos[0] : undefined;
   const canMergePpt = downloadScopes?.some((scope) => scope.videos.length > 1) ?? false;
+  const trackCount = trackAvailability?.count ?? 0;
+  const trackNumbers = Array.from({ length: trackCount }, (_, index) => index + 1);
+  const selectedTracks = exportOptions.tracks === "all" ? trackNumbers : exportOptions.tracks.filter((number) => number <= trackCount);
+  const canDownload = (exportOptions.video || exportOptions.ppt || exportOptions.subtitle)
+    && (!exportOptions.video || selectedTracks.length > 0);
   const submitDownload = async (saveAs = false) => {
-    if (!downloadScopes || !downloadCourse || exporting) return;
+    if (!downloadScopes || !downloadCourse || exporting || !canDownload) return;
     setExporting(true);
     try {
       const defaultPath = saveAs ? await downloadDirectory("root").catch(() => undefined) : await downloadDirectory("root");
       const directory = saveAs ? await open({ directory: true, multiple: false, title: "选择本次下载根目录（其下按学期、课程和资料类型归档）", defaultPath }) : defaultPath;
       if (!directory || Array.isArray(directory)) return;
-      const count = await enqueueVideoExports(downloadScopes, exportOptions, directory, downloadCourse);
+      const options: VideoExportOptions = { ...exportOptions, tracks: selectedTracks.length === trackCount ? "all" : selectedTracks };
+      const count = await enqueueVideoExports(downloadScopes, options, directory, downloadCourse);
       messageApi.success(`已加入 ${count} 个导出任务，可在${centerOnly ? "任务中心" : "下方下载任务列表"}查看进度`); setDownloadScopes(undefined);
     } catch (e) { messageApi.error(`创建任务失败：${e}`); }
     finally { setExporting(false); }
@@ -261,7 +345,12 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
     setAiOrganization(entry.organization); setAiTranscribe(entry.transcribeMissing !== false); setAiScopes(undefined); setCacheListOpen(false);
   };
   const summarize = (next: VideoSession[]) => {
-    if (chatLoading) { setChatOpen(true); messageApi.info("请等待当前总结完成后再切换范围"); return; }
+    if (!cacheNamespace) { messageApi.info("当前账号信息不可用，请刷新后重试"); return; }
+    if (chatLoading) {
+      if (hasCourseChat) setChatOpen(true);
+      messageApi.info(hasCourseChat ? "请等待当前总结完成后再切换范围" : "另一门课程正在生成总结，请等待完成后再试");
+      return;
+    }
     const organization = next.length > 1 ? "sessions" : "combined";
     setAiScopes(next); setAiOrganization(organization); setAiTranscribe(true);
   };
@@ -327,7 +416,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
           </Box>
         }
       />
-      {selectedCourse && login === "ready" && <VideoLivePanel visible={active} key={selectedCourse.id} canvasCourseId={selectedCourse.canvasId} teachingClassId={selectedCourse.teachingClassId} refresh={refresh} playback={playback} onPlay={() => { setPlayer(undefined); setPlayback("live"); }} />}
+      {selectedCourse && <VideoLivePanel enabled={login === "ready"} visible={active} key={selectedCourse.id} canvasCourseId={selectedCourse.canvasId} teachingClassId={selectedCourse.teachingClassId} refresh={refresh} playback={playback} onPlay={() => { setPlayer(undefined); setPlayback("live"); }} />}
       {historyError && <Alert severity="warning">{historyError}</Alert>}
           {topicError && <Alert severity="warning">{topicError}</Alert>}
       {(player || chatOpen) && learningPanels}
@@ -342,7 +431,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
                 </Typography>
               </Box>
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                {chatMessages.length > 0 && <Button onClick={() => setChatOpen(true)}>{chatLoading ? "AI 处理中" : "上次总结"}</Button>}
+                {hasCourseChat && chatMessages.length > 0 && <Button onClick={() => setChatOpen(true)}>{chatLoading ? "AI 处理中" : "上次总结"}</Button>}
                 {!!courseSummaries.length && <Button disabled={chatLoading} onClick={() => setCacheListOpen(true)}>已保存总结 · {courseSummaries.length}</Button>}
                 <Button variant="outlined" startIcon={<MoreHorizRoundedIcon />} onClick={(e) => setToolsAnchor(e.currentTarget)}>更多工具</Button>
               </Stack>
@@ -421,14 +510,36 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
         <Typography variant="body2" color="text.secondary">{downloadScopes?.map((s) => s.title).join("；")}</Typography>
         <Stack direction="row" flexWrap="wrap">{([ ["video", "视频"], ["ppt", "PPT PDF"], ["subtitle", "字幕"] ] as const).map(([key, label]) => <FormControlLabel key={key} label={label} control={<Checkbox checked={exportOptions[key]} onChange={(_, checked) => setExportOptions((previous) => ({ ...previous, [key]: checked }))} />} />)}</Stack>
         {exportOptions.video && <Stack spacing={1}>
-          <Typography variant="subtitle2">视频</Typography>
-          <WorkspaceSelect label="视频机位" size="small" value={exportOptions.tracks} onChange={(e) => setExportOptions((p) => ({ ...p, tracks: e.target.value as "all" | "first" }))}><MenuItem value="all">全部可用机位</MenuItem><MenuItem value="first">仅首个机位</MenuItem></WorkspaceSelect>
-          <Typography variant="caption" color="text.secondary">每个机位保存为独立视频文件。</Typography>
+          <Typography variant="subtitle2">视频机位</Typography>
+          {!trackAvailability && <LinearProgress aria-label="正在读取可用机位" />}
+          {!!trackAvailability?.failed && <Alert severity="warning" action={<Button onClick={() => setTrackRetry((value) => value + 1)}>重试</Button>}>
+            {trackAvailability.failed} 小节的机位读取失败。
+          </Alert>}
+          {trackAvailability && !trackCount && !trackAvailability.failed && <Typography variant="body2">所选录像暂无可用机位。</Typography>}
+          {trackCount > 0 && <>
+            <Stack direction="row" flexWrap="wrap" role="group" aria-label="选择下载机位">
+              {trackNumbers.map((number) => <FormControlLabel
+                key={number} label={recordingTrackLabel(number)}
+                control={<Checkbox checked={selectedTracks.includes(number)} onChange={(_, checked) => {
+                  const tracks = checked ? [...selectedTracks, number] : selectedTracks.filter((track) => track !== number);
+                  setExportOptions((previous) => ({ ...previous, tracks }));
+                }} />}
+              />)}
+            </Stack>
+            <Typography variant="caption" color="text.secondary">
+              教师和屏幕为常见机位标注，以实际画面为准。每个机位保存为独立视频文件。
+              {downloadCount > 1 && "批量下载按编号选择，缺失机位会在任务结果中提示。"}
+            </Typography>
+          </>}
         </Stack>}
         {exportOptions.ppt && <Stack spacing={1}>
           <Typography variant="subtitle2">PPT PDF</Typography>
           {canMergePpt ? <WorkspaceSelect label="PPT 输出" size="small" value={exportOptions.pptPerSession ? "session" : "section"} onChange={(e) => setExportOptions((p) => ({ ...p, pptPerSession: e.target.value === "session" }))}><MenuItem value="session">每堂课一个 PDF</MenuItem><MenuItem value="section">每小节一个 PDF</MenuItem></WorkspaceSelect> : <Typography variant="body2">{singleDownload ? "一个 PDF。" : "每小节一个 PDF。"}</Typography>}
-          {pptCleanupEnabled && <Alert severity="info">已开启 PPT 页面清理，可在设置中关闭。</Alert>}
+          {pptCleanupEnabled && <Alert
+            severity="info"
+            sx={{ alignItems: "center", "& .MuiAlert-action": { pt: 0 } }}
+            action={<Button size="small" color="inherit" component={RouterLink} to="/settings?focus=ppt-cleanup" sx={{ whiteSpace: "nowrap" }}>前往设置</Button>}
+          >已开启 PPT 页面清理，可在设置中关闭。</Alert>}
         </Stack>}
         {exportOptions.subtitle && <Stack spacing={1}>
           <Typography variant="subtitle2">字幕</Typography>
@@ -440,8 +551,8 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
       </Stack></DialogContent>
       <DialogActions sx={{ flexWrap: "wrap", gap: 1 }}>
         <Button disabled={exporting} onClick={() => setDownloadScopes(undefined)}>取消</Button>
-        <Button variant="outlined" disabled={exporting || !(exportOptions.video || exportOptions.ppt || exportOptions.subtitle)} onClick={saveAsDownload}>另存为</Button>
-        <Button variant="contained" disabled={exporting || !(exportOptions.video || exportOptions.ppt || exportOptions.subtitle)} onClick={() => void submitDownload()}>{exporting ? "正在加入队列…" : "下载"}</Button>
+        <Button variant="outlined" disabled={exporting || !canDownload} onClick={saveAsDownload}>另存为</Button>
+        <Button variant="contained" disabled={exporting || !canDownload} onClick={() => void submitDownload()}>{exporting ? "正在加入队列…" : "下载"}</Button>
       </DialogActions>
     </Dialog>
     <Dialog open={active && !!aiScopes} onClose={() => setAiScopes(undefined)} fullWidth maxWidth="sm">
@@ -479,6 +590,6 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
       <DialogActions><Button onClick={() => setCacheListOpen(false)}>关闭</Button></DialogActions>
     </Dialog>
     <Dialog open={active && aggregator} onClose={() => setAggregator(false)} maxWidth="lg" fullWidth><DialogTitle><Stack direction="row" justifyContent="space-between">视频合成工具<Button onClick={() => setAggregator(false)}>关闭</Button></Stack></DialogTitle><DialogContent>{active && aggregator && <VideoAggregator course={selectedCourse ? downloadCourseContext(selectedCourse) : undefined} />}</DialogContent></Dialog>
-    {chatLoading && !chatOpen && <Box sx={{ ...surfaceCardSx, position: "fixed", bottom: 20, right: 24, zIndex: 8, bgcolor: "background.paper", p: 1 }}><Button startIcon={<CircularProgress size={14} />} onClick={() => setChatOpen(true)}>{chatProgress}</Button></Box>}
+    {hasCourseChat && chatLoading && !chatOpen && <Box sx={{ ...surfaceCardSx, position: "fixed", bottom: 20, right: 24, zIndex: 8, bgcolor: "background.paper", p: 1 }}><Button startIcon={<CircularProgress size={14} />} onClick={() => setChatOpen(true)}>{chatProgress}</Button></Box>}
   </BasicLayout>;
 }
