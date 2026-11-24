@@ -1,5 +1,6 @@
 use llm::chat::LlmRuntime;
 pub(crate) use llm::chat::{EffectiveLlmConfig, LlmSnapshot};
+pub(crate) use llm::MARKDOWN_ANSWER_FORMAT;
 use reqwest::cookie::Jar;
 use std::sync::Arc;
 use tokio::sync::RwLock;

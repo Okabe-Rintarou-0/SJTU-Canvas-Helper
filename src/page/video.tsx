@@ -20,11 +20,12 @@ import VideoLibraryPlayer from "../components/video_library_player";
 import VideoLivePanel from "../components/video_live_panel";
 import VideoSummarySources from "../components/video_summary_sources";
 import VideoSummaryScope from "../components/video_summary_scope";
+import { videoSummaryMarkdownComponents } from "../components/video_summary_citations";
 import FileAIChatModal from "../components/file_ai_chat_modal";
 import { useCourses, useConfigSelector } from "../lib/hooks";
 import { useAppMessage } from "../lib/message";
 import { compareVideoCourses, loadVideoCourse, mergeVideoCourses, videoCourseKey } from "../lib/video_courses";
-import { canSummarizeRecording, groupVideoSessions, groupSessionsByDate, parseVideoCitation, formatVideoTimestamp, recordingKey, recordingTime, recordingTrackLabel, selectedSessionScopes, toggleRecordings, type VideoExportOptions, type VideoSession } from "../lib/video_library";
+import { canSummarizeRecording, groupVideoSessions, groupSessionsByDate, recordingKey, recordingTime, recordingTrackLabel, selectedSessionScopes, toggleRecordings, type VideoExportOptions, type VideoSession } from "../lib/video_library";
 import { enqueueVideoExports, resolveRecording, saveRecordingMaterial } from "../lib/video_library_tasks";
 import { readSummaryCache, summaryAccount, summaryCacheKey, summaryCourseKey, withSummaryModelIdentity, PPT_CLEANUP_POLICY, type VideoSummaryCache } from "../lib/video_summary_cache";
 import type { AccountInfo, CanvasVideo, Course } from "../lib/model";
@@ -290,13 +291,14 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
     videoSummarySession.update({ open: false });
     videoSummarySession.clearMaterials();
   }, [courses, courseId]);
-  const play = (session: VideoSession, key?: string, seconds = 0) => {
+  const play = useCallback((session: VideoSession, key?: string, seconds = 0) => {
     if (!player) setPlayerMini(false);
     const video = key ? session.videos.find((v) => recordingKey(v) === key) : session.videos.find(isPlayable);
     if (!video) { messageApi.info("本堂课暂无可播放录像"); return; }
     setPlayback("recording");
     setPlayer({ session, key: recordingKey(video), seconds, nonce: crypto.randomUUID(), course: selectedCourse ? downloadCourseContext(selectedCourse) : undefined });
-  };
+  }, [messageApi, player, selectedCourse]);
+  const markdownComponents = useMemo(() => videoSummaryMarkdownComponents(chatScope, play), [chatScope, play]);
   const download = (next: VideoSession[], kind?: "ppt" | "subtitle") => {
     setDownloadScopes(next); setDownloadCourse(selectedCourse ? downloadCourseContext(selectedCourse) : undefined);
     setTrackAvailability(undefined);
@@ -379,14 +381,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   const chatPanel = <FileAIChatModal embedded loadingLabel={chatProgress || "等待模型回复"} open={chatOpen} title={`${chatTitle} · ${chatScope.map((scope) => scope.title).join("；")}`} messages={chatMessages} loading={chatLoading} onClose={() => setChatOpen(false)} onSend={sendMessage} input={summary.input} onInputChange={(input) => videoSummarySession.update({ input })}
       dialogTitle="AI 课堂总结" dialogDescription={chatProgress || ""}
       contextLabel="会话范围" emptyText="正在读取所选小节资料" inputPlaceholder="继续追问知识点、作业或通知…" footerIdleText="点击时间引用可跳转录像"
-      markdownComponents={{ a: ({ href, children }) => {
-        const citation = parseVideoCitation(href);
-        if (!citation || citation.seconds === undefined) return <span>{children}</span>;
-        return <a href={href} onClick={(event) => {
-          event.preventDefault(); const session = chatScope.find((s) => s.videos.some((v) => recordingKey(v) === citation.key));
-          if (session) play(session, citation.key, citation.seconds);
-        }} title="跳转到此小节的对应时间">{formatVideoTimestamp(citation.seconds)}</a>;
-      } }} />
+      markdownComponents={markdownComponents} restoredMessageCount={summary.restoredMessageCount} />
 
   const learningPanels = <Box ref={workspaceRef} sx={{ scrollMarginTop: 16, display: "grid", gridTemplateColumns: player && !playerMini && chatOpen ? { xs: "minmax(0, 1fr)", md: "minmax(0, 1.2fr) minmax(340px, 1fr)" } : "minmax(0, 1fr)", gap: 2, alignItems: "start" }}>
         {player && <VideoLibraryPlayer course={player.course} topics={topics} onTopicChange={updateTopic} onMiniChange={setPlayerMini} session={player.session} initialKey={player.key} seconds={player.seconds} seekRequest={player.nonce} onClose={() => setPlayer(undefined)} onSummarize={(video) => summarize([{ ...player.session, id: recordingKey(video), title: `${player.session.title} · ${video.courseBeginTime?.slice(11, 16) || video.videoName}`, videos: [video] }])} />}

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::{
+    client::MARKDOWN_ANSWER_FORMAT,
     error::{AppError, Result},
     model::{
         Assignment, CalendarEvent, Colors, Course, DiscussionTopic, File, Folder, FullDiscussion,
@@ -777,11 +778,11 @@ pub async fn chat(messages: &[LLMChatMessage], options: Option<CanvasAgentOption
     let mut builder = snapshot
         .client
         .agent(&snapshot.model)
-        .preamble(
+        .preamble(&format!(
             "You are Canvas Agent, an SJTU Canvas assistant. \
             Use the provided tools whenever the user asks for factual Canvas data. \
-            Answer in Chinese by default, summarize tool results clearly, and do not invent missing data.",
-        )
+            Answer in Chinese by default, summarize tool results clearly, and do not invent missing data.\n\n{MARKDOWN_ANSWER_FORMAT}",
+        ))
         .tools(boxed_tools())
         .default_max_turns(max_turns)
         .max_tokens(max_tokens);

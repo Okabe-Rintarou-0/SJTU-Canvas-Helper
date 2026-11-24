@@ -16,6 +16,7 @@ interface SummaryState {
   title: string;
   scopes: VideoSession[];
   messages: CanvasAgentChatMessage[];
+  restoredMessageCount: number;
   loading: boolean;
   progress: string;
   coverage: string;
@@ -57,7 +58,7 @@ export class VideoSummarySession extends AISessionStore<SummaryState> {
   private missingTopics = 0;
 
   constructor() {
-    super(() => ({ open: false, title: "", scopes: [], messages: [], loading: false, progress: "", coverage: "",
+    super(() => ({ open: false, title: "", scopes: [], messages: [], restoredMessageCount: 0, loading: false, progress: "", coverage: "",
       input: "", text: "", namespace: "", organization: "sessions", cacheNotice: "", summaryOptions: videoSummaryOptions(), transcribeMissing: true }));
   }
 
@@ -73,7 +74,7 @@ export class VideoSummarySession extends AISessionStore<SummaryState> {
     this.storageAccount = account;
     this.generation++;
     this.update({ cacheEntry: { ...entry, scopes }, namespace: entry.namespace, title: entry.title, scopes,
-      messages: entry.messages, organization: entry.organization, text: entry.text, coverage: entry.coverage, sources: entry.sources,
+      messages: entry.messages, restoredMessageCount: entry.messages.length, organization: entry.organization, text: entry.text, coverage: entry.coverage, sources: entry.sources,
       summaryOptions: entry.summaryOptions ?? videoSummaryOptions(), preparedContext: entry.preparedContext,
       transcribeMissing: entry.transcribeMissing !== false,
       input: "", open: true, progress: "", cacheNotice: `已读取本地历史 · ${new Date(entry.savedAt).toLocaleString("zh-CN")}` });
@@ -156,7 +157,7 @@ export class VideoSummarySession extends AISessionStore<SummaryState> {
     const opening = aiMessage("user", `总结所选 ${scopes.reduce((count, scope) => count + scope.videos.length, 0)} 小节`);
     this.update({ cacheEntry: undefined, namespace, cacheNotice: "", title, scopes, organization,
       summaryOptions, transcribeMissing, preparedContext: undefined,
-      messages: [opening], coverage: "", sources: undefined, text: "", input: "", loading: true, open: true, progress: "正在准备资料" });
+      messages: [opening], restoredMessageCount: 0, coverage: "", sources: undefined, text: "", input: "", loading: true, open: true, progress: "正在准备资料" });
     try {
       this.storageAccount = await currentDataAccount();
       if (generation !== this.generation) return;

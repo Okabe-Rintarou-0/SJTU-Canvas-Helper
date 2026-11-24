@@ -1,9 +1,10 @@
-use super::{Client, LlmSnapshot};
+use super::{Client, LlmSnapshot, MARKDOWN_ANSWER_FORMAT};
 use crate::{
     error::{AppError, Result},
     model::{LLMChatMessage, VideoChatResponse, VideoPreparedContext, VideoSummaryOptions},
 };
 use md5::{Digest, Md5};
+use std::sync::LazyLock;
 use tiktoken_rs::{bpe_for_model, cl100k_base_singleton, CoreBPE};
 
 // Integrity and navigation are application rules. Writing preferences belong to the user.
@@ -12,7 +13,7 @@ const FIXED_RULES: &str = r#"你是课程助教。依据课堂资料回答用户
 字幕与 AI 音视频转录为教师讲解的自动识别结果，PPT OCR 为画面补充；结合时间相近的信息理解，两者分别保留自身时间，OCR 时间不代表教师说话时间。无时间戳转录只能支持所属小节的内容总结，不能为其估算、拼接时间或引用其他资料的时间冒充讲解位置。
 自动转写可能听错术语、数字或运算词，理解时结合前后文、课程术语和 PPT 还原明显的识别错误，不必逐字沿用错字；依据不足时保留不确定性，不凭常识补造教师观点。正式授课前、授课结束后连续的学生闲聊杂音不作为课程知识；教学视频、课程介绍、问答和作业考试通知仍是有效资料，不因表达零散而忽略。
 引用规则：
-- 引用原样使用资料中的 [HH:MM:SS](#video=原始编码key&t=整数秒) 链接，不估算或拼接新时间。不同小节的时间轴独立，注明所涉及的小节；时间未知的 OCR 不附跳转链接。
+- 引用原样使用资料中的 [HH:MM:SS](#video=原始编码key&t=整数秒) 链接，不估算或拼接新时间。各小节的时间轴独立，由链接中的录像标识区分。时间引用只写该链接，省略紧邻链接的「（节1）」「（第 1 小节）」等重复来源标签。按小节组织内容时可以在标题中写小节名称。时间未知的 OCR 不附跳转链接。
 - OCR 可能有识别错误或界面噪声；忽略无关内容，不据关键词补造公式、代码、论证或作业要求。仅有 OCR 时说明缺少讲解，证据冲突时保留不确定性。
 - 教师明确更正口误时，以更正后的结论为准并优先引用该位置；更正不明确时不擅自修正。
 用 Markdown 展示结果。用户可指定详略、结构、关注重点和引用密度。
@@ -20,6 +21,9 @@ const FIXED_RULES: &str = r#"你是课程助教。依据课堂资料回答用户
 标为压缩的资料可能省略细节；找不到所问细节时明确说明，不能把未保留理解为课堂没有提及。"#;
 
 const COMPRESSION_TASK: &str = "当前任务是压缩参考资料，不是回答课堂问题或生成最终总结。删去重复内容并合并同义表述，实际正文必须比输入短。用户总结偏好仅用于选择关注主题；详细展开、逐句解释等要求留到最终回答，不适用于压缩。只输出精简资料，不输出前言、分析过程、建议或新增知识。保留关键条件、更正和代表性原始引用，不以省略号截断引用链接。";
+
+static ANSWER_RULES: LazyLock<String> =
+    LazyLock::new(|| format!("{FIXED_RULES}\n\n{MARKDOWN_ANSWER_FORMAT}"));
 
 fn message(role: &str, content: impl Into<String>) -> LLMChatMessage {
     LLMChatMessage {
@@ -344,14 +348,14 @@ async fn prepare_request(
     let budget = options.input_budget();
     let original = request_messages(text, history, false);
     // Always try complete original data first, including follow-ups and cache restores.
-    if request_tokens(bpe, FIXED_RULES, &original) <= budget {
+    if request_tokens(bpe, &ANSWER_RULES, &original) <= budget {
         return Ok(PreparedRequest {
             messages: original,
             cached,
         });
     }
     let minimal = request_messages("", std::slice::from_ref(last), true);
-    if request_tokens(bpe, FIXED_RULES, &minimal) + 512 > budget {
+    if request_tokens(bpe, &ANSWER_RULES, &minimal) + 512 > budget {
         return Err(AppError::LLMError(
             "本次问题或总结要求过长，请缩短输入或增加上下文容量".into(),
         ));
@@ -361,7 +365,7 @@ async fn prepare_request(
     if request_tokens(bpe, "", &history[..history.len() - 1]) > budget / 3 {
         let old = serde_json::to_string(&history[..history.len() - 1])
             .map_err(|e| AppError::LLMError(e.to_string()))?;
-        let target = (budget / 4).min(budget - request_tokens(bpe, FIXED_RULES, &minimal) - 512);
+        let target = (budget / 4).min(budget - request_tokens(bpe, &ANSWER_RULES, &minimal) - 512);
         let notes = reduce(snapshot, bpe, &old, target, options, "对话历史", on_status).await?;
         history = vec![
             message(
@@ -371,7 +375,7 @@ async fn prepare_request(
             last.clone(),
         ];
     }
-    let empty_size = request_tokens(bpe, FIXED_RULES, &request_messages("", &history, true));
+    let empty_size = request_tokens(bpe, &ANSWER_RULES, &request_messages("", &history, true));
     let available = budget
         .checked_sub(empty_size + 128)
         .filter(|n| *n >= 256)
@@ -409,7 +413,7 @@ async fn prepare_request(
         format!("{notes}\n\n与本次追问相关的原始片段（仅部分匹配，不代表完整覆盖）：\n{evidence}")
     };
     let messages = request_messages(&context, &history, true);
-    if request_tokens(bpe, FIXED_RULES, &messages) > budget {
+    if request_tokens(bpe, &ANSWER_RULES, &messages) > budget {
         return Err(AppError::LLMError(
             "压缩后的完整请求仍超出预算，请增加容量或开始新总结".into(),
         ));
@@ -449,7 +453,7 @@ impl Client {
         on_status("等待模型回复".into());
         let content = snapshot
             .chat_messages(
-                FIXED_RULES,
+                &ANSWER_RULES,
                 &prepared.messages,
                 options.output_tokens as usize,
                 on_chunk,
@@ -504,8 +508,8 @@ mod tests {
         let mut longer = original.clone();
         longer.insert(1, message("assistant", "历史".repeat(1000)));
         assert!(
-            request_tokens(bpe, FIXED_RULES, &longer)
-                > request_tokens(bpe, FIXED_RULES, &original) + 1000
+            request_tokens(bpe, &ANSWER_RULES, &longer)
+                > request_tokens(bpe, &ANSWER_RULES, &original) + 1000
         );
     }
 
@@ -531,7 +535,7 @@ mod tests {
         assert!(request.cached.is_none());
         assert!(request.messages[0].content.contains(&text));
         assert!(
-            request_tokens(cl100k_base_singleton(), FIXED_RULES, &request.messages)
+            request_tokens(cl100k_base_singleton(), &ANSWER_RULES, &request.messages)
                 <= options.input_budget()
         );
     }
@@ -560,7 +564,7 @@ mod tests {
             format!("课堂原始资料：\n{text}")
         );
         assert!(request.cached.is_none());
-        assert!(request_tokens(bpe, FIXED_RULES, &request.messages) <= options.input_budget());
+        assert!(request_tokens(bpe, &ANSWER_RULES, &request.messages) <= options.input_budget());
     }
 
     #[tokio::test]
@@ -772,7 +776,7 @@ mod tests {
             second.messages.last().unwrap().content,
             "条件概率的分母是什么？"
         );
-        assert!(request_tokens(bpe, FIXED_RULES, &second.messages) <= options.input_budget());
+        assert!(request_tokens(bpe, &ANSWER_RULES, &second.messages) <= options.input_budget());
         assert!(!second.cached.unwrap().text.contains("与本次追问相关"));
     }
 
@@ -812,7 +816,7 @@ mod tests {
         assert!(compression.hits() > 0);
         assert!(stages.iter().any(|s| s.contains("对话历史")));
         assert_eq!(request.messages.last().unwrap().content, question);
-        assert!(request_tokens(bpe, FIXED_RULES, &request.messages) <= options.input_budget());
+        assert!(request_tokens(bpe, &ANSWER_RULES, &request.messages) <= options.input_budget());
     }
 
     #[tokio::test]
