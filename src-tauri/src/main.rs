@@ -373,6 +373,11 @@ async fn list_course_images(course_id: i64) -> Result<Vec<File>> {
 }
 
 #[tauri::command]
+async fn list_course_members(course_id: i64) -> Result<Vec<crate::model::CourseMember>> {
+    APP.list_course_members(course_id).await
+}
+
+#[tauri::command]
 async fn list_course_users(course_id: i64) -> Result<Vec<User>> {
     APP.list_course_users(course_id).await
 }
@@ -1204,6 +1209,7 @@ async fn main() -> Result<()> {
             list_course_files,
             open_file_preview_window,
             list_course_images,
+            list_course_members,
             list_course_users,
             list_course_students,
             list_course_assignments,

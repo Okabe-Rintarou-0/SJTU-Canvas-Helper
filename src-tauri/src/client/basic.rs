@@ -625,6 +625,19 @@ impl Client {
         Ok(all_events)
     }
 
+    pub async fn list_course_members(
+        &self,
+        course_id: i64,
+        token: &str,
+    ) -> Result<Vec<crate::model::CourseMember>> {
+        let url = format!(
+            "{}/api/v1/courses/{}/users?include[]=enrollments",
+            self.base_url.read().await,
+            course_id
+        );
+        self.list_items(&url, token).await
+    }
+
     pub async fn list_course_users(&self, course_id: i64, token: &str) -> Result<Vec<User>> {
         let url = format!(
             "{}/api/v1/courses/{}/users",

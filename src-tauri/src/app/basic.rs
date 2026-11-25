@@ -781,6 +781,12 @@ impl App {
         self.client.list_course_images(course_id, &token).await
     }
 
+    pub async fn list_course_members(&self, course_id: i64) -> Result<Vec<crate::model::CourseMember>> {
+        self.client
+            .list_course_members(course_id, &self.config.read().await.token)
+            .await
+    }
+
     pub async fn list_course_users(&self, course_id: i64) -> Result<Vec<User>> {
         self.client
             .list_course_users(course_id, &self.config.read().await.token)

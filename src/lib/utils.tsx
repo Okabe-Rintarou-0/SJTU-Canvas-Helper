@@ -49,6 +49,13 @@ export function formatDate(inputDate: Option<string>): string {
   return `${year}/${month}/${day} ${hours}:${minutes}`;
 }
 
+export function formatCompactDate(inputDate: Option<string>): string {
+  if (!inputDate) return "";
+  const date = dayjs(inputDate);
+  if (!date.isValid()) return "";
+  return date.format(date.isSame(dayjs(), "year") ? "M月D日 HH:mm" : "YYYY年M月D日 HH:mm");
+}
+
 export function sleep(time: number) {
   return new Promise((resolve) => setTimeout(resolve, time));
 }

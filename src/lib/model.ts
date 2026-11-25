@@ -108,6 +108,14 @@ export interface User {
     email: Option<string>;
 }
 
+export interface CourseMember extends User {
+    enrollments?: {
+        type?: string | null;
+        role?: string | null;
+        created_at?: string | null;
+    }[] | null;
+}
+
 export interface LLMChatMessage {
     role: string;
     content: string;

@@ -285,6 +285,22 @@ pub struct User {
     pub email: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CourseMember {
+    #[serde(flatten)]
+    pub user: User,
+    #[serde(default)]
+    pub enrollments: Option<Vec<CourseMembership>>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CourseMembership {
+    #[serde(rename = "type")]
+    pub enrollment_type: Option<String>,
+    pub role: Option<String>,
+    pub created_at: Option<String>,
+}
+
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LLMChatMessage {
     pub role: String,

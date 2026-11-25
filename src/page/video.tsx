@@ -1,5 +1,5 @@
 import WorkspaceSelect from "../components/workspace_select";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Link as RouterLink } from "react-router-dom";
@@ -9,8 +9,9 @@ import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import SmartDisplayRoundedIcon from "@mui/icons-material/SmartDisplayRounded";
 import { WorkspaceHero } from "../components/workspace_hero";
 import MoreHorizRoundedIcon from "@mui/icons-material/MoreHorizRounded";
-import CloudDownloadRoundedIcon from "@mui/icons-material/CloudDownloadRounded";
-import PsychologyRoundedIcon from "@mui/icons-material/PsychologyRounded";
+import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
+import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
+import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import { alpha } from "@mui/material/styles";
 import BasicLayout from "../components/layout";
 import CourseSelect from "../components/course_select";
@@ -204,6 +205,42 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
     return matching.length ? [{ session, matching }] : [];
   }), [sessions, query, status, topics]);
   const visibleDates = useMemo(() => groupSessionsByDate(visible), [visible]);
+  const recordingPanelRef = useRef<HTMLDivElement>(null);
+  const recordingTableRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const panel = recordingPanelRef.current;
+    const table = recordingTableRef.current;
+    if (!active || !panel || !table) return;
+
+    let disposed = false;
+    let measuredWidth = -1;
+    const measure = () => {
+      measuredWidth = table.clientWidth;
+      // Measure the table with labels before choosing the final layout.
+      panel.setAttribute("data-action-labels", "");
+      const dateHeadings = table.querySelectorAll<HTMLElement>("[data-date-heading]");
+      const fits = table.scrollWidth <= measuredWidth + 1 && [...dateHeadings].every((row) => {
+        const gap = Number.parseFloat(getComputedStyle(row).columnGap) || 0;
+        const width = [...row.children].reduce((sum, child) => sum + (child as HTMLElement).offsetWidth, 0);
+        return width + gap * (row.children.length - 1) <= row.clientWidth + 1;
+      });
+      panel.toggleAttribute("data-action-labels", measuredWidth > 0 && fits);
+    };
+
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(() => {
+      if (table.clientWidth !== measuredWidth) measure();
+    });
+    observer?.observe(table);
+    void document.fonts?.ready.then(() => {
+      if (!disposed) measure();
+    });
+    return () => {
+      disposed = true;
+      observer?.disconnect();
+    };
+  }, [active, expanded, generateTopics, topics, visibleDates]);
   const visibleVideos = visible.flatMap((item) => item.matching);
   const visibleKeys = new Set(visibleVideos.map(recordingKey));
   const hiddenSelected = [...selected].filter((key) => !visibleKeys.has(key)).length;
@@ -373,11 +410,34 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
   const toggleExpanded = (id: string, currentlyExpanded: boolean) => setExpanded((previous) => new Map(previous).set(id, !currentlyExpanded));
 
   const sourceNames = (items: CanvasVideo[]) => [...new Set(items.flatMap((v) => [v, ...(v.alternatives ?? [])]).map((v) => ({ canvas: "Canvas", videoSpace: "视频空间", legacy: "旧版" })[v.source]))].join(" / ");
-  const rowActions = (scope: VideoSession, playbackScope = scope, key?: string) => <TableCell align="right"><Stack direction="row" gap={0.5} justifyContent="flex-end" sx={{ whiteSpace: "nowrap" }}>
-    <Button size="small" sx={{ minWidth: 40 }} disabled={!scope.videos.some(isPlayable)} onClick={() => play(playbackScope, key)}>播放</Button>
-    <Button size="small" sx={{ minWidth: 40 }} onClick={() => download([scope])}>下载</Button>
-    <Button size="small" sx={{ minWidth: 64 }} disabled={!scope.videos.some(canSummarizeRecording)} onClick={() => summarize([scope])}>AI 总结</Button>
-  </Stack></TableCell>;
+  const videoAction = (label: string, icon: ReactNode, onClick: () => void, disabled = false) => (
+    <Tooltip title={label} describeChild>
+      <span>
+        <Button
+          size="small"
+          aria-label={label}
+          startIcon={icon}
+          onClick={onClick}
+          disabled={disabled}
+          sx={{ minWidth: 30, px: 0.5, whiteSpace: "nowrap", "& .MuiButton-startIcon": { m: 0 } }}
+        >
+          <Box component="span" data-video-action-label>
+            {label}
+          </Box>
+        </Button>
+      </span>
+    </Tooltip>
+  );
+
+  const rowActions = (scope: VideoSession, playbackScope = scope, key?: string) => (
+    <TableCell align="right">
+      <Stack direction="row" gap={0.25} justifyContent="flex-end">
+        {videoAction("播放", <PlayArrowRoundedIcon fontSize="small" />, () => play(playbackScope, key), !scope.videos.some(isPlayable))}
+        {videoAction("下载", <DownloadRoundedIcon fontSize="small" />, () => download([scope]))}
+        {videoAction("AI 总结", <AutoAwesomeRoundedIcon fontSize="small" />, () => summarize([scope]), !scope.videos.some(canSummarizeRecording))}
+      </Stack>
+    </TableCell>
+  );
   const chatPanel = <FileAIChatModal embedded loadingLabel={chatProgress || "等待模型回复"} open={chatOpen} title={`${chatTitle} · ${chatScope.map((scope) => scope.title).join("；")}`} messages={chatMessages} loading={chatLoading} onClose={() => setChatOpen(false)} onSend={sendMessage} input={summary.input} onInputChange={(input) => videoSummarySession.update({ input })}
       dialogTitle="AI 课堂总结" dialogDescription={chatProgress || ""}
       contextLabel="会话范围" emptyText="正在读取所选小节资料" inputPlaceholder="继续追问知识点、作业或通知…" footerIdleText="点击时间引用可跳转录像"
@@ -421,7 +481,14 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
           {topicError && <Alert severity="warning">{topicError}</Alert>}
       {(player || chatOpen) && learningPanels}
       <Card sx={{ ...surfaceCardSx, overflow: "visible" }}>
-        <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
+        <CardContent
+          ref={recordingPanelRef}
+          sx={{
+            p: { xs: 2, md: 2.5 },
+            "& [data-video-action-label]": { display: "none", ml: 0.5 },
+            "&[data-action-labels] [data-video-action-label]": { display: "inline" },
+          }}
+        >
           <Stack spacing={2}>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} justifyContent="space-between" alignItems={{ sm: "center" }}>
               <Box>
@@ -448,12 +515,12 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
               <Button disabled={loading || courseLoading || login === "checking"} onClick={() => { videoSummarySession.clearMaterials(); setRefresh((value) => value + 1); void canvas.mutate(); }}>刷新</Button>
             </Stack>
             {loadError && <Alert severity="error">读取录像失败：{loadError}</Alert>}
-            <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: "8px", overflow: "auto" }}>
+            <Box ref={recordingTableRef} sx={{ border: "1px solid", borderColor: "divider", borderRadius: "8px", overflow: "auto" }}>
               {loading && <LinearProgress aria-label="正在读取录像" />}
               <Table size="small" sx={{ "& .MuiTableCell-root": { px: { xs: 0.75, sm: 2 } }, "& .MuiTableCell-paddingCheckbox": { px: 0 } }} aria-label="课堂资料库">
                 <TableHead><TableRow sx={{ bgcolor: (theme) => alpha(theme.palette.primary.main, 0.05) }}>
                   <TableCell padding="checkbox">{check(visibleVideos, "全选当前筛选结果")}</TableCell>
-                  <TableCell>日期 / 小节</TableCell>{generateTopics && <TableCell>课堂主题</TableCell>}<TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>来源</TableCell><TableCell align="right">操作</TableCell>
+                  <TableCell>日期 / 小节</TableCell>{generateTopics && <TableCell>课堂主题</TableCell>}<TableCell align="right">操作</TableCell>
                 </TableRow></TableHead>
                 <TableBody>
                   {visibleDates.map((day) => {
@@ -461,6 +528,9 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
                     const allDayVideos = dateGroups.find((group) => group.id === day.id)!.items.flatMap(({ session }) => session.videos).sort((a, b) => (recordingTime(a.courseBeginTime) ?? Infinity) - (recordingTime(b.courseBeginTime) ?? Infinity));
                     const [dateLabel, weekday] = day.title.split(" · ");
                     const dayScope: VideoSession = { id: `date:${day.id}`, title: day.title, videos: allDayVideos };
+                    const weeks = [...new Set(allDayVideos.flatMap((video) => [video, ...(video.alternatives ?? [])])
+                      .map((video) => video.weekNumber).filter((week) => week > 0))];
+                    const weekLabel = weeks.map((week) => `第 ${week} 周`).join(" / ") || "周次待确认";
                     const dayExpanded = expanded.get(dayScope.id) ?? (!!query || status !== "all" || day.id === visibleDates[0]?.id);
                     return <Fragment key={day.id}>
                       <TableRow data-level="date" selected={allDayVideos.every((v) => selected.has(recordingKey(v)))} sx={{ bgcolor: "action.hover" }}>
@@ -468,35 +538,66 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
                           <Stack direction="row" alignItems="center" gap={0.5}>
                             {check(allDayVideos, `选择日期 ${day.title}`)}
                             <IconButton size="small" aria-label={`${dayExpanded ? "收起" : "展开"}日期 ${day.title}`} aria-expanded={dayExpanded} onClick={() => toggleExpanded(dayScope.id, dayExpanded)}>{dayExpanded ? <ExpandMoreRoundedIcon /> : <ChevronRightRoundedIcon />}</IconButton>
-                            <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap"><Button color="inherit" size="small" sx={{ p: 0, fontSize: "1rem", fontWeight: 700, color: "text.primary", textAlign: "left" }} onClick={() => toggleExpanded(dayScope.id, dayExpanded)}>{[...new Set(allDayVideos.flatMap((v) => [v, ...(v.alternatives ?? [])]).map((v) => v.weekNumber).filter((week) => week > 0))].map((week) => `第 ${week} 周`).join(" / ") || "周次待确认"}{weekday ? ` · ${weekday}` : ""}</Button><Typography variant="caption" color="text.secondary">{dateLabel}</Typography><Chip size="small" variant="outlined" label={`${allDayVideos.length} 小节`} />{dayVideos.length < allDayVideos.length && <Typography variant="caption" color="text.secondary">筛选命中 {dayVideos.length} 小节</Typography>}</Stack>
-                          </Stack>
-                        </TableCell>
-                        {generateTopics && <TableCell><Typography variant="body2">{dayExpanded ? "" : [...new Set(allDayVideos.map((video) => recordingTopic(video, topics)).filter(Boolean))].join("；") || "—"}</Typography></TableCell>}
-                        <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}><Typography variant="caption" color="text.secondary">{sourceNames(allDayVideos)}</Typography></TableCell>
-                        {rowActions(dayScope)}
-                      </TableRow>
-                      {dayExpanded && dayVideos.map((video) => <TableRow data-level="recording" key={recordingKey(video)} hover selected={selected.has(recordingKey(video))}>
-                        <TableCell colSpan={2}>
-                          <Stack direction="row" alignItems="center" gap={1} sx={{ ml: { xs: 2, sm: 4 }, pl: 1, borderLeft: "2px solid", borderColor: "divider" }}>
-                            {check([video], `选择小节 ${video.videoName}`)}
-                            <Box><Typography variant="body2">第 {allDayVideos.indexOf(video) + 1} 小节 · {video.courseBeginTime.split(/[ T]/)[1]?.slice(0, 5) || "时间待确认"}{video.courseEndTime.split(/[ T]/)[1] ? `–${video.courseEndTime.split(/[ T]/)[1].slice(0, 5)}` : ""}</Typography>
-                              <Tooltip title={video.videoName}><Typography variant="caption" color="text.secondary" sx={{ display: "block", overflowWrap: "anywhere" }}>{[video.userName, video.classroomName].filter(Boolean).join(" · ") || video.videoName}</Typography></Tooltip>
+                            <Box>
+                              <Stack data-date-heading direction="row" gap={1} alignItems="center" flexWrap="wrap" sx={{ whiteSpace: "nowrap" }}>
+                                <Button
+                                  color="inherit"
+                                  size="small"
+                                  sx={{ p: 0, fontSize: "1rem", fontWeight: 700, color: "text.primary", textAlign: "left" }}
+                                  onClick={() => toggleExpanded(dayScope.id, dayExpanded)}
+                                >
+                                  {weekLabel}{weekday ? ` · ${weekday}` : ""}
+                                </Button>
+                                <Chip size="small" variant="outlined" label={`${allDayVideos.length} 小节`} />
+                                {dayVideos.length < allDayVideos.length && (
+                                  <Typography variant="caption" color="text.secondary">筛选命中 {dayVideos.length} 小节</Typography>
+                                )}
+                              </Stack>
+                              <Typography display="block" variant="caption" color="text.secondary">{dateLabel}</Typography>
                             </Box>
                           </Stack>
                         </TableCell>
-                        {generateTopics && <TableCell><Typography variant="body2">{recordingTopic(video, topics) || "—"}</Typography></TableCell>}
-                        <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}><Typography variant="caption">{sourceNames([video])}</Typography></TableCell>
-                        {rowActions({ ...dayScope, title: `${day.title}（第 ${allDayVideos.indexOf(video) + 1} 小节）`, videos: [video] }, dayScope, recordingKey(video))}
-                      </TableRow>)}
+                        {generateTopics && <TableCell><Typography variant="body2">{dayExpanded ? "" : [...new Set(allDayVideos.map((video) => recordingTopic(video, topics)).filter(Boolean))].join("；") || "—"}</Typography></TableCell>}
+                        {rowActions(dayScope)}
+                      </TableRow>
+                      {dayExpanded && dayVideos.map((video) => {
+                        const section = allDayVideos.indexOf(video) + 1;
+                        const start = video.courseBeginTime.split(/[ T]/)[1]?.slice(0, 5);
+                        const end = video.courseEndTime.split(/[ T]/)[1]?.slice(0, 5);
+                        const timeRange = start ? [start, end].filter(Boolean).join("–") : "时间待确认";
+                        const videoInfo = [video.videoName, video.classroomName, `来源 ${sourceNames([video])}`].filter(Boolean).join(" · ");
+                        return <TableRow data-level="recording" key={recordingKey(video)} hover selected={selected.has(recordingKey(video))}>
+                          <TableCell colSpan={2}>
+                            <Stack direction="row" alignItems="center" gap={1} sx={{ ml: { xs: 2, sm: 4 }, pl: 1, borderLeft: "2px solid", borderColor: "divider" }}>
+                              {check([video], `选择小节 ${video.videoName}`)}
+                              <Box sx={{ minWidth: 0 }}>
+                                <Typography variant="body2">第 {section} 小节{video.userName ? ` · ${video.userName}` : ""}</Typography>
+                                <Tooltip title={videoInfo} describeChild>
+                                  <Typography tabIndex={0} display="block" variant="caption" color="text.secondary">{timeRange}</Typography>
+                                </Tooltip>
+                              </Box>
+                            </Stack>
+                          </TableCell>
+                          {generateTopics && <TableCell><Typography variant="body2">{recordingTopic(video, topics) || "—"}</Typography></TableCell>}
+                          {rowActions({ ...dayScope, title: `${day.title}（第 ${section} 小节）`, videos: [video] }, dayScope, recordingKey(video))}
+                        </TableRow>;
+                      })}
                     </Fragment>;
                   })}
-                  {!visible.length && <TableRow><TableCell colSpan={generateTopics ? 5 : 4} sx={{ textAlign: "center", py: 7, color: "text.secondary" }}>{loading ? "正在读取课堂录像…" : !selectedCourse ? "选择课程，查看课堂录像和资料" : videos.length ? "没有匹配的课堂，请调整搜索或筛选" : "本课程暂无课堂录像"}</TableCell></TableRow>}
+                  {!visible.length && <TableRow><TableCell colSpan={generateTopics ? 4 : 3} sx={{ textAlign: "center", py: 7, color: "text.secondary" }}>{loading ? "正在读取课堂录像…" : !selectedCourse ? "选择课程，查看课堂录像和资料" : videos.length ? "没有匹配的课堂，请调整搜索或筛选" : "本课程暂无课堂录像"}</TableCell></TableRow>}
                 </TableBody>
               </Table>
             </Box>
             {!!selected.size && <Stack direction={{ xs: "column", sm: "row" }} alignItems={{ sm: "center" }} gap={1} sx={{ position: "sticky", bottom: 0, zIndex: 5, pt: 2, pb: 0.5, bgcolor: "background.paper", borderTop: "1px solid", borderColor: "divider" }}>
               <Box sx={{ flex: 1 }}><Typography variant="body2">已选 {scopes.length} 堂课 · {selected.size} 小节</Typography>{hiddenSelected > 0 && <Typography variant="caption" color="text.secondary">其中 {hiddenSelected} 小节不在当前筛选结果中</Typography>}</Box>
-              <Button onClick={() => setSelected(new Set())}>清空选择</Button><Button disabled={!scopes.some((scope) => scope.videos.some(isPlayable))} onClick={() => play({ id: "selected", title: "所选录像", videos: scopes.flatMap((scope) => scope.videos) })}>播放</Button><Button variant="outlined" startIcon={<CloudDownloadRoundedIcon />} onClick={() => download(scopes)}>下载…</Button><Button variant="contained" startIcon={<PsychologyRoundedIcon />} disabled={!scopes.some((scope) => scope.videos.some(canSummarizeRecording))} onClick={() => summarize(scopes)}>AI 总结…</Button>
+              <Stack direction="row" gap={0.5} alignItems="center">
+                <Button size="small" onClick={() => setSelected(new Set())}>清空选择</Button>
+                {videoAction("播放", <PlayArrowRoundedIcon fontSize="small" />, () => play({
+                  id: "selected", title: "所选录像", videos: scopes.flatMap((scope) => scope.videos),
+                }), !scopes.some((scope) => scope.videos.some(isPlayable)))}
+                {videoAction("下载…", <DownloadRoundedIcon fontSize="small" />, () => download(scopes))}
+                {videoAction("AI 总结…", <AutoAwesomeRoundedIcon fontSize="small" />, () => summarize(scopes), !scopes.some((scope) => scope.videos.some(canSummarizeRecording)))}
+              </Stack>
             </Stack>}
           </Stack>
         </CardContent>

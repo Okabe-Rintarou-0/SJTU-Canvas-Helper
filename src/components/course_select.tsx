@@ -20,8 +20,10 @@ export default memo(function CourseSelect({
   value,
   getSourceLabel,
   compareCourses,
+  disableClearable = false,
 }: {
   courses: Course[];
+  disableClearable?: boolean;
   disabled?: boolean;
   onChange?: (courseId: number) => void;
   value?: number;
@@ -60,6 +62,7 @@ export default memo(function CourseSelect({
     <Autocomplete
       {...popup}
       fullWidth
+      disableClearable={disableClearable}
       disabled={disabled || !hasCourses}
       options={formattedCourses}
       value={selectedCourse}
@@ -165,6 +168,7 @@ export default memo(function CourseSelect({
         <TextField
           {...params}
           placeholder={hasCourses ? "请选择或搜索课程…" : "暂无可用课程"}
+          inputProps={{ ...params.inputProps, "aria-label": "课程" }}
           helperText={
             selectedCourse
               ? `当前已选：${selectedCourse.name.split(" | ")[0]}`

@@ -659,7 +659,8 @@ describe("video library workflows", () => {
     await load();
     fireEvent.click(screen.getByRole("button", { name: /展开日期 2026-09-28/ }));
     const row = screen.getByRole("checkbox", { name: "选择小节 录像a" }).closest("tr")!;
-    expect(within(row).getAllByRole("button").map((button) => button.textContent)).toEqual(["播放", "下载", "AI 总结"]);
+    expect(within(row).getByRole("button", { name: "播放" })).toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: "AI 总结" })).toBeInTheDocument();
     fireEvent.click(within(row).getByRole("button", { name: "下载" }));
     const dialog = within(screen.getByRole("dialog", { name: "下载小节资料" }));
     fireEvent.click(dialog.getByRole("checkbox", { name: "视频" }));
@@ -680,7 +681,10 @@ describe("video library workflows", () => {
     await load();
     expect(screen.getByRole("button", { name: "第 4 周 · 星期一" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "第 4 周 · 星期二" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "来源" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /展开日期 2026-09-28/ }));
+    const section = screen.getByRole("checkbox", { name: "选择小节 录像a" }).closest("tr")!;
+    fireEvent.mouseOver(within(section).getByText("08:00–08:45"));
+    expect(await screen.findByRole("tooltip", { name: "录像a · 教室 · 来源 Canvas" })).toBeInTheDocument();
     expect(screen.queryByText(/待检查|按需读取/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^下载任务/ })).not.toBeInTheDocument();
     expect(mocks.invoke.mock.calls.some(([command]) => command === "prepare_video_material")).toBe(false);
