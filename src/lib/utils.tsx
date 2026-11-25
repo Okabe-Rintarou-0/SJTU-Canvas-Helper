@@ -422,5 +422,6 @@ export function moduleItem2File(item: ModuleItem): FileModel {
     size: 0,
     external_type: externalType,
     external_title: item.title,
+    canvas_url: item.html_url,
   } as FileModel;
 }

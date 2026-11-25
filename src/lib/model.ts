@@ -66,9 +66,12 @@ export interface File {
     mime_class: string;
     "content-type": string;
     preview_url?: string | null;
+    modified_at?: string | null;
+    updated_at?: string | null;
     size: number;
     external_type?: "File" | "Link";
     external_title?: string;
+    canvas_url?: string;
 }
 
 export interface Folder {
@@ -82,10 +85,11 @@ export interface Folder {
     files_url: string;
     files_count: number;
     folders_count: number;
+    updated_at?: string | null;
 }
 
 export type Entry = File | Folder;
-export function isFile(entry: Entry) {
+export function isFile(entry: Entry): entry is File {
     return 'display_name' in entry;
 }
 export function entryName(entry: Entry) {

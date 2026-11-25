@@ -14,10 +14,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
 vi.mock("../../lib/task_runtime", () => ({ enqueueTask: mocks.enqueueTask }));
-vi.mock("../../lib/upload_tasks", () => ({ createCloudUploadTask: vi.fn() }));
 vi.mock("../../lib/task_hooks", () => ({ useLegacyTasks: () => mocks.empty, useTasks: () => mocks.empty }));
 vi.mock("../../lib/pdf_tasks", () => ({ enqueuePDFMerge: mocks.enqueuePDFMerge }));
-vi.mock("../../lib/file_conversion", () => ({ canConvertFileToPdf: () => false, getOutputFile: vi.fn() }));
 vi.mock("../../lib/hooks", () => ({
   useCourses: () => ({ data: mocks.courses }), useSelectedCourse: () => ({ selectedCourseId: mocks.selectedCourseId, setSelectedCourseId: mocks.noop }),
   useExternalFiles: () => ({ data: mocks.files }), useBaseURL: () => ({ data: "https://example.com" }),
@@ -25,6 +23,7 @@ vi.mock("../../lib/hooks", () => ({
 }));
 vi.mock("../../lib/message", () => ({ useAppMessage: () => [mocks.messages] }));
 vi.mock("../../lib/utils", () => ({ formatDate: (value: string) => value, formatSize: () => "20 B", getFileIcon: () => null,
+  formatCompactDate: (value?: string) => value?.slice(0, 10) ?? "",
   isMergableFileType: (name: string) => name.endsWith(".pdf"), consoleLog: vi.fn(), scrollToTop: vi.fn() }));
 vi.mock("../layout", () => ({ default: ({ children }: { children: ReactNode }) => <>{children}</> }));
 vi.mock("../page_task_lists", () => ({ default: ({ children }: { children: ReactNode }) => <>{children}</> }));
@@ -113,3 +112,52 @@ it("only queues course-wide synchronization after confirming the course and scop
     mocks.selectedCourseId = -1;
   }
 });
+
+it("sorts folder files, separates preview from Canvas, and queues batches", async () => {
+  const course = { id: 37, name: "测试课程", term: { id: 2, name: "Fall" } } as Course;
+  const pdf = { id: 7, uuid: "pdf", folder_id: 2, display_name: "讲义.pdf", filename: "讲义.pdf", size: 300,
+    modified_at: "2026-02-05T10:00:00Z", url: "https://example.com/pdf" };
+  const doc = { id: 8, uuid: "doc", folder_id: 2, display_name: "提纲.docx", filename: "提纲.docx", size: 100,
+    updated_at: "2026-10-01T10:00:00Z", url: "https://example.com/doc" };
+  const savedFiles = mocks.files.splice(0);
+  mocks.courses = [course];
+  mocks.selectedCourseId = course.id;
+  mocks.enqueueTask.mockClear();
+  mocks.invoke.mockImplementation(async (command) => {
+    if (command === "list_course_folders") return [{ id: 2, name: "course files", full_name: "course files" }];
+    if (command === "list_folder_files") return [pdf, doc];
+    return [];
+  });
+  try {
+    render(<FilesPage />);
+    const preview = await screen.findByRole("button", { name: pdf.display_name });
+    fireEvent.click(preview);
+    expect(mocks.noop).toHaveBeenCalledWith(expect.objectContaining({ id: pdf.id }));
+    expect(within(preview.closest("tr")!).getByRole("link", { name: "在 Canvas 打开" }))
+      .toHaveAttribute("href", "https://example.com/courses/37/files?preview=7");
+
+    const names = () => screen.getAllByRole("row").slice(1).map((row) => within(row).getAllByRole("cell")[1].textContent);
+    fireEvent.click(screen.getByRole("button", { name: "文件大小" }));
+    expect(names()).toEqual([doc.display_name, pdf.display_name]);
+    fireEvent.click(screen.getByRole("button", { name: "修改日期" }));
+    expect(names()).toEqual([pdf.display_name, doc.display_name]);
+    fireEvent.click(screen.getByRole("button", { name: "修改日期" }));
+    expect(names()).toEqual([doc.display_name, pdf.display_name]);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择所有可见文件" }));
+    fireEvent.click(screen.getByRole("button", { name: "批量下载" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "下载原文件" }));
+    expect(mocks.enqueueTask.mock.calls.map(([task]) => task.kind)).toEqual(["file", "file"]);
+    await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "批量上传云盘" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "上传原文件" }));
+    expect(mocks.enqueueTask.mock.calls.map(([task]) => task.kind)).toEqual(["file", "file", "upload", "upload"]);
+    expect(mocks.enqueueTask.mock.calls.slice(2).map(([task]) => task.outputPath))
+      .toEqual(["交大云盘/测试课程/提纲.docx", "交大云盘/测试课程/讲义.pdf"]);
+  } finally {
+    mocks.files.push(...savedFiles);
+    mocks.courses = [];
+    mocks.selectedCourseId = -1;
+  }
+}, 30_000);

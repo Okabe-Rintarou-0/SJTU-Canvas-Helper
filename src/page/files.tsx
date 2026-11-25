@@ -13,8 +13,8 @@ import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import DescriptionRoundedIcon from "@mui/icons-material/DescriptionRounded";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import FolderOpenRoundedIcon from "@mui/icons-material/FolderOpenRounded";
+import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
 import PictureAsPdfRoundedIcon from "@mui/icons-material/PictureAsPdfRounded";
-import PreviewRoundedIcon from "@mui/icons-material/PreviewRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import UploadFileRoundedIcon from "@mui/icons-material/UploadFileRounded";
 import {
@@ -24,13 +24,13 @@ import {
   Card,
   CardContent,
   Checkbox,
-  Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogContentText,
   DialogTitle,
   FormControlLabel,
+  IconButton,
   InputAdornment,
   Link as MuiLink,
   ListItemIcon,
@@ -42,8 +42,10 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableContainer,
   TableHead,
   TableRow,
+  TableSortLabel,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
@@ -88,6 +90,7 @@ import {
 } from "../lib/model";
 import {
   consoleLog,
+  formatCompactDate,
   formatSize,
   getFileIcon,
   isMergableFileType,
@@ -99,7 +102,49 @@ import { surfaceCardSx } from "../lib/styles";
 interface FileActionMenuState {
   action: "download" | "upload";
   anchorEl: HTMLElement;
-  file: File;
+  files: File[];
+}
+
+type FileSortKey = "size" | "modified";
+type FileSort = { key: FileSortKey; direction: "asc" | "desc" };
+
+const fileSortColumns = [
+  { key: "size", label: "文件大小", width: 118 },
+  { key: "modified", label: "修改日期", width: 154 },
+] as const;
+
+const entryLinkSx = {
+  fontWeight: 600,
+  textAlign: "left",
+  overflowWrap: "anywhere",
+  border: 0,
+  background: "transparent",
+  cursor: "pointer",
+  p: 0,
+} as const;
+
+function modificationDate(entry: Entry) {
+  if (isFile(entry) && entry.modified_at && Number.isFinite(Date.parse(entry.modified_at))) {
+    return entry.modified_at;
+  }
+  return entry.updated_at;
+}
+
+function entrySize(entry: Entry) {
+  return isFile(entry) && !entry.external_type && Number.isFinite(entry.size) ? entry.size : undefined;
+}
+
+function compareEntries(left: Entry, right: Entry, sort: FileSort) {
+  // Keep folders together above files and unavailable values at the end of each group.
+  if (isFile(left) !== isFile(right)) return isFile(left) ? 1 : -1;
+  const value = sort.key === "size"
+    ? entrySize
+    : (entry: Entry) => Date.parse(modificationDate(entry) ?? "");
+  const a = value(left);
+  const b = value(right);
+  if (a === undefined || !Number.isFinite(a)) return b !== undefined && Number.isFinite(b) ? 1 : 0;
+  if (b === undefined || !Number.isFinite(b)) return -1;
+  return sort.direction === "asc" ? a - b : b - a;
 }
 
 type SnackSeverity = "success" | "info" | "warning" | "error";
@@ -108,11 +153,11 @@ const COURSE_FILES = "course files";
 const MY_FILES = "my files";
 const EXPLAINABLE_FILE_EXTS = [".pdf", ".docx"];
 const fileActionSx = {
-  minWidth: { xs: 28, md: 0 }, px: { xs: 0.25, md: 1 }, whiteSpace: "nowrap",
-  "& .MuiButton-startIcon": { mx: { xs: 0, md: 0.5 } },
-  "& .MuiButton-endIcon": { display: { xs: "none", md: "inherit" }, ml: 0.25 },
+  minWidth: { xs: 28, xl: 0 }, px: { xs: 0.25, xl: 1 }, whiteSpace: "nowrap",
+  "& .MuiButton-startIcon": { mx: { xs: 0, xl: 0.5 } },
+  "& .MuiButton-endIcon": { display: { xs: "none", xl: "inherit" }, ml: 0.25 },
 };
-const fileActionLabelSx = { display: { xs: "none", md: "inline" } };
+const fileActionLabelSx = { display: { xs: "none", xl: "inline" } };
 function isExplainableFile(file: File) {
   const dotPos = file.display_name.lastIndexOf(".");
   if (dotPos === -1) {
@@ -126,7 +171,8 @@ export default function FilesPage() {
   const theme = useTheme();
   const [section, setSection] = useState<typeof COURSE_FILES | typeof MY_FILES>(COURSE_FILES);
   const { selectedCourseId, setSelectedCourseId } = useSelectedCourse();
-  const [selectedEntries, setSelectedEntries] = useState<Entry[]>([]);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [sort, setSort] = useState<FileSort | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [allFolders, setAllFolders] = useState<Folder[]>([]);
@@ -175,10 +221,6 @@ export default function FilesPage() {
   };
 
   useEffect(() => {
-    setEntries(files);
-  }, [files]);
-
-  useEffect(() => {
     if (!currentFolderId) {
       setLoadingEntries(false);
       return;
@@ -205,7 +247,8 @@ export default function FilesPage() {
 
   const courseForFolders = selectedDownloadCourse?.id;
   useEffect(() => {
-    setSelectedEntries([]);
+    setSelectedFiles([]);
+    setFileActionMenu(null);
     setAllFolders([]);
     setFiles([]);
     setFolders([]);
@@ -241,7 +284,8 @@ export default function FilesPage() {
 
   const handleFolderOpen = (folderId: number) => {
     if (folderId === currentFolderId) return;
-    setSelectedEntries([]);
+    setSelectedFiles([]);
+    setFileActionMenu(null);
     setFiles([]);
     setFolders([]);
     setLoadingEntries(true);
@@ -316,82 +360,58 @@ export default function FilesPage() {
     });
   };
 
-  const handleUploadFile = async (
+  const handleUploadFile = (
     file: File,
     outputFormat: FileOutputFormat = "original"
   ) => {
+    if (section === COURSE_FILES && !selectedDownloadCourse) return;
     const subDir = folderPath[folderPath.length - 1]?.full_name.slice(section.length) ?? "";
-    const course = selectedDownloadCourse;
-    if (section === COURSE_FILES && !course) return;
-    const saveDir =
-      section === COURSE_FILES
-        ? `${course!.name}${subDir}`
-        : `我的Canvas文件${subDir}`;
+    const saveDir = `${selectedDownloadCourse?.name ?? "我的Canvas文件"}${subDir}`;
     enqueueTask(createCloudUploadTask(file, outputFormat, saveDir,
-      section === COURSE_FILES ? course!.name : "我的 Canvas 文件"));
-  };
-
-  const handleEntrySelect = (entry: Entry, checked: boolean) => {
-    if (!isFile(entry)) {
-      return;
-    }
-    setSelectedEntries((prev) =>
-      checked
-        ? [...prev, entry]
-        : prev.filter((item) => item.key !== entry.key)
-    );
-  };
-
-  const handleDownloadSelectedFiles = () => {
-    selectedEntries.forEach((entry) => {
-      if (isFile(entry)) {
-        void handleAddDownloadFileTask(entry as File);
-      }
-    });
+      selectedDownloadCourse?.name ?? "我的 Canvas 文件"));
   };
 
   const openFileActionMenu = (
     event: ReactMouseEvent<HTMLElement>,
-    file: File,
+    files: File[],
     action: FileActionMenuState["action"]
   ) => {
-    setFileActionMenu({ action, anchorEl: event.currentTarget, file });
+    setFileActionMenu({ action, anchorEl: event.currentTarget, files });
   };
+
+  const pdfActionFiles = fileActionMenu?.files.filter(canConvertFileToPdf) ?? [];
 
   const runFileAction = (outputFormat: FileOutputFormat) => {
     if (!fileActionMenu) {
       return;
     }
-    const { action, file } = fileActionMenu;
+    const { action, files } = fileActionMenu;
     setFileActionMenu(null);
-    if (action === "download") {
-      handleAddDownloadFileTask(file, outputFormat);
-      return;
+    const run = action === "download" ? handleAddDownloadFileTask : handleUploadFile;
+    for (const file of outputFormat === "pdf" ? pdfActionFiles : files) {
+      run(file, outputFormat);
     }
-    void handleUploadFile(file, outputFormat);
-  };
-
-  const shouldShow = (entry: Entry) => {
-    const containsKeyword = entryName(entry).includes(keyword);
-    const downloadable = !isFile(entry) || !downloadableOnly || (entry as File).url;
-    return containsKeyword && downloadable;
   };
 
   const supportedMergeFiles = useMemo(() =>
-    (selectedEntries.filter(isFile) as File[]).filter((file) =>
-      isMergableFileType(file.display_name)
-    ), [selectedEntries]);
-  const noSelectedMergeFiles = supportedMergeFiles.length < 2;
+    selectedFiles.filter((file) => isMergableFileType(file.display_name)), [selectedFiles]);
 
-  const filteredEntries = useMemo(
-    () =>
-      ([...(folders as Entry[]), ...(files as Entry[]), ...externalFiles.data] as Entry[]).filter(
-        shouldShow
-      ),
-    [folders, files, externalFiles.data, keyword, downloadableOnly]
-  );
+  const filteredEntries = useMemo(() => {
+    const entries: Entry[] = [...folders, ...files, ...externalFiles.data].filter((entry) =>
+      entryName(entry).includes(keyword) && (!isFile(entry) || !downloadableOnly || entry.url)
+    );
+    if (sort) entries.sort((a, b) => compareEntries(a, b, sort));
+    return entries;
+  }, [folders, files, externalFiles.data, keyword, downloadableOnly, sort]);
 
-  const selectedFileCount = selectedEntries.filter(isFile).length;
+  const visibleFiles = useMemo(() => filteredEntries.filter(isFile), [filteredEntries]);
+  useEffect(() => { setEntries(visibleFiles); }, [visibleFiles, setEntries]);
+
+  const selectedKeys = new Set(selectedFiles.map((file) => file.key));
+  const visibleKeys = new Set(visibleFiles.map((file) => file.key));
+  const selectedVisibleCount = visibleFiles.filter((file) => selectedKeys.has(file.key)).length;
+  const hiddenSelected = selectedFiles.length - selectedVisibleCount;
+  const transferableFiles = selectedFiles.filter((file) => file.url);
 
   return (
     <BasicLayout>
@@ -452,9 +472,7 @@ export default function FilesPage() {
           />
         </MenuItem>
         <MenuItem
-          disabled={
-            !fileActionMenu || !canConvertFileToPdf(fileActionMenu.file)
-          }
+          disabled={pdfActionFiles.length === 0}
           onClick={() => runFileAction("pdf")}
         >
           <ListItemIcon>
@@ -467,8 +485,10 @@ export default function FilesPage() {
                 : "转换为 PDF 后下载"
             }
             secondary={
-              fileActionMenu && !canConvertFileToPdf(fileActionMenu.file)
-                ? "仅支持 Word 和 PowerPoint 文件"
+              fileActionMenu && pdfActionFiles.length < fileActionMenu.files.length
+                ? pdfActionFiles.length
+                  ? `仅处理 ${pdfActionFiles.length} 个支持转换的文件`
+                  : "仅支持 Word 和 PowerPoint 文件"
                 : undefined
             }
           />
@@ -480,7 +500,7 @@ export default function FilesPage() {
           chipLabel="文件管理"
           chipIcon={<FolderOpenRoundedIcon />}
           title="文件浏览与下载"
-          description="浏览 Canvas 文件，按目录查找和批量下载。"
+          description="按目录浏览和预览 Canvas 文件，批量下载或上传云盘。"
           aside={
             <Stack spacing={1} alignItems={{ xs: "stretch", sm: "flex-start", lg: "flex-end" }}
               sx={{ width: { xs: "100%", lg: 440 } }}>
@@ -563,34 +583,59 @@ export default function FilesPage() {
                 )}
               </Stack>
 
-              <Box
-                sx={{
-                  borderRadius: "8px",
-                  border: "1px solid",
-                  borderColor: "divider",
-                  overflow: "hidden",
-                }}
-              >
+              <TableContainer sx={{ borderRadius: "8px", border: "1px solid", borderColor: "divider" }}>
                 <Table size="small" sx={{
+                  minWidth: 560,
                   tableLayout: "fixed",
-                  "& .MuiTableCell-root": { px: { xs: 0.75, md: 2 } },
+                  "& .MuiTableCell-root": { px: { xs: 0.75, md: 1.25 } },
                   "& .MuiTableCell-paddingCheckbox": { width: 38, px: 0 },
                 }}>
                   <TableHead>
                     <TableRow sx={{ bgcolor: alpha(theme.palette.primary.main, 0.05) }}>
-                      <TableCell padding="checkbox" />
+                      <TableCell padding="checkbox">
+                        <Checkbox
+                          size="small"
+                          inputProps={{ "aria-label": "选择所有可见文件" }}
+                          checked={visibleFiles.length > 0 && selectedVisibleCount === visibleFiles.length}
+                          indeterminate={selectedVisibleCount > 0 && selectedVisibleCount < visibleFiles.length}
+                          disabled={operating || visibleFiles.length === 0}
+                          onChange={(_, checked) => setSelectedFiles((previous) => {
+                            if (!checked) return previous.filter((file) => !visibleKeys.has(file.key));
+                            const previousKeys = new Set(previous.map((file) => file.key));
+                            return [...previous, ...visibleFiles.filter((file) => !previousKeys.has(file.key))];
+                          })}
+                        />
+                      </TableCell>
                       <TableCell>文件</TableCell>
-                      <TableCell align="right" sx={{ width: { xs: 126, md: 376 } }}>操作</TableCell>
+                      {fileSortColumns.map(({ key, label, width }) => (
+                        <TableCell key={key} align="right" sortDirection={sort?.key === key ? sort.direction : false} sx={{ width, whiteSpace: "nowrap" }}>
+                          <TableSortLabel
+                            active={sort?.key === key}
+                            direction={sort?.key === key ? sort.direction : "asc"}
+                            onClick={() => setSort((current) => ({
+                              key, direction: current?.key === key && current.direction === "asc" ? "desc" : "asc",
+                            }))}
+                          >
+                            {label}
+                          </TableSortLabel>
+                        </TableCell>
+                      ))}
+                      <TableCell align="right" sx={{ width: { xs: 148, xl: 368 } }}>操作</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {filteredEntries.map((entry) => {
-                      const checked = selectedEntries.some((item) => item.key === entry.key);
+                      const date = formatCompactDate(modificationDate(entry)) || "—";
                       if (isFile(entry)) {
-                        const file = entry as File;
+                        const file = entry;
+                        const checked = selectedKeys.has(file.key);
+                        const size = entrySize(file);
+                        const opensExternalSource = Boolean(file.external_type && !file.canvas_url);
                         const href = file.external_type
-                          ? file.url
-                          : `${baseURL.data}/courses/${selectedCourseId}/files?preview=${file.id}`;
+                          ? file.canvas_url || file.url
+                          : baseURL.data && (section === MY_FILES
+                            ? `${baseURL.data}/files/${file.id}`
+                            : selectedDownloadCourse && `${baseURL.data}/courses/${selectedDownloadCourse.id}/files?preview=${file.id}`);
                         const filePrefix = file.external_title ? "[外部文件] " : "";
                         return (
                           <TableRow key={entry.key} hover selected={checked}>
@@ -598,7 +643,10 @@ export default function FilesPage() {
                               <Checkbox
                                 checked={checked}
                                 size="small"
-                                onChange={(event) => handleEntrySelect(entry, event.target.checked)}
+                                inputProps={{ "aria-label": `选择 ${file.display_name}` }}
+                                onChange={(_, nextChecked) => setSelectedFiles((previous) => nextChecked
+                                  ? [...previous, file]
+                                  : previous.filter((item) => item.key !== file.key))}
                               />
                             </TableCell>
                             <TableCell>
@@ -610,29 +658,30 @@ export default function FilesPage() {
                                 </Box>
                                 <Box sx={{ minWidth: 0 }}>
                                   <MuiLink
-                                    href={href}
-                                    target="_blank"
+                                    component="button"
+                                    type="button"
                                     underline="hover"
                                     color="inherit"
-                                    onMouseEnter={() => onHoverEntry(entry)}
+                                    onClick={() => setPreviewEntry(file)}
+                                    onMouseEnter={() => onHoverEntry(file)}
                                     onMouseLeave={onLeaveEntry}
-                                    sx={{ fontWeight: 600, overflowWrap: "anywhere" }}
+                                    sx={entryLinkSx}
                                   >
                                     {filePrefix}
                                     {file.display_name}
                                   </MuiLink>
-                                  <Typography variant="caption" display="block" color="text.secondary">
-                                    {formatSize(file.size)}
-                                  </Typography>
                                 </Box>
                               </Stack>
                             </TableCell>
+                            <TableCell align="right" sx={{ color: "text.secondary" }}>
+                              {size === undefined ? "—" : formatSize(size)}
+                            </TableCell>
+                            <TableCell align="right" sx={{ color: "text.secondary" }}>{date}</TableCell>
                             <TableCell align="right">
                               <Stack
                                 direction="row"
-                                spacing={{ xs: 0.25, md: 0.75 }}
+                                spacing={{ xs: 0.25, xl: 0.75 }}
                                 justifyContent="flex-end"
-                                flexWrap="wrap"
                                 useFlexGap
                               >
                                 {file.url ? (
@@ -642,7 +691,7 @@ export default function FilesPage() {
                                     startIcon={<DownloadRoundedIcon />}
                                     endIcon={<ArrowDropDownRoundedIcon />}
                                     onClick={(event) =>
-                                      openFileActionMenu(event, file, "download")
+                                      openFileActionMenu(event, [file], "download")
                                     }
                                   >
                                     <Box component="span" sx={fileActionLabelSx}>下载</Box>
@@ -655,20 +704,26 @@ export default function FilesPage() {
                                     startIcon={<UploadFileRoundedIcon />}
                                     endIcon={<ArrowDropDownRoundedIcon />}
                                     onClick={(event) =>
-                                      openFileActionMenu(event, file, "upload")
+                                      openFileActionMenu(event, [file], "upload")
                                     }
                                   >
                                     <Box component="span" sx={fileActionLabelSx}>上传云盘</Box>
                                   </Button>
                                 ) : null}
-                                <Button
-                                  size="small"
-                                  aria-label="预览" title="预览" sx={fileActionSx}
-                                  startIcon={<PreviewRoundedIcon />}
-                                  onClick={() => setPreviewEntry(file)}
-                                >
-                                  <Box component="span" sx={fileActionLabelSx}>预览</Box>
-                                </Button>
+                                {href && (
+                                  <IconButton
+                                    component="a"
+                                    href={href}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    size="small"
+                                    color="primary"
+                                    aria-label={opensExternalSource ? "打开外部来源" : "在 Canvas 打开"}
+                                    title={opensExternalSource ? "打开外部来源" : "在 Canvas 打开"}
+                                  >
+                                    <OpenInNewRoundedIcon fontSize="small" />
+                                  </IconButton>
+                                )}
                                 {isExplainableFile(file) ? (
                                   <Button
                                     size="small"
@@ -686,7 +741,7 @@ export default function FilesPage() {
                         );
                       }
 
-                      const folder = entry as Folder;
+                      const folder = entry;
                       return (
                         <TableRow key={entry.key} hover>
                           <TableCell padding="checkbox" />
@@ -701,21 +756,14 @@ export default function FilesPage() {
                                 onMouseEnter={() => onHoverEntry(entry)}
                                 onMouseLeave={onLeaveEntry}
                                 onClick={() => handleFolderOpen(folder.id)}
-                                sx={{
-                                  fontWeight: 600,
-                                  minWidth: 0,
-                                  overflowWrap: "anywhere",
-                                  textAlign: "left",
-                                  border: "none",
-                                  background: "transparent",
-                                  cursor: "pointer",
-                                  p: 0,
-                                }}
+                                sx={{ ...entryLinkSx, minWidth: 0 }}
                               >
                                 {folder.name}
                               </MuiLink>
                             </Stack>
                           </TableCell>
+                          <TableCell align="right" sx={{ color: "text.secondary" }}>—</TableCell>
+                          <TableCell align="right" sx={{ color: "text.secondary" }}>{date}</TableCell>
                           <TableCell />
                         </TableRow>
                       );
@@ -730,6 +778,8 @@ export default function FilesPage() {
                           <TableCell>
                             <Skeleton variant="text" width="55%" sx={{ fontSize: 20 }} />
                           </TableCell>
+                          <TableCell><Skeleton /></TableCell>
+                          <TableCell><Skeleton /></TableCell>
                           <TableCell align="right">
                             <Stack direction="row" spacing={{ xs: 0.5, md: 1.5 }} justifyContent="flex-end">
                               <Skeleton variant="rounded" width={56} height={30} />
@@ -742,7 +792,7 @@ export default function FilesPage() {
 
                     {!operating && filteredEntries.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={3}>
+                        <TableCell colSpan={5}>
                           <Stack alignItems="center" spacing={1.5} sx={{ py: 8, textAlign: "center" }}>
                             <Box
                               sx={{
@@ -770,36 +820,54 @@ export default function FilesPage() {
                     ) : null}
                   </TableBody>
                 </Table>
-              </Box>
+              </TableContainer>
 
-              <Stack
-                direction={{ xs: "column", md: "row" }}
-                spacing={1.25}
-                justifyContent="space-between"
-              >
-                <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25}>
-                  <Button
-                    variant="contained"
-                    startIcon={<DownloadRoundedIcon />}
-                    disabled={operating || selectedEntries.length === 0}
-                    onClick={handleDownloadSelectedFiles}
-                  >
-                    下载所选文件
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    disabled={operating || noSelectedMergeFiles}
-                    onClick={() => setOpenFileOrderSelectModal(true)}
-                  >
-                    合并 Word/PDF/PPTX
-                  </Button>
+              {selectedFiles.length > 0 && (
+                <Stack
+                  direction="row" alignItems="center" gap={1} flexWrap="wrap"
+                  sx={{ position: "sticky", bottom: 0, zIndex: 5, pt: 1.5, pb: 0.5, bgcolor: "background.paper", borderTop: 1, borderColor: "divider" }}
+                >
+                  <Box sx={{ flex: "1 0 auto" }}>
+                    <Typography variant="body2">已选 {selectedFiles.length} 个文件</Typography>
+                    {hiddenSelected > 0 && (
+                      <Typography variant="caption" display="block" color="text.secondary">
+                        其中 {hiddenSelected} 个不在当前筛选结果中
+                      </Typography>
+                    )}
+                    {transferableFiles.length < selectedFiles.length && (
+                      <Typography variant="caption" display="block" color="text.secondary">
+                        可下载或上传 {transferableFiles.length} 个
+                      </Typography>
+                    )}
+                  </Box>
+                  <Stack direction="row" gap={0.5} flexWrap="wrap">
+                    <Button size="small" onClick={() => setSelectedFiles([])}>清空选择</Button>
+                    <Button
+                      size="small"
+                      startIcon={<DownloadRoundedIcon />}
+                      disabled={operating || transferableFiles.length === 0}
+                      onClick={(event) => openFileActionMenu(event, transferableFiles, "download")}
+                    >
+                      批量下载
+                    </Button>
+                    <Button
+                      size="small"
+                      startIcon={<UploadFileRoundedIcon />}
+                      disabled={operating || transferableFiles.length === 0}
+                      onClick={(event) => openFileActionMenu(event, transferableFiles, "upload")}
+                    >
+                      批量上传云盘
+                    </Button>
+                    <Button
+                      size="small"
+                      disabled={operating || supportedMergeFiles.length < 2}
+                      onClick={() => setOpenFileOrderSelectModal(true)}
+                    >
+                      合并 Word/PDF/PPTX
+                    </Button>
+                  </Stack>
                 </Stack>
-                <Chip
-                  label={selectedFileCount > 0 ? `已选 ${selectedFileCount} 个文件` : "尚未选择文件"}
-                  color={selectedFileCount > 0 ? "primary" : "default"}
-                  variant={selectedFileCount > 0 ? "filled" : "outlined"}
-                />
-              </Stack>
+              )}
             </Stack>
           </CardContent>
         </Card>

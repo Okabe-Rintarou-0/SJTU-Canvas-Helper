@@ -79,6 +79,8 @@ pub struct File {
     pub content_type: String,
     #[serde(default)]
     pub preview_url: Option<String>,
+    pub modified_at: Option<String>,
+    pub updated_at: Option<String>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -99,6 +101,7 @@ pub struct Folder {
     pub files_url: String,
     pub files_count: i64,
     pub folders_count: i64,
+    pub updated_at: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]

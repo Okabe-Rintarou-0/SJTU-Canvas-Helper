@@ -43,6 +43,7 @@ const WEBSOCKET_BASE_URL = "wss://jaccount.sjtu.edu.cn/jaccount/sub";
 const QRCODE_TIMEOUT = 1000 * 8;
 
 const EMPTY_ARRAY: any[] = [];
+const EMPTY_FILES: File[] = [];
 
 export function usePreview(
   footer?: ReactNode,
@@ -656,7 +657,7 @@ export function useExternalFiles(courseId?: number) {
     [data]);
 
   return {
-    data: externalFiles ?? [],
+    data: externalFiles ?? EMPTY_FILES,
     isLoading,
     error,
     mutate,
