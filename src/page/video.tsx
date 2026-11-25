@@ -456,7 +456,7 @@ export default function VideoPage({ active = true }: { active?: boolean }) {
         </Stack>{chatPanel}</Card>}
       </Box>;
 
-  return <BasicLayout active={active} contentKey="video-workspace">
+  return <BasicLayout contentKey="video-workspace">
     {contextHolder}
     <Stack spacing={2} sx={{ width: "100%" }}>
       <WorkspaceHero

@@ -229,7 +229,6 @@ export default function UsersPage() {
           aside={
             <Box sx={{ width: { xs: "100%", lg: 640 } }}>
               <CourseSelect
-                disableClearable
                 onChange={setSelectedCourseId}
                 disabled={Boolean(selectedCourse && operating)}
                 courses={courses.data}

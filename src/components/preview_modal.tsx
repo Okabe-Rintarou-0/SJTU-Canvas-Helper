@@ -15,7 +15,7 @@ import {
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
-import { CSSProperties, ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { CSSProperties, ReactNode, useEffect, useMemo, useState } from "react";
 
 import { File } from "../lib/model";
 import {
@@ -26,10 +26,6 @@ import {
 } from "../lib/file_conversion";
 import { getFileType } from "../lib/utils";
 import { BasicRenderers } from "./renderers";
-
-type ResolvedPreview =
-  | { kind: "document"; document: IDocument }
-  | { kind: "window" };
 
 const localDocumentCache = new Map<string, Promise<IDocument>>();
 
@@ -66,30 +62,55 @@ async function resolveLocalDocument(file: File): Promise<IDocument> {
   return task;
 }
 
-async function resolvePreview(file: File): Promise<ResolvedPreview> {
-  if (file.url?.startsWith("blob:")) {
-    return { kind: "document", document: await resolveLocalDocument(file) };
-  }
-  if (canConvertFileToPdf(file) || isPdfFile(file)) {
-    try {
-      await invoke("open_file_preview_window", {
-        fileId: file.id,
-        title: file.display_name,
-      });
-      return { kind: "window" };
-    } catch (onlinePreviewError) {
-      if (!isPowerPointFile(file) && !isPdfFile(file)) {
-        throw onlinePreviewError;
-      }
+function isCanvasPreview(file: File) {
+  return file.id > 0 && !file.external_type && !file.url?.startsWith("blob:") &&
+    (canConvertFileToPdf(file) || isPdfFile(file));
+}
 
-      return {
-        kind: "document",
-        document: await resolveLocalDocument(file),
-      };
-    }
-  }
+function previewBounds(element: HTMLElement) {
+  const { left, top, width, height } = element.getBoundingClientRect();
+  const scale = window.devicePixelRatio || 1;
+  return {
+    x: Math.round(left * scale),
+    y: Math.round(top * scale),
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
+}
 
-  return { kind: "document", document: await resolveLocalDocument(file) };
+function mountCanvasPreview(file: File, slot: HTMLElement) {
+  const previewId = crypto.randomUUID();
+  let bounds = previewBounds(slot);
+  const ready = invoke<void>("open_embedded_file_preview", { fileId: file.id, previewId, bounds });
+  let closed = false;
+  let frame = 0;
+  const scheduleResize = () => {
+    if (closed || frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      const next = previewBounds(slot);
+      if (next.x === bounds.x && next.y === bounds.y && next.width === bounds.width && next.height === bounds.height) return;
+      bounds = next;
+      void invoke("resize_embedded_file_preview", { previewId, bounds }).catch(() => undefined);
+    });
+  };
+  const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(scheduleResize);
+  void ready.then(() => {
+    if (closed) return;
+    observer?.observe(slot);
+    window.addEventListener("resize", scheduleResize);
+    scheduleResize();
+  }, () => undefined);
+  return {
+    ready,
+    close: () => {
+      closed = true;
+      observer?.disconnect();
+      window.removeEventListener("resize", scheduleResize);
+      if (frame) cancelAnimationFrame(frame);
+      void ready.then(() => invoke("close_embedded_file_preview", { previewId })).catch(() => undefined);
+    },
+  };
 }
 
 export default function PreviewModal({
@@ -108,56 +129,44 @@ export default function PreviewModal({
   bodyStyle?: CSSProperties;
 }) {
   const theme = useTheme();
-  const [previews, setPreviews] = useState<ResolvedPreview[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [docs, setDocs] = useState<IDocument[]>([]);
+  const [canvasSlot, setCanvasSlot] = useState<HTMLDivElement | null>(null);
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const cancelPreviewRef = useRef(handleCancelPreview);
-  useLayoutEffect(() => { cancelPreviewRef.current = handleCancelPreview; }, [handleCancelPreview]);
+  const onlineFile = files.length === 1 && isCanvasPreview(files[0]) ? files[0] : undefined;
 
   useEffect(() => {
-    if (!open || files.length === 0) {
-      return;
-    }
-
+    if (!open || !files.length || (onlineFile && !canvasSlot)) return;
     let cancelled = false;
-    setPreviews([]);
+    setDocs([]);
     setLoadError(null);
     setLoading(true);
+    const canvas = onlineFile && canvasSlot ? mountCanvasPreview(onlineFile, canvasSlot) : undefined;
     void (async () => {
       try {
-        const nextPreviews = await Promise.all(
-          files.map((file) => resolvePreview(file))
-        );
-        if (!cancelled) {
-          if (nextPreviews.some((preview) => preview.kind === "window")) {
-            cancelPreviewRef.current?.();
-          } else {
-            setPreviews(nextPreviews);
+        if (canvas && onlineFile) {
+          try {
+            await canvas.ready;
+            return;
+          } catch (error) {
+            if (cancelled) return;
+            if (!isPowerPointFile(onlineFile) && !isPdfFile(onlineFile)) throw error;
           }
         }
+        const documents = await Promise.all(files.map(resolveLocalDocument));
+        if (!cancelled) setDocs(documents);
       } catch (error) {
-        if (!cancelled) {
-          setLoadError(String(error));
-        }
+        if (!cancelled) setLoadError(String(error));
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
     })();
-
     return () => {
       cancelled = true;
+      canvas?.close();
     };
-  }, [files, open]);
+  }, [open, files, onlineFile, canvasSlot]);
 
-  const docs = useMemo(
-    () =>
-      previews.flatMap((preview) =>
-        preview.kind === "document" ? [preview.document] : []
-      ),
-    [previews]
-  );
   const viewer = useMemo(() => {
     const body = bodyStyle ?? { height: "78vh", marginTop: "0px" };
     const key = files.map((file) => file.url).join("|");
@@ -241,11 +250,11 @@ export default function PreviewModal({
           <Stack direction="row" spacing={1} alignItems="center">
             <Chip
               size="small"
-              label={`${previews.length || files.length} 份文档`}
+              label={`${files.length} 份文档`}
               variant="outlined"
               color="primary"
             />
-            <IconButton onClick={handleCancelPreview}>
+            <IconButton aria-label="关闭文件预览" onClick={handleCancelPreview}>
               <CloseRoundedIcon />
             </IconButton>
           </Stack>
@@ -257,22 +266,20 @@ export default function PreviewModal({
         sx={{
           px: 0,
           py: 0,
-          overflowY: "auto",
+          position: "relative",
+          overflowY: onlineFile && !docs.length ? "hidden" : "auto",
           bgcolor:
             theme.palette.mode === "dark"
               ? alpha("#020617", 0.28)
               : alpha("#eff6ff", 0.42),
         }}
       >
+        {onlineFile && <Box ref={setCanvasSlot} aria-label="Canvas 在线预览" sx={{ position: "absolute", inset: 0, pointerEvents: "none" }} />}
         {loading ? (
-          <Stack spacing={2} alignItems="center" justifyContent="center" sx={{ minHeight: 480 }}>
+          <Stack spacing={2} alignItems="center" justifyContent="center" sx={{ height: "100%" }}>
             <CircularProgress />
             <Typography color="text.secondary">
-              {files.some(
-                (file) => canConvertFileToPdf(file) || isPdfFile(file)
-              )
-                ? "正在连接 Canvas 在线预览…"
-                : "正在准备预览…"}
+              {onlineFile ? "正在连接 Canvas 在线预览…" : "正在准备预览…"}
             </Typography>
           </Stack>
         ) : loadError ? (
@@ -284,20 +291,20 @@ export default function PreviewModal({
         ) : docs.length > 0 ? (
           <Box>{viewer}</Box>
         ) : null}
-        {footer ? (
-          <Box
-            sx={{
-              px: 3,
-              py: 2,
-              borderTop: "1px solid",
-              borderColor: "divider",
-              bgcolor: alpha(theme.palette.background.paper, 0.72),
-            }}
-          >
-            {footer}
-          </Box>
-        ) : null}
       </DialogContent>
+      {footer ? (
+        <Box
+          sx={{
+            px: 3,
+            py: 2,
+            borderTop: "1px solid",
+            borderColor: "divider",
+            bgcolor: alpha(theme.palette.background.paper, 0.72),
+          }}
+        >
+          {footer}
+        </Box>
+      ) : null}
     </Dialog>
   );
 }

@@ -76,17 +76,17 @@ body::after {
 
 /* One choreographed entrance per route change */
 .page-enter {
-    animation: page-enter 0.38s var(--ease-out);
+    animation: page-enter 0.22s var(--ease-out);
 }
 
 @keyframes page-enter {
     from {
         opacity: 0;
-        transform: translateY(10px) scale(0.995);
+        transform: translateY(4px);
     }
     to {
         opacity: 1;
-        transform: translateY(0) scale(1);
+        transform: translateY(0);
     }
 }
 
@@ -117,16 +117,9 @@ body::after {
     box-shadow: 0 8px 24px rgba(31, 42, 36, 0.08);
 }
 
-/* Sidebar nav entrance */
-.nav-enter {
-    animation: rise 0.4s var(--ease-out) both;
-    animation-delay: var(--rise-delay, 0ms);
-}
-
 @media (prefers-reduced-motion: reduce) {
     .page-enter,
     .rise,
-    .nav-enter,
     .card-lift {
         animation: none !important;
         transition: none !important;

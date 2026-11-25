@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { Link, MemoryRouter } from "react-router-dom";
 import { MenuItem } from "@mui/material";
 import RetainedVideoWorkspace from "../retained_video_workspace";
-import BasicLayout from "../layout";
+import BasicLayout, { AppShell } from "../layout";
 import WorkspaceSelect from "../workspace_select";
 import CourseSelect from "../course_select";
 import { resetVideoWorkspace } from "../../lib/video_workspace";
@@ -24,8 +24,10 @@ afterEach(cleanup);
 
 it("mounts lazily, keeps layout/media identity, and releases on account reset", async () => {
   render(<MemoryRouter initialEntries={["/settings"]}>
-    <Link to="/settings">离开</Link><Link to="/video">返回</Link>
-    <RetainedVideoWorkspace>{(active) => <BasicLayout active={active} contentKey="video-workspace"><video data-testid="media" /></BasicLayout>}</RetainedVideoWorkspace>
+    <AppShell>
+      <Link to="/settings">离开</Link><Link to="/video">返回</Link>
+      <RetainedVideoWorkspace>{() => <BasicLayout contentKey="video-workspace"><video data-testid="media" /></BasicLayout>}</RetainedVideoWorkspace>
+    </AppShell>
   </MemoryRouter>);
   expect(screen.queryByTestId("media")).not.toBeInTheDocument();
   fireEvent.click(screen.getByText("返回"));

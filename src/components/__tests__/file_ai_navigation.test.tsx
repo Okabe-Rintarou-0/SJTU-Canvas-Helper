@@ -3,23 +3,24 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import FilesPage from "../../page/files";
 import { fileAISession } from "../../lib/file_ai_session";
-import type { DraggableItem } from "../../lib/model";
+import type { Course, DraggableItem } from "../../lib/model";
 
 const mocks = vi.hoisted(() => ({
-  invoke: vi.fn(), listen: vi.fn(), noop: vi.fn(), empty: [],
+  invoke: vi.fn(), listen: vi.fn(), enqueueTask: vi.fn(), enqueuePDFMerge: vi.fn(), noop: vi.fn(), empty: [],
+  courses: [] as Course[], selectedCourseId: -1,
   files: [{ id: 12, key: "file", uuid: "file", display_name: "作业.pdf", url: "https://example.com/file", size: 20 }],
   messages: { info: vi.fn(), error: vi.fn(), warning: vi.fn(), success: vi.fn() },
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
-vi.mock("../../lib/task_runtime", () => ({ enqueueTask: vi.fn() }));
+vi.mock("../../lib/task_runtime", () => ({ enqueueTask: mocks.enqueueTask }));
 vi.mock("../../lib/upload_tasks", () => ({ createCloudUploadTask: vi.fn() }));
-vi.mock("../../lib/task_hooks", () => ({ useLegacyTasks: () => mocks.empty }));
+vi.mock("../../lib/task_hooks", () => ({ useLegacyTasks: () => mocks.empty, useTasks: () => mocks.empty }));
+vi.mock("../../lib/pdf_tasks", () => ({ enqueuePDFMerge: mocks.enqueuePDFMerge }));
 vi.mock("../../lib/file_conversion", () => ({ canConvertFileToPdf: () => false, getOutputFile: vi.fn() }));
 vi.mock("../../lib/hooks", () => ({
-  useCourses: () => ({ data: mocks.empty }), useSelectedCourse: () => ({ selectedCourseId: -1, setSelectedCourseId: mocks.noop }),
+  useCourses: () => ({ data: mocks.courses }), useSelectedCourse: () => ({ selectedCourseId: mocks.selectedCourseId, setSelectedCourseId: mocks.noop }),
   useExternalFiles: () => ({ data: mocks.files }), useBaseURL: () => ({ data: "https://example.com" }),
-  useMerger: () => ({ merger: null, mergePDFs: mocks.noop }),
   usePreview: () => ({ previewer: null, onHoverEntry: mocks.noop, onLeaveEntry: mocks.noop, setPreviewEntry: mocks.noop, setEntries: mocks.noop }),
 }));
 vi.mock("../../lib/message", () => ({ useAppMessage: () => [mocks.messages] }));
@@ -49,8 +50,9 @@ it("keeps the user's PDF merge order across unrelated file page updates", () => 
     expect(screen.getByTestId("merge-order")).toHaveTextContent("第二份.pdf,作业.pdf");
     view.rerender(<FilesPage />);
     expect(screen.getByTestId("merge-order")).toHaveTextContent("第二份.pdf,作业.pdf");
-    fireEvent.click(screen.getByRole("button", { name: "确认顺序" }));
-    expect(mocks.noop).toHaveBeenCalledWith([mocks.files[1], mocks.files[0]]);
+    fireEvent.change(screen.getByRole("textbox", { name: "输出文件名" }), { target: { value: "课程笔记.pdf" } });
+    fireEvent.click(screen.getByRole("button", { name: "开始合并" }));
+    expect(mocks.enqueuePDFMerge).toHaveBeenCalledWith([mocks.files[1], mocks.files[0]], "课程笔记.pdf", undefined);
   } finally {
     mocks.files.pop();
   }
@@ -81,4 +83,33 @@ it("restores the real file conversation after leaving, including chunks received
   returned.unmount(); render(<FilesPage />);
   expect(screen.getByPlaceholderText(/继续追问这份文件/)).toHaveValue("未发送的追问");
   expect(mocks.invoke).toHaveBeenCalledOnce();
+});
+
+it("only queues course-wide synchronization after confirming the course and scope", async () => {
+  const course = { id: 37, name: "课程同步测试", term: { id: 2, name: "Fall" } } as Course;
+  mocks.courses = [course];
+  mocks.selectedCourseId = course.id;
+  mocks.invoke.mockResolvedValue([]);
+  mocks.enqueueTask.mockClear();
+  try {
+    render(<FilesPage />);
+    const sync = await screen.findByRole("button", { name: "一键同步" });
+    await waitFor(() => expect(sync).toBeEnabled());
+    fireEvent.click(sync);
+    let dialog = screen.getByRole("dialog", { name: "同步课程文件" });
+    expect(within(dialog).getByText(course.name)).toBeVisible();
+    expect(within(dialog).getByText(/包括所有子目录/)).toBeVisible();
+    expect(mocks.enqueueTask).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
+    expect(mocks.enqueueTask).not.toHaveBeenCalled();
+    fireEvent.click(sync);
+    dialog = screen.getByRole("dialog", { name: "同步课程文件" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认同步" }));
+    expect(mocks.enqueueTask).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      kind: "sync", source: "files", context: course.name,
+    }));
+  } finally {
+    mocks.courses = [];
+    mocks.selectedCourseId = -1;
+  }
 });

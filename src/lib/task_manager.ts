@@ -26,6 +26,7 @@ export interface Task {
   log?: string;
   createdAt: number;
   finishedAt?: number;
+  batch?: number;
   unreadCompletion?: boolean;
   attempt: number;
   data?: unknown;
@@ -82,6 +83,7 @@ export class TaskManager {
   private actionBusy = new Set<string>();
   private failureStages = new Map<string, string>();
   private draining = false;
+  private batch = 0;
   constructor(private readonly concurrency = 3) {}
   getSnapshot = () => this.tasks;
   subscribe = (listener: () => void) => {
@@ -95,6 +97,10 @@ export class TaskManager {
     this.tasks = this.tasks.map((task) => task.id === id ? { ...task, ...patch } : task);
     this.emit();
   }
+  private currentBatch() {
+    if (!this.tasks.some(isTaskActive)) this.batch++;
+    return this.batch;
+  }
   enqueue(spec: TaskSpec): string {
     const existing = this.tasks.find((task) => task.id === spec.id);
     if (existing) {
@@ -105,7 +111,7 @@ export class TaskManager {
     this.tasks = [...this.tasks, {
       id: spec.id, name: spec.name, kind: spec.kind, source: spec.source,
       context: spec.context, outputPath: spec.outputPath, outputDirectory: spec.outputDirectory, data: spec.data,
-      status: "queued", stage: "等待执行", createdAt: Date.now(), attempt: 0,
+      status: "queued", stage: "等待执行", batch: this.currentBatch(), createdAt: Date.now(), attempt: 0,
       canOpen: !!spec.open, canSave: !!spec.save,
     }];
     this.emit();
@@ -120,7 +126,7 @@ export class TaskManager {
       attempt: task.attempt, error: task.error,
     });
     this.failureStages.delete(id);
-    this.patch(id, { status: "queued", stage: "等待重试", progress: undefined, error: undefined, actionError: undefined, finishedAt: undefined, log: undefined });
+    this.patch(id, { status: "queued", stage: "等待重试", batch: this.currentBatch(), progress: undefined, error: undefined, actionError: undefined, finishedAt: undefined, log: undefined });
     this.drain();
   }
   remove(id: string) {

@@ -13,7 +13,7 @@ use model::{
 };
 use serde::{Deserialize, Serialize};
 
-use tauri::{Emitter, Runtime, Window};
+use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize, Rect, Runtime, Webview, Window};
 
 use crate::app::App;
 mod app;
@@ -345,25 +345,83 @@ async fn list_course_files(course_id: i64) -> Result<Vec<File>> {
     APP.list_course_files(course_id).await
 }
 
+#[derive(Deserialize)]
+struct PreviewBounds {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+fn file_preview_label(preview_id: uuid::Uuid) -> String {
+    format!("file-preview-{preview_id}")
+}
+
 #[tauri::command]
-async fn open_file_preview_window(
-    app: tauri::AppHandle,
+async fn open_embedded_file_preview(
+    webview: Webview,
     file_id: i64,
-    title: String,
+    preview_id: uuid::Uuid,
+    bounds: PreviewBounds,
 ) -> Result<()> {
     let session_url = APP.get_file_preview_session_url(file_id).await?;
-    let url = session_url
+    let url: tauri::Url = session_url
         .parse()
         .map_err(|error| AppError::FilePreview(format!("Invalid preview URL: {error}")))?;
-    let label = format!("file-preview-{}", uuid::Uuid::new_v4());
-
-    tauri::WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::External(url))
-        .title(title)
-        .inner_size(1280.0, 820.0)
-        .min_inner_size(720.0, 480.0)
-        .center()
-        .build()
+    let app_origin = webview
+        .url()
+        .map_err(|error| AppError::FilePreview(error.to_string()))?
+        .origin();
+    let builder = tauri::webview::WebviewBuilder::new(
+        file_preview_label(preview_id),
+        tauri::WebviewUrl::External(url),
+    )
+    .focused(false)
+    .on_navigation(move |url| {
+        matches!(url.scheme(), "https" | "http") && url.origin() != app_origin
+    });
+    webview
+        .window()
+        .add_child(
+            builder,
+            PhysicalPosition::new(bounds.x, bounds.y),
+            PhysicalSize::new(bounds.width, bounds.height),
+        )
         .map_err(|error| AppError::FilePreview(error.to_string()))?;
+    Ok(())
+}
+
+fn embedded_file_preview(owner: &Webview, preview_id: uuid::Uuid) -> Option<Webview> {
+    owner
+        .app_handle()
+        .get_webview(&file_preview_label(preview_id))
+        .filter(|preview| preview.window().label() == owner.window().label())
+}
+
+#[tauri::command]
+fn resize_embedded_file_preview(
+    webview: Webview,
+    preview_id: uuid::Uuid,
+    bounds: PreviewBounds,
+) -> Result<()> {
+    if let Some(preview) = embedded_file_preview(&webview, preview_id) {
+        preview
+            .set_bounds(Rect {
+                position: PhysicalPosition::new(bounds.x, bounds.y).into(),
+                size: PhysicalSize::new(bounds.width, bounds.height).into(),
+            })
+            .map_err(|error| AppError::FilePreview(error.to_string()))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn close_embedded_file_preview(webview: Webview, preview_id: uuid::Uuid) -> Result<()> {
+    if let Some(preview) = embedded_file_preview(&webview, preview_id) {
+        preview
+            .close()
+            .map_err(|error| AppError::FilePreview(error.to_string()))?;
+    }
     Ok(())
 }
 
@@ -1207,7 +1265,9 @@ async fn main() -> Result<()> {
             list_discussion_topics,
             sync_course_files,
             list_course_files,
-            open_file_preview_window,
+            open_embedded_file_preview,
+            resize_embedded_file_preview,
+            close_embedded_file_preview,
             list_course_images,
             list_course_members,
             list_course_users,

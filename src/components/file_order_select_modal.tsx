@@ -1,10 +1,12 @@
 import {
-  Alert,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   Button,
+  InputAdornment,
+  TextField,
+  Typography,
   Stack,
 } from "@mui/material";
 import { useEffect, useState } from "react";
@@ -20,12 +22,15 @@ export default function FileOrderSelectModal({
 }: {
   files: File[];
   open: boolean;
-  handleOk: (items: DraggableItem[]) => void;
+  handleOk: (files: File[], name: string) => void;
   handleCancel: () => void;
 }) {
   const [items, setItems] = useState<DraggableItem[]>([]);
+  const [fileName, setFileName] = useState("");
 
   useEffect(() => {
+    if (!open) return;
+    setFileName("");
     setItems(
       files.map((file) => ({
         id: file.id.toString(),
@@ -33,7 +38,13 @@ export default function FileOrderSelectModal({
         data: file,
       }))
     );
-  }, [files]);
+  }, [files, open]);
+
+  const confirm = () => {
+    if (items.length < 2) return;
+    const base = fileName.trim().replace(/\.pdf$/i, "").replace(/[\\/:*?"<>|]/g, "_").replace(/[ .]+$/, "");
+    handleOk(items.map((item) => item.data as File), (base || "merged_" + Date.now()) + ".pdf");
+  };
 
   return (
     <Dialog
@@ -47,19 +58,21 @@ export default function FileOrderSelectModal({
         },
       }}
     >
-      <DialogTitle>指定合并顺序</DialogTitle>
+      <DialogTitle>合并文档</DialogTitle>
       <DialogContent dividers>
         <Stack spacing={2}>
-          <Alert severity="info" sx={{ borderRadius: "16px" }}>
-            您可以拖拽文件名称以调整合并顺序。
-          </Alert>
+          <TextField label="输出文件名" placeholder="留空使用默认文件名" value={fileName}
+            onChange={(event) => setFileName(event.target.value)} fullWidth autoFocus
+            slotProps={{ input: { endAdornment: <InputAdornment position="end">.pdf</InputAdornment> } }}
+          />
+          <Typography variant="body2" color="text.secondary">拖动文件以调整合并顺序。</Typography>
           <DraggableList items={items} onDragEnd={setItems} />
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
         <Button onClick={handleCancel}>取消</Button>
-        <Button variant="contained" onClick={() => handleOk(items)}>
-          确认顺序
+        <Button variant="contained" disabled={items.length < 2} onClick={confirm}>
+          开始合并
         </Button>
       </DialogActions>
     </Dialog>

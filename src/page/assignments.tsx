@@ -430,7 +430,6 @@ export default function AssignmentsPage() {
           aside={
             <Box sx={{ width: { xs: "100%", lg: 640 } }}>
               <CourseSelect
-                disableClearable
                 onChange={setSelectedCourseId}
                 disabled={operating}
                 courses={courses.data}

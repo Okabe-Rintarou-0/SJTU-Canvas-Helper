@@ -20,10 +20,8 @@ export default memo(function CourseSelect({
   value,
   getSourceLabel,
   compareCourses,
-  disableClearable = false,
 }: {
   courses: Course[];
-  disableClearable?: boolean;
   disabled?: boolean;
   onChange?: (courseId: number) => void;
   value?: number;
@@ -62,11 +60,11 @@ export default memo(function CourseSelect({
     <Autocomplete
       {...popup}
       fullWidth
-      disableClearable={disableClearable}
+      disableClearable={Boolean(selectedCourse)}
       disabled={disabled || !hasCourses}
       options={formattedCourses}
       value={selectedCourse}
-      onChange={(_, nextValue) => onChange?.(nextValue?.id ?? -1)}
+      onChange={(_, nextValue) => { if (nextValue) onChange?.(nextValue.id); }}
       getOptionLabel={(option) => option.name}
       isOptionEqualToValue={(option, currentValue) => option.id === currentValue.id}
       noOptionsText="暂无可用课程"
@@ -169,11 +167,6 @@ export default memo(function CourseSelect({
           {...params}
           placeholder={hasCourses ? "请选择或搜索课程…" : "暂无可用课程"}
           inputProps={{ ...params.inputProps, "aria-label": "课程" }}
-          helperText={
-            selectedCourse
-              ? `当前已选：${selectedCourse.name.split(" | ")[0]}`
-              : "优先展示最近学期课程，支持按课程、学期和教师搜索。"
-          }
           sx={{
             "& .MuiOutlinedInput-root": {
               minHeight: 56,

@@ -1,14 +1,3 @@
-import { enqueuePDFMerge } from "./pdf_tasks";
-import type { DownloadCourse } from "./downloads";
-import { useTasks } from "./task_hooks";
-import { isTaskActive, taskManager } from "./task_manager";
-import {
-  Button,
-  LinearProgress,
-  Stack,
-  TextField,
-  Typography,
-} from "@mui/material";
 import { invoke } from "@tauri-apps/api/core";
 import dayjs from "dayjs";
 import {
@@ -45,7 +34,7 @@ import {
   isFile,
 } from "./model";
 import { ConfigDispatch, ConfigState, courseSlice } from "./store";
-import { consoleLog, isMergableFileType, moduleItem2File } from "./utils";
+import { consoleLog, moduleItem2File } from "./utils";
 
 const UPDATE_QRCODE_MESSAGE = '{ "type": "UPDATE_QR_CODE" }';
 const SEND_INTERVAL = 1000 * 25;
@@ -263,87 +252,6 @@ function Previewer({
       )}
     </>
   );
-}
-
-export function useMerger({
-  setPreviewEntry,
-  onHoverEntry,
-  onLeaveEntry,
-  course,
-}: {
-  setPreviewEntry: Dispatch<SetStateAction<EntryType>>;
-  onHoverEntry: (entry: Entry) => void;
-  onLeaveEntry: () => void;
-  course?: DownloadCourse;
-}) {
-  const tasks = useTasks();
-  const latest = [...tasks].reverse().find((task) => task.kind === "pdf-merge");
-  const [outFileName, setOutFileName] = useState("");
-  const result = useMemo(() => latest?.result ? ({
-    url: latest.result.url, display_name: latest.result.name,
-  } as File) : undefined, [latest?.result]);
-  const mergePDFs = async (files: File[]) => {
-    const selected = files.filter((file) => isMergableFileType(file.display_name));
-    if (selected.length < 2) {
-      appMessage().warning("请选择至少两个可合并的文件。");
-      return;
-    }
-    if (tasks.some((task) => task.kind === "pdf-merge" && isTaskActive(task))) {
-      appMessage().warning("请等待当前合并任务执行完毕。");
-      return;
-    }
-    const name = outFileName.trim().replace(/[\\/:*?"<>|]/g, "_") || `merged_${Date.now()}`;
-    enqueuePDFMerge(selected, `${name}.pdf`, course);
-  };
-  const progress = (
-    <Stack spacing={1}>
-      <Typography variant="body2" color={latest?.status === "failed" ? "error" : "text.secondary"}>
-        {latest?.error ?? latest?.stage ?? "当前无任务"}
-      </Typography>
-      <LinearProgress
-        variant={latest && isTaskActive(latest) && latest.progress === undefined ? "indeterminate" : "determinate"}
-        value={latest?.progress ?? 0}
-        color={latest?.status === "failed" ? "error" : "primary"}
-      />
-      {latest?.status === "failed" && <Button onClick={() => taskManager.retry(latest.id)}>重试合并</Button>}
-      {latest?.actionError && <Typography color="error">{latest.actionError}</Typography>}
-    </Stack>
-  );
-  const handleDownloadResult = () => latest ? taskManager.action(latest.id, "save") : undefined;
-
-  const merger = (
-    <Stack spacing={2} sx={{ width: "100%" }}>
-      <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }}>
-        <Typography variant="body2" color="text.secondary">
-          自定义文件名：
-        </Typography>
-        <TextField
-          size="small"
-          fullWidth
-          onChange={(e) => setOutFileName(e.target.value)}
-          placeholder="请输入自定义文件名"
-          InputProps={{
-            endAdornment: <Typography variant="caption" color="text.secondary">.pdf</Typography>,
-          }}
-        />
-      </Stack>
-      {progress}
-      {result && (
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }}>
-          <a
-            onMouseEnter={() => onHoverEntry(result)}
-            onMouseLeave={onLeaveEntry}
-          >
-            {result.display_name}
-          </a>
-          <Button variant="outlined" onClick={() => setPreviewEntry(result)}>预览</Button>
-          <Button variant="contained" onClick={handleDownloadResult}>下载</Button>
-        </Stack>
-      )}
-    </Stack>
-  );
-
-  return { merger, mergePDFs };
 }
 
 export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {
