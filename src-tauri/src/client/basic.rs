@@ -440,6 +440,41 @@ impl Client {
         self.list_items(&url, token).await
     }
 
+    pub async fn read_canvas_preview_file(
+        &self,
+        file_id: i64,
+        token: &str,
+        sample_only: bool,
+    ) -> Result<Vec<u8>> {
+        let base_url = self.base_url.read().await.trim_end_matches('/').to_owned();
+        let api_url = format!("{base_url}/api/v1/files/{file_id}");
+        let file: File = self.get_json_with_token(&api_url, None::<&str>, token).await?;
+        let base = reqwest::Url::parse(&base_url)
+            .map_err(|error| AppError::FilePreview(error.to_string()))?;
+        let url = base
+            .join(&file.url)
+            .map_err(|error| AppError::FilePreview(error.to_string()))?;
+
+        let mut request = self.cli.get(url.clone());
+        if url.origin() == base.origin() {
+            request = request.bearer_auth(token);
+        }
+        let mut response = self.execute_request(request.build()?).await?.error_for_status()?;
+        if !sample_only {
+            return Ok(response.bytes().await?.to_vec());
+        }
+
+        // Stop reading after the prefix, even when the storage server cannot serve ranges.
+        const SAMPLE_BYTES: usize = 8192;
+        let mut sample = Vec::with_capacity(SAMPLE_BYTES);
+        while sample.len() < SAMPLE_BYTES {
+            let Some(chunk) = response.chunk().await? else { break };
+            let count = min(SAMPLE_BYTES - sample.len(), chunk.len());
+            sample.extend_from_slice(&chunk[..count]);
+        }
+        Ok(sample)
+    }
+
     pub async fn get_file_preview_session_url(&self, file_id: i64, token: &str) -> Result<String> {
         #[derive(serde::Deserialize)]
         struct WebSessionResponse {

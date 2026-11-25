@@ -364,7 +364,12 @@ async fn open_embedded_file_preview(
     preview_id: uuid::Uuid,
     bounds: PreviewBounds,
 ) -> Result<()> {
-    let session_url = APP.get_file_preview_session_url(file_id).await?;
+    let session_url = tokio::time::timeout(
+        std::time::Duration::from_secs(6),
+        APP.get_file_preview_session_url(file_id),
+    )
+    .await
+    .map_err(|_| AppError::FilePreview("Canvas preview request timed out".to_owned()))??;
     let url: tauri::Url = session_url
         .parse()
         .map_err(|error| AppError::FilePreview(format!("Invalid preview URL: {error}")))?;
@@ -372,6 +377,8 @@ async fn open_embedded_file_preview(
         .url()
         .map_err(|error| AppError::FilePreview(error.to_string()))?
         .origin();
+    let (page_loaded, finished) = tokio::sync::oneshot::channel();
+    let page_loaded = std::sync::Mutex::new(Some(page_loaded));
     let builder = tauri::webview::WebviewBuilder::new(
         file_preview_label(preview_id),
         tauri::WebviewUrl::External(url),
@@ -379,8 +386,18 @@ async fn open_embedded_file_preview(
     .focused(false)
     .on_navigation(move |url| {
         matches!(url.scheme(), "https" | "http") && url.origin() != app_origin
+    })
+    .on_page_load(move |_, payload| {
+        if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished)
+            && matches!(payload.url().scheme(), "https" | "http")
+            && !payload.url().path().starts_with("/login")
+        {
+            if let Some(sender) = page_loaded.lock().ok().and_then(|mut sender| sender.take()) {
+                let _ = sender.send(());
+            }
+        }
     });
-    webview
+    let preview = webview
         .window()
         .add_child(
             builder,
@@ -388,6 +405,17 @@ async fn open_embedded_file_preview(
             PhysicalSize::new(bounds.width, bounds.height),
         )
         .map_err(|error| AppError::FilePreview(error.to_string()))?;
+    if let Err(error) = preview.hide() {
+        let _ = preview.close();
+        return Err(AppError::FilePreview(error.to_string()));
+    }
+    if !matches!(
+        tokio::time::timeout(std::time::Duration::from_secs(8), finished).await,
+        Ok(Ok(()))
+    ) {
+        let _ = preview.close();
+        return Err(AppError::FilePreview("Canvas preview did not load".to_owned()));
+    }
     Ok(())
 }
 
@@ -410,6 +438,7 @@ fn resize_embedded_file_preview(
                 position: PhysicalPosition::new(bounds.x, bounds.y).into(),
                 size: PhysicalSize::new(bounds.width, bounds.height).into(),
             })
+            .and_then(|_| preview.show())
             .map_err(|error| AppError::FilePreview(error.to_string()))?;
     }
     Ok(())
@@ -803,6 +832,12 @@ async fn download_my_file_as_pdf(file: File, folder_path: String) -> Result<()> 
 #[tauri::command]
 async fn save_file_content(content: Vec<u8>, file_name: String, course: Option<utils::download::DownloadCourse>) -> Result<()> {
     APP.save_file_content(&content, &file_name, course.as_ref()).await
+}
+
+#[tauri::command]
+async fn read_canvas_preview_file(file_id: i64, sample_only: Option<bool>) -> Result<tauri::ipc::Response> {
+    let bytes = APP.read_canvas_preview_file(file_id, sample_only.unwrap_or(false)).await?;
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 #[tauri::command]
@@ -1328,6 +1363,7 @@ async fn main() -> Result<()> {
             delete_assignment_ddl_override,
             get_my_single_submission,
             // Utils
+            read_canvas_preview_file,
             convert_pptx_to_pdf,
             convert_docx_to_pdf,
             // Apis for course video

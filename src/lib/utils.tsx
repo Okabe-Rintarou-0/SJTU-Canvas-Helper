@@ -12,7 +12,7 @@ import TableChartRoundedIcon from "@mui/icons-material/TableChartRounded";
 import { relaunch } from '@tauri-apps/plugin-process';
 import { check } from "@tauri-apps/plugin-updater";
 import dayjs, { Dayjs } from "dayjs";
-import { decode } from "js-base64";
+import { toUint8Array } from "js-base64";
 import { getConfig } from "./config";
 import {
   Assignment,
@@ -73,7 +73,6 @@ export function base64ToBuffer(base64: string) {
 }
 
 const aliasMap: Record<string, string> = {
-  pptx: "ppt",
   cjs: "js",
   gitignore: "txt",
   mp4: "video/mp4",
@@ -83,7 +82,8 @@ const aliasMap: Record<string, string> = {
 };
 
 export async function getFileType(filename: string) {
-  const extension = filename.split(".").pop()?.toLowerCase() ?? "";
+  const dockerfile = /^dockerfile(?:\..+)?$/i.test(filename);
+  const extension = dockerfile ? "dockerfile" : filename.split(".").pop()?.toLowerCase() ?? "";
   const serveAsPlaintext = (await getConfig()).serve_as_plaintext.split(",");
   if (extension && aliasMap[extension]) {
     return aliasMap[extension];
@@ -121,7 +121,10 @@ export function decodeBase64Data(raw: string) {
   const base64 = getBase64Data(raw);
   let data;
   try {
-    data = decode(base64);
+    const bytes = toUint8Array(base64);
+    const encoding = bytes[0] === 0xff && bytes[1] === 0xfe ? "utf-16le"
+      : bytes[0] === 0xfe && bytes[1] === 0xff ? "utf-16be" : "utf-8";
+    data = new TextDecoder(encoding).decode(bytes);
   } catch (_) {
     data = raw;
   }

@@ -10,7 +10,6 @@ import {
   Alert,
   Box,
   Button,
-  Card,
   CircularProgress,
   Divider,
   List,
@@ -22,12 +21,20 @@ import {
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import { Archive } from "libarchive.js";
-import { Fragment, ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { DownloadCourseContext } from "../lib/download_context";
 
 import { useAppMessage } from "../lib/message";
 import { LOG_LEVEL_ERROR } from "../lib/model";
 import { consoleLog, dataURLtoFile, formatSize, getFileType } from "../lib/utils";
+import { PreviewErrorContext } from "./preview_error";
+import {
+  createPreviewRenderers,
+  isPreviewText,
+  knownPreviewType,
+  PREVIEW_SAMPLE_BYTES,
+} from "./preview_file_loader";
+import PreviewUnavailable from "./preview_unavailable";
 import { ArchiveSupportedRenderers } from "./renderers";
 
 interface BlackListEntry {
@@ -54,15 +61,29 @@ export default function ArchiveRenderer({
   const [treeData, setTreeData] = useState<ArchiveTreeNode | undefined>();
   const [fileMap, setFileMap] = useState<Map<string, any> | undefined>();
   const [selectedDoc, setSelectedDoc] = useState<IDocument | undefined>();
-  const selectedViewer = useMemo(() => selectedDoc ? (
-    <DocViewer
-      key={selectedDoc.uri}
-      config={{ header: { disableHeader: true, disableFileName: true, retainURLParams: true } }}
-      pluginRenderers={ArchiveSupportedRenderers}
-      documents={[selectedDoc]}
-      style={{ height: "100%" }}
-    />
-  ) : null, [selectedDoc]);
+  const [failedUri, setFailedUri] = useState<string>();
+  const previewFailed = useCallback(() => setFailedUri(selectedDoc?.uri), [selectedDoc?.uri]);
+  const renderers = useMemo(() => createPreviewRenderers(ArchiveSupportedRenderers, previewFailed), [previewFailed]);
+  const selectedViewer = useMemo(() => {
+    if (!selectedDoc) return null;
+    if (failedUri === selectedDoc.uri) {
+      return <PreviewUnavailable document={selectedDoc} fileName={selectedDoc.fileName ?? ""} failed />;
+    }
+    return (
+      <PreviewErrorContext.Provider value={previewFailed}>
+        <DocViewer
+          key={selectedDoc.uri}
+          config={{
+            header: { disableHeader: true },
+            noRenderer: { overrideComponent: PreviewUnavailable },
+          }}
+          pluginRenderers={renderers}
+          documents={[selectedDoc]}
+          style={{ height: "100%", backgroundColor: "transparent" }}
+        />
+      </PreviewErrorContext.Provider>
+    );
+  }, [selectedDoc, failedUri, previewFailed, renderers]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | undefined>();
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
@@ -196,22 +217,16 @@ export default function ArchiveRenderer({
     if (fileReader) {
       try {
         const file = await fileReader.extract();
-        const fileData = await Promise.race([
-          new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result ?? ""));
-            reader.onerror = () => reject(reader.error ?? new Error("读取压缩包子文件失败"));
-            reader.readAsDataURL(file);
-          }),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("读取压缩包子文件超时")), 10000)
-          ),
-        ]);
+        const extension = await getFileType(file.name);
+        let fileType = knownPreviewType(extension, file.type, ArchiveSupportedRenderers);
+        if (!fileType) {
+          const sample = await file.slice(0, PREVIEW_SAMPLE_BYTES).arrayBuffer();
+          if (isPreviewText(new Uint8Array(sample))) fileType = "txt";
+        }
         const doc = {
           uri: URL.createObjectURL(file),
           fileName: file.name,
-          fileType: await getFileType(file.name),
-          fileData,
+          fileType: fileType ?? extension,
         } as IDocument;
         setSelectedDoc((oldDoc) => setDocAndGC(oldDoc, doc));
         setSelectedPath(path);
@@ -325,7 +340,7 @@ export default function ArchiveRenderer({
   return (
     <>
       {contextHolder}
-      <Stack spacing={2} sx={{ width: "100%", height: "100%" }}>
+      <Stack sx={{ width: "100%", height: "100%", minHeight: 0 }}>
         {loading ? (
           <Box
             sx={{
@@ -342,38 +357,36 @@ export default function ArchiveRenderer({
             </Stack>
           </Box>
         ) : error ? (
-          <Alert severity="error" sx={{ borderRadius: "18px" }}>
+          <Alert severity="error" sx={{ m: 2 }}>
             解析失败：{error}
           </Alert>
         ) : (
           <Box
             sx={{
               display: "grid",
-              gap: 2,
-              gridTemplateColumns: {
-                xs: "minmax(0, 1fr)",
-                lg: "320px minmax(0, 1fr)",
-              },
+              gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "minmax(180px, 28%) minmax(0, 1fr)" },
+              gridTemplateRows: { xs: "minmax(104px, 34%) minmax(0, 1fr)", sm: "minmax(0, 1fr)" },
               height: "100%",
-              minHeight: 520,
+              minHeight: 0,
             }}
           >
-            <Card
+            <Box
               sx={{
-                borderRadius: "24px",
-                border: "1px solid",
-                borderColor: "divider",
-                boxShadow: "none",
                 display: "flex",
                 flexDirection: "column",
                 minHeight: 0,
+                minWidth: 0,
+                borderRight: { xs: 0, sm: 1 },
+                borderBottom: { xs: 1, sm: 0 },
+                borderColor: "divider",
+                bgcolor: "action.hover",
               }}
             >
               <Stack
                 direction="row"
                 justifyContent="space-between"
                 alignItems="center"
-                sx={{ px: 2, pt: 0.25, pb: 1.75, flexShrink: 0 }}
+                sx={{ px: 2, py: 1, flexShrink: 0 }}
               >
                 <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
                   压缩包目录
@@ -410,19 +423,9 @@ export default function ArchiveRenderer({
                     </Typography>
                   </Box>
                 )}
-            </Card>
+            </Box>
 
-            <Card
-              sx={{
-                borderRadius: "24px",
-                border: "1px solid",
-                borderColor: "divider",
-                boxShadow: "none",
-                display: "flex",
-                flexDirection: "column",
-                minHeight: 0,
-              }}
-            >
+            <Box sx={{ display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0 }}>
               <Stack
                 direction="row"
                 justifyContent="space-between"
@@ -466,7 +469,7 @@ export default function ArchiveRenderer({
                   </Box>
                 )}
               </Box>
-            </Card>
+            </Box>
           </Box>
         )}
       </Stack>

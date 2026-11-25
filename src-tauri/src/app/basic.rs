@@ -1404,6 +1404,26 @@ impl App {
     }
 
     #[cfg(target_os = "windows")]
+    fn run_office_powershell(script: &str) -> std::io::Result<process::Output> {
+        let command = format!(
+            r#"[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$ErrorActionPreference = 'Stop'
+try {{
+    & {{
+{script}
+    }}
+}} catch {{
+    [Console]::Error.WriteLine($_.Exception.Message)
+    exit 1
+}}"#
+        );
+        process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command"])
+            .arg(command)
+            .output()
+    }
+
+    #[cfg(target_os = "windows")]
     fn convert_docx_to_pdf_inner(&self, docx_path: &Path, pdf_path: &Path) -> Result<()> {
         if self
             .try_convert_with_libreoffice(docx_path, pdf_path)
@@ -1415,8 +1435,7 @@ impl App {
         let input = docx_path.to_string_lossy().replace('\'', "''");
         let output_path = pdf_path.to_string_lossy().replace('\'', "''");
         let script = format!(
-            r#"$ErrorActionPreference = 'Stop'
-$wordApp = $null
+            r#"$wordApp = $null
 $document = $null
 try {{
     $wordApp = New-Object -ComObject Word.Application
@@ -1428,10 +1447,7 @@ try {{
     if ($null -ne $wordApp) {{ $wordApp.Quit() }}
 }}"#
         );
-        let output = process::Command::new("powershell.exe")
-            .args(["-NoProfile", "-NonInteractive", "-Command"])
-            .arg(script)
-            .output()?;
+        let output = Self::run_office_powershell(&script)?;
         if !output.status.success() || !pdf_path.exists() {
             return Err(AppError::DocumentConversion(format!(
                 "Word/LibreOffice 均无法完成转换：{}",
@@ -1463,22 +1479,31 @@ try {{
         let input = pptx_path.to_string_lossy().replace('\'', "''");
         let output_path = pdf_path.to_string_lossy().replace('\'', "''");
         let script = format!(
-            r#"$ErrorActionPreference = 'Stop'
+            r#"$powerPointWasRunning = [bool](Get-Process -Name POWERPNT -ErrorAction SilentlyContinue)
 $powerPointApp = $null
 $presentation = $null
 try {{
     $powerPointApp = New-Object -ComObject PowerPoint.Application
     $presentation = $powerPointApp.Presentations.Open('{input}', $true, $false, $false)
-    $presentation.SaveAs('{output_path}', 32)
+    try {{
+        # Export all slides using PowerPoint's fixed-format PDF exporter.
+        $presentation.ExportAsFixedFormat('{output_path}', 2, 1, 0, 1, 1, 0, $null, 1)
+    }} catch {{
+        $exportError = $_.Exception.Message
+        try {{
+            $presentation.SaveAs('{output_path}', 32)
+        }} catch {{
+            throw ('ExportAsFixedFormat: ' + $exportError + ' / SaveAs: ' + $_.Exception.Message)
+        }}
+    }}
 }} finally {{
     if ($null -ne $presentation) {{ $presentation.Close() }}
-    if ($null -ne $powerPointApp) {{ $powerPointApp.Quit() }}
+    if ($null -ne $powerPointApp -and -not $powerPointWasRunning -and $powerPointApp.Presentations.Count -eq 0) {{
+        $powerPointApp.Quit()
+    }}
 }}"#
         );
-        let output = process::Command::new("powershell.exe")
-            .args(["-NoProfile", "-NonInteractive", "-Command"])
-            .arg(script)
-            .output()?;
+        let output = Self::run_office_powershell(&script)?;
         if !output.status.success() || !pdf_path.exists() {
             return Err(AppError::DocumentConversion(format!(
                 "PowerPoint/LibreOffice 均无法完成转换：{}",
@@ -1546,6 +1571,11 @@ try {{
             tracing::warn!("Failed to remove conversion temp directory: {error}");
         }
         result
+    }
+
+    pub async fn read_canvas_preview_file(&self, file_id: i64, sample_only: bool) -> Result<Vec<u8>> {
+        let token = self.config.read().await.token.clone();
+        self.client.read_canvas_preview_file(file_id, &token, sample_only).await
     }
 
     pub async fn convert_pptx_to_pdf(&self, file: &mut File) -> Result<Vec<u8>> {
