@@ -36,6 +36,7 @@ const weekColumns = "repeat(7, minmax(0, 1fr))";
 type CalendarSources = {
   colors: Colors["custom_colors"];
   courses: Map<string, Course>;
+  lockOnlyEvents: Promise<CalendarEvent[]>;
 };
 
 type CalendarAssignment = {
@@ -44,6 +45,7 @@ type CalendarAssignment = {
   courseId: number;
   courseName: string;
   date: Dayjs;
+  closes: boolean;
   color?: string;
 };
 
@@ -61,15 +63,19 @@ function getMonthGridDates(month: Dayjs) {
 
 async function loadAssignments(sources: CalendarSources, start: Dayjs, end: Dayjs) {
   if (!sources.courses.size) return [];
-  const events = await invoke<CalendarEvent[]>("list_calendar_events", {
-    contextCodes: [...sources.courses.keys()],
-    startDate: start.toISOString(),
-    endDate: end.toISOString(),
-  });
+  const [datedEvents, lockOnlyEvents] = await Promise.all([
+    invoke<CalendarEvent[]>("list_calendar_events", {
+      contextCodes: [...sources.courses.keys()],
+      startDate: start.toISOString(),
+      endDate: end.toISOString(),
+    }),
+    sources.lockOnlyEvents,
+  ]);
   const items = new Map<string, CalendarAssignment>();
-  for (const event of events) {
+  for (const event of [...datedEvents, ...lockOnlyEvents]) {
     const course = sources.courses.get(event.context_code);
-    const timestamp = event.end_at || event.start_at || event.assignment.due_at;
+    const { due_at: due, lock_at: lock } = event.assignment;
+    const timestamp = due || lock || event.end_at || event.start_at;
     if (!course || !timestamp) continue;
     const date = dayjs(timestamp);
     if (!date.isValid() || date.isBefore(start) || date.isAfter(end)) continue;
@@ -81,15 +87,16 @@ async function loadAssignments(sources: CalendarSources, start: Dayjs, end: Dayj
       courseId: course.id,
       courseName: course.name || event.context_name,
       date,
+      closes: !due && Boolean(lock),
       color: sources.colors[event.context_code],
     });
   }
   return [...items.values()].sort((left, right) => left.date.valueOf() - right.date.valueOf());
 }
 
-function getRemainingTime(date: Dayjs, now: Dayjs) {
+function getRemainingTime({ date, closes }: CalendarAssignment, now: Dayjs) {
   const minutes = date.diff(now, "minute");
-  if (!date.isAfter(now)) return "已截止";
+  if (!date.isAfter(now)) return closes ? "已关闭" : "已截止";
   if (minutes < 1) return "不足 1 分钟";
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);
@@ -106,7 +113,8 @@ function AssignmentLink({ item, inCalendar = false, now }: {
   const theme = useTheme();
   const color = item.color || theme.palette.primary.main;
   const localTime = item.date.format("HH:mm");
-  const calendarTitle = `${item.title} · ${item.courseName} · ${localTime}`;
+  const dateLabel = item.closes ? "关闭 " : "";
+  const calendarTitle = `${item.title} · ${item.courseName} · ${dateLabel}${localTime}`;
 
   return (
     <Tooltip title={inCalendar ? calendarTitle : ""} placement="top">
@@ -137,11 +145,11 @@ function AssignmentLink({ item, inCalendar = false, now }: {
         {!inCalendar && (
           <Stack alignItems="flex-end" sx={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
             <Typography component="time" dateTime={item.date.toISOString()} variant="caption" color="text.secondary">
-              {item.date.format("M/D HH:mm")}
+              {dateLabel}{item.date.format("M/D HH:mm")}
             </Typography>
             {now && (
               <Typography variant="caption" color={item.date.diff(now, "hour") < 24 ? "warning.main" : "text.secondary"}>
-                {getRemainingTime(item.date, now)}
+                {getRemainingTime(item, now)}
               </Typography>
             )}
           </Stack>
@@ -174,6 +182,7 @@ export default function CalendarPage() {
   const [selectedDate, setSelectedDate] = useState(() => dayjs());
   const [sources, setSources] = useState<CalendarSources>();
   const [sourceError, setSourceError] = useState(false);
+  const [lockDateError, setLockDateError] = useState(false);
   const [monthResult, setMonthResult] = useState<{ month: Dayjs; result: CalendarResult }>();
   const [upcoming, setUpcoming] = useState<CalendarResult>();
 
@@ -187,7 +196,15 @@ export default function CalendarPage() {
           const context = `course_${course.id}`;
           if (Object.prototype.hasOwnProperty.call(colors, context)) courseMap.set(context, course);
         }
-        setSources({ colors, courses: courseMap });
+        const contextCodes = [...courseMap.keys()];
+        const lockOnlyEvents = contextCodes.length
+          ? invoke<CalendarEvent[]>("list_calendar_assignments_with_only_lock_dates", { contextCodes })
+            .catch(() => {
+              if (active) setLockDateError(true);
+              return [];
+            })
+          : Promise.resolve([]);
+        setSources({ colors, courses: courseMap, lockOnlyEvents });
       })
       .catch(() => { if (active) setSourceError(true); });
     return () => { active = false; };
@@ -255,7 +272,7 @@ export default function CalendarPage() {
           chipLabel="日程管理"
           chipIcon={<CalendarMonthRoundedIcon />}
           title="课程日历"
-          description="查看 Canvas 课程作业的截止时间与未来七天的待截止事项。"
+          description="查看 Canvas 作业的截止时间、关闭时间和未来七天的事项。"
           aside={
             <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale="zh-cn"
               localeText={zhCN.components.MuiLocalizationProvider.defaultProps.localeText}>
@@ -275,6 +292,7 @@ export default function CalendarPage() {
           }
         />
 
+        {lockDateError && <Alert severity="warning">无法读取仅设置了关闭日期的作业。</Alert>}
         {sourceError ? (
           <Alert severity="error">无法读取 Canvas 课程日历。</Alert>
         ) : (
@@ -360,9 +378,9 @@ export default function CalendarPage() {
                   <Agenda
                     title={selectedDate.format("M 月 D 日事项")}
                     result={visibleMonth && { items: byDate.get(dateKey(selectedDate)) ?? [], error: visibleMonth.error }}
-                    empty="当天没有作业截止。"
+                    empty="当天没有作业截止或关闭。"
                   />
-                  <Agenda title="未来七天" result={upcoming} now={today} empty="未来七天没有作业截止。" />
+                  <Agenda title="未来七天" result={upcoming} now={today} empty="未来七天没有作业截止或关闭。" />
                 </Stack>
               </CardContent>
             </Card>

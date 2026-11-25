@@ -1088,6 +1088,14 @@ impl App {
             .await
     }
 
+    pub async fn list_calendar_assignments_with_only_lock_dates(
+        &self,
+        context_codes: &[String],
+    ) -> Result<Vec<CalendarEvent>> {
+        let token = self.config.read().await.token.clone();
+        self.client.list_calendar_assignments_with_only_lock_dates(&token, context_codes).await
+    }
+
     async fn apply_llm_config(config: &AppConfig, client: &Client) -> Result<()> {
         client
             .reconfigure_llm(crate::client::EffectiveLlmConfig::from_app_config(config))

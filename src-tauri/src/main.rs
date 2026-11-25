@@ -863,6 +863,11 @@ async fn list_calendar_events(
 }
 
 #[tauri::command]
+async fn list_calendar_assignments_with_only_lock_dates(context_codes: Vec<String>) -> Result<Vec<CalendarEvent>> {
+    APP.list_calendar_assignments_with_only_lock_dates(&context_codes).await
+}
+
+#[tauri::command]
 async fn get_folder_by_id(folder_id: i64) -> Result<Folder> {
     APP.get_folder_by_id(folder_id).await
 }
@@ -1321,6 +1326,7 @@ async fn main() -> Result<()> {
             list_my_folders,
             list_folder_folders,
             list_calendar_events,
+            list_calendar_assignments_with_only_lock_dates,
             test_token,
             upload_submission_file,
             submit_assignment,

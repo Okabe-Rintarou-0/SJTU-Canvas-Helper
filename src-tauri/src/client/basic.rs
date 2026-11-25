@@ -608,26 +608,34 @@ impl Client {
         Ok(colors)
     }
 
-    pub async fn list_calendar_events_inner(
+    async fn list_assignment_calendar_events(
         &self,
         token: &str,
         context_codes: &[String],
-        start_date: &str,
-        end_date: &str,
+        date_range: Option<(&str, &str)>,
     ) -> Result<Vec<CalendarEvent>> {
-        let context_codes = context_codes
-            .iter()
-            .map(|context_code| format!("context_codes[]={context_code}"))
-            .reduce(|c1, c2| format!("{c1}&{c2}"))
-            .unwrap_or_default();
-        let url = format!(
-            "{}/api/v1/calendar_events?type=assignment&{}&start_date={}&end_date={}",
-            self.base_url.read().await,
-            context_codes,
-            start_date,
-            end_date
-        );
-        self.list_items(&url, token).await
+        let base_url = self.base_url.read().await.clone();
+        let mut events = Vec::new();
+        for context_batch in context_codes.chunks(10) {
+            let context_query = context_batch
+                .iter()
+                .map(|code| format!("context_codes[]={}", urlencoding::encode(code)))
+                .collect::<Vec<_>>()
+                .join("&");
+            let date_query = match date_range {
+                Some((start, end)) => format!(
+                    "start_date={}&end_date={}",
+                    urlencoding::encode(start),
+                    urlencoding::encode(end)
+                ),
+                None => "undated=true".to_owned(),
+            };
+            let url = format!(
+                "{base_url}/api/v1/calendar_events?type=assignment&{context_query}&{date_query}"
+            );
+            events.extend(self.list_items::<CalendarEvent>(&url, token).await?);
+        }
+        Ok(events)
     }
 
     pub async fn list_calendar_events(
@@ -637,27 +645,18 @@ impl Client {
         start_date: &str,
         end_date: &str,
     ) -> Result<Vec<CalendarEvent>> {
-        const BATCH_SIZE: usize = 10;
-        let n_codes = context_codes.len();
-        let n_batches = if n_codes.is_multiple_of(BATCH_SIZE) {
-            n_codes / BATCH_SIZE
-        } else {
-            n_codes / BATCH_SIZE + 1
-        };
+        self.list_assignment_calendar_events(token, context_codes, Some((start_date, end_date)))
+            .await
+    }
 
-        let mut start;
-        let mut end;
-        let mut all_events = vec![];
-        for batch_idx in 0..n_batches {
-            start = batch_idx * BATCH_SIZE;
-            end = min(start + BATCH_SIZE, n_codes);
-            let context_codes_batch = &context_codes[start..end];
-            let events = self
-                .list_calendar_events_inner(token, context_codes_batch, start_date, end_date)
-                .await?;
-            all_events.extend(events);
-        }
-        Ok(all_events)
+    pub async fn list_calendar_assignments_with_only_lock_dates(
+        &self,
+        token: &str,
+        context_codes: &[String],
+    ) -> Result<Vec<CalendarEvent>> {
+        let mut events = self.list_assignment_calendar_events(token, context_codes, None).await?;
+        events.retain(|event| event.assignment.due_at.is_none() && event.assignment.lock_at.is_some());
+        Ok(events)
     }
 
     pub async fn list_course_members(
@@ -1117,6 +1116,53 @@ mod mock_tests {
             if error.status() == Some(reqwest::StatusCode::UNAUTHORIZED)));
         accepted.assert();
         rejected.assert();
+    }
+
+    #[tokio::test]
+    async fn test_list_calendar_assignments_with_only_lock_dates_returns_closed_assignments() {
+        let server = MockServer::start();
+        let assignment = |id, due_at: Option<&str>, lock_at: Option<&str>| {
+            crate::model::CalendarEvent {
+                assignment: crate::model::Assignment {
+                    id,
+                    due_at: due_at.map(str::to_owned),
+                    lock_at: lock_at.map(str::to_owned),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        };
+        let past = "2024-04-01T10:00:00Z";
+        let first = server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/calendar_events")
+                .header("Authorization", "Bearer test-token")
+                .query_param("type", "assignment")
+                .query_param("undated", "true")
+                .query_param("context_codes[]", "course_37")
+                .query_param("page", "1");
+            then.status(200).json_body_obj(&[
+                assignment(1, None, Some(past)),
+                assignment(2, None, None),
+                assignment(3, Some(past), Some(past)),
+            ]);
+        });
+        let last = server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/calendar_events")
+                .query_param("undated", "true")
+                .query_param("page", "2");
+            then.status(200).json_body(json!([]));
+        });
+        let client = create_test_client(&server.base_url());
+        let events = client
+            .list_calendar_assignments_with_only_lock_dates("test-token", &["course_37".to_owned()])
+            .await
+            .unwrap();
+
+        assert_eq!(events, vec![assignment(1, None, Some(past))]);
+        first.assert();
+        last.assert();
     }
 
     #[tokio::test]
