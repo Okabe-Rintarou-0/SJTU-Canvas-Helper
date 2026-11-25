@@ -1,4 +1,5 @@
 import { getVersion } from "@tauri-apps/api/app";
+import { open as openExternal } from "@tauri-apps/plugin-shell";
 import FolderRoundedIcon from "@mui/icons-material/FolderRounded";
 import ChecklistRoundedIcon from "@mui/icons-material/ChecklistRounded";
 import AutoStoriesRoundedIcon from "@mui/icons-material/AutoStoriesRounded";
@@ -27,7 +28,6 @@ import {
   Badge,
   Button,
   CircularProgress,
-  Divider,
   Drawer,
   IconButton,
   List,
@@ -58,9 +58,10 @@ import LogModal from "./log_modal";
 
 const drawerWidth = 248;
 const collapsedDrawerWidth = 76;
+const communityThreadUrl = "https://shuiyuan.sjtu.edu.cn/t/topic/245275";
 
 const utilityButtonSx = {
-  flex: 1, minWidth: 0, minHeight: 36, borderRadius: "9px",
+  width: "100%", minWidth: 0, minHeight: 36, borderRadius: "9px",
   px: 0.5, gap: 0.75, color: "text.secondary", fontSize: 13,
   whiteSpace: "nowrap",
   "&[aria-current=\"page\"], &[aria-expanded=\"true\"]": { color: "primary.main", bgcolor: "action.selected" },
@@ -157,7 +158,6 @@ export function AppShell({ children }: PropsWithChildren) {
   });
 
   const handleCheckForUpdates = () => {
-    setSupportAnchor(null);
     if (previewOnly) {
       messageApi.info(availableVersion
         ? "开发预览：模拟发现 v" + availableVersion + "，不会下载安装。"
@@ -168,7 +168,7 @@ export function AppShell({ children }: PropsWithChildren) {
   };
 
   const navigationButtonSx = {
-    minHeight: 32, px: compactRail ? 0.75 : 1, py: 0, borderRadius: "8px",
+    minHeight: 42, px: compactRail ? 0.75 : 1, py: 0, borderRadius: "8px",
     "& .MuiListItemIcon-root": { minWidth: compactRail ? 0 : 28, color: "inherit", justifyContent: "center" },
     "& .MuiSvgIcon-root": { fontSize: 18 },
     "& .MuiListItemText-root": { my: 0, ml: 0.5 },
@@ -176,34 +176,8 @@ export function AppShell({ children }: PropsWithChildren) {
     transition: "background-color 0.16s ease, color 0.16s ease",
     "&.Mui-selected, &.Mui-selected:hover": { bgcolor: "action.selected", color: "primary.main" },
   };
-  const taskButton = taskCenterEnabled && (
-    <Tooltip title={`任务中心 · 进行中 ${activeTaskCount} · 需处理 ${failedTaskCount}${progressText}`}>
-      <ListItemButton selected={!!taskAnchor} onClick={(event) => {
-        taskManager.markCompletionsRead();
-        setTaskAnchor(event.currentTarget);
-      }} aria-haspopup="dialog" aria-expanded={!!taskAnchor}
-        aria-label={`任务中心，进行中 ${activeTaskCount}，需处理 ${failedTaskCount}，新完成 ${unreadTaskCount}${progressText}`}
-        sx={navigationButtonSx}
-      >
-        <ListItemIcon sx={{ "& .MuiSvgIcon-root": { color: failedTaskCount ? "error.main" : undefined } }}>
-          <Badge badgeContent={taskAnchor ? 0 : unreadTaskCount} color="error" max={99}
-            sx={{ "& .MuiBadge-badge": { top: 3, right: 3, minWidth: 14, height: 14, px: 0.375, fontSize: 9 } }}>
-            <Box sx={{ position: "relative", display: "grid", placeItems: "center", width: 26, height: 26 }}>
-              {activeTaskCount > 0 && <>
-                <CircularProgress variant="determinate" value={100} size={26} thickness={3} aria-hidden
-                  sx={{ position: "absolute", inset: 0, color: "action.disabledBackground" }} />
-                <CircularProgress variant={batchProgress === undefined ? "indeterminate" : "determinate"}
-                  value={batchProgress} size={26} thickness={3} aria-label="任务总进度"
-                  sx={{ position: "absolute", inset: 0 }} />
-              </>}
-              <DownloadRoundedIcon sx={{ fontSize: 17 }} />
-            </Box>
-          </Badge>
-        </ListItemIcon>
-        {!compactRail && <ListItemText primary="任务中心" slotProps={{ primary: { fontSize: 13.5, lineHeight: 1.35 } }} />}
-      </ListItemButton>
-    </Tooltip>
-  );
+  const taskSummary = `任务中心 · 进行中 ${activeTaskCount} · 需处理 ${failedTaskCount}${progressText}`;
+  const versionLabel = version ? " v" + version : "";
   const drawerContent = (
     <Stack
       sx={{
@@ -243,7 +217,7 @@ export function AppShell({ children }: PropsWithChildren) {
 
         <List component="nav" aria-label="功能导航" sx={{
           p: 0, display: "flex", flexDirection: "column", gap: 0.25, minHeight: 0, overflowY: "auto", overflowX: "hidden",
-          "& .MuiListItemButton-root": { flexShrink: 0 },
+          "& .MuiListItemButton-root": { flex: "0 0 auto" },
         }}>
           {navigationItems.map((item) => {
             const selected = currentKey === item.key;
@@ -310,39 +284,66 @@ export function AppShell({ children }: PropsWithChildren) {
           flexShrink: 0, mt: "auto", pt: 1, borderTop: "1px solid", borderColor: "divider",
           pb: "env(safe-area-inset-bottom, 0px)",
         }}>
-          <Stack direction="row" spacing={0.25}>
+          <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 0.25 }}>
             <Tooltip title="系统设置">
               <Button component={Link} to="/settings" aria-label="系统设置"
-                aria-current={currentKey === "settings" ? "page" : undefined} sx={utilityButtonSx}>
+                aria-current={currentKey === "settings" ? "page" : undefined}
+                sx={{ ...utilityButtonSx, gridColumn: taskCenterEnabled ? undefined : "1 / -1" }}>
                 <SettingsRoundedIcon fontSize="small" />
                 {!compactRail && "设置"}
               </Button>
             </Tooltip>
-            <Tooltip title={availableVersion ? "关于与支持 · 有新版本 " + availableVersion : "关于与支持"}>
+            <Tooltip title={availableVersion ? "检测到新版本 v" + availableVersion : "检查更新"}>
+              <Button sx={utilityButtonSx} onClick={handleCheckForUpdates}
+                aria-label={availableVersion ? "检查更新，有新版本 v" + availableVersion : "检查更新"}>
+                <Badge color="error" variant="dot" invisible={!availableVersion}>
+                  <SystemUpdateAltRoundedIcon fontSize="small" />
+                </Badge>
+                {!compactRail && "检查更新"}
+              </Button>
+            </Tooltip>
+            {taskCenterEnabled && (
+              <Tooltip title={taskSummary}>
+                <Button sx={utilityButtonSx} onClick={(event) => {
+                  taskManager.markCompletionsRead();
+                  setTaskAnchor(event.currentTarget);
+                }} aria-haspopup="dialog" aria-expanded={!!taskAnchor}
+                  aria-label={`${taskSummary} · 新完成 ${unreadTaskCount}`}>
+                  <Badge badgeContent={!taskAnchor ? unreadTaskCount : 0} color="error" max={99}
+                    sx={{ "& .MuiBadge-badge": { top: 3, right: 3, minWidth: 14, height: 14, px: 0.375, fontSize: 9 } }}>
+                    <Box sx={{ position: "relative", display: "grid", placeItems: "center", width: 22, height: 22 }}>
+                      {activeTaskCount > 0 && <>
+                        <CircularProgress variant="determinate" value={100} size={22} thickness={3} aria-hidden
+                          sx={{ position: "absolute", inset: 0, color: "action.disabledBackground" }} />
+                        <CircularProgress variant={batchProgress === undefined ? "indeterminate" : "determinate"}
+                          value={batchProgress} size={22} thickness={3} aria-label="任务总进度"
+                          sx={{ position: "absolute", inset: 0 }} />
+                      </>}
+                      <DownloadRoundedIcon sx={{ fontSize: 18, color: failedTaskCount ? "error.main" : undefined }} />
+                    </Box>
+                  </Badge>
+                  {!compactRail && "任务中心"}
+                </Button>
+              </Tooltip>
+            )}
+            <Tooltip title="关于与支持">
               <Button sx={utilityButtonSx} aria-label="关于与支持" aria-haspopup="menu"
                 aria-expanded={!!supportAnchor} aria-controls={supportAnchor ? supportMenuId : undefined}
                 onClick={(event) => setSupportAnchor(event.currentTarget)}>
-                <Badge color="error" variant="dot" invisible={!availableVersion}>
-                  <HelpOutlineRoundedIcon fontSize="small" />
-                </Badge>
+                <HelpOutlineRoundedIcon fontSize="small" />
                 {!compactRail && "关于与支持"}
               </Button>
             </Tooltip>
-          </Stack>
-          {taskButton}
+          </Box>
+          <Typography variant="caption" color="text.secondary" align="center"
+            sx={{ fontSize: compactRail ? 10 : 11, lineHeight: 1.35 }}>
+            SJTU Canvas Helper{versionLabel}
+          </Typography>
         </Stack>
 
         <Menu id={supportMenuId} anchorEl={supportAnchor} open={!!supportAnchor} onClose={() => setSupportAnchor(null)}
           anchorOrigin={{ vertical: "top", horizontal: "right" }} transformOrigin={{ vertical: "bottom", horizontal: "right" }}
         >
-          <Box component="li" sx={{ listStyle: "none", px: 2, pt: 0.25, pb: 0.75 }}>
-            <Typography variant="caption" color="text.secondary">Canvas Helper {version ? "v" + version : ""}</Typography>
-          </Box>
-          <Divider component="li" />
-          <MenuItem onClick={handleCheckForUpdates}>
-            <ListItemIcon><SystemUpdateAltRoundedIcon fontSize="small" /></ListItemIcon>
-            <ListItemText primary="检查更新" secondary={availableVersion ? "新版本 v" + availableVersion : undefined} />
-          </MenuItem>
           <MenuItem onClick={() => { setSupportAnchor(null); setShowChangeLog(true); }}>
             <ListItemIcon><HistoryRoundedIcon fontSize="small" /></ListItemIcon>
             <ListItemText>更新日志</ListItemText>
@@ -350,6 +351,14 @@ export function AppShell({ children }: PropsWithChildren) {
           <MenuItem onClick={() => { setSupportAnchor(null); setShowLogModal(true); }}>
             <ListItemIcon><ForumRoundedIcon fontSize="small" /></ListItemIcon>
             <ListItemText>反馈</ListItemText>
+          </MenuItem>
+          <MenuItem component="a" href={communityThreadUrl} onClick={(event) => {
+            event.preventDefault();
+            setSupportAnchor(null);
+            void openExternal(communityThreadUrl).catch(() => messageApi.error("无法打开水源社区链接。"));
+          }}>
+            <ListItemIcon><ForumRoundedIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>水源社区讨论帖</ListItemText>
           </MenuItem>
           {config?.debug_mode && (
             <MenuItem component={Link} to="/debug" aria-current={currentKey === "debug" ? "page" : undefined}

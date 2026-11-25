@@ -9,6 +9,12 @@ svg {
     vertical-align: baseline;
 }
 
+html,
+body {
+    overflow-x: clip;
+    overscroll-behavior-x: none;
+}
+
 html {
     scroll-behavior: smooth;
 }

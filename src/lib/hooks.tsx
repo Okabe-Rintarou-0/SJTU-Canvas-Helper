@@ -386,19 +386,25 @@ export function useLoginModal({ onLogin }: { onLogin?: () => void }) {
   return { modal, showModal, closeModal };
 }
 
-export function useData<T>(command: string, shouldFetch: boolean, args?: any) {
+export function useData<T>(
+  command: string,
+  shouldFetch: boolean,
+  args?: any,
+  notifyOnError = true
+) {
   const [data, setData] = useState<T | undefined>();
   const [error, setError] = useState<unknown>();
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState(shouldFetch);
 
   const mutate = async () => {
     setIsLoading(true);
+    setError(undefined);
     try {
       const data = (await invoke(command, args)) as T;
       setData(data);
     } catch (e) {
       consoleLog(LOG_LEVEL_ERROR, e);
-      appMessage().error(e as string);
+      if (notifyOnError) appMessage().error(e as string);
       setError(e);
     }
     setIsLoading(false);
@@ -428,8 +434,8 @@ export function useCourses() {
   };
 }
 
-export function useTAOrTeacherCourses() {
-  const courses = useData<Course[]>("list_courses", true);
+export function useTAOrTeacherCourses(notifyOnError = true) {
+  const courses = useData<Course[]>("list_courses", true, undefined, notifyOnError);
   const data = useMemo(() => (courses.data ?? (EMPTY_ARRAY as Course[])).filter((course) =>
     course.enrollments.find(
       (enrollment) =>
@@ -461,16 +467,18 @@ export function useMe() {
   return useData<User>("get_me", true);
 }
 
-export function useUserSubmissions(courseId?: number, studentIds?: number[]) {
-  const [args, setArgs] = useState<any>({ courseId, studentIds });
-  useEffect(() => {
-    setArgs({ courseId, studentIds });
-  }, [courseId, studentIds]);
+export function useUserSubmissions(
+  courseId?: number,
+  studentIds?: number[],
+  notifyOnError = true
+) {
+  const args = useMemo(() => ({ courseId, studentIds }), [courseId, studentIds]);
   const shouldFetch = courseId != undefined && (studentIds?.length ?? 0) > 0;
   const submissions = useData<UserSubmissions[]>(
     "list_user_submissions",
     shouldFetch,
-    args
+    args,
+    notifyOnError
   );
   return {
     ...submissions,
@@ -478,16 +486,14 @@ export function useUserSubmissions(courseId?: number, studentIds?: number[]) {
   };
 }
 
-export function useAssignments(courseId?: number) {
-  const [args, setArgs] = useState<any>({ courseId });
-  useEffect(() => {
-    setArgs({ courseId });
-  }, [courseId]);
+export function useAssignments(courseId?: number, notifyOnError = true) {
+  const args = useMemo(() => ({ courseId }), [courseId]);
   const shouldFetch = courseId != undefined;
   const assignments = useData<Assignment[]>(
     "list_course_assignments",
     shouldFetch,
-    args
+    args,
+    notifyOnError
   );
   return {
     ...assignments,
@@ -495,13 +501,10 @@ export function useAssignments(courseId?: number) {
   };
 }
 
-export function useStudents(courseId?: number) {
-  const [args, setArgs] = useState<any>({ courseId });
-  useEffect(() => {
-    setArgs({ courseId });
-  }, [courseId]);
+export function useStudents(courseId?: number, notifyOnError = true) {
+  const args = useMemo(() => ({ courseId }), [courseId]);
   const shouldFetch = courseId != undefined;
-  const students = useData<User[]>("list_course_students", shouldFetch, args);
+  const students = useData<User[]>("list_course_students", shouldFetch, args, notifyOnError);
   return {
     ...students,
     data: students.data ?? (EMPTY_ARRAY as User[]),

@@ -67,7 +67,35 @@ import { surfaceCardSx } from "../lib/styles";
 
 export default function GradePage() {
   const { selectedCourseId, setSelectedCourseId } = useSelectedCourse();
-  const [studentIds, setStudentIds] = useState<number[]>([]);
+  const courses = useTAOrTeacherCourses(false);
+  const selectedCourse = courses.error
+    ? undefined
+    : courses.data.find((course) => course.id === selectedCourseId);
+
+  return (
+    <BasicLayout>
+      <GradeWorkspace
+        key={selectedCourse?.id ?? "no-course"}
+        courses={courses}
+        selectedCourse={selectedCourse}
+        selectedCourseId={selectedCourseId}
+        setSelectedCourseId={setSelectedCourseId}
+      />
+    </BasicLayout>
+  );
+}
+
+function GradeWorkspace({
+  courses,
+  selectedCourse,
+  selectedCourseId,
+  setSelectedCourseId,
+}: {
+  courses: ReturnType<typeof useTAOrTeacherCourses>;
+  selectedCourse?: Course;
+  selectedCourseId: number;
+  setSelectedCourseId: (id: number) => void;
+}) {
   const [currentView, setCurrentView] = useState("overview");
   const [messageApi, contextHolder] = useAppMessage();
   const [statistics, setStatistics] = useState<DetailedGradeStatistic>({
@@ -82,15 +110,22 @@ export default function GradePage() {
     folderPath: "",
   });
 
-  const courses = useTAOrTeacherCourses();
-  const activeCourseId = selectedCourseId > 0 ? selectedCourseId : undefined;
-  const students = useStudents(activeCourseId);
-  const userSubmissions = useUserSubmissions(activeCourseId, studentIds);
-  const assignments = useAssignments(activeCourseId);
-
-  const selectedCourse = courses.data.find(
-    (course) => course.id === selectedCourseId
+  const activeCourseId = selectedCourse?.id;
+  const students = useStudents(activeCourseId, false);
+  const studentIds = useMemo(
+    () => students.data.map((student) => student.id),
+    [students.data]
   );
+  const userSubmissions = useUserSubmissions(activeCourseId, studentIds, false);
+  const assignments = useAssignments(activeCourseId, false);
+  const gradeErrors = [students.error, userSubmissions.error, assignments.error].filter(Boolean);
+  const permissionDenied = gradeErrors.some((error) =>
+    /\b(?:unauthorized|forbidden)\b/i.test(String(error))
+  );
+  const refreshGrades = () => {
+    void students.mutate();
+    void assignments.mutate();
+  };
 
   useEffect(() => {
     let disposed = false;
@@ -108,10 +143,6 @@ export default function GradePage() {
     }
     return () => { disposed = true; };
   }, [selectedCourse, messageApi]);
-
-  useEffect(() => {
-    setStudentIds(students.data.map((student) => student.id));
-  }, [students.data]);
 
   useEffect(() => {
     if (currentView !== "statistic") {
@@ -275,13 +306,14 @@ export default function GradePage() {
     assignment: Assignment,
     studentId: number
   ) => {
+    if (!activeCourseId) return;
     if (!validateGrade(grade, assignment)) {
       messageApi.error("请输入正确格式的评分");
       return;
     }
     try {
       await invoke("update_grade", {
-        courseId: selectedCourseId,
+        courseId: activeCourseId,
         assignmentId: assignment.id,
         studentId,
         grade,
@@ -352,8 +384,43 @@ export default function GradePage() {
     }
   };
 
+  let accessNotice;
+  if (courses.error) {
+    accessNotice = (
+      <Alert
+        severity="error"
+        action={<Button color="inherit" onClick={() => void courses.mutate()}>重试</Button>}
+      >
+        无法读取课程列表，请重试。
+      </Alert>
+    );
+  } else if (permissionDenied) {
+    accessNotice = (
+      <Alert severity="warning">
+        Canvas 拒绝了此课程的成绩访问请求。请确认你在这门课拥有评分权限，或选择其他课程。
+      </Alert>
+    );
+  } else if (gradeErrors.length > 0) {
+    accessNotice = (
+      <Alert
+        severity="error"
+        action={<Button color="inherit" disabled={isLoading} onClick={refreshGrades}>重试</Button>}
+      >
+        无法读取课程成绩，请重试。
+      </Alert>
+    );
+  } else if (!isLoading && !selectedCourse) {
+    let prompt = "请在上方选择课程。";
+    if (!courses.data.length) {
+      prompt = "成绩管理需要教师或助教权限。当前账号没有可管理成绩的课程。";
+    } else if (selectedCourseId > 0) {
+      prompt = "当前课程没有成绩管理权限。请在上方选择你担任教师或助教的课程。";
+    }
+    accessNotice = <Alert severity="info">{prompt}</Alert>;
+  }
+
   return (
-    <BasicLayout>
+    <>
       {contextHolder}
       <Stack spacing={3}>
         <WorkspaceHero
@@ -375,7 +442,7 @@ export default function GradePage() {
               />
             </Box>
           }
-          stats={[
+          stats={selectedCourse && !accessNotice ? [
             {
               label: "作业数量",
               value: gradeSummary.totalAssignments,
@@ -396,35 +463,27 @@ export default function GradePage() {
               value: gradeSummary.pendingAssignments,
               icon: <ScheduleRoundedIcon />,
             },
-          ]}
-          footer={
+          ] : undefined}
+          footer={selectedCourse && !accessNotice ?
             <Stack
               direction={{ xs: "column", md: "row" }}
               justifyContent="space-between"
               spacing={1.5}
             >
-              {selectedCourse ? (
-                <Chip
-                  label={selectedCourse.name}
-                  color="primary"
-                  variant="outlined"
-                />
-              ) : (
-                <Chip label="请选择课程" variant="outlined" />
-              )}
+              <Chip label={selectedCourse.name} color="primary" variant="outlined" />
               <Button
                 variant="outlined"
                 startIcon={<RefreshRoundedIcon />}
-                onClick={() => userSubmissions.mutate()}
+                onClick={refreshGrades}
                 disabled={isLoading}
               >
                 刷新数据
               </Button>
             </Stack>
-          }
+          : undefined}
         />
 
-        <Card sx={surfaceCardSx}>
+        {accessNotice ?? <Card sx={surfaceCardSx}>
           <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
             <Tabs
               value={currentView}
@@ -701,8 +760,8 @@ export default function GradePage() {
               </Stack>
             )}
           </CardContent>
-        </Card>
+        </Card>}
       </Stack>
-    </BasicLayout>
+    </>
   );
 }
