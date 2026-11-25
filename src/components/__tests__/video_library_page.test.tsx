@@ -67,7 +67,10 @@ const videos = [
   { videoId: "b", courseBeginTime: "2026-09-28 08:55", courseEndTime: "2026-09-28 09:40" },
   { videoId: "c", courseBeginTime: "2026-09-29 14:00", courseEndTime: "2026-09-29 14:45" },
 ].map((video) => ({ ...video, source: "canvas", weekNumber: 4, videoName: `录像${video.videoId}`, userName: "教师", classroomName: "教室", playable: true, availability: "ready", availabilityLabel: "可播放" }));
+const testCourse = mocks.courses[0];
+const secondCourse = { ...testCourse, id: 11, name: "另一门课程" };
 beforeEach(() => {
+  mocks.courses = [testCourse];
   videoSummarySession.reset();
   vi.clearAllMocks(); dataMock.reset(); localStorage.clear(); mocks.centerOnly = undefined;
   dataMock.switchAccount("test-account");
@@ -102,32 +105,39 @@ async function load() {
   return view;
 }
 async function beginSummary(name: string | RegExp = /开始总结|转录音频后总结|查看总结/) {
-  const button = await screen.findByRole("button", { name });
-  await waitFor(() => expect(button).toBeEnabled());
-  const dialog = screen.getByRole("dialog", { name: /^总结所选/ });
+  const dialog = await screen.findByRole("dialog", { name: /^总结所选/ });
+  const button = await waitFor(() => {
+    const currentButton = within(dialog).getByRole("button", { name });
+    expect(currentButton).toBeEnabled();
+    return currentButton;
+  });
   fireEvent.click(button);
   await waitFor(() => expect(dialog).not.toBeInTheDocument());
 }
 
 describe("video library workflows", () => {
-  it.each(["resolve", "reject"])("clears pending recording loading when deselecting a course before requests %s", async (outcome) => {
+  it.each(["resolve", "reject"])("ignores results from a previous course when its recording requests %s", async (outcome) => {
     mocks.realCourseSelect = true;
+    mocks.courses = [testCourse, secondCourse];
     const original = mocks.invoke.getMockImplementation()!;
     let complete!: () => void;
-    mocks.invoke.mockImplementation((command, args) => command === "get_canvas_videos"
-      ? new Promise((resolve, reject) => {
+    mocks.invoke.mockImplementation((command, args) => {
+      if (command !== "get_canvas_videos") return original(command, args);
+      if (args.courseId !== 10) return Promise.resolve([]);
+      return new Promise((resolve, reject) => {
         complete = () => outcome === "resolve" ? resolve(videos) : reject(new Error("旧课程请求失败"));
-      }) : original(command, args));
+      });
+    });
     render(<VideoPage />);
     await waitFor(() => expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled());
     fireEvent.mouseDown(screen.getByPlaceholderText("请选择或搜索课程…"));
     fireEvent.click(await screen.findByRole("option", { name: /测试课程/ }));
     await waitFor(() => expect(complete).toBeDefined());
     expect(screen.getByRole("progressbar", { name: "正在读取录像" })).toBeVisible();
-    fireEvent.click(screen.getByTitle("Clear"));
-    const loadingAfterClear = screen.queryByRole("progressbar", { name: "正在读取录像" });
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "课程" }));
+    fireEvent.click(await screen.findByRole("option", { name: /另一门课程/ }));
+    await waitFor(() => expect(screen.queryByRole("progressbar", { name: "正在读取录像" })).not.toBeInTheDocument());
     await act(async () => complete());
-    expect(loadingAfterClear).toBeNull();
     expect(screen.queryByRole("progressbar", { name: "正在读取录像" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled();
     expect(screen.queryByText("2 小节")).not.toBeInTheDocument();
@@ -180,10 +190,12 @@ describe("video library workflows", () => {
     await waitFor(() => expect(screen.queryByRole("progressbar", { name: "正在读取直播" })).not.toBeInTheDocument());
 
     mocks.realCourseSelect = true;
+    mocks.courses = [testCourse, secondCourse];
     mocks.invoke.mockImplementation(withLive);
     fireEvent.click(screen.getByRole("button", { name: "刷新" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled());
-    fireEvent.click(screen.getByTitle("Clear"));
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "课程" }));
+    fireEvent.click(await screen.findByRole("option", { name: /另一门课程/ }));
     expect(screen.queryByTestId("live-media")).not.toBeInTheDocument();
     fireEvent.mouseDown(screen.getByPlaceholderText("请选择或搜索课程…"));
     fireEvent.click(await screen.findByRole("option", { name: /测试课程/ }));

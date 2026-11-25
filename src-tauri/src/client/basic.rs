@@ -1120,6 +1120,67 @@ mod mock_tests {
     }
 
     #[tokio::test]
+    async fn test_read_canvas_preview_file_reads_prefix_or_full_text_with_canvas_auth() {
+        let server = MockServer::start();
+        let body = "word ".repeat(2000);
+        let metadata = server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/files/42")
+                .header("Authorization", "Bearer test-token");
+            then.status(200).json_body_obj(&crate::model::File {
+                id: 42,
+                url: "/files/42/download".to_owned(),
+                ..Default::default()
+            });
+        });
+        let download = server.mock(|when, then| {
+            when.method(GET)
+                .path("/files/42/download")
+                .header("Authorization", "Bearer test-token");
+            then.status(200).body(&body);
+        });
+        let client = create_test_client(&server.base_url());
+        let sample = client.read_canvas_preview_file(42, "test-token", true).await.unwrap();
+        let text = client.read_canvas_preview_file(42, "test-token", false).await.unwrap();
+
+        assert_eq!(sample, body.as_bytes()[..8192]);
+        assert_eq!(text, body.as_bytes());
+        metadata.assert_hits(2);
+        download.assert_hits(2);
+    }
+
+    #[tokio::test]
+    async fn test_read_canvas_preview_file_keeps_token_off_cross_origin_requests() {
+        let server = MockServer::start();
+        let storage = MockServer::start();
+        let metadata = server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/files/42")
+                .header("Authorization", "Bearer test-token");
+            then.status(200).json_body_obj(&crate::model::File {
+                id: 42,
+                url: format!("{}/document?signature=test", storage.base_url()),
+                ..Default::default()
+            });
+        });
+        let unauthorized = storage.mock(|when, then| {
+            when.method(GET).path("/document").header_exists("Authorization");
+            then.status(403);
+        });
+        let download = storage.mock(|when, then| {
+            when.method(GET).path("/document").query_param("signature", "test");
+            then.status(200).body("preview");
+        });
+        let client = create_test_client(&server.base_url());
+        let text = client.read_canvas_preview_file(42, "test-token", false).await.unwrap();
+
+        assert_eq!(text, b"preview");
+        metadata.assert();
+        download.assert();
+        unauthorized.assert_hits(0);
+    }
+
+    #[tokio::test]
     async fn test_get_file_preview_session_url_creates_web_session() {
         let server = MockServer::start();
         let token = "test_token_12345";

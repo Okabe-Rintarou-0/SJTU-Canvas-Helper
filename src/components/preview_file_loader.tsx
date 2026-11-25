@@ -30,7 +30,12 @@ export function isPreviewText(bytes: Uint8Array) {
   try {
     // A prefix can end partway through the last encoded character.
     const text = new TextDecoder(encoding, { fatal: true }).decode(bytes, { stream: bytes.length === PREVIEW_SAMPLE_BYTES });
-    return !/[\u0000-\u0008\u000b\u000e-\u001f\u007f-\u009f]/u.test(text);
+    for (const character of text) {
+      const code = character.charCodeAt(0);
+      if (code < 32 && !"\t\n\f\r".includes(character)) return false;
+      if (code >= 127 && code <= 159) return false;
+    }
+    return true;
   } catch {
     return false;
   }
