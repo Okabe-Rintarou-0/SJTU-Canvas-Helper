@@ -486,9 +486,12 @@ async fn list_folder_folders(folder_id: i64) -> Result<Vec<Folder>> {
 }
 
 #[tauri::command]
-async fn test_token(token: String) -> Result<User> {
+async fn test_token(token: String, account_type: Option<model::AccountType>) -> Result<User> {
     diagnostics::protect_secret(&token);
-    APP.test_token(&token).await
+    match account_type {
+        Some(account_type) => APP.test_token_for_account(&token, &account_type).await,
+        None => APP.test_token(&token).await,
+    }
 }
 
 #[tauri::command]

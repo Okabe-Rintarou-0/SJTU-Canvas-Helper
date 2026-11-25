@@ -744,6 +744,10 @@ impl App {
         self.client.test_credential(token).await
     }
 
+    pub async fn test_token_for_account(&self, token: &str, account_type: &AccountType) -> Result<User> {
+        self.client.test_credential_at(token, Self::get_base_url(account_type)).await
+    }
+
     pub async fn get_me(&self) -> Result<User> {
         self.client.get_me(&self.config.read().await.token).await
     }

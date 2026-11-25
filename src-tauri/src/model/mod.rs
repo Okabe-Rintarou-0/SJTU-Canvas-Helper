@@ -161,6 +161,9 @@ pub struct LlmApiKeyEntry {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppConfig {
+    // Accounts configured before the setup wizard lack this flag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onboarding_completed: Option<bool>,
     #[serde(default)]
     pub token: String,
     #[serde(default)]
@@ -228,6 +231,7 @@ fn default_mcp_port() -> u16 {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
+            onboarding_completed: None,
             token: Default::default(),
             save_path: Default::default(),
             account_type: Default::default(),

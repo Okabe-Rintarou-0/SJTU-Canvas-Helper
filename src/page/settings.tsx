@@ -33,18 +33,18 @@ import {
   Tooltip,
   Typography
 } from "@mui/material";
-import { ProviderIcon } from "@lobehub/icons";
 import { alpha, useTheme } from "@mui/material/styles";
 import { surfaceCardSx } from "../lib/styles";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import ReactJson from "react-json-view-ts";
 import BasicLayout from "../components/layout";
 import LogModal from "../components/log_modal";
+import LlmBrandIcon from "../components/llm_brand_icon";
 import PrimaryColorField, { DEFAULT_PRIMARY } from "../components/primary_color_field";
-import CanvasTokenGuideDialog, { CanvasTokenGuideContent } from "../components/canvas_token_guide";
+import CanvasTokenGuideDialog from "../components/canvas_token_guide";
 import { changeSessionAccount } from "../lib/account_sessions";
 import VideoSummarySettings from "../components/video_summary_settings";
 import { videoSummaryOptions, videoSummaryOptionsError } from "../lib/video_summary_config";
@@ -169,7 +169,7 @@ function LlmProviderIcon({ provider, size }: { provider: string; size: number })
     );
   }
 
-  return <ProviderIcon provider={provider} size={size} />;
+  return <LlmBrandIcon provider={provider} size={size} />;
 }
 
 const cardSx = surfaceCardSx;
@@ -260,7 +260,7 @@ export default function SettingsPage() {
   const settingsParams = new URLSearchParams(location.search);
   const focusProxyPort = settingsParams.get("focus") === "proxy-port";
   const focusPptCleanup = settingsParams.get("focus") === "ppt-cleanup";
-  const [activeSection, setActiveSection] = useState<SettingsSection>(focusProxyPort || focusPptCleanup ? "advanced" : settingsParams.get("section") === "storage" ? "storage" : "account");
+  const [activeSection, setActiveSection] = useState<SettingsSection>(focusProxyPort || focusPptCleanup ? "advanced" : settingsParams.get("section") === "storage" ? "storage" : settingsParams.get("section") === "tools" ? "tools" : "account");
   const dispatch = useConfigDispatch();
   const [messageApi, contextHolder] = useAppMessage();
   const tokenFieldRef = useRef<HTMLDivElement>(null);
@@ -270,8 +270,6 @@ export default function SettingsPage() {
   const latestFormDataRef = useRef<AppConfig | null>(null);
   const initialSnapshotRef = useRef<string>("");
   const [accounts, setAccounts] = useState<string[]>([]);
-  const [openTour, setOpenTour] = useState<boolean>(false);
-  const [tourStep, setTourStep] = useState(0);
   const [accountMode, setAccountMode] = useState<AccountMode>("select");
   const [currentAccount, setCurrentAccount] = useState<string>("");
   const [rawConfig, setRawConfig] = useState<string>("");
@@ -339,20 +337,6 @@ export default function SettingsPage() {
       : activeSection === "storage" && savePathError ? savePathFieldRef.current : null;
     field?.querySelector("input")?.focus();
   }, [activeSection, tokenError, savePathError]);
-
-  const steps = [
-    {
-      title: "填写您的 Canvas Token",
-    },
-    {
-      title: "填写您的下载保存目录",
-      description: "请正确填写您的下载保存目录。",
-    },
-    {
-      title: "保存",
-      description: "点击“保存全部设置”，保存您的配置。",
-    },
-  ];
 
   const dirty = useMemo(() => {
     if (!formData || !initialSnapshot) {
@@ -522,10 +506,6 @@ export default function SettingsPage() {
       setTokenError("");
       setTokenTestResult(null);
       setSavePathError("");
-      if (normalizedConfig.token.length === 0) {
-        setOpenTour(true);
-        setTourStep(0);
-      }
     } catch (e) {
       messageApi.error(`初始化时发生错误：${e}`);
     }
@@ -1847,7 +1827,7 @@ export default function SettingsPage() {
                     <Box>
                       <Typography variant="h5">实用工具</Typography>
                       <Typography variant="body2" color="text.secondary">
-                        打开配置文件目录，或导出近期日志并反馈问题。
+                        打开配置目录、查看日志，或重新打开首次配置向导。
                       </Typography>
                     </Box>
 
@@ -1871,6 +1851,9 @@ export default function SettingsPage() {
                         startIcon={<PreviewRoundedIcon />}
                       >
                         日志与反馈
+                      </Button>
+                      <Button component={Link} to="/setup" variant="outlined" startIcon={<AutoAwesomeRoundedIcon />}>
+                        预览配置向导
                       </Button>
                     </Box>
                   </Stack>
@@ -1935,37 +1918,6 @@ export default function SettingsPage() {
         <CanvasTokenGuideDialog open={showTokenGuide} accountType={formData?.account_type}
           onClose={() => setShowTokenGuide(false)}
           onExited={() => tokenFieldRef.current?.querySelector("input")?.focus()} />
-        <Dialog open={openTour} onClose={() => setOpenTour(false)} fullWidth maxWidth="sm" aria-labelledby="settings-tour-title">
-          <DialogTitle id="settings-tour-title">{steps[tourStep]?.title}</DialogTitle>
-          <DialogContent dividers>
-            <Stack spacing={2}>
-              {tourStep === 0 ? <CanvasTokenGuideContent accountType={formData?.account_type} /> : (
-                <Typography variant="body2" color="text.secondary">{steps[tourStep]?.description}</Typography>
-              )}
-            </Stack>
-          </DialogContent>
-          <DialogActions sx={{ px: 3, py: 2 }}>
-            <Button onClick={() => setOpenTour(false)}>关闭</Button>
-            <Button
-              onClick={() => setTourStep((prev) => Math.max(0, prev - 1))}
-              disabled={tourStep === 0}
-            >
-              上一步
-            </Button>
-            <Button
-              variant="contained"
-              onClick={() => {
-                if (tourStep === steps.length - 1) {
-                  setOpenTour(false);
-                  return;
-                }
-                setTourStep((prev) => prev + 1);
-              }}
-            >
-              {tourStep === steps.length - 1 ? "完成" : "下一步"}
-            </Button>
-          </DialogActions>
-        </Dialog>
       </Box>
       )}
     </BasicLayout>

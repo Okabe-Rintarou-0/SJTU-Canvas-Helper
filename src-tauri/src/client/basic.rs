@@ -792,8 +792,12 @@ impl Client {
     }
 
     pub async fn test_credential(&self, token: &str) -> Result<User> {
-        // Use the same URL for dispatch and diagnostics if settings change during the request.
-        let url = format!("{}/api/v1/users/self", self.base_url.read().await);
+        let base_url = self.base_url.read().await.clone();
+        self.test_credential_at(token, &base_url).await
+    }
+
+    pub async fn test_credential_at(&self, token: &str, base_url: &str) -> Result<User> {
+        let url = format!("{base_url}/api/v1/users/self");
         let result = self.get_json_with_token(&url, None::<&str>, token).await;
         tracing::info!(
             operation = "credential_test",

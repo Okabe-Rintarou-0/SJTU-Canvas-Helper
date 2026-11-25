@@ -254,7 +254,13 @@ function Previewer({
   );
 }
 
-export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {
+export function useQRCode({
+  onScanSuccess,
+  onSavingChange,
+}: {
+  onScanSuccess?: () => void;
+  onSavingChange?: (saving: boolean) => void;
+}) {
   const [uuid, setUuid] = useState<string>("");
   const [qrcode, setQrcode] = useState<string>("");
   const [wsURL, setWsURL] = useState<string>("");
@@ -262,6 +268,12 @@ export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {
   const [error, setError] = useState("");
   const hasRetriedRef = useRef(false);
   const uuidRef = useRef("");
+  const mountedRef = useRef(true);
+  const loginPendingRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   const { sendMessage, lastMessage, readyState } = useWebSocket(
     wsURL,
     undefined,
@@ -273,32 +285,44 @@ export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {
     setError("");
     setQrcode("");
     hasRetriedRef.current = false;
-    const nextUuid = (await invoke("get_uuid")) as string | null;
-    consoleLog(LOG_LEVEL_ERROR, nextUuid)
-    if (nextUuid) {
-      uuidRef.current = nextUuid;
-      setUuid(nextUuid);
-      setWsURL(`${WEBSOCKET_BASE_URL}/${nextUuid}`);
-      return;
+    try {
+      const nextUuid = await invoke<string | null>("get_uuid");
+      if (!mountedRef.current) return;
+      if (nextUuid) {
+        uuidRef.current = nextUuid;
+        setUuid(nextUuid);
+        setWsURL(`${WEBSOCKET_BASE_URL}/${nextUuid}`);
+        return;
+      }
+    } catch { /* Fall through to the retryable error. */ }
+    if (mountedRef.current) {
+      setLoading(false);
+      setError("未能获取登录二维码，请检查网络后重试。");
     }
-    setLoading(false);
-    setError("未能获取登录二维码标识，请稍后重试。");
   }, []);
 
   const handleScanSuccess = async () => {
+    if (!mountedRef.current || loginPendingRef.current) return;
+    loginPendingRef.current = true;
+    onSavingChange?.(true);
     try {
-      const JAAuthCookie = (await invoke("express_login", { uuid: uuidRef.current || uuid })) as
-        | string
-        | null;
-      if (!JAAuthCookie) {
+      const cookie = await invoke<string | null>("express_login", { uuid: uuidRef.current || uuid });
+      if (!mountedRef.current) return;
+      if (!cookie) {
+        setError("扫码登录未完成，请重新扫码。");
         return;
       }
-      const config = await getConfig();
-      config.ja_auth_cookie = JAAuthCookie;
-      await saveConfig(config);
-      onScanSuccess?.();
+      const config = await getConfig(true);
+      if (!mountedRef.current) return;
+      await saveConfig({ ...config, ja_auth_cookie: cookie });
+      if (mountedRef.current) onScanSuccess?.();
     } catch (e) {
-      appMessage().error(`登录失败🥹：${e}`);
+      if (!mountedRef.current) return;
+      setError("扫码登录未能保存，请重新扫码或稍后重试。");
+      consoleLog(LOG_LEVEL_ERROR, e);
+    } finally {
+      loginPendingRef.current = false;
+      if (mountedRef.current) onSavingChange?.(false);
     }
   };
 

@@ -67,6 +67,8 @@ const utilityButtonSx = {
   "&[aria-current=\"page\"], &[aria-expanded=\"true\"]": { color: "primary.main", bgcolor: "action.selected" },
 };
 
+const navigationTypography = { fontSize: 14.5, letterSpacing: "0.02em", lineHeight: 1.45, noWrap: true };
+
 const navigationItems = [
   { key: "agent", label: "Canvas Agent", icon: <PsychologyRoundedIcon />, path: "/agent" },
   { key: "files", label: "文件管理", icon: <FolderRoundedIcon />, path: "/files" },
@@ -74,7 +76,7 @@ const navigationItems = [
   { key: "calendar", label: "日程管理", icon: <CalendarMonthRoundedIcon />, path: "/calendar" },
   { key: "grades", label: "成绩管理", icon: <FactCheckRoundedIcon />, path: "/grades" },
   { key: "submissions", label: "提交批改", icon: <GradingRoundedIcon />, path: "/submissions" },
-  { key: "video", label: "视频管理", icon: <SmartDisplayRoundedIcon />, path: "/video" },
+  { key: "video", label: "视频中心", icon: <SmartDisplayRoundedIcon />, path: "/video" },
   { key: "annual", label: "年度总结", icon: <TimelineRoundedIcon />, path: "/annual" },
 ];
 
@@ -95,7 +97,7 @@ const pageTitleMap: Record<string, string> = {
   grades: "成绩管理",
   submissions: "提交批改",
   syllabus: "教学大纲",
-  video: "视频管理",
+  video: "视频中心",
   qrcode: "二维码管理",
   annual: "年度总结",
   settings: "系统设置",
@@ -168,10 +170,8 @@ export function AppShell({ children }: PropsWithChildren) {
   };
 
   const navigationButtonSx = {
-    minHeight: 42, px: compactRail ? 0.75 : 1, py: 0, borderRadius: "8px",
-    "& .MuiListItemIcon-root": { minWidth: compactRail ? 0 : 28, color: "inherit", justifyContent: "center" },
-    "& .MuiSvgIcon-root": { fontSize: 18 },
-    "& .MuiListItemText-root": { my: 0, ml: 0.5 },
+    minHeight: 42, px: compactRail ? 1.25 : 1.5, py: 0.5, borderRadius: "12px",
+    "& .MuiListItemIcon-root": { minWidth: compactRail ? 0 : 38, color: "inherit", justifyContent: "center" },
     justifyContent: compactRail ? "center" : "flex-start",
     transition: "background-color 0.16s ease, color 0.16s ease",
     "&.Mui-selected, &.Mui-selected:hover": { bgcolor: "action.selected", color: "primary.main" },
@@ -235,10 +235,8 @@ export function AppShell({ children }: PropsWithChildren) {
                   <ListItemText
                     primary={item.label}
                     primaryTypographyProps={{
-                      fontSize: 13.5,
+                      ...navigationTypography,
                       fontWeight: selected ? 700 : 500,
-                      lineHeight: 1.35,
-                      noWrap: true,
                     }}
                   />
                 )}
@@ -260,7 +258,7 @@ export function AppShell({ children }: PropsWithChildren) {
                 <WidgetsRoundedIcon />
               </ListItemIcon>
               {!compactRail && <>
-                <ListItemText primary="其他工具" slotProps={{ primary: { fontSize: 13.5, lineHeight: 1.35, fontWeight: toolSelected ? 700 : 500 } }} />
+                <ListItemText primary="其他工具" slotProps={{ primary: { ...navigationTypography, fontWeight: toolSelected ? 700 : 500 } }} />
                 <ExpandMoreRoundedIcon fontSize="small" />
               </>}
             </ListItemButton>
@@ -326,12 +324,12 @@ export function AppShell({ children }: PropsWithChildren) {
                 </Button>
               </Tooltip>
             )}
-            <Tooltip title="关于与支持">
-              <Button sx={utilityButtonSx} aria-label="关于与支持" aria-haspopup="menu"
+            <Tooltip title="帮助">
+              <Button sx={utilityButtonSx} aria-label="帮助" aria-haspopup="menu"
                 aria-expanded={!!supportAnchor} aria-controls={supportAnchor ? supportMenuId : undefined}
                 onClick={(event) => setSupportAnchor(event.currentTarget)}>
                 <HelpOutlineRoundedIcon fontSize="small" />
-                {!compactRail && "关于与支持"}
+                {!compactRail && "帮助"}
               </Button>
             </Tooltip>
           </Box>

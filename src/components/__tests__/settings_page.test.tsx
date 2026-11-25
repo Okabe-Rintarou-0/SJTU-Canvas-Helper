@@ -22,7 +22,6 @@ vi.mock("../../lib/account_sessions", () => ({ changeSessionAccount: mocks.chang
 vi.mock("../../lib/message", () => ({ useAppMessage: () => [mocks.message, null] }));
 vi.mock("../layout", () => ({ default: ({ children }: PropsWithChildren) => <>{children}</> }));
 vi.mock("../log_modal", () => ({ default: ({ onClose }: { onClose: () => void }) => <div role="dialog" aria-label="日志与反馈"><button onClick={onClose}>关闭日志</button></div> }));
-vi.mock("@lobehub/icons", () => ({ ProviderIcon: () => null }));
 vi.mock("react-json-view-ts", () => ({ default: ({ src }: { src: unknown }) => <pre>{JSON.stringify(src)}</pre> }));
 
 let config: AppConfig;
@@ -132,14 +131,11 @@ it("opens token instructions for the selected Canvas and returns to the draft", 
   expect(mocks.saveConfig).not.toHaveBeenCalled();
 });
 
-it("uses the same token instructions in first-run onboarding", async () => {
-  config.token = "";
-  render(<MemoryRouter><SettingsPage /></MemoryRouter>);
-  const tour = within(await screen.findByRole("dialog", { name: "填写您的 Canvas Token" }));
-  expect(tour.getByText("点击“创建新访问许可证”")).toBeVisible();
-  expect(tour.getByRole("link", { name: "打开 Canvas 个人设置" })).toHaveAttribute("href", "https://oc.sjtu.edu.cn/profile/settings");
-  fireEvent.click(tour.getByRole("button", { name: "下一步" }));
-  expect(screen.getByRole("dialog", { name: "填写您的下载保存目录" })).toBeVisible();
+it("links to the full-window setup guide from diagnostics", async () => {
+  await openSettings();
+  section("工具与诊断");
+  expect(screen.getByRole("link", { name: "预览配置向导" })).toHaveAttribute("href", "/setup");
+  expect(mocks.saveConfig).not.toHaveBeenCalled();
 });
 
 it("keeps edits across categories and saves all categories together", async () => {

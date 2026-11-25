@@ -7,7 +7,6 @@ import fixReactVirtualized from 'esbuild-plugin-react-virtualized'
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
   optimizeDeps: {
-    include: ["@lobehub/icons"],
     esbuildOptions: {
       plugins: [fixReactVirtualized],
     },

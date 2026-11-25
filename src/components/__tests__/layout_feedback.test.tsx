@@ -35,7 +35,7 @@ afterEach(() => {
 
 it("opens logs and feedback from the regular sidebar with no debug or experimental flags", async () => {
   render(<MemoryRouter><AppShell><BasicLayout>页面内容</BasicLayout></AppShell></MemoryRouter>);
-  fireEvent.click(screen.getByRole("button", { name: "关于与支持" }));
+  fireEvent.click(screen.getByRole("button", { name: "帮助" }));
   fireEvent.click(screen.getByRole("menuitem", { name: "反馈" }));
   expect(await screen.findByRole("dialog", { name: "日志与反馈" })).toBeInTheDocument();
   expect(await screen.findByText(/暂无运行日志/)).toBeInTheDocument();
@@ -49,7 +49,7 @@ it("checks updates from the sidebar and opens the community thread from support"
 
   fireEvent.click(screen.getByRole("button", { name: "检查更新，有新版本 v3.0.14" }));
   expect(mocks.checkForUpdates).toHaveBeenCalledOnce();
-  fireEvent.click(screen.getByRole("button", { name: "关于与支持" }));
+  fireEvent.click(screen.getByRole("button", { name: "帮助" }));
   expect(screen.queryByRole("menuitem", { name: /检查更新/ })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("menuitem", { name: "水源社区讨论帖" }));
   expect(mocks.openExternal).toHaveBeenCalledWith("https://shuiyuan.sjtu.edu.cn/t/topic/245275");
@@ -89,6 +89,7 @@ it("keeps the sidebar and its collapsed state when the routed page changes", () 
     </AppShell>
   </MemoryRouter>);
   const navigation = screen.getByRole("navigation", { name: "功能导航" });
+  expect(within(navigation).getByRole("link", { name: "视频中心" })).toHaveAttribute("href", "/video");
   expect(within(navigation).queryByRole("link", { name: "系统设置" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "收起侧栏" }));
   const assignments = within(navigation).getByRole("link", { name: "作业列表" });

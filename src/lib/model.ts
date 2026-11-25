@@ -300,6 +300,7 @@ export interface LlmApiKeyEntry {
 }
 
 export interface AppConfig {
+    onboarding_completed?: boolean | null;
     token: string;
     account_type: "Default" | "JI";
     save_path: string;
