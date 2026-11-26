@@ -1119,6 +1119,47 @@ mod mock_tests {
     }
 
     #[tokio::test]
+    async fn course_roster_preserves_enrollment_roles_and_dates() {
+        let server = MockServer::start();
+        let user = |id| {
+            serde_json::to_value(crate::model::User { id, ..Default::default() }).unwrap()
+        };
+        let mut student = user(9);
+        student["enrollments"] = json!([{
+            "type": "StudentEnrollment",
+            "role": "StudentEnrollment",
+            "created_at": "2026-09-01T08:00:00Z"
+        }]);
+        let first = server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/courses/5/users")
+                .header("Authorization", "Bearer test-token")
+                .query_param("include[]", "enrollments")
+                .query_param("page", "1");
+            then.status(200).json_body(json!([user(8), student]));
+        });
+        let last = server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/courses/5/users")
+                .query_param("page", "2");
+            then.status(200).json_body(json!([]));
+        });
+
+        let client = create_test_client(&server.base_url());
+        let members = client.list_course_members(5, "test-token").await.unwrap();
+        assert_eq!(members.len(), 2);
+        assert_eq!(members[0].user.id, 8);
+        assert!(members[0].enrollments.is_none());
+        assert_eq!(members[1].user.id, 9);
+        let enrollment = &members[1].enrollments.as_ref().unwrap()[0];
+        assert_eq!(enrollment.role.as_deref(), Some("StudentEnrollment"));
+        assert_eq!(enrollment.enrollment_type.as_deref(), Some("StudentEnrollment"));
+        assert_eq!(enrollment.created_at.as_deref(), Some("2026-09-01T08:00:00Z"));
+        first.assert();
+        last.assert();
+    }
+
+    #[tokio::test]
     async fn test_list_calendar_assignments_with_only_lock_dates_returns_closed_assignments() {
         let server = MockServer::start();
         let assignment = |id, due_at: Option<&str>, lock_at: Option<&str>| {

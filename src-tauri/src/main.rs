@@ -357,6 +357,19 @@ fn file_preview_label(preview_id: uuid::Uuid) -> String {
     format!("file-preview-{preview_id}")
 }
 
+const PREVIEW_SESSION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(6);
+const PREVIEW_PAGE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+
+fn allow_preview_navigation(url: &tauri::Url, app_url: &tauri::Url) -> bool {
+    matches!(url.scheme(), "https" | "http") && url.origin() != app_url.origin()
+}
+
+fn is_loaded_preview_page(event: tauri::webview::PageLoadEvent, url: &tauri::Url) -> bool {
+    matches!(event, tauri::webview::PageLoadEvent::Finished)
+        && matches!(url.scheme(), "https" | "http")
+        && !url.path().starts_with("/login")
+}
+
 #[tauri::command]
 async fn open_embedded_file_preview(
     webview: Webview,
@@ -365,18 +378,28 @@ async fn open_embedded_file_preview(
     bounds: PreviewBounds,
 ) -> Result<()> {
     let session_url = tokio::time::timeout(
-        std::time::Duration::from_secs(6),
+        PREVIEW_SESSION_TIMEOUT,
         APP.get_file_preview_session_url(file_id),
     )
     .await
     .map_err(|_| AppError::FilePreview("Canvas preview request timed out".to_owned()))??;
+    mount_embedded_file_preview(&webview, session_url, preview_id, bounds, PREVIEW_PAGE_TIMEOUT)
+        .await
+}
+
+async fn mount_embedded_file_preview<R: Runtime>(
+    webview: &Webview<R>,
+    session_url: String,
+    preview_id: uuid::Uuid,
+    bounds: PreviewBounds,
+    page_timeout: std::time::Duration,
+) -> Result<()> {
     let url: tauri::Url = session_url
         .parse()
         .map_err(|error| AppError::FilePreview(format!("Invalid preview URL: {error}")))?;
-    let app_origin = webview
+    let app_url = webview
         .url()
-        .map_err(|error| AppError::FilePreview(error.to_string()))?
-        .origin();
+        .map_err(|error| AppError::FilePreview(error.to_string()))?;
     let (page_loaded, finished) = tokio::sync::oneshot::channel();
     let page_loaded = std::sync::Mutex::new(Some(page_loaded));
     let builder = tauri::webview::WebviewBuilder::new(
@@ -384,14 +407,9 @@ async fn open_embedded_file_preview(
         tauri::WebviewUrl::External(url),
     )
     .focused(false)
-    .on_navigation(move |url| {
-        matches!(url.scheme(), "https" | "http") && url.origin() != app_origin
-    })
+    .on_navigation(move |url| allow_preview_navigation(url, &app_url))
     .on_page_load(move |_, payload| {
-        if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished)
-            && matches!(payload.url().scheme(), "https" | "http")
-            && !payload.url().path().starts_with("/login")
-        {
+        if is_loaded_preview_page(payload.event(), payload.url()) {
             if let Some(sender) = page_loaded.lock().ok().and_then(|mut sender| sender.take()) {
                 let _ = sender.send(());
             }
@@ -410,7 +428,7 @@ async fn open_embedded_file_preview(
         return Err(AppError::FilePreview(error.to_string()));
     }
     if !matches!(
-        tokio::time::timeout(std::time::Duration::from_secs(8), finished).await,
+        tokio::time::timeout(page_timeout, finished).await,
         Ok(Ok(()))
     ) {
         let _ = preview.close();
@@ -419,7 +437,7 @@ async fn open_embedded_file_preview(
     Ok(())
 }
 
-fn embedded_file_preview(owner: &Webview, preview_id: uuid::Uuid) -> Option<Webview> {
+fn embedded_file_preview<R: Runtime>(owner: &Webview<R>, preview_id: uuid::Uuid) -> Option<Webview<R>> {
     owner
         .app_handle()
         .get_webview(&file_preview_label(preview_id))
@@ -427,8 +445,8 @@ fn embedded_file_preview(owner: &Webview, preview_id: uuid::Uuid) -> Option<Webv
 }
 
 #[tauri::command]
-fn resize_embedded_file_preview(
-    webview: Webview,
+fn resize_embedded_file_preview<R: Runtime>(
+    webview: Webview<R>,
     preview_id: uuid::Uuid,
     bounds: PreviewBounds,
 ) -> Result<()> {
@@ -445,13 +463,91 @@ fn resize_embedded_file_preview(
 }
 
 #[tauri::command]
-fn close_embedded_file_preview(webview: Webview, preview_id: uuid::Uuid) -> Result<()> {
+fn close_embedded_file_preview<R: Runtime>(webview: Webview<R>, preview_id: uuid::Uuid) -> Result<()> {
     if let Some(preview) = embedded_file_preview(&webview, preview_id) {
         preview
             .close()
             .map_err(|error| AppError::FilePreview(error.to_string()))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod embedded_preview_tests {
+    use super::*;
+    use tauri::{test, webview::PageLoadEvent, WebviewUrl, WebviewWindowBuilder};
+
+    #[test]
+    fn only_external_http_navigation_can_continue_and_only_loaded_documents_are_ready() {
+        let app_url = "https://tauri.localhost/files".parse().unwrap();
+        let document = "https://canvas.example.test/courses/5/files/1/file_preview".parse().unwrap();
+        let login = "https://canvas.example.test/login/session_token".parse().unwrap();
+        let internal = "https://tauri.localhost/settings".parse().unwrap();
+        let blank = "about:blank".parse().unwrap();
+
+        assert!(allow_preview_navigation(&document, &app_url));
+        assert!(allow_preview_navigation(&login, &app_url));
+        assert!(!allow_preview_navigation(&internal, &app_url));
+        assert!(!allow_preview_navigation(&blank, &app_url));
+
+        assert!(is_loaded_preview_page(PageLoadEvent::Finished, &document));
+        assert!(!is_loaded_preview_page(PageLoadEvent::Started, &document));
+        assert!(!is_loaded_preview_page(PageLoadEvent::Finished, &login));
+        assert!(!is_loaded_preview_page(PageLoadEvent::Finished, &blank));
+    }
+
+    #[tokio::test]
+    async fn embedded_preview_times_out_without_a_document_and_rejects_invalid_session_urls() {
+        let app = test::mock_builder()
+            .build(test::mock_context(test::noop_assets()))
+            .unwrap();
+        let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::default())
+            .build()
+            .unwrap();
+        let owner = window.as_ref();
+        let preview_id = uuid::Uuid::new_v4();
+        let bounds = || PreviewBounds { x: 0, y: 0, width: 320, height: 240 };
+
+        let invalid = mount_embedded_file_preview(
+            owner, "invalid URL".to_owned(), preview_id, bounds(), std::time::Duration::ZERO,
+        )
+        .await;
+        assert!(matches!(invalid, Err(AppError::FilePreview(message)) if message.starts_with("Invalid preview URL")));
+        assert!(embedded_file_preview(owner, preview_id).is_none());
+
+        let unloaded = mount_embedded_file_preview(
+            owner, "https://canvas.example.test/login/session_token".to_owned(),
+            preview_id, bounds(), std::time::Duration::ZERO,
+        )
+        .await;
+        assert!(matches!(unloaded, Err(AppError::FilePreview(message)) if message == "Canvas preview did not load"));
+    }
+
+    #[test]
+    fn other_windows_cannot_control_the_embedded_preview() {
+        let app = test::mock_builder()
+            .build(test::mock_context(test::noop_assets()))
+            .unwrap();
+        let owner = WebviewWindowBuilder::new(&app, "owner", WebviewUrl::default())
+            .build()
+            .unwrap();
+        let other = WebviewWindowBuilder::new(&app, "unrelated", WebviewUrl::default())
+            .build()
+            .unwrap();
+        let preview_id = uuid::Uuid::new_v4();
+        let preview = owner.as_ref().window().add_child(
+            tauri::webview::WebviewBuilder::new(file_preview_label(preview_id), WebviewUrl::default()),
+            PhysicalPosition::new(0, 0),
+            PhysicalSize::new(320, 240),
+        ).unwrap();
+
+        assert!(embedded_file_preview(other.as_ref(), preview_id).is_none());
+        assert_eq!(embedded_file_preview(owner.as_ref(), preview_id).unwrap().label(), preview.label());
+        resize_embedded_file_preview(
+            owner.as_ref().clone(), preview_id, PreviewBounds { x: 12, y: 8, width: 360, height: 280 },
+        ).unwrap();
+        close_embedded_file_preview(owner.as_ref().clone(), preview_id).unwrap();
+    }
 }
 
 #[tauri::command]
