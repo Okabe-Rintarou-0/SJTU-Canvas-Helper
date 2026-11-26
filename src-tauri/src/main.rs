@@ -1173,6 +1173,12 @@ async fn login_canvas_website() -> Result<()> {
 }
 
 #[tauri::command]
+async fn read_zhiyuan_api_key() -> client::zhiyuan_import::ZhiyuanKeyResult {
+    let config = APP.get_config().await;
+    client::zhiyuan_import::read_zhiyuan_key(&config.ja_auth_cookie).await
+}
+
+#[tauri::command]
 async fn check_extra_login_status() -> Result<bool> {
     APP.check_extra_login_status().await
 }
@@ -1479,6 +1485,7 @@ async fn main() -> Result<()> {
             get_legacy_videos,
             login_canvas_website,
             check_extra_login_status,
+            read_zhiyuan_api_key,
             get_video_course,
             get_video_info,
             get_canvas_video_info,

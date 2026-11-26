@@ -12,13 +12,15 @@ import type { AppConfig, User } from "../lib/model";
 import { savePathValidator } from "../lib/utils";
 import { CanvasTokenGuideContent } from "./canvas_token_guide";
 import { LoginAlert } from "./login_alert";
+import { createAiDraft, saveAiDraft } from "../lib/llm_config";
+import { FirstRunAiSetup } from "./first_run_ai_setup";
 
-const steps = ["连接 Canvas", "下载目录", "额外登录", "开始探索"];
+const steps = ["连接 Canvas", "下载目录", "额外登录", "AI 模型", "开始探索"];
 const features = [
   ["课程文件", "选择课程后浏览、预览和下载资料，也可以批量下载或同步课程文件。"],
   ["作业与日历", "查看作业要求、截止时间与提交情况，在日历中安排学习进度。"],
   ["课堂视频", "浏览直播与回放。优先使用 Canvas Token 鉴权，必要时使用额外登录态。"],
-  ["AI 学习助手", "与课程资料对话、生成课堂总结或使用 Canvas Agent。使用前请到「系统设置 → AI 与模型」配置模型服务。"],
+  ["AI 学习助手", "与课程资料对话、生成课堂总结或使用 Canvas Agent。之后可在「系统设置 → AI 与模型」调整模型服务。"],
 ];
 
 export default function FirstRunSetupGate({ children }: { children: ReactNode }) {
@@ -98,6 +100,9 @@ export function FirstRunSetup({ initialConfig, onComplete, replay = false, onExi
   const [step, setStep] = useState(initialConfig.onboarding_completed === false && initialConfig.token.trim() && initialConfig.save_path.trim() ? 2 : 0);
   const [busy, setBusy] = useState(false);
   const [loginSaving, setLoginSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [aiDraft, setAiDraft] = useState(() => createAiDraft(initialConfig));
+  const [aiSaved, setAiSaved] = useState(false);
   const [extraReady, setExtraReady] = useState(false);
   const [error, setError] = useState("");
   const [fieldError, setFieldError] = useState("");
@@ -132,7 +137,16 @@ export function FirstRunSetup({ initialConfig, onComplete, replay = false, onExi
         setDraft(nextConfig);
         moveTo(2);
       } else if (step === 2) moveTo(3);
-      else {
+      else if (step === 3) {
+        const current = await getConfig(true);
+        let nextConfig: AppConfig;
+        try { nextConfig = saveAiDraft(current, aiDraft); }
+        catch (error) { setError(error instanceof Error ? error.message : "请检查 AI 配置。"); return; }
+        await saveConfig(nextConfig);
+        setAiDraft(createAiDraft(nextConfig));
+        setAiSaved(true);
+        moveTo(4);
+      } else {
         // The QR login saves its cookie separately. Read the latest config before finishing.
         const current = await getConfig(true);
         const completed = { ...current, onboarding_completed: true };
@@ -152,11 +166,12 @@ export function FirstRunSetup({ initialConfig, onComplete, replay = false, onExi
     } catch { setError("无法打开目录选择器，请重试或手动填写目录。"); }
   };
 
-  const titles = ["先连接你的 Canvas", "给课程资料一个固定位置", "按需连接额外登录态", "准备好了，开始探索吧"];
+  const titles = ["先连接你的 Canvas", "给课程资料一个固定位置", "按需连接额外登录态", "配置 AI 模型", "准备好了，开始探索吧"];
   const descriptions = [
     "Canvas Token 用于访问你的课程、文件、作业、成绩与日历，是使用应用的必要配置。",
     "下载和同步的课程资料会保存到这个目录。之后可在「系统设置 → 存储与下载」随时修改。",
     "课堂视频优先使用 Canvas Token 完成鉴权；失败时，会尝试使用额外登录态。部分需要统一身份认证的功能也会使用它。",
+    "可选配置模型服务，用于课程资料问答、课堂总结和 Canvas Agent。",
     "基础配置已保存。先了解几个常用功能，再从课程文件开始。",
   ];
 
@@ -166,15 +181,15 @@ export function FirstRunSetup({ initialConfig, onComplete, replay = false, onExi
       <Typography variant="overline" color="primary">欢迎使用</Typography>
       <Typography variant="h4" sx={{ mt: 1, mb: 3 }}>首次配置</Typography>
       <Stepper activeStep={step} orientation="vertical" sx={{ display: { xs: "none", md: "flex" } }}>
-        {steps.map((label, index) => <Step key={label} completed={index === 2 ? step > 2 && extraReady : step > index}>
-          <StepLabel optional={index === 2 ? <Typography variant="caption">{step > 2 && !extraReady ? "已跳过" : "可跳过"}</Typography> : undefined}>{label}</StepLabel>
+        {steps.map((label, index) => <Step key={label} completed={step > index && (index !== 2 || extraReady) && (index !== 3 || aiSaved)}>
+          <StepLabel optional={index === 2 ? <Typography variant="caption">{step > 2 && !extraReady ? "已跳过" : "可跳过"}</Typography> : index === 3 ? <Typography variant="caption">{step > 3 && !aiSaved ? "已跳过" : "可跳过"}</Typography> : undefined}>{label}</StepLabel>
         </Step>)}
       </Stepper>
-      <Typography variant="body2" color="text.secondary" sx={{ display: { md: "none" } }} aria-live="polite">第 {step + 1} / 4 步 · {steps[step]}</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ display: { md: "none" } }} aria-live="polite">第 {step + 1} / {steps.length} 步 · {steps[step]}</Typography>
     </Box>
     <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
       <Box sx={{ flex: 1, width: "100%", maxWidth: 920, mx: "auto", p: { xs: 2.5, sm: 4, lg: 6 } }}>
-        <Chip size="small" variant="outlined" color="primary" label={`第 ${step + 1} 步 / 共 4 步${step === 2 ? " · 可选" : ""}`} sx={{ mb: 2.5 }} />
+        <Chip size="small" variant="outlined" color="primary" label={`第 ${step + 1} 步 / 共 ${steps.length} 步${step === 2 || step === 3 ? " · 可选" : ""}`} sx={{ mb: 2.5 }} />
         <Typography component="h1" variant="h3" tabIndex={-1} ref={titleRef} sx={{ outline: "none", mb: 1.5 }}>{titles[step]}</Typography>
         <Typography color="text.secondary" sx={{ mb: 4 }}>{descriptions[step]}</Typography>
         <Stack spacing={3}>
@@ -204,7 +219,9 @@ export function FirstRunSetup({ initialConfig, onComplete, replay = false, onExi
             <Alert severity="info">此步可跳过，不影响课程文件、作业、成绩和日历等 Canvas 功能。以后可到「系统设置 → 账号与连接」补充登录；登录态失效时也可在那里重新扫码。</Alert>
             <ExtraLogin onReady={markExtraReady} onSavingChange={setLoginSaving} />
           </>}
-          {step === 3 && <>
+          {step === 3 && <FirstRunAiSetup draft={aiDraft} onChange={setAiDraft} canImport={extraReady || Boolean(draft.ja_auth_cookie?.trim())}
+            busy={busy || importing} onImportingChange={setImporting} />}
+          {step === 4 && <>
             <Alert severity="success">Canvas 和下载目录已配置。{extraReady ? "额外登录态已连接。" : "额外登录态可稍后在系统设置中连接。"}</Alert>
             <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 2 }}>
               {features.map(([title, description]) => <Card key={title} variant="outlined"><CardContent>
@@ -218,12 +235,15 @@ export function FirstRunSetup({ initialConfig, onComplete, replay = false, onExi
       <Box component="footer" sx={{ position: "sticky", bottom: 0, bgcolor: "background.paper", borderTop: 1, borderColor: "divider", p: { xs: 2, sm: 3 }, zIndex: 1 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2} sx={{ maxWidth: 820, mx: "auto" }}>
           <Stack direction="row" spacing={1}>
-            {onExit && <Button disabled={busy || loginSaving} onClick={onExit}>返回设置</Button>}
-            <Button disabled={step === 0 || busy || loginSaving} onClick={() => moveTo(step - 1)}>上一步</Button>
+            {onExit && <Button disabled={busy || loginSaving || importing} onClick={onExit}>返回设置</Button>}
+            <Button disabled={step === 0 || busy || loginSaving || importing} onClick={() => moveTo(step - 1)}>上一步</Button>
           </Stack>
-          <Button variant="contained" disabled={busy || loginSaving} onClick={() => void next()} endIcon={busy || loginSaving ? <CircularProgress size={18} color="inherit" /> : <ArrowForwardRoundedIcon />}>
-            {loginSaving ? "正在保存登录态…" : busy ? (step === 0 ? "正在验证…" : "正在保存…") : ["验证并继续", "保存并继续", extraReady ? "继续" : "跳过，稍后配置", "开始使用"][step]}
-          </Button>
+          <Stack direction="row" spacing={1} flexWrap="wrap" justifyContent="flex-end">
+            {step === 3 && <Button disabled={busy || importing} onClick={() => moveTo(4)}>跳过 AI 配置</Button>}
+            <Button variant="contained" disabled={busy || loginSaving || importing} onClick={() => void next()} endIcon={busy || loginSaving ? <CircularProgress size={18} color="inherit" /> : <ArrowForwardRoundedIcon />}>
+              {importing ? "正在导入…" : loginSaving ? "正在保存登录态…" : busy ? (step === 0 ? "正在验证…" : "正在保存…") : ["验证并继续", "保存并继续", extraReady ? "继续" : "跳过，稍后配置", "保存并继续", "开始使用"][step]}
+            </Button>
+          </Stack>
         </Stack>
       </Box>
     </Box>

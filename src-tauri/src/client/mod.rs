@@ -17,6 +17,7 @@ pub mod jbox;
 mod llm;
 pub mod video;
 mod video_auth;
+pub mod zhiyuan_import;
 pub mod video_library;
 mod transcription;
 pub mod subtitle_proofread;

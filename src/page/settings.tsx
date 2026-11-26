@@ -58,6 +58,8 @@ import {
   DEFAULT_LLM_BASE_URL,
   DEFAULT_LLM_MODEL,
   normalizeLlmConfigForSettings,
+  ZHIYUAN_LLM_BASE_URL,
+  ZHIYUAN_LLM_DEFAULT_MODEL,
 } from "../lib/llm_config";
 import { useAppMessage } from "../lib/message";
 import { AccountInfo, AppConfig, LOG_LEVEL_INFO, User } from "../lib/model";
@@ -69,8 +71,6 @@ const DEFAULT_PROXY_PORT = 3030;
 const MIN_LLM_TEMPERATURE = 0;
 const MAX_LLM_TEMPERATURE = 2;
 const LLM_TEMPERATURE_STEP = 0.1;
-const ZHIYUAN_LLM_BASE_URL = "https://models.sjtu.edu.cn/api/v1";
-const ZHIYUAN_LLM_DEFAULT_MODEL = "deepseek-reasoner";
 
 const URL_PROVIDER_MAP: [RegExp, string][] = [
   [/models\.sjtu\.edu\.cn/, "sjtu"],

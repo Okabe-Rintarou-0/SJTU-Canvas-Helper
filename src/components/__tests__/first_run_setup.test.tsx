@@ -51,6 +51,9 @@ it("gates unconfigured pages, saves basics, allows skipping login and completes 
   expect(config).toMatchObject({ token: "valid-token", save_path: "D:\\Courses", onboarding_completed: false });
   expect(mocks.showQRCode).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "跳过，稍后配置" }));
+  expect(screen.getByRole("heading", { name: "配置 AI 模型" })).toHaveFocus();
+  expect(screen.queryByRole("button", { name: "从交我办导入致远一号" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "跳过 AI 配置" }));
   expect(screen.getByRole("heading", { name: "准备好了，开始探索吧" })).toHaveFocus();
   expect(screen.getByText("AI 学习助手")).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "开始使用" }));
@@ -149,10 +152,41 @@ it("resumes pending setup, handles QR failure and preserves the saved cookie on 
   act(() => { mocks.onScanSuccess?.(); mocks.onSavingChange?.(false); });
   await screen.findByText("额外登录态已连接，可以继续。");
   fireEvent.click(screen.getByRole("button", { name: "继续" }));
+  fireEvent.click(screen.getByRole("button", { name: "跳过 AI 配置" }));
   mocks.saveConfig.mockRejectedValueOnce(new Error("write failed"));
   fireEvent.click(screen.getByRole("button", { name: "开始使用" }));
   await screen.findByText("设置未能保存，请重试。你的填写内容仍保留在此页。");
   expect(onComplete).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "开始使用" }));
   await waitFor(() => expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({ ja_auth_cookie: "saved-cookie", onboarding_completed: true })));
+});
+
+it("imports only after consent and saves the masked model key", async () => {
+  config = { ...config, token: "saved-token", save_path: "D:\\Courses", onboarding_completed: false,
+    ja_auth_cookie: "mock-cookie", llm_api_keys: [{ name: "已有模型", key: "mock-existing", base_url: "https://existing.example.test/v1", model: "example" }],
+    llm_active_api_key: "已有模型" };
+  mocks.invoke.mockImplementation(async (command: string) => command === "read_zhiyuan_api_key"
+    ? { status: "imported", key: "mock-issued-api-key" } : true);
+  render(<FirstRunSetup initialConfig={config} onComplete={vi.fn()} />);
+  fireEvent.click(await screen.findByRole("button", { name: "继续" }));
+  const openImport = async () => fireEvent.click(await screen.findByRole("button", { name: "从交我办导入致远一号" }));
+  await openImport();
+  fireEvent.click(screen.getByRole("button", { name: "取消" }));
+  expect(mocks.invoke.mock.calls.some(([command]) => command === "read_zhiyuan_api_key")).toBe(false);
+  await openImport();
+  fireEvent.click(screen.getByRole("button", { name: "同意并导入" }));
+  await screen.findByText("已填入致远一号配置。选择「保存并继续」后生效。");
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  expect(mocks.invoke).toHaveBeenCalledWith("read_zhiyuan_api_key");
+  expect(screen.getByLabelText("API Key")).toHaveAttribute("type", "password");
+  expect(screen.getByLabelText("API Key")).toHaveValue("mock-issued-api-key");
+  expect(mocks.saveConfig).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "保存并继续" }));
+  await screen.findByRole("heading", { name: "准备好了，开始探索吧" });
+  expect(config).toMatchObject({
+    llm_active_api_key: "交大致远一号", llm_api_key: "mock-issued-api-key",
+    llm_base_url: "https://models.sjtu.edu.cn/api/v1", llm_model: "deepseek-reasoner",
+    ja_auth_cookie: "mock-cookie",
+  });
+  expect(config.llm_api_keys.map((entry) => entry.name)).toEqual(["已有模型", "交大致远一号"]);
 });
