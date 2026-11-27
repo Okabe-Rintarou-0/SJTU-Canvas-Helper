@@ -337,6 +337,12 @@ pub struct Colors {
     pub custom_colors: HashMap<String, String>,
 }
 
+#[derive(Default, Serialize)]
+pub struct CalendarLockDates {
+    pub events: Vec<CalendarEvent>,
+    pub incomplete: bool,
+}
+
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CalendarEvent {
     pub title: String,

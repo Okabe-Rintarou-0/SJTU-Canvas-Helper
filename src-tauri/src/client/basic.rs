@@ -659,6 +659,22 @@ impl Client {
         Ok(events)
     }
 
+    pub async fn list_student_calendar_lock_dates(
+        &self,
+        token: &str,
+        course_id: i64,
+    ) -> Result<Vec<Assignment>> {
+        // The undated bucket uses the student's effective due date. The calendar
+        // endpoint's undated filter checks the default due date before overrides.
+        let url = format!(
+            "{}/api/v1/courses/{course_id}/assignments?bucket=undated&override_assignment_dates=true",
+            self.base_url.read().await
+        );
+        let mut assignments: Vec<Assignment> = self.list_items(&url, token).await?;
+        assignments.retain(|a| a.published && a.due_at.is_none() && a.lock_at.is_some());
+        Ok(assignments)
+    }
+
     pub async fn list_course_members(
         &self,
         course_id: i64,
@@ -1202,6 +1218,50 @@ mod mock_tests {
             .unwrap();
 
         assert_eq!(events, vec![assignment(1, None, Some(past))]);
+        first.assert();
+        last.assert();
+    }
+
+    #[tokio::test]
+    async fn test_student_calendar_lock_dates_requests_only_undated_assignments() {
+        let server = MockServer::start();
+        let date = "2026-11-29T10:00:00Z";
+        let assignment = |id, due_at, lock_at, published| crate::model::Assignment {
+            id,
+            course_id: 37,
+            due_at,
+            lock_at,
+            published,
+            ..Default::default()
+        };
+        let closed = assignment(1, None, Some(date.to_owned()), true);
+        let first = server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/courses/37/assignments")
+                .query_param("bucket", "undated")
+                .query_param("override_assignment_dates", "true")
+                .query_param("page", "1");
+            then.status(200).json_body_obj(&[
+                closed.clone(),
+                assignment(2, None, None, true),
+                assignment(3, Some(date.to_owned()), Some(date.to_owned()), true),
+                assignment(4, None, Some(date.to_owned()), false),
+            ]);
+        });
+        let last = server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/courses/37/assignments")
+                .query_param("bucket", "undated")
+                .query_param("page", "2");
+            then.status(200).json_body(json!([]));
+        });
+        let client = create_test_client(&server.base_url());
+        let assignments = client
+            .list_student_calendar_lock_dates("test-token", 37)
+            .await
+            .unwrap();
+
+        assert_eq!(assignments, vec![closed]);
         first.assert();
         last.assert();
     }

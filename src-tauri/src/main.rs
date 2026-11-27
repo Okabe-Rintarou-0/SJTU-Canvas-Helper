@@ -959,8 +959,11 @@ async fn list_calendar_events(
 }
 
 #[tauri::command]
-async fn list_calendar_assignments_with_only_lock_dates(context_codes: Vec<String>) -> Result<Vec<CalendarEvent>> {
-    APP.list_calendar_assignments_with_only_lock_dates(&context_codes).await
+async fn list_calendar_assignments_with_only_lock_dates(
+    context_codes: Vec<String>,
+    student_course_ids: Vec<i64>,
+) -> model::CalendarLockDates {
+    APP.list_calendar_assignments_with_only_lock_dates(&context_codes, student_course_ids).await
 }
 
 #[tauri::command]

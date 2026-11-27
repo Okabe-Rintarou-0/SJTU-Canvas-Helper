@@ -1091,9 +1091,35 @@ impl App {
     pub async fn list_calendar_assignments_with_only_lock_dates(
         &self,
         context_codes: &[String],
-    ) -> Result<Vec<CalendarEvent>> {
+        student_course_ids: Vec<i64>,
+    ) -> CalendarLockDates {
         let token = self.config.read().await.token.clone();
-        self.client.list_calendar_assignments_with_only_lock_dates(&token, context_codes).await
+        let calendar_events = self
+            .client
+            .list_calendar_assignments_with_only_lock_dates(&token, context_codes);
+        let assignments = futures::stream::iter(student_course_ids)
+            .map(|id| self.client.list_student_calendar_lock_dates(&token, id))
+            .buffer_unordered(6)
+            .collect::<Vec<_>>();
+        let (calendar_events, student_results) = tokio::join!(calendar_events, assignments);
+        let mut result = match calendar_events {
+            Ok(events) => CalendarLockDates { events, incomplete: false },
+            Err(_) => CalendarLockDates { events: Vec::new(), incomplete: true },
+        };
+        for student_result in student_results {
+            match student_result {
+                Ok(assignments) => result.events.extend(assignments.into_iter().map(|assignment| {
+                    CalendarEvent {
+                        title: assignment.name.clone(),
+                        context_code: format!("course_{}", assignment.course_id),
+                        assignment,
+                        ..Default::default()
+                    }
+                })),
+                Err(_) => result.incomplete = true,
+            }
+        }
+        result
     }
 
     async fn apply_llm_config(config: &AppConfig, client: &Client) -> Result<()> {

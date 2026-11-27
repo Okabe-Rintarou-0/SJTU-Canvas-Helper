@@ -36,7 +36,6 @@ const weekColumns = "repeat(7, minmax(0, 1fr))";
 type CalendarSources = {
   colors: Colors["custom_colors"];
   courses: Map<string, Course>;
-  lockOnlyEvents: Promise<CalendarEvent[]>;
 };
 
 type CalendarAssignment = {
@@ -50,6 +49,8 @@ type CalendarAssignment = {
 };
 
 type CalendarResult = { items: CalendarAssignment[]; error?: true };
+type EventResult = { events: CalendarEvent[]; error?: true };
+const emptyEvents: CalendarEvent[] = [];
 
 const dateKey = (date: Dayjs) => date.format("YYYY-MM-DD");
 
@@ -61,18 +62,18 @@ function getMonthGridDates(month: Dayjs) {
   return Array.from({ length: days }, (_, index) => start.add(index, "day"));
 }
 
-async function loadAssignments(sources: CalendarSources, start: Dayjs, end: Dayjs) {
-  if (!sources.courses.size) return [];
-  const [datedEvents, lockOnlyEvents] = await Promise.all([
-    invoke<CalendarEvent[]>("list_calendar_events", {
-      contextCodes: [...sources.courses.keys()],
-      startDate: start.toISOString(),
-      endDate: end.toISOString(),
-    }),
-    sources.lockOnlyEvents,
-  ]);
+function loadDatedEvents(sources: CalendarSources, start: Dayjs, end: Dayjs) {
+  if (!sources.courses.size) return Promise.resolve([]);
+  return invoke<CalendarEvent[]>("list_calendar_events", {
+    contextCodes: [...sources.courses.keys()],
+    startDate: start.toISOString(),
+    endDate: end.toISOString(),
+  });
+}
+
+function collectAssignments(sources: CalendarSources, events: CalendarEvent[], start: Dayjs, end: Dayjs) {
   const items = new Map<string, CalendarAssignment>();
-  for (const event of [...datedEvents, ...lockOnlyEvents]) {
+  for (const event of events) {
     const course = sources.courses.get(event.context_code);
     const { due_at: due, lock_at: lock } = event.assignment;
     const timestamp = due || lock || event.end_at || event.start_at;
@@ -183,28 +184,41 @@ export default function CalendarPage() {
   const [sources, setSources] = useState<CalendarSources>();
   const [sourceError, setSourceError] = useState(false);
   const [lockDateError, setLockDateError] = useState(false);
-  const [monthResult, setMonthResult] = useState<{ month: Dayjs; result: CalendarResult }>();
-  const [upcoming, setUpcoming] = useState<CalendarResult>();
+  const [monthResult, setMonthResult] = useState<{ month: Dayjs; result: EventResult }>();
+  const [upcomingResult, setUpcomingResult] = useState<EventResult>();
+  const [upcomingStart] = useState(() => dayjs());
+  const [lockOnlyEvents, setLockOnlyEvents] = useState(emptyEvents);
 
   useEffect(() => {
     let active = true;
-    Promise.all([invoke<Colors>("get_colors"), invoke<Course[]>("list_courses")])
+    Promise.all([invoke<Colors>("get_colors").catch(() => ({ custom_colors: {} })), invoke<Course[]>("list_courses")])
       .then(([{ custom_colors: colors }, courses]) => {
         if (!active) return;
         const courseMap = new Map<string, Course>();
+        const studentCourseIds: number[] = [];
+        const otherContextCodes: string[] = [];
         for (const course of courses) {
           const context = `course_${course.id}`;
-          if (Object.prototype.hasOwnProperty.call(colors, context)) courseMap.set(context, course);
+          courseMap.set(context, course);
+          const isStudent = course.enrollments?.some(({ type, role }) =>
+            type === "student" || type === "StudentEnrollment" || role === "StudentEnrollment"
+          );
+          if (isStudent) studentCourseIds.push(course.id);
+          else otherContextCodes.push(context);
         }
-        const contextCodes = [...courseMap.keys()];
-        const lockOnlyEvents = contextCodes.length
-          ? invoke<CalendarEvent[]>("list_calendar_assignments_with_only_lock_dates", { contextCodes })
-            .catch(() => {
-              if (active) setLockDateError(true);
-              return [];
+        setSources({ colors, courses: courseMap });
+        if (courseMap.size) {
+          void invoke<EventResult & { incomplete: boolean }>("list_calendar_assignments_with_only_lock_dates", {
+            contextCodes: otherContextCodes,
+            studentCourseIds,
+          })
+            .then(({ events, incomplete }) => {
+              if (!active) return;
+              setLockOnlyEvents(events);
+              setLockDateError(incomplete);
             })
-          : Promise.resolve([]);
-        setSources({ colors, courses: courseMap, lockOnlyEvents });
+            .catch(() => { if (active) setLockDateError(true); });
+        }
       })
       .catch(() => { if (active) setSourceError(true); });
     return () => { active = false; };
@@ -213,21 +227,20 @@ export default function CalendarPage() {
   useEffect(() => {
     if (!sources) return;
     let active = true;
-    const finish = (result: CalendarResult) => { if (active) setMonthResult({ month: currentMonth, result }); };
-    void loadAssignments(sources, currentMonth.startOf("month"), currentMonth.endOf("month"))
-      .then((items) => finish({ items }), () => finish({ items: [], error: true }));
+    const finish = (result: EventResult) => { if (active) setMonthResult({ month: currentMonth, result }); };
+    void loadDatedEvents(sources, currentMonth.startOf("month"), currentMonth.endOf("month"))
+      .then((events) => finish({ events }), () => finish({ events: [], error: true }));
     return () => { active = false; };
   }, [currentMonth, sources]);
 
   useEffect(() => {
     if (!sources) return;
     let active = true;
-    const now = dayjs();
-    const finish = (result: CalendarResult) => { if (active) setUpcoming(result); };
-    void loadAssignments(sources, now, now.add(7, "day"))
-      .then((items) => finish({ items }), () => finish({ items: [], error: true }));
+    const finish = (result: EventResult) => { if (active) setUpcomingResult(result); };
+    void loadDatedEvents(sources, upcomingStart, upcomingStart.add(7, "day"))
+      .then((events) => finish({ events }), () => finish({ events: [], error: true }));
     return () => { active = false; };
-  }, [sources]);
+  }, [sources, upcomingStart]);
 
   const selectDate = useCallback((date: Dayjs) => {
     setCurrentMonth((previous) => previous.isSame(date, "month") ? previous : date.startOf("month"));
@@ -253,17 +266,25 @@ export default function CalendarPage() {
   }, [changeMonth, currentMonth]);
 
   const visibleMonth = monthResult?.month === currentMonth ? monthResult.result : undefined;
+  const upcoming = useMemo(() => sources && upcomingResult && ({
+    items: collectAssignments(sources, [...upcomingResult.events, ...lockOnlyEvents], upcomingStart, upcomingStart.add(7, "day")),
+    error: upcomingResult.error,
+  }), [sources, upcomingResult, lockOnlyEvents, upcomingStart]);
   const dates = useMemo(() => getMonthGridDates(currentMonth), [currentMonth]);
   const byDate = useMemo(() => {
     const indexed = new Map<string, CalendarAssignment[]>();
-    for (const item of visibleMonth?.items ?? []) {
+    if (!sources || !visibleMonth) return indexed;
+    const monthItems = collectAssignments(
+      sources, [...visibleMonth.events, ...lockOnlyEvents], currentMonth.startOf("month"), currentMonth.endOf("month")
+    );
+    for (const item of monthItems) {
       const key = dateKey(item.date);
       const group = indexed.get(key);
       if (group) group.push(item);
       else indexed.set(key, [item]);
     }
     return indexed;
-  }, [visibleMonth]);
+  }, [sources, visibleMonth, lockOnlyEvents, currentMonth]);
 
   return (
     <BasicLayout>
@@ -292,7 +313,7 @@ export default function CalendarPage() {
           }
         />
 
-        {lockDateError && <Alert severity="warning">无法读取仅设置了关闭日期的作业。</Alert>}
+        {lockDateError && <Alert severity="warning">部分只设置了关闭日期的作业可能未显示。</Alert>}
         {sourceError ? (
           <Alert severity="error">无法读取 Canvas 课程日历。</Alert>
         ) : (
