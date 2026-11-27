@@ -1,15 +1,16 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { IMainState } from "@cyntler/react-doc-viewer/dist/cjs/store/mainStateReducer";
 import ArchiveRenderer from "../archive_renderer";
+import { invoke } from "@tauri-apps/api/core";
 
-const mocks = vi.hoisted(() => ({ loads: vi.fn(), message: { warning: vi.fn(), error: vi.fn(), success: vi.fn() } }));
+const mocks = vi.hoisted(() => ({ loads: vi.fn(), extract: vi.fn(), close: vi.fn(), message: { warning: vi.fn(), error: vi.fn(), success: vi.fn() } }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("../../lib/message", () => ({ useAppMessage: () => [mocks.message, null] }));
-vi.mock("../../lib/utils", () => ({ consoleLog: vi.fn(), dataURLtoFile: vi.fn(), formatSize: () => "5 B", getFileType: async () => "txt" }));
+vi.mock("../../lib/utils", () => ({ consoleLog: vi.fn(), formatSize: () => "5 B", getFileType: async () => "txt" }));
 vi.mock("../renderers", () => ({ ArchiveSupportedRenderers: [] }));
-vi.mock("libarchive.js", () => ({ Archive: { init: vi.fn(), open: async () => ({ getFilesObject: async () => ({
-  "课件.txt": { name: "课件.txt", size: 5, extract: async () => new File(["notes"], "课件.txt") },
+vi.mock("libarchive.js", () => ({ Archive: { init: vi.fn(), open: async () => ({ close: mocks.close, getFilesObject: async () => ({
+  "课件.txt": { name: "课件.txt", size: 5, extract: mocks.extract },
   "其他资料": {},
 }) }) } }));
 vi.mock("@cyntler/react-doc-viewer", async () => {
@@ -22,17 +23,28 @@ vi.mock("@cyntler/react-doc-viewer", async () => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
 
 it("does not reload the selected document when expanding another archive folder", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, blob: async () => new Blob(["archive"]) })));
+  const file = new File(["notes"], "课件.txt");
+  file.arrayBuffer = async () => new TextEncoder().encode("notes").buffer;
+  mocks.extract.mockResolvedValue(file);
   vi.stubGlobal("URL", class extends URL {
     static createObjectURL() { return "blob:archive-child"; }
     static revokeObjectURL() {}
   });
   const mainState: IMainState = { currentFileNo: 0, documents: [], language: "en",
-    currentDocument: { uri: "blob:archive", fileName: "materials.zip", fileData: "encoded" } };
-  render(<ArchiveRenderer mainState={mainState} />);
+    currentDocument: { uri: "blob:archive", fileName: "materials.zip" } };
+  const { unmount } = render(<ArchiveRenderer mainState={mainState} />);
   fireEvent.click(await screen.findByRole("button", { name: /课件.txt/ }));
   const viewer = await screen.findByTestId("archive-document");
   mocks.loads.mockClear();
   fireEvent.click(screen.getByRole("button", { name: /其他资料/ }));
   expect(screen.getByTestId("archive-document")).toBe(viewer);
   expect(mocks.loads).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "下载文件" }));
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith("save_file_content", {
+    content: [110, 111, 116, 101, 115], fileName: "课件.txt",
+  }));
+  expect(mocks.extract).toHaveBeenCalledTimes(1);
+  unmount();
+  expect(mocks.close).toHaveBeenCalledOnce();
 });

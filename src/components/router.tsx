@@ -16,6 +16,8 @@ import SyllabusPage from "../page/syllabus";
 import UsersPage from "../page/users";
 import VideoPage from "../page/video";
 import RetainedVideoWorkspace from "./retained_video_workspace";
+import { AppShell } from "./layout";
+import FirstRunSetupGate from "./first_run_setup";
 
 // 路由配置对象
 const routesConfig = [
@@ -40,14 +42,18 @@ const routesConfig = [
 export default function AppRouter() {
     return (
         <BrowserRouter>
-            <RetainedVideoWorkspace>{(active) => <VideoPage active={active} />}</RetainedVideoWorkspace>
-            <Routes>
-                <Route index element={<Navigate to="/files" />} />
-                {routesConfig.map((route, index) => (
-                    <Route key={index} path={route.path} element={route.element} />
-                ))}
-                <Route path="*" element={<Navigate to="/" />} />
-            </Routes>
+            <FirstRunSetupGate>
+                <AppShell>
+                    <RetainedVideoWorkspace>{(active) => <VideoPage active={active} />}</RetainedVideoWorkspace>
+                    <Routes>
+                        <Route index element={<Navigate to="/files" replace />} />
+                        {routesConfig.map((route, index) => (
+                            <Route key={index} path={route.path} element={route.element} />
+                        ))}
+                        <Route path="*" element={<Navigate to="/" />} />
+                    </Routes>
+                </AppShell>
+            </FirstRunSetupGate>
         </BrowserRouter>
     );
 }

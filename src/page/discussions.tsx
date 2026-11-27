@@ -1,29 +1,28 @@
-import { invoke } from "@tauri-apps/api/core";
-import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineRounded";
 import ForumRoundedIcon from "@mui/icons-material/ForumRounded";
+import { invoke } from "@tauri-apps/api/core";
 import LaunchRoundedIcon from "@mui/icons-material/LaunchRounded";
-import MarkEmailUnreadRoundedIcon from "@mui/icons-material/MarkEmailUnreadRounded";
 import PushPinRoundedIcon from "@mui/icons-material/PushPinRounded";
 import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
 import {
   Avatar,
   Box,
-  Button,
   Card,
   CardContent,
-  Chip,
   Divider,
-  MenuItem,
+  IconButton,
+  LinearProgress,
+  List,
+  ListItem,
+  ListItemButton,
+  Tooltip,
   Stack,
-  TextField,
   Typography,
 } from "@mui/material";
-import { alpha, useTheme } from "@mui/material/styles";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import CourseSelect from "../components/course_select";
-import BasicLayout from "../components/layout";
 import { WorkspaceHero } from "../components/workspace_hero";
+import BasicLayout from "../components/layout";
 import { useCourses, useMe, useSelectedCourse, useAutoLoadCourse } from "../lib/hooks";
 import { useAppMessage } from "../lib/message";
 import {
@@ -33,11 +32,11 @@ import {
   LOG_LEVEL_ERROR,
   Participant,
 } from "../lib/model";
-import { consoleLog, formatDate } from "../lib/utils";
+import { consoleLog, formatCompactDate } from "../lib/utils";
 
 import { surfaceCardSx } from "../lib/styles";
 
-function DiscussionBubble({
+function DiscussionReply({
   author,
   message,
   createdAt,
@@ -51,70 +50,24 @@ function DiscussionBubble({
   unread?: boolean;
 }) {
   return (
-    <Stack
-      direction={mine ? "row-reverse" : "row"}
-      spacing={1.5}
-      alignItems="flex-start"
-    >
-      <Avatar sx={{ width: 40, height: 40 }}>
+    <Stack direction="row" spacing={1.25} alignItems="flex-start" sx={{ py: 1.25 }}>
+      <Avatar sx={{ width: 28, height: 28, fontSize: 13 }}>
         {author.slice(0, 1).toUpperCase()}
       </Avatar>
-      <Box
-        sx={{
-          maxWidth: { xs: "100%", md: "80%" },
-          px: 2,
-          py: 1.5,
-          borderRadius: mine ? "22px 8px 22px 22px" : "8px 22px 22px 22px",
-          bgcolor: mine ? "primary.main" : alpha("#94a3b8", 0.12),
-          color: mine ? "primary.contrastText" : "text.primary",
-          border: "1px solid",
-          borderColor: mine ? alpha("#ffffff", 0.16) : "divider",
-        }}
-      >
-        <Stack
-          direction="row"
-          justifyContent="space-between"
-          spacing={1}
-          sx={{ mb: 1, flexWrap: "wrap" }}
-        >
-          <Typography
-            variant="subtitle2"
-            sx={{ fontWeight: 700, color: mine ? "inherit" : "text.primary" }}
-          >
-            {author}
-          </Typography>
-          <Stack direction="row" spacing={0.75} alignItems="center">
-            {unread ? (
-              <Chip
-                size="small"
-                label="未读"
-                color={mine ? "default" : "primary"}
-                variant={mine ? "filled" : "outlined"}
-                sx={{ height: 22 }}
-              />
-            ) : null}
-            <Typography
-              variant="caption"
-              sx={{ color: mine ? alpha("#ffffff", 0.82) : "text.secondary" }}
-            >
-              {formatDate(createdAt)}
-            </Typography>
-          </Stack>
+      <Box sx={{ minWidth: 0 }}>
+        <Stack direction="row" gap={1} alignItems="baseline" flexWrap="wrap">
+          <Typography variant="subtitle2">{author}{mine ? "（我）" : ""}</Typography>
+          <Typography variant="caption" color="text.secondary">{formatCompactDate(createdAt)}</Typography>
+          {unread && <Typography variant="caption" color="primary.main">未读</Typography>}
         </Stack>
         <Box
           sx={{
             fontSize: 14,
-            lineHeight: 1.7,
-            wordBreak: "break-word",
-            "& a": {
-              color: mine ? "inherit" : "primary.main",
-            },
-            "& img": {
-              maxWidth: "100%",
-            },
-            "& p": {
-              m: 0,
-            },
+            lineHeight: 1.65,
+            overflowWrap: "anywhere",
+            "& a": { color: "primary.main" },
+            "& img": { maxWidth: "100%" },
+            "& p": { my: 0.5 },
           }}
           dangerouslySetInnerHTML={{ __html: message || "<p>无内容</p>" }}
         />
@@ -124,12 +77,13 @@ function DiscussionBubble({
 }
 
 export default function DiscussionsPage() {
-  const theme = useTheme();
   const [messageApi, contextHolder] = useAppMessage();
   const [topics, setTopics] = useState<DiscussionTopic[]>([]);
   const [operating, setOperating] = useState(false);
   const [selectedTopicId, setSelectedTopicId] = useState<number | "">("");
   const [fullDiscussion, setFullDiscussion] = useState<FullDiscussion>();
+  const [loadingTopic, setLoadingTopic] = useState(false);
+  const topicRequest = useRef(0);
   const { selectedCourseId, setSelectedCourseId } = useSelectedCourse();
   const courses = useCourses();
   const me = useMe();
@@ -179,7 +133,8 @@ export default function DiscussionsPage() {
 
   const loadCourse = async (courseId: number) => {
     setOperating(true);
-    setSelectedCourseId(courseId);
+    topicRequest.current += 1;
+    setLoadingTopic(false);
     setTopics([]);
     setSelectedTopicId("");
     setFullDiscussion(undefined);
@@ -197,44 +152,47 @@ export default function DiscussionsPage() {
     courses.data.length > 0
   );
 
-  const handleGetFullDiscussion = async (topicId: number) => {
+  const handleTopicSelect = async (topicId: number) => {
+    const request = ++topicRequest.current;
+    setSelectedTopicId(topicId);
+    setFullDiscussion(undefined);
+    setLoadingTopic(true);
     try {
-      const nextFullDiscussion = (await invoke("get_full_discussion", {
+      const discussion = await invoke<FullDiscussion>("get_full_discussion", {
         courseId: selectedCourseId,
         topicId,
-      })) as FullDiscussion;
-      setFullDiscussion(nextFullDiscussion);
+      });
+      if (request === topicRequest.current) setFullDiscussion(discussion);
     } catch (error) {
-      consoleLog(LOG_LEVEL_ERROR, error);
-      messageApi.error(`获取讨论内容失败：${error}`);
+      if (request === topicRequest.current) {
+        consoleLog(LOG_LEVEL_ERROR, error);
+        messageApi.error(`获取讨论内容失败：${error}`);
+      }
+    } finally {
+      if (request === topicRequest.current) setLoadingTopic(false);
     }
   };
 
-  const handleTopicSelect = async (topicId: number) => {
-    setSelectedTopicId(topicId);
-    await handleGetFullDiscussion(topicId);
+  const refreshTopics = async () => {
+    setOperating(true);
+    try {
+      await handleGetDiscussionTopics(selectedCourseId);
+    } finally {
+      setOperating(false);
+    }
   };
-
-  const selectedCourse = courses.data.find(
-    (course) => course.id === selectedCourseId
-  );
 
   return (
     <BasicLayout>
       {contextHolder}
-      <Stack spacing={3}>
+      <Stack spacing={2}>
         <WorkspaceHero
           chipLabel="讨论管理"
           chipIcon={<ForumRoundedIcon />}
-          title="讨论区"
-          description="更清晰地查看课程讨论主题、发言流和未读情况。"
+          title="课程讨论"
+          description="按话题阅读课程讨论和回复。"
           aside={
-            <Box
-              sx={{
-                width: { xs: "100%", lg: 680 },
-                alignSelf: { xs: "stretch", lg: "flex-start" },
-              }}
-            >
+            <Box sx={{ width: { xs: "100%", lg: 640 } }}>
               <CourseSelect
                 onChange={setSelectedCourseId}
                 disabled={operating}
@@ -243,287 +201,121 @@ export default function DiscussionsPage() {
               />
             </Box>
           }
-          stats={[
-            { label: "讨论主题", value: topics.length },
-            { label: "未读条目", value: fullDiscussion?.unread_entries.length ?? 0 },
-            { label: "参与者", value: fullDiscussion?.participants.length ?? 0 },
-            { label: "消息条数", value: discussionMessages.length },
-          ]}
-          footer={
-            <Stack
-              direction={{ xs: "column", md: "row" }}
-              spacing={1.5}
-              justifyContent="space-between"
-            >
-              <TextField
-                select
-                fullWidth
-                disabled={operating || topics.length === 0}
-                label="选择话题"
-                value={selectedTopicId}
-                onChange={(event) =>
-                  void handleTopicSelect(Number(event.target.value))
-                }
-                helperText={
-                  selectedTopic
-                    ? `当前查看：${selectedTopic.title}`
-                    : "先选择课程，再选择一个讨论主题。"
-                }
-              >
-                {topics.map((topic) => (
-                  <MenuItem key={topic.id} value={topic.id}>
-                    {topic.title}
-                  </MenuItem>
-                ))}
-              </TextField>
-              <Button
-                variant="outlined"
-                startIcon={<RefreshRoundedIcon />}
-                onClick={() =>
-                  selectedCourseId > 0
-                    ? void handleGetDiscussionTopics(selectedCourseId)
-                    : undefined
-                }
-                disabled={selectedCourseId <= 0 || operating}
-                sx={{ minWidth: { md: 132 } }}
-              >
-                刷新主题
-              </Button>
-            </Stack>
-          }
         />
 
-        <Box
-          sx={{
-            display: "grid",
-            gap: 3,
-            gridTemplateColumns: {
-              xs: "minmax(0, 1fr)",
-              xl: "360px minmax(0, 1fr)",
-            },
-          }}
-        >
+        <Box sx={{
+          display: "grid",
+          gap: 1.5,
+          alignItems: "start",
+          gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "minmax(220px, 1fr) minmax(0, 2fr)" },
+        }}>
           <Card sx={surfaceCardSx}>
-            <CardContent sx={{ p: 0 }}>
-              <Stack
-                direction="row"
-                alignItems="center"
-                justifyContent="space-between"
-                sx={{ px: 2.5, py: 2 }}
-              >
-                <Typography variant="h6" sx={{ fontWeight: 800 }}>
-                  话题列表
-                </Typography>
-                {selectedCourse ? (
-                  <Chip label={selectedCourse.name} variant="outlined" size="small" />
-                ) : null}
-              </Stack>
-              <Divider />
-              <Stack sx={{ maxHeight: { xl: "calc(100vh - 360px)" }, overflow: "auto" }}>
-                {topics.length > 0 ? (
-                  topics.map((topic) => {
-                    const selected = topic.id === selectedTopicId;
-                    return (
-                      <Box
-                        key={topic.id}
+            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 1.5, py: 0.75 }}>
+              <Typography component="h2" variant="subtitle2">话题</Typography>
+              <Tooltip title="刷新话题" describeChild>
+                <span>
+                  <IconButton size="small" aria-label="刷新话题" disabled={selectedCourseId <= 0 || operating} onClick={() => void refreshTopics()}>
+                    <RefreshRoundedIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            </Stack>
+            {operating ? <LinearProgress aria-label="正在读取话题" /> : <Divider />}
+            {topics.length ? (
+              <List disablePadding aria-label="讨论话题" sx={{ maxHeight: { xs: 230, md: "65vh" }, overflow: "auto" }}>
+                {topics.map((topic) => {
+                  const selected = topic.id === selectedTopicId;
+                  const activity = formatCompactDate(topic.last_reply_at || topic.created_at);
+                  return (
+                    <ListItem key={topic.id} disablePadding>
+                      <ListItemButton
+                        component="button"
+                        selected={selected}
+                        aria-current={selected ? "true" : undefined}
                         onClick={() => void handleTopicSelect(topic.id)}
-                        sx={{
-                          px: 2.5,
-                          py: 2,
-                          cursor: "pointer",
-                          borderBottom: "1px solid",
-                          borderColor: "divider",
-                          bgcolor: selected
-                            ? alpha(theme.palette.primary.main, 0.08)
-                            : "transparent",
-                          transition: "background-color 0.2s ease",
-                          "&:hover": {
-                            bgcolor: alpha(theme.palette.primary.main, 0.05),
-                          },
-                        }}
+                        sx={{ display: "block", width: "100%", textAlign: "left", px: 1.5, py: 1 }}
                       >
-                        <Stack spacing={1.2}>
-                          <Stack
-                            direction="row"
-                            spacing={1}
-                            alignItems="center"
-                            flexWrap="wrap"
-                            useFlexGap
-                          >
-                            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                              {topic.title}
-                            </Typography>
-                            {topic.pinned ? (
-                              <Chip
-                                size="small"
-                                icon={<PushPinRoundedIcon />}
-                                label="置顶"
-                                color="primary"
-                                variant="outlined"
-                              />
-                            ) : null}
-                            {topic.unread_count > 0 ? (
-                              <Chip
-                                size="small"
-                                icon={<MarkEmailUnreadRoundedIcon />}
-                                label={`${topic.unread_count} 未读`}
-                                color="warning"
-                                variant="outlined"
-                              />
-                            ) : null}
-                          </Stack>
-                          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                            <Chip
-                              size="small"
-                              label={`${topic.discussion_subentry_count} 回复`}
-                              variant="outlined"
-                            />
-                            {topic.user_name ? (
-                              <Chip
-                                size="small"
-                                label={topic.user_name}
-                                variant="outlined"
-                              />
-                            ) : null}
-                          </Stack>
-                          <Typography variant="caption" color="text.secondary">
-                            最后回复：{formatDate(topic.last_reply_at || topic.created_at)}
+                        <Stack direction="row" gap={0.75} alignItems="baseline">
+                          {topic.pinned && <PushPinRoundedIcon role="img" aria-label="置顶" sx={{ fontSize: 14, color: "text.secondary", alignSelf: "center" }} />}
+                          <Typography variant="body2" fontWeight={selected || topic.unread_count > 0 ? 700 : 500} sx={{ overflowWrap: "anywhere" }}>
+                            {topic.title}
                           </Typography>
                         </Stack>
-                      </Box>
-                    );
-                  })
-                ) : (
-                  <Box sx={{ px: 2.5, py: 8 }}>
-                    <Typography align="center" variant="body2" color="text.secondary">
-                      选择课程后，这里会显示讨论主题列表。
-                    </Typography>
-                  </Box>
-                )}
-              </Stack>
-            </CardContent>
+                        <Typography component="div" variant="caption" color="text.secondary" sx={{ mt: 0.25 }}>
+                          {topic.discussion_subentry_count} 条回复
+                          {topic.unread_count > 0 && <Box component="span" sx={{ color: "primary.main" }}> · {topic.unread_count} 条未读</Box>}
+                          {activity && ` · ${activity}`}
+                        </Typography>
+                      </ListItemButton>
+                    </ListItem>
+                  );
+                })}
+              </List>
+            ) : !operating && (
+              <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
+                {selectedCourseId <= 0 ? "请选择课程" : "本课程暂无讨论"}
+              </Typography>
+            )}
           </Card>
 
           <Card sx={surfaceCardSx}>
-            <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
-              {selectedTopic && fullDiscussion ? (
-                <Stack spacing={3}>
-                  <Stack spacing={1.5}>
-                    <Stack
-                      direction={{ xs: "column", md: "row" }}
-                      justifyContent="space-between"
-                      spacing={1.5}
-                    >
-                      <Box>
-                        <Typography variant="h5" sx={{ fontWeight: 800 }}>
-                          {selectedTopic.title}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          创建于 {formatDate(selectedTopic.created_at)}，最近活跃于{" "}
-                          {formatDate(selectedTopic.last_reply_at || selectedTopic.created_at)}
-                        </Typography>
-                      </Box>
-                      <Button
-                        component="a"
-                        href={selectedTopic.html_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        variant="outlined"
-                        startIcon={<LaunchRoundedIcon />}
-                      >
-                        在 Canvas 打开
-                      </Button>
-                    </Stack>
-                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                      <Chip
-                        icon={<ChatBubbleOutlineRoundedIcon />}
-                        label={`${discussionMessages.length} 条消息`}
-                        color="primary"
-                        variant="outlined"
-                      />
-                      {selectedTopic.subscribed ? (
-                        <Chip label="已订阅" variant="outlined" />
-                      ) : null}
-                      {selectedTopic.locked ? (
-                        <Chip label="已锁定" color="warning" variant="outlined" />
-                      ) : null}
-                    </Stack>
+            {loadingTopic && <LinearProgress aria-label="正在读取讨论" />}
+            <CardContent sx={{ px: { xs: 1.5, sm: 2 }, py: 1.5, "&:last-child": { pb: 1.5 } }}>
+              {selectedTopic ? (
+                <Stack spacing={1.5}>
+                  <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={1}>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography component="h2" variant="h6" fontWeight={700} sx={{ overflowWrap: "anywhere" }}>
+                        {selectedTopic.title}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {[
+                          selectedTopic.user_name,
+                          formatCompactDate(selectedTopic.created_at),
+                          selectedTopic.subscribed && "已订阅",
+                          selectedTopic.locked && "已锁定",
+                        ].filter(Boolean).join(" · ")}
+                      </Typography>
+                    </Box>
+                    <Tooltip title="在 Canvas 打开" describeChild>
+                      <IconButton component="a" href={selectedTopic.html_url} target="_blank" rel="noreferrer" size="small" aria-label="在 Canvas 打开">
+                        <LaunchRoundedIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                   </Stack>
-
-                  <Box
-                    sx={{
-                      p: 2.25,
-                      borderRadius: "8px",
-                      border: "1px solid",
-                      borderColor: "divider",
-                    }}
-                  >
-                    <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.25 }}>
-                      主题内容
-                    </Typography>
+                  {selectedTopic.message && (
                     <Box
-                      sx={{
-                        fontSize: 14,
-                        lineHeight: 1.8,
-                        color: "text.secondary",
-                        "& a": {
-                          color: "primary.main",
-                        },
-                        "& img": {
-                          maxWidth: "100%",
-                        },
-                      }}
-                      dangerouslySetInnerHTML={{
-                        __html: selectedTopic.message || "<p>无主题内容</p>",
-                      }}
+                      sx={{ fontSize: 14, lineHeight: 1.65, overflowWrap: "anywhere", "& a": { color: "primary.main" }, "& img": { maxWidth: "100%" } }}
+                      dangerouslySetInnerHTML={{ __html: selectedTopic.message }}
                     />
-                  </Box>
-
-                  <Stack spacing={2}>
-                    {discussionMessages.map((view) => {
-                      const user = view.user_id
-                        ? participantMap.get(view.user_id)
-                        : undefined;
-                      const isMine = user?.id === me.data?.id;
-                      const unread =
-                        fullDiscussion.unread_entries.includes(view.id) ||
-                        fullDiscussion.new_entries.includes(view.id);
-
-                      return (
-                        <DiscussionBubble
-                          key={view.id}
-                          author={user?.display_name ?? "未知用户"}
-                          message={view.message ?? ""}
-                          createdAt={view.created_at}
-                          mine={Boolean(isMine)}
-                          unread={unread}
-                        />
-                      );
-                    })}
-                  </Stack>
+                  )}
+                  {fullDiscussion && (
+                    <>
+                      <Divider />
+                      {discussionMessages.length ? (
+                        <Stack divider={<Divider />}>
+                          {discussionMessages.map((view) => {
+                            const user = view.user_id == null ? undefined : participantMap.get(view.user_id);
+                            return (
+                              <DiscussionReply
+                                key={view.id}
+                                author={user?.display_name ?? "未知用户"}
+                                message={view.message ?? ""}
+                                createdAt={view.created_at}
+                                mine={Boolean(user && user.id === me.data?.id)}
+                                unread={fullDiscussion.unread_entries.includes(view.id) || fullDiscussion.new_entries.includes(view.id)}
+                              />
+                            );
+                          })}
+                        </Stack>
+                      ) : <Typography variant="body2" color="text.secondary">暂无回复</Typography>}
+                    </>
+                  )}
                 </Stack>
               ) : (
-                <Box
-                  sx={{
-                    minHeight: 420,
-                    display: "grid",
-                    placeItems: "center",
-                    textAlign: "center",
-                    px: 2,
-                  }}
-                >
-                  <Stack spacing={1.25} alignItems="center">
-                    <ChatBubbleOutlineRoundedIcon
-                      sx={{ fontSize: 44, color: "text.secondary" }}
-                    />
-                    <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                      还没有打开任何讨论
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      先选择课程和话题，右侧会显示完整讨论内容与回复流。
-                    </Typography>
-                  </Stack>
-                </Box>
+                <Typography align="center" variant="body2" color="text.secondary" sx={{ py: 5 }}>
+                  {topics.length ? "请选择话题" : "暂无可查看的讨论"}
+                </Typography>
               )}
             </CardContent>
           </Card>

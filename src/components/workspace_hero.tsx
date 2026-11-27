@@ -84,6 +84,8 @@ export function WorkspaceHero({
                   alignItems: "flex-start",
                   alignSelf: { xs: "stretch", lg: "flex-start" },
                   flexShrink: 0,
+                  maxWidth: { xs: "100%", lg: "72%" },
+                  "& > *": { maxWidth: "100%" },
                 }}
               >
                 {aside}

@@ -1,637 +1,413 @@
 import { invoke } from "@tauri-apps/api/core";
-import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
-import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
-import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
-import EventAvailableRoundedIcon from "@mui/icons-material/EventAvailableRounded";
-import KeyboardDoubleArrowLeftRoundedIcon from "@mui/icons-material/KeyboardDoubleArrowLeftRounded";
+import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
+import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import TodayRoundedIcon from "@mui/icons-material/TodayRounded";
-import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import {
   Alert,
   Box,
   Button,
   Card,
   CardContent,
-  Chip,
-  CircularProgress,
-  Divider,
+  IconButton,
+  LinearProgress,
   Link as MuiLink,
-  MenuItem,
   Stack,
-  TextField,
   Tooltip,
   Typography,
 } from "@mui/material";
-import { alpha } from "@mui/material/styles";
-import dayjs, { Dayjs } from "dayjs";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { alpha, useTheme } from "@mui/material/styles";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { zhCN } from "@mui/x-date-pickers/locales";
+import dayjs, { type Dayjs } from "dayjs";
+import "dayjs/locale/zh-cn";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
-
 import BasicLayout from "../components/layout";
 import { WorkspaceHero } from "../components/workspace_hero";
-import { useAppMessage } from "../lib/message";
-import { CalendarEvent, Colors, Course } from "../lib/model";
+import type { CalendarEvent, Colors, Course } from "../lib/model";
+import { surfaceCardSx } from "../lib/styles";
 
 const weekdayLabels = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
-const monthOptions = [
-  "1 月",
-  "2 月",
-  "3 月",
-  "4 月",
-  "5 月",
-  "6 月",
-  "7 月",
-  "8 月",
-  "9 月",
-  "10 月",
-  "11 月",
-  "12 月",
-];
+const weekColumns = "repeat(7, minmax(0, 1fr))";
 
-import { surfaceCardSx as cardSx } from "../lib/styles";
+type CalendarSources = {
+  colors: Colors["custom_colors"];
+  courses: Map<string, Course>;
+};
 
-function getCourseId(event: CalendarEvent) {
-  const parts = event.context_code.split("_");
-  return parts[parts.length - 1];
-}
+type CalendarAssignment = {
+  key: string;
+  title: string;
+  courseId: number;
+  courseName: string;
+  date: Dayjs;
+  closes: boolean;
+  color?: string;
+};
 
-function getEventMoment(event: CalendarEvent) {
-  return dayjs(event.end_at || event.start_at || dayjs().toISOString());
-}
+type CalendarResult = { items: CalendarAssignment[]; error?: true };
+type EventResult = { events: CalendarEvent[]; error?: true };
+const emptyEvents: CalendarEvent[] = [];
 
-function getDateKey(date: Dayjs) {
-  return date.format("YYYY-MM-DD");
-}
+const dateKey = (date: Dayjs) => date.format("YYYY-MM-DD");
 
-function getMonthGridDates(currentMonth: Dayjs) {
-  const firstDay = currentMonth.startOf("month");
+function getMonthGridDates(month: Dayjs) {
+  const firstDay = month.startOf("month");
   const offset = (firstDay.day() + 6) % 7;
-  const gridStart = firstDay.subtract(offset, "day");
-  return Array.from({ length: 42 }, (_, index) => gridStart.add(index, "day"));
+  const start = firstDay.subtract(offset, "day");
+  const days = Math.ceil((offset + month.daysInMonth()) / 7) * 7;
+  return Array.from({ length: days }, (_, index) => start.add(index, "day"));
+}
+
+function loadDatedEvents(sources: CalendarSources, start: Dayjs, end: Dayjs) {
+  if (!sources.courses.size) return Promise.resolve([]);
+  return invoke<CalendarEvent[]>("list_calendar_events", {
+    contextCodes: [...sources.courses.keys()],
+    startDate: start.toISOString(),
+    endDate: end.toISOString(),
+  });
+}
+
+function collectAssignments(sources: CalendarSources, events: CalendarEvent[], start: Dayjs, end: Dayjs) {
+  const items = new Map<string, CalendarAssignment>();
+  for (const event of events) {
+    const course = sources.courses.get(event.context_code);
+    const { due_at: due, lock_at: lock } = event.assignment;
+    const timestamp = due || lock || event.end_at || event.start_at;
+    if (!course || !timestamp) continue;
+    const date = dayjs(timestamp);
+    if (!date.isValid() || date.isBefore(start) || date.isAfter(end)) continue;
+    const key = `${course.id}:${event.assignment.id}:${date.valueOf()}`;
+    if (items.has(key)) continue;
+    items.set(key, {
+      key,
+      title: event.title,
+      courseId: course.id,
+      courseName: course.name || event.context_name,
+      date,
+      closes: !due && Boolean(lock),
+      color: sources.colors[event.context_code],
+    });
+  }
+  return [...items.values()].sort((left, right) => left.date.valueOf() - right.date.valueOf());
+}
+
+function getRemainingTime({ date, closes }: CalendarAssignment, now: Dayjs) {
+  const minutes = date.diff(now, "minute");
+  if (!date.isAfter(now)) return closes ? "已关闭" : "已截止";
+  if (minutes < 1) return "不足 1 分钟";
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  if (days) return `剩 ${days} 天 ${hours % 24} 小时`;
+  if (hours) return `剩 ${hours} 小时 ${minutes % 60} 分钟`;
+  return `剩 ${minutes} 分钟`;
+}
+
+function AssignmentLink({ item, inCalendar = false, now }: {
+  item: CalendarAssignment;
+  inCalendar?: boolean;
+  now?: Dayjs;
+}) {
+  const theme = useTheme();
+  const color = item.color || theme.palette.primary.main;
+  const localTime = item.date.format("HH:mm");
+  const dateLabel = item.closes ? "关闭 " : "";
+  const calendarTitle = `${item.title} · ${item.courseName} · ${dateLabel}${localTime}`;
+
+  return (
+    <Tooltip title={inCalendar ? calendarTitle : ""} placement="top">
+      <MuiLink
+        component={RouterLink}
+        to={`/assignments?id=${item.courseId}`}
+        underline="hover"
+        onClick={inCalendar ? (event) => event.stopPropagation() : undefined}
+        sx={{
+          display: "flex", justifyContent: "space-between", gap: 0.75, minWidth: 0,
+          px: inCalendar ? 0.5 : 0.75, py: inCalendar ? 0.25 : 0.5,
+          borderLeft: "3px solid", borderColor: color, borderRadius: "4px",
+          bgcolor: inCalendar ? alpha(color, 0.1) : undefined,
+          color: "text.primary",
+          "&:hover": { bgcolor: alpha(color, 0.16) },
+        }}
+      >
+        <Box sx={{ minWidth: 0 }}>
+          <Typography component="span" variant={inCalendar ? "caption" : "body2"}
+            noWrap={inCalendar} sx={{ display: "block", fontWeight: 600, overflowWrap: "anywhere", lineHeight: 1.35 }}>
+            {item.title}
+          </Typography>
+          <Typography component="span" variant="caption" color="text.secondary"
+            noWrap={inCalendar} sx={{ display: "block", overflowWrap: "anywhere", lineHeight: 1.35 }}>
+            {item.courseName}
+          </Typography>
+        </Box>
+        {!inCalendar && (
+          <Stack alignItems="flex-end" sx={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+            <Typography component="time" dateTime={item.date.toISOString()} variant="caption" color="text.secondary">
+              {dateLabel}{item.date.format("M/D HH:mm")}
+            </Typography>
+            {now && (
+              <Typography variant="caption" color={item.date.diff(now, "hour") < 24 ? "warning.main" : "text.secondary"}>
+                {getRemainingTime(item, now)}
+              </Typography>
+            )}
+          </Stack>
+        )}
+      </MuiLink>
+    </Tooltip>
+  );
+}
+
+function Agenda({ title, result, empty, now }: { title: string; result?: CalendarResult; empty: string; now?: Dayjs }) {
+  return (
+    <Box>
+      <Typography component="h2" variant="subtitle1" sx={{ fontWeight: 700, mb: 0.75 }}>{title}</Typography>
+      {!result ? <LinearProgress aria-label={`正在加载${title}`} /> : result.error ? (
+        <Typography variant="body2" color="error">读取事项失败。</Typography>
+      ) : result.items.length > 0 ? (
+        <Stack spacing={0.5}>
+          {result.items.map((item) => <AssignmentLink key={item.key} item={item} now={now} />)}
+        </Stack>
+      ) : (
+        <Typography variant="body2" color="text.secondary">{empty}</Typography>
+      )}
+    </Box>
+  );
 }
 
 export default function CalendarPage() {
-  const [messageApi, contextHolder] = useAppMessage();
-  const [currentMonth, setCurrentMonth] = useState<Dayjs>(dayjs());
-  const [selectedDate, setSelectedDate] = useState<Dayjs>(dayjs());
-  const [colors, setColors] = useState<Colors | undefined>();
-  const [contextCodes, setContextCodes] = useState<string[]>([]);
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [hintEvents, setHintEvents] = useState<CalendarEvent[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
-  const currentMonthRef = useRef<Dayjs>(dayjs());
-  const contextCodesRef = useRef<string[]>([]);
+  const today = dayjs();
+  const [currentMonth, setCurrentMonth] = useState(() => dayjs().startOf("month"));
+  const [selectedDate, setSelectedDate] = useState(() => dayjs());
+  const [sources, setSources] = useState<CalendarSources>();
+  const [sourceError, setSourceError] = useState(false);
+  const [lockDateError, setLockDateError] = useState(false);
+  const [monthResult, setMonthResult] = useState<{ month: Dayjs; result: EventResult }>();
+  const [upcomingResult, setUpcomingResult] = useState<EventResult>();
+  const [upcomingStart] = useState(() => dayjs());
+  const [lockOnlyEvents, setLockOnlyEvents] = useState(emptyEvents);
 
   useEffect(() => {
-    init();
-    document.body.addEventListener("keydown", handleKeyDownEvent, true);
-    return () => {
-      document.body.removeEventListener("keydown", handleKeyDownEvent, true);
-    };
+    let active = true;
+    Promise.all([invoke<Colors>("get_colors").catch(() => ({ custom_colors: {} })), invoke<Course[]>("list_courses")])
+      .then(([{ custom_colors: colors }, courses]) => {
+        if (!active) return;
+        const courseMap = new Map<string, Course>();
+        const studentCourseIds: number[] = [];
+        const otherContextCodes: string[] = [];
+        for (const course of courses) {
+          const context = `course_${course.id}`;
+          courseMap.set(context, course);
+          const isStudent = course.enrollments?.some(({ type, role }) =>
+            type === "student" || type === "StudentEnrollment" || role === "StudentEnrollment"
+          );
+          if (isStudent) studentCourseIds.push(course.id);
+          else otherContextCodes.push(context);
+        }
+        setSources({ colors, courses: courseMap });
+        if (courseMap.size) {
+          void invoke<EventResult & { incomplete: boolean }>("list_calendar_assignments_with_only_lock_dates", {
+            contextCodes: otherContextCodes,
+            studentCourseIds,
+          })
+            .then(({ events, incomplete }) => {
+              if (!active) return;
+              setLockOnlyEvents(events);
+              setLockDateError(incomplete);
+            })
+            .catch(() => { if (active) setLockDateError(true); });
+        }
+      })
+      .catch(() => { if (active) setSourceError(true); });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
-    currentMonthRef.current = currentMonth;
-  }, [currentMonth]);
+    if (!sources) return;
+    let active = true;
+    const finish = (result: EventResult) => { if (active) setMonthResult({ month: currentMonth, result }); };
+    void loadDatedEvents(sources, currentMonth.startOf("month"), currentMonth.endOf("month"))
+      .then((events) => finish({ events }), () => finish({ events: [], error: true }));
+    return () => { active = false; };
+  }, [currentMonth, sources]);
 
   useEffect(() => {
-    contextCodesRef.current = contextCodes;
-  }, [contextCodes]);
+    if (!sources) return;
+    let active = true;
+    const finish = (result: EventResult) => { if (active) setUpcomingResult(result); };
+    void loadDatedEvents(sources, upcomingStart, upcomingStart.add(7, "day"))
+      .then((events) => finish({ events }), () => finish({ events: [], error: true }));
+    return () => { active = false; };
+  }, [sources, upcomingStart]);
 
-  const handleKeyDownEvent = (event: KeyboardEvent) => {
-    if (loading) {
-      return;
-    }
-    if (event.key === "ArrowRight" && !event.repeat) {
-      void handleMonthChange(currentMonthRef.current.add(1, "month"));
-    }
-    if (event.key === "ArrowLeft" && !event.repeat) {
-      void handleMonthChange(currentMonthRef.current.subtract(1, "month"));
-    }
-  };
-
-  const getColors = () => invoke("get_colors");
-
-  const handleGetCalendarEvents = async (
-    nextContextCodes: string[],
-    startDate: string,
-    endDate: string
-  ) => {
-    return (await invoke("list_calendar_events", {
-      contextCodes: nextContextCodes,
-      startDate,
-      endDate,
-    })) as CalendarEvent[];
-  };
-
-  const dedupeEvents = (rawEvents: CalendarEvent[]) => {
-    const seenAssignments = new Set<number>();
-    return rawEvents.filter((event) => {
-      if (seenAssignments.has(event.assignment.id)) {
-        return false;
-      }
-      seenAssignments.add(event.assignment.id);
-      return true;
-    });
-  };
-
-  const init = async () => {
-    try {
-      const nextColors = (await getColors()) as Colors;
-      const courses = (await invoke("list_courses")) as Course[];
-      const courseIds = Array.from(courses, (course) => `course_${course.id}`);
-      const nextContextCodes = courseIds.filter((courseId) =>
-        Object.keys(nextColors.custom_colors).includes(courseId)
-      );
-
-      setColors(nextColors);
-      setContextCodes(nextContextCodes);
-      await Promise.all([
-        handleInitCalendarEvents(nextContextCodes, currentMonth),
-        getHints(nextContextCodes),
-      ]);
-    } catch (error) {
-      messageApi.error(`初始化日历失败：${error}`);
-    }
-  };
-
-  const handleInitCalendarEvents = async (
-    nextContextCodes: string[],
-    date: Dayjs
-  ) => {
-    setLoading(true);
-    try {
-      const startDate = date.startOf("month").toISOString();
-      const endDate = date.endOf("month").toISOString();
-      const rawEvents = await handleGetCalendarEvents(
-        nextContextCodes,
-        startDate,
-        endDate
-      );
-      setEvents(dedupeEvents(rawEvents));
-    } catch (error) {
-      messageApi.error(error as string);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const getHints = async (nextContextCodes: string[]) => {
-    try {
-      const now = dayjs().toISOString();
-      const afterAWeek = dayjs().add(7, "day").toISOString();
-      const rawEvents = await handleGetCalendarEvents(nextContextCodes, now, afterAWeek);
-      const deduped = dedupeEvents(rawEvents).sort(
-        (a, b) => getEventMoment(a).valueOf() - getEventMoment(b).valueOf()
-      );
-      setHintEvents(deduped);
-    } catch (error) {
-      messageApi.error(error as string);
-    }
-  };
-
-  const handleMonthChange = async (date: Dayjs) => {
-    setCurrentMonth(date);
+  const selectDate = useCallback((date: Dayjs) => {
+    setCurrentMonth((previous) => previous.isSame(date, "month") ? previous : date.startOf("month"));
     setSelectedDate(date);
-    if (contextCodesRef.current.length > 0) {
-      await handleInitCalendarEvents(contextCodesRef.current, date);
-    }
-  };
-
-  const monthGridDates = useMemo(() => getMonthGridDates(currentMonth), [currentMonth]);
-
-  const eventsByDate = useMemo(() => {
-    const grouped = new Map<string, CalendarEvent[]>();
-    for (const event of events) {
-      const key = getDateKey(getEventMoment(event));
-      const current = grouped.get(key) ?? [];
-      current.push(event);
-      grouped.set(key, current);
-    }
-    for (const [key, list] of grouped) {
-      grouped.set(
-        key,
-        list.sort((a, b) => getEventMoment(a).valueOf() - getEventMoment(b).valueOf())
-      );
-    }
-    return grouped;
-  }, [events]);
-
-  const selectedDayEvents = useMemo(() => {
-    return eventsByDate.get(getDateKey(selectedDate)) ?? [];
-  }, [eventsByDate, selectedDate]);
-
-  const statItems = useMemo(() => {
-    const thisMonthCount = events.length;
-    const todayCount = eventsByDate.get(getDateKey(dayjs()))?.length ?? 0;
-    const urgentCount = hintEvents.length;
-    const selectedCount = selectedDayEvents.length;
-    return [
-      { label: "本月事项", value: `${thisMonthCount}`, icon: <CalendarMonthRoundedIcon /> },
-      { label: "今日截止", value: `${todayCount}`, icon: <WarningAmberRoundedIcon /> },
-      { label: "七日提醒", value: `${urgentCount}`, icon: <EventAvailableRoundedIcon /> },
-      { label: "所选日期", value: `${selectedCount}`, icon: <TodayRoundedIcon /> },
-    ];
-  }, [events.length, eventsByDate, hintEvents.length, selectedDayEvents.length]);
-
-  const yearOptions = useMemo(() => {
-    const currentYear = dayjs().year();
-    return Array.from({ length: 11 }, (_, index) => currentYear - 5 + index);
   }, []);
 
-  const handleYearSelect = async (year: number) => {
-    await handleMonthChange(currentMonth.year(year));
-  };
+  const changeMonth = useCallback((date: Dayjs) => {
+    const now = dayjs();
+    selectDate(date.isSame(now, "month") ? now : date.startOf("month"));
+  }, [selectDate]);
 
-  const handleMonthSelect = async (month: number) => {
-    await handleMonthChange(currentMonth.month(month));
-  };
+  useEffect(() => {
+    const handleArrowKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+      if (event.target instanceof Element && event.target.closest(
+        "input, textarea, select, [contenteditable], [role=dialog], [role=menu]"
+      )) return;
+      changeMonth(currentMonth.add(event.key === "ArrowRight" ? 1 : -1, "month"));
+    };
+    document.addEventListener("keydown", handleArrowKey);
+    return () => document.removeEventListener("keydown", handleArrowKey);
+  }, [changeMonth, currentMonth]);
+
+  const visibleMonth = monthResult?.month === currentMonth ? monthResult.result : undefined;
+  const upcoming = useMemo(() => sources && upcomingResult && ({
+    items: collectAssignments(sources, [...upcomingResult.events, ...lockOnlyEvents], upcomingStart, upcomingStart.add(7, "day")),
+    error: upcomingResult.error,
+  }), [sources, upcomingResult, lockOnlyEvents, upcomingStart]);
+  const dates = useMemo(() => getMonthGridDates(currentMonth), [currentMonth]);
+  const byDate = useMemo(() => {
+    const indexed = new Map<string, CalendarAssignment[]>();
+    if (!sources || !visibleMonth) return indexed;
+    const monthItems = collectAssignments(
+      sources, [...visibleMonth.events, ...lockOnlyEvents], currentMonth.startOf("month"), currentMonth.endOf("month")
+    );
+    for (const item of monthItems) {
+      const key = dateKey(item.date);
+      const group = indexed.get(key);
+      if (group) group.push(item);
+      else indexed.set(key, [item]);
+    }
+    return indexed;
+  }, [sources, visibleMonth, lockOnlyEvents, currentMonth]);
 
   return (
     <BasicLayout>
-      {contextHolder}
-      <Box sx={{ minHeight: "100%", color: "text.primary" }}>
-        <Stack spacing={3}>
-          <WorkspaceHero
-            chipLabel="日程管理"
-            chipIcon={<CalendarMonthRoundedIcon />}
-            title="日历与 DDL 工作台"
-            description="更适合扫读、排程和追踪作业截止日期的月历视图。"
-            aside={
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25}>
-                <TextField
-                  select
-                  size="small"
-                  label="年份"
-                  value={currentMonth.year()}
-                  onChange={(event) => void handleYearSelect(Number(event.target.value))}
-                  sx={{ minWidth: 120 }}
-                >
-                  {yearOptions.map((year) => (
-                    <MenuItem key={year} value={year}>
-                      {year} 年
-                    </MenuItem>
-                  ))}
-                </TextField>
-                <TextField
-                  select
-                  size="small"
-                  label="月份"
-                  value={currentMonth.month()}
-                  onChange={(event) => void handleMonthSelect(Number(event.target.value))}
-                  sx={{ minWidth: 110 }}
-                >
-                  {monthOptions.map((label, index) => (
-                    <MenuItem key={label} value={index}>
-                      {label}
-                    </MenuItem>
-                  ))}
-                </TextField>
-                <Button
-                  variant="outlined"
-                  startIcon={<KeyboardDoubleArrowLeftRoundedIcon />}
-                  onClick={() => void handleMonthChange(dayjs())}
-                >
-                  回到本月
-                </Button>
-                <Button
-                  variant="outlined"
-                  startIcon={<ArrowBackRoundedIcon />}
-                  onClick={() => void handleMonthChange(currentMonth.subtract(1, "month"))}
-                >
-                  上个月
-                </Button>
-                <Button
-                  variant="contained"
-                  endIcon={<ArrowForwardRoundedIcon />}
-                  onClick={() => void handleMonthChange(currentMonth.add(1, "month"))}
-                >
-                  下个月
-                </Button>
+      <Stack spacing={2.5}>
+        <WorkspaceHero
+          chipLabel="日程管理"
+          chipIcon={<CalendarMonthRoundedIcon />}
+          title="课程日历"
+          description="查看 Canvas 作业的截止时间、关闭时间和未来七天的事项。"
+          aside={
+            <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale="zh-cn"
+              localeText={zhCN.components.MuiLocalizationProvider.defaultProps.localeText}>
+              <DatePicker
+                label="选择月份"
+                views={["year", "month"]}
+                openTo="month"
+                format="YYYY 年 M 月"
+                value={currentMonth}
+                closeOnSelect
+                onChange={(date, context) => {
+                  if (date && !context.validationError) changeMonth(date);
+                }}
+                sx={{ width: 196, maxWidth: "100%" }}
+              />
+            </LocalizationProvider>
+          }
+        />
+
+        {lockDateError && <Alert severity="warning">部分只设置了关闭日期的作业可能未显示。</Alert>}
+        {sourceError ? (
+          <Alert severity="error">无法读取 Canvas 课程日历。</Alert>
+        ) : (
+          <Box sx={{
+            display: "grid", alignItems: "start", gap: 2,
+            gridTemplateColumns: { xs: "minmax(0, 1fr)", xl: "minmax(0, 1fr) minmax(230px, 0.32fr)" },
+          }}>
+            <Card sx={surfaceCardSx} aria-label={currentMonth.format("YYYY 年 M 月作业日历")}>
+              <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 1.25, py: 0.5 }}>
+                <Typography variant="caption" color="text.secondary">点击日期查看当天事项</Typography>
+                <Stack direction="row" spacing={0.25}>
+                  <Tooltip title="回到今天">
+                    <IconButton size="small" aria-label="回到今天" onClick={() => selectDate(dayjs())}>
+                      <TodayRoundedIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="上个月">
+                    <IconButton size="small" aria-label="上个月" onClick={() => changeMonth(currentMonth.subtract(1, "month"))}>
+                      <ChevronLeftRoundedIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="下个月">
+                    <IconButton size="small" aria-label="下个月" onClick={() => changeMonth(currentMonth.add(1, "month"))}>
+                      <ChevronRightRoundedIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Stack>
               </Stack>
-            }
-            stats={statItems}
-          />
+              {!visibleMonth && <LinearProgress aria-label="正在加载月历" />}
+              <Box sx={{ display: "grid", gridTemplateColumns: weekColumns, bgcolor: "action.hover" }}>
+                {weekdayLabels.map((label) => (
+                  <Typography key={label} variant="caption" align="center" color="text.secondary" sx={{ py: 0.75 }}>
+                    {label}
+                  </Typography>
+                ))}
+              </Box>
+              <Box sx={{ display: "grid", gridTemplateColumns: weekColumns }}>
+                {dates.map((date, index) => {
+                  const key = dateKey(date);
+                  const items = byDate.get(key) ?? [];
+                  const inMonth = date.isSame(currentMonth, "month");
+                  const isToday = date.isSame(today, "day");
+                  const selected = date.isSame(selectedDate, "day");
 
-          <Box
-            sx={{
-              display: "grid",
-              gap: 3,
-              gridTemplateColumns: {
-                xs: "minmax(0, 1fr)",
-                xl: "minmax(0, 2.2fr) minmax(300px, 0.55fr)",
-              },
-            }}
-          >
-            <Card sx={cardSx}>
-              <CardContent sx={{ p: { xs: 2, md: 3 } }}>
-                <Stack spacing={2.5}>
-                  <Stack
-                    direction={{ xs: "column", sm: "row" }}
-                    justifyContent="space-between"
-                    alignItems={{ xs: "flex-start", sm: "center" }}
-                    spacing={1.5}
-                  >
-                    <Box>
-                      <Typography variant="h5">
-                        {currentMonth.format("YYYY 年 M 月")}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        使用左右方向键也可以切换月份。
-                      </Typography>
-                    </Box>
-                    <Chip
-                      icon={<AutoAwesomeRoundedIcon />}
-                      label={`共 ${events.length} 个去重后的日历事项`}
-                      color="primary"
-                      variant="outlined"
-                    />
-                  </Stack>
-
-                  <Alert severity="info" sx={{ borderRadius: "18px" }}>
-                    点击某一天可以查看当天的截止事项，点击事项名称会跳转到对应课程的作业页。
-                  </Alert>
-
-                  {loading ? (
-                    <Box
-                      sx={{
-                        minHeight: 420,
-                        display: "grid",
-                        placeItems: "center",
-                      }}
-                    >
-                      <CircularProgress />
-                    </Box>
-                  ) : (
-                    <Box sx={{ display: "grid", gap: 1.25 }}>
-                      <Box
+                  return (
+                    <Stack key={key} spacing={0.25} onClick={() => selectDate(date)} sx={{
+                      cursor: "pointer", minWidth: 0, minHeight: { xs: 46, md: 72 }, p: { xs: 0.25, md: 0.5 },
+                      borderTop: "1px solid", borderRight: index % 7 < 6 ? "1px solid" : undefined,
+                      borderColor: "divider",
+                      bgcolor: selected ? "action.selected" : !inMonth ? "action.hover" : undefined,
+                      "&:hover": { bgcolor: selected ? "action.selected" : "action.hover" },
+                    }}>
+                      <Button size="small"
+                        aria-pressed={selected} aria-current={isToday ? "date" : undefined}
+                        aria-label={`${date.format("M 月 D 日")}，${items.length} 项作业`}
                         sx={{
-                          display: "grid",
-                          gap: 1,
-                          gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
-                        }}
-                      >
-                        {weekdayLabels.map((label) => (
-                          <Box
-                            key={label}
-                            sx={{
-                              px: 1.25,
-                              py: 1,
-                                  borderRadius: "8px",
-                                  bgcolor: "action.hover",
-                              textAlign: "center",
-                            }}
-                          >
-                            <Typography variant="subtitle2" color="text.secondary">
-                              {label}
-                            </Typography>
-                          </Box>
-                        ))}
-                      </Box>
+                          alignSelf: { md: "flex-start" }, minWidth: 0, minHeight: 34, px: 0.75, py: 0,
+                          color: isToday || selected ? "primary.main" : inMonth ? "text.primary" : "text.secondary", gap: 0.5,
+                        }}>
+                        {date.date()}
+                        {isToday && <Box aria-hidden component="span" sx={{ display: { xs: "none", md: "inline" }, fontSize: 10 }}>今天</Box>}
+                        {!!items.length && <Box aria-hidden component="span" sx={{
+                          fontSize: 10, color: "primary.main", display: { md: "none" },
+                        }}>·{items.length}</Box>}
+                      </Button>
+                      <Stack spacing={0.25} sx={{ display: { xs: "none", md: "flex" } }}>
+                        {items.slice(0, 3).map((item) => <AssignmentLink key={item.key} item={item} inCalendar />)}
+                        {items.length > 3 && (
+                          <Typography variant="caption" color="text.secondary" sx={{ px: 0.5 }}>
+                            另有 {items.length - 3} 项
+                          </Typography>
+                        )}
+                      </Stack>
+                    </Stack>
+                  );
+                })}
+              </Box>
+            </Card>
 
-                      <Box
-                        sx={{
-                          display: "grid",
-                          gap: 1,
-                          gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
-                        }}
-                      >
-                        {monthGridDates.map((date) => {
-                          const key = getDateKey(date);
-                          const dayEvents = eventsByDate.get(key) ?? [];
-                          const isCurrentMonth = date.isSame(currentMonth, "month");
-                          const isToday = date.isSame(dayjs(), "day");
-                          const isSelected = date.isSame(selectedDate, "day");
-
-                          return (
-                            <Card
-                              key={key}
-                              onClick={() => setSelectedDate(date)}
-                              sx={{
-                                minHeight: { xs: 132, md: 156 },
-                                cursor: "pointer",
-                                borderRadius: "8px",
-                                border: "1px solid",
-                                borderColor: isSelected
-                                  ? "primary.main"
-                                  : "divider",
-                                bgcolor: isSelected
-                                  ? "action.selected"
-                                  : isCurrentMonth
-                                    ? "background.paper"
-                                    : "action.disabledBackground",
-                                transition: "border-color 0.2s ease, transform 0.2s ease",
-                                "&:hover": {
-                                  transform: "translateY(-2px)",
-                                  borderColor: "primary.main",
-                                },
-                              }}
-                            >
-                              <CardContent
-                                sx={{
-                                  p: 1.25,
-                                  height: "100%",
-                                  display: "flex",
-                                  flexDirection: "column",
-                                  gap: 1,
-                                }}
-                              >
-                                <Stack
-                                  direction="row"
-                                  justifyContent="space-between"
-                                  alignItems="center"
-                                  spacing={1}
-                                >
-                                  <Typography
-                                    variant="subtitle2"
-                                    sx={{
-                                      fontWeight: isToday || isSelected ? 700 : 600,
-                                      color: isCurrentMonth ? "text.primary" : "text.disabled",
-                                    }}
-                                  >
-                                    {date.date()}
-                                  </Typography>
-                                  {isToday && <Chip size="small" label="今天" color="primary" />}
-                                </Stack>
-
-                                <Stack spacing={0.75} sx={{ minWidth: 0 }}>
-                                  {dayEvents.slice(0, 3).map((event) => (
-                                    <Tooltip
-                                      key={event.id}
-                                      title={`${event.context_name} · ${getEventMoment(event).format(
-                                        "MM/DD HH:mm"
-                                      )}`}
-                                      placement="top"
-                                    >
-                                      <MuiLink
-                                        component={RouterLink}
-                                        to={`/assignments?id=${getCourseId(event)}`}
-                                        underline="none"
-                                        onClick={(eventClick) => eventClick.stopPropagation()}
-                                        sx={{
-                                          display: "block",
-                                          px: 1,
-                                          py: 0.7,
-                                          borderRadius: "12px",
-                                          bgcolor: alpha(
-                                            colors?.custom_colors[event.context_code] || "#2563eb",
-                                            0.12
-                                          ),
-                                          color: "text.primary",
-                                          overflow: "hidden",
-                                          textOverflow: "ellipsis",
-                                          whiteSpace: "nowrap",
-                                          borderLeft: `4px solid ${
-                                            colors?.custom_colors[event.context_code] || "#2563eb"
-                                          }`,
-                                          "&:hover": {
-                                            bgcolor: alpha(
-                                              colors?.custom_colors[event.context_code] || "#2563eb",
-                                              0.18
-                                            ),
-                                          },
-                                        }}
-                                      >
-                                        {event.title}
-                                      </MuiLink>
-                                    </Tooltip>
-                                  ))}
-                                  {dayEvents.length > 3 && (
-                                    <Typography variant="caption" color="text.secondary">
-                                      还有 {dayEvents.length - 3} 项…
-                                    </Typography>
-                                  )}
-                                </Stack>
-                              </CardContent>
-                            </Card>
-                          );
-                        })}
-                      </Box>
-                    </Box>
-                  )}
+            <Card sx={surfaceCardSx}>
+              <CardContent sx={{ p: 1.75, "&:last-child": { pb: 1.75 } }}>
+                <Stack spacing={2} divider={<Box sx={{ borderTop: "1px solid", borderColor: "divider" }} />}>
+                  <Agenda
+                    title={selectedDate.format("M 月 D 日事项")}
+                    result={visibleMonth && { items: byDate.get(dateKey(selectedDate)) ?? [], error: visibleMonth.error }}
+                    empty="当天没有作业截止或关闭。"
+                  />
+                  <Agenda title="未来七天" result={upcoming} now={today} empty="未来七天没有作业截止或关闭。" />
                 </Stack>
               </CardContent>
             </Card>
-
-            <Stack spacing={3}>
-              <Card sx={cardSx}>
-                <CardContent sx={{ p: { xs: 2.25, md: 3 } }}>
-                  <Stack spacing={2}>
-                    <Box>
-                      <Typography variant="h5">七日内 DDL</Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        优先关注最近一周需要处理的事项。
-                      </Typography>
-                    </Box>
-
-                    {hintEvents.length === 0 ? (
-                      <Alert severity="success" sx={{ borderRadius: "18px" }}>
-                        暂无临近 DDL，尽情享受当下。
-                      </Alert>
-                    ) : (
-                      <Stack spacing={1.25}>
-                        {hintEvents.map((event) => {
-                          const now = dayjs();
-                          const diff = getEventMoment(event).diff(now, "hour");
-                          const days = Math.floor(diff / 24);
-                          const hours = diff % 24;
-
-                          return (
-                            <Box
-                              key={event.id}
-                              sx={{
-                                p: 1.5,
-                                borderRadius: "8px",
-                                border: "1px solid",
-                                borderColor: "divider",
-                              }}
-                            >
-                              <Stack spacing={0.7}>
-                                <MuiLink
-                                  component={RouterLink}
-                                  to={`/assignments?id=${getCourseId(event)}`}
-                                  underline="hover"
-                                  sx={{ fontWeight: 700, color: "text.primary" }}
-                                >
-                                  {event.title}
-                                </MuiLink>
-                                <Typography variant="body2" color="text.secondary">
-                                  {event.context_name}
-                                </Typography>
-                                <Chip
-                                  size="small"
-                                  color={days <= 1 ? "warning" : "default"}
-                                  label={`还有 ${days} 天 ${hours} 小时`}
-                                  sx={{ width: "fit-content" }}
-                                />
-                              </Stack>
-                            </Box>
-                          );
-                        })}
-                      </Stack>
-                    )}
-                  </Stack>
-                </CardContent>
-              </Card>
-
-              <Card sx={cardSx}>
-                <CardContent sx={{ p: { xs: 2.25, md: 3 } }}>
-                  <Stack spacing={2}>
-                    <Box>
-                      <Typography variant="h5">
-                        {selectedDate.format("M 月 D 日")} 事项
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        选中日期后，这里会显示当天所有作业与截止事项。
-                      </Typography>
-                    </Box>
-                    <Divider />
-
-                    {selectedDayEvents.length === 0 ? (
-                      <Typography variant="body2" color="text.secondary">
-                        这一天没有记录到截止事项。
-                      </Typography>
-                    ) : (
-                      <Stack spacing={1.25}>
-                        {selectedDayEvents.map((event) => (
-                          <Box
-                            key={event.id}
-                            sx={{
-                              p: 1.5,
-                              borderRadius: "18px",
-                              border: "1px solid",
-                              borderColor: "divider",
-                            }}
-                          >
-                            <Stack spacing={0.7}>
-                              <MuiLink
-                                component={RouterLink}
-                                to={`/assignments?id=${getCourseId(event)}`}
-                                underline="hover"
-                                sx={{ fontWeight: 700, color: "text.primary" }}
-                              >
-                                {event.title}
-                              </MuiLink>
-                              <Typography variant="body2" color="text.secondary">
-                                {event.context_name}
-                              </Typography>
-                              <Typography variant="caption" color="text.secondary">
-                                截止时间：{getEventMoment(event).format("YYYY/MM/DD HH:mm")}
-                              </Typography>
-                            </Stack>
-                          </Box>
-                        ))}
-                      </Stack>
-                    )}
-                  </Stack>
-                </CardContent>
-              </Card>
-            </Stack>
           </Box>
-        </Stack>
-
-      </Box>
+        )}
+      </Stack>
     </BasicLayout>
   );
 }

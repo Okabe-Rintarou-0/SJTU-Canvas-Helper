@@ -1,11 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
-import DocViewer, { IDocument } from "@cyntler/react-doc-viewer";
+import DocViewer, { type IDocument } from "@cyntler/react-doc-viewer";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import InsertDriveFileRoundedIcon from "@mui/icons-material/InsertDriveFileRounded";
 import {
-  Alert,
   Box,
-  Chip,
+  Button,
   CircularProgress,
   Dialog,
   DialogContent,
@@ -15,168 +14,207 @@ import {
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
-import { CSSProperties, ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { CSSProperties, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 
 import { File } from "../lib/model";
 import {
   canConvertFileToPdf,
   getPdfFileName,
   isPdfFile,
-  isPowerPointFile,
 } from "../lib/file_conversion";
 import { getFileType } from "../lib/utils";
+import { PreviewErrorContext } from "./preview_error";
+import {
+  createPreviewRenderers,
+  fetchPreviewSample,
+  isPreviewText,
+  knownPreviewType,
+  textPreviewType,
+} from "./preview_file_loader";
+import PreviewUnavailable from "./preview_unavailable";
 import { BasicRenderers } from "./renderers";
 
-type ResolvedPreview =
-  | { kind: "document"; document: IDocument }
-  | { kind: "window" };
+type PreviewMode = "canvas" | "local";
+type PreviewAttempt = {
+  mode: PreviewMode;
+  failed: PreviewMode[];
+  exhausted?: boolean;
+};
 
-const localDocumentCache = new Map<string, Promise<IDocument>>();
-
-async function resolveLocalDocument(file: File): Promise<IDocument> {
-  const cacheKey = `${file.display_name}|${file.url}`;
-  const cached = localDocumentCache.get(cacheKey);
-  if (cached) {
-    return cached;
-  }
-
-  const task = (async () => {
-    if (isPowerPointFile(file)) {
-      const content = await invoke<number[]>("convert_pptx_to_pdf", { file });
-      const pdfBlob = new Blob([new Uint8Array(content).buffer as ArrayBuffer], {
-        type: "application/pdf",
-      });
-      return {
-        uri: URL.createObjectURL(pdfBlob),
-        fileName: getPdfFileName(file.display_name),
-        fileType: "pdf",
-      } satisfies IDocument;
-    }
-
-    const fileType = await getFileType(file.display_name);
-    return {
-      uri: file.url,
-      fileName: file.display_name,
-      fileType,
-    } satisfies IDocument;
-  })();
-
-  localDocumentCache.set(cacheKey, task);
-  void task.catch(() => localDocumentCache.delete(cacheKey));
-  return task;
+function needsOfficeConversion(file: File) {
+  return /\.(?:doc|ppt)$/i.test(file.display_name);
 }
 
-async function resolvePreview(file: File): Promise<ResolvedPreview> {
-  if (file.url?.startsWith("blob:")) {
-    return { kind: "document", document: await resolveLocalDocument(file) };
+async function resolveLocalDocument(file: File, signal: AbortSignal, objectUrls: string[]): Promise<IDocument> {
+  if (!file.url) throw new Error("File URL unavailable");
+  if (needsOfficeConversion(file)) {
+    const content = await invoke<number[]>("convert_pptx_to_pdf", { file });
+    signal.throwIfAborted();
+    const uri = URL.createObjectURL(new Blob([Uint8Array.from(content)], { type: "application/pdf" }));
+    objectUrls.push(uri);
+    return { uri, fileName: getPdfFileName(file.display_name), fileType: "pdf" };
   }
-  if (canConvertFileToPdf(file) || isPdfFile(file)) {
-    try {
-      await invoke("open_file_preview_window", {
-        fileId: file.id,
-        title: file.display_name,
-      });
-      return { kind: "window" };
-    } catch (onlinePreviewError) {
-      if (!isPowerPointFile(file) && !isPdfFile(file)) {
-        throw onlinePreviewError;
-      }
 
-      return {
-        kind: "document",
-        document: await resolveLocalDocument(file),
-      };
+  const extension = isPdfFile(file) ? "pdf" : await getFileType(file.display_name);
+  let fileType = knownPreviewType(extension, file["content-type"] ?? "", BasicRenderers);
+  let uri = file.url;
+  const canReadThroughCanvas = file.id > 0 && !file.external_type && /^https?:\/\//i.test(uri);
+
+  if (!fileType && file.external_type !== "Link") {
+    const canvasSample = canReadThroughCanvas
+      ? await invoke<ArrayBuffer>("read_canvas_preview_file", { fileId: file.id, sampleOnly: true }).catch(() => undefined)
+      : undefined;
+    signal.throwIfAborted();
+    const sample = canvasSample === undefined
+      ? await fetchPreviewSample(uri, signal).catch(() => undefined)
+      : new Uint8Array(canvasSample);
+    signal.throwIfAborted();
+    if (sample && isPreviewText(sample)) fileType = "txt";
+  }
+
+  if (fileType && textPreviewType(fileType) && canReadThroughCanvas) {
+    // Canvas download redirects can be blocked by the WebView's cross-origin policy.
+    const content = await invoke<ArrayBuffer>("read_canvas_preview_file", { fileId: file.id })
+      .catch(() => undefined);
+    signal.throwIfAborted();
+    if (content !== undefined) {
+      uri = URL.createObjectURL(new Blob([content]));
+      objectUrls.push(uri);
     }
   }
-
-  return { kind: "document", document: await resolveLocalDocument(file) };
+  return { uri, fileName: file.display_name, fileType: fileType ?? extension };
 }
 
-export default function PreviewModal({
-  open,
-  files,
-  handleCancelPreview,
-  title,
-  footer,
-  bodyStyle,
-}: {
+function isCanvasPreview(file: File) {
+  return file.id > 0 && !file.external_type && !file.url?.startsWith("blob:") &&
+    (canConvertFileToPdf(file) || isPdfFile(file));
+}
+
+function previewBounds(element: HTMLElement) {
+  const { left, top, width, height } = element.getBoundingClientRect();
+  const scale = window.devicePixelRatio || 1;
+  return {
+    x: Math.round(left * scale),
+    y: Math.round(top * scale),
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
+}
+
+function mountCanvasPreview(file: File, slot: HTMLElement) {
+  const previewId = crypto.randomUUID();
+  let bounds = previewBounds(slot);
+  const opening = invoke<void>("open_embedded_file_preview", { fileId: file.id, previewId, bounds });
+  let closed = false;
+  let frame = 0;
+  const scheduleResize = () => {
+    if (closed || frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      const next = previewBounds(slot);
+      if (next.x === bounds.x && next.y === bounds.y && next.width === bounds.width && next.height === bounds.height) return;
+      bounds = next;
+      void invoke("resize_embedded_file_preview", { previewId, bounds }).catch(() => undefined);
+    });
+  };
+  const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(scheduleResize);
+  const ready = opening.then(async () => {
+    if (closed) return;
+    bounds = previewBounds(slot);
+    await invoke("resize_embedded_file_preview", { previewId, bounds });
+    if (closed) return;
+    observer?.observe(slot);
+    window.addEventListener("resize", scheduleResize);
+    scheduleResize();
+  });
+  return {
+    ready,
+    close: () => {
+      closed = true;
+      observer?.disconnect();
+      window.removeEventListener("resize", scheduleResize);
+      if (frame) cancelAnimationFrame(frame);
+      void opening.then(() => invoke("close_embedded_file_preview", { previewId })).catch(() => undefined);
+    },
+  };
+}
+
+interface PreviewModalProps {
   open: boolean;
   files: File[];
   handleCancelPreview?: () => void;
   title?: string;
   footer?: ReactNode;
   bodyStyle?: CSSProperties;
-}) {
+}
+
+export default function PreviewModal(props: PreviewModalProps) {
+  const key = JSON.stringify(props.files.map(({ id, display_name, url }) => [id, display_name, url]));
+  return <PreviewDialog key={key} {...props} />;
+}
+
+function PreviewDialog({ open, files, handleCancelPreview, title, footer, bodyStyle }: PreviewModalProps) {
   const theme = useTheme();
-  const [previews, setPreviews] = useState<ResolvedPreview[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const cancelPreviewRef = useRef(handleCancelPreview);
-  useLayoutEffect(() => { cancelPreviewRef.current = handleCancelPreview; }, [handleCancelPreview]);
+  const primaryFile = files[0];
+  const onlineFile = files.length === 1 && isCanvasPreview(primaryFile) ? primaryFile : undefined;
+  const [canvasSlot, setCanvasSlot] = useState<HTMLDivElement | null>(null);
+  const [attempt, setAttempt] = useState<PreviewAttempt>(() => ({
+    mode: onlineFile && /\.doc$/i.test(onlineFile.display_name) ? "canvas" : "local",
+    failed: [],
+  }));
+  const [loaded, setLoaded] = useState<{ attempt: PreviewAttempt; docs: IDocument[] }>();
+  const ready = loaded?.attempt === attempt;
+  const showCanvas = attempt.mode === "canvas" && !attempt.exhausted;
+  const docs = ready ? loaded.docs : undefined;
+
+  const fail = useCallback((mode: PreviewMode) => {
+    setAttempt((current) => {
+      if (current.mode !== mode || current.exhausted) return current;
+      const failed = [...current.failed, mode];
+      const alternative = mode === "canvas" ? "local" : "canvas";
+      if (!failed.includes(alternative) && (alternative === "local" || onlineFile)) {
+        return { mode: alternative, failed };
+      }
+      return { ...current, failed, exhausted: true };
+    });
+  }, [onlineFile]);
+  const failLocal = useCallback(() => fail("local"), [fail]);
+  const renderers = useMemo(() => createPreviewRenderers(BasicRenderers, failLocal), [failLocal]);
 
   useEffect(() => {
-    if (!open || files.length === 0) {
-      return;
-    }
+    if (!open || !showCanvas || !onlineFile || !canvasSlot) return;
+    let active = true;
+    const canvas = mountCanvasPreview(onlineFile, canvasSlot);
+    void canvas.ready.then(() => {
+      if (active) setLoaded({ attempt, docs: [] });
+    }).catch(() => { if (active) fail("canvas"); });
+    return () => { active = false; canvas.close(); };
+  }, [open, showCanvas, onlineFile, canvasSlot, attempt, fail]);
 
-    let cancelled = false;
-    setPreviews([]);
-    setLoadError(null);
-    setLoading(true);
-    void (async () => {
-      try {
-        const nextPreviews = await Promise.all(
-          files.map((file) => resolvePreview(file))
-        );
-        if (!cancelled) {
-          if (nextPreviews.some((preview) => preview.kind === "window")) {
-            cancelPreviewRef.current?.();
-          } else {
-            setPreviews(nextPreviews);
-          }
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setLoadError(String(error));
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    })();
-
+  useEffect(() => {
+    if (!open || !files.length || attempt.mode !== "local" || attempt.exhausted) return;
+    const controller = new AbortController();
+    const objectUrls: string[] = [];
+    void Promise.all(files.map((file) => resolveLocalDocument(file, controller.signal, objectUrls)))
+      .then((docs) => { if (!controller.signal.aborted) setLoaded({ attempt, docs }); })
+      .catch(() => { if (!controller.signal.aborted) failLocal(); });
     return () => {
-      cancelled = true;
+      controller.abort();
+      objectUrls.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [files, open]);
+  }, [open, files, attempt, failLocal]);
 
-  const docs = useMemo(
-    () =>
-      previews.flatMap((preview) =>
-        preview.kind === "document" ? [preview.document] : []
-      ),
-    [previews]
-  );
-  const viewer = useMemo(() => {
-    const body = bodyStyle ?? { height: "78vh", marginTop: "0px" };
-    const key = files.map((file) => file.url).join("|");
+  const switchMode = () => {
+    setAttempt(({ mode, failed }) => {
+      const next = mode === "canvas" ? "local" : "canvas";
+      return { mode: next, failed: failed.filter((value) => value !== next) };
+    });
+  };
 
-    return (
-      <DocViewer
-        style={body}
-        key={key}
-        config={{
-          header: {
-            disableFileName: true,
-            retainURLParams: true,
-          },
-        }}
-        pluginRenderers={BasicRenderers}
-        documents={docs}
-      />
-    );
-  }, [bodyStyle, docs, files]);
+  const viewerConfig = useMemo(() => ({
+    header: { disableHeader: files.length === 1, disableFileName: true, retainURLParams: true },
+    noRenderer: { overrideComponent: PreviewUnavailable },
+  }), [files.length]);
 
   return (
     <Dialog
@@ -201,13 +239,14 @@ export default function PreviewModal({
               ? "0 30px 90px rgba(2,8,23,0.55)"
               : "0 30px 90px rgba(15,23,42,0.18)",
           backdropFilter: "blur(18px)",
+          "& [data-preview-surface]": { border: 0, borderRadius: 0 },
         },
       }}
     >
       <DialogTitle
         sx={{
           px: 3,
-          py: 2.25,
+          py: 1.25,
           borderBottom: "1px solid",
           borderColor: "divider",
         }}
@@ -232,20 +271,19 @@ export default function PreviewModal({
               <Typography variant="h6" sx={{ fontWeight: 700 }} noWrap>
                 {title || "文件预览"}
               </Typography>
-              <Typography variant="body2" color="text.secondary" noWrap>
-                共 {files.length} 个文件，可使用键盘左右键切换
-              </Typography>
+              {files.length > 1 && <Typography variant="body2" color="text.secondary" noWrap>
+                共 {files.length} 个文件
+              </Typography>}
             </Box>
           </Stack>
 
           <Stack direction="row" spacing={1} alignItems="center">
-            <Chip
-              size="small"
-              label={`${previews.length || files.length} 份文档`}
-              variant="outlined"
-              color="primary"
-            />
-            <IconButton onClick={handleCancelPreview}>
+            {onlineFile && (
+              <Button size="small" onClick={switchMode} sx={{ flexShrink: 0 }}>
+                {attempt.mode === "canvas" ? "使用内置预览" : "使用 Canvas 预览"}
+              </Button>
+            )}
+            <IconButton aria-label="关闭文件预览" onClick={handleCancelPreview}>
               <CloseRoundedIcon />
             </IconButton>
           </Stack>
@@ -257,47 +295,59 @@ export default function PreviewModal({
         sx={{
           px: 0,
           py: 0,
-          overflowY: "auto",
+          position: "relative",
+          display: "flex",
+          flexDirection: "column",
+          minHeight: 0,
+          overflow: "hidden",
           bgcolor:
             theme.palette.mode === "dark"
               ? alpha("#020617", 0.28)
               : alpha("#eff6ff", 0.42),
         }}
       >
-        {loading ? (
-          <Stack spacing={2} alignItems="center" justifyContent="center" sx={{ minHeight: 480 }}>
+        {showCanvas && <Box ref={setCanvasSlot} aria-label="Canvas 在线预览" sx={{ position: "absolute", inset: 0, pointerEvents: "none" }} />}
+        {attempt.exhausted ? (
+          <PreviewUnavailable
+            fileName={primaryFile?.display_name ?? ""}
+            document={primaryFile?.url ? { uri: primaryFile.url } : undefined}
+            failed
+          />
+        ) : !ready ? (
+          <Stack spacing={2} alignItems="center" justifyContent="center" sx={{ flex: 1 }}>
             <CircularProgress />
             <Typography color="text.secondary">
-              {files.some(
-                (file) => canConvertFileToPdf(file) || isPdfFile(file)
-              )
+              {showCanvas
                 ? "正在连接 Canvas 在线预览…"
-                : "正在准备预览…"}
+                : primaryFile && /\.ppt$/i.test(primaryFile.display_name)
+                  ? "正在将旧版 PowerPoint 转换为 PDF…"
+                  : "正在准备预览…"}
             </Typography>
           </Stack>
-        ) : loadError ? (
-          <Box sx={{ p: 3 }}>
-            <Alert severity="error">
-              文件预览失败：{loadError}
-            </Alert>
-          </Box>
-        ) : docs.length > 0 ? (
-          <Box>{viewer}</Box>
-        ) : null}
-        {footer ? (
-          <Box
-            sx={{
-              px: 3,
-              py: 2,
-              borderTop: "1px solid",
-              borderColor: "divider",
-              bgcolor: alpha(theme.palette.background.paper, 0.72),
-            }}
-          >
-            {footer}
-          </Box>
+        ) : docs?.length ? (
+          <PreviewErrorContext.Provider value={failLocal}>
+            <DocViewer
+              style={{ flex: 1, minHeight: 0, backgroundColor: "transparent", ...bodyStyle }}
+              config={viewerConfig}
+              pluginRenderers={renderers}
+              documents={docs}
+            />
+          </PreviewErrorContext.Provider>
         ) : null}
       </DialogContent>
+      {footer ? (
+        <Box
+          sx={{
+            px: 3,
+            py: 2,
+            borderTop: "1px solid",
+            borderColor: "divider",
+            bgcolor: alpha(theme.palette.background.paper, 0.72),
+          }}
+        >
+          {footer}
+        </Box>
+      ) : null}
     </Dialog>
   );
 }

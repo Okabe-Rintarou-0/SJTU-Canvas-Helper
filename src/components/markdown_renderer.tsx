@@ -1,27 +1,13 @@
 import ArticleRoundedIcon from "@mui/icons-material/ArticleRounded";
-import { DocRendererProps } from "@cyntler/react-doc-viewer";
+import type { DocRendererProps } from "@cyntler/react-doc-viewer";
 import { Box } from "@mui/material";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { dracula } from "react-syntax-highlighter/dist/cjs/styles/prism";
+import { memo } from "react";
 
 import styles from "../css/markdown.module.css";
-import { decodeBase64Data } from "../lib/utils";
 import MarkdownContent from "./markdown_content";
 import RendererShell from "./renderer_shell";
 
-// React treats these renderers as component types; keep their identity across renders.
-const markdownComponents = {
-  code({ className, children, node: _node, ...props }: any) {
-    const match = /language-(\w+)/.exec(className || "");
-    return match ? (
-      <SyntaxHighlighter style={dracula} PreTag="div" language={match[1]} {...props}>
-        {String(children).replace(/\n$/, "")}
-      </SyntaxHighlighter>
-    ) : (
-      <code className={className} {...props}>{children}</code>
-    );
-  },
-};
+const RenderMarkdown = memo(MarkdownContent);
 
 export default function MarkdownRenderer({
   mainState: { currentDocument },
@@ -30,7 +16,7 @@ export default function MarkdownRenderer({
     return null;
   }
 
-  const data = decodeBase64Data(currentDocument.fileData as string);
+  const data = typeof currentDocument.fileData === "string" ? currentDocument.fileData : "";
 
   return (
     <RendererShell
@@ -41,12 +27,12 @@ export default function MarkdownRenderer({
       headerMode="none"
       contentSx={{ p: 0 }}
     >
-      <Box className={`${styles.markdownContainer} ${styles.markdown}`}>
-        <MarkdownContent components={markdownComponents}>{data}</MarkdownContent>
+      <Box className={styles.markdown} sx={{ p: 2, "& pre": { overflowX: "auto", whiteSpace: "pre", bgcolor: "action.hover", p: 1.5 } }}>
+        <RenderMarkdown recoverCjkStrong>{data}</RenderMarkdown>
       </Box>
     </RendererShell>
   );
 }
 
-MarkdownRenderer.fileTypes = ["md"];
+MarkdownRenderer.fileTypes = ["md", "markdown", "text/markdown"];
 MarkdownRenderer.weight = 2;

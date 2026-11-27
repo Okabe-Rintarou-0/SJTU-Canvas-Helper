@@ -5,7 +5,7 @@ import type { AppConfig } from "../lib/model";
 
 type AccountType = AppConfig["account_type"];
 
-export function CanvasTokenGuideContent({ accountType = "Default" }: { accountType?: AccountType }) {
+export function CanvasTokenGuideContent({ accountType = "Default", setup = false }: { accountType?: AccountType; setup?: boolean }) {
   const settingsUrl = `${accountType === "JI" ? JI_BASE_URL : BASE_URL}/profile/settings`;
   return (
     <Stack spacing={2}>
@@ -35,7 +35,9 @@ export function CanvasTokenGuideContent({ accountType = "Default" }: { accountTy
         <li>
           <Typography fontWeight={700}>复制 Token，返回应用填写</Typography>
           <Typography variant="body2" color="text.secondary">
-            生成后立即复制完整的 Token，粘贴到本页的“Canvas Token”输入框。点击“测试 Canvas Token”确认连接，再点击“保存全部设置”。
+            {setup
+              ? "生成后立即复制完整的 Token，粘贴到本页的“Canvas Token”输入框，点击“验证并继续”。"
+              : "生成后立即复制完整的 Token，粘贴到本页的“Canvas Token”输入框。点击“测试 Canvas Token”确认连接，再点击“保存全部设置”。"}
           </Typography>
         </li>
       </Box>

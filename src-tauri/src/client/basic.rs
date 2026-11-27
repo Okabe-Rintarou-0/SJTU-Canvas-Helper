@@ -440,6 +440,41 @@ impl Client {
         self.list_items(&url, token).await
     }
 
+    pub async fn read_canvas_preview_file(
+        &self,
+        file_id: i64,
+        token: &str,
+        sample_only: bool,
+    ) -> Result<Vec<u8>> {
+        let base_url = self.base_url.read().await.trim_end_matches('/').to_owned();
+        let api_url = format!("{base_url}/api/v1/files/{file_id}");
+        let file: File = self.get_json_with_token(&api_url, None::<&str>, token).await?;
+        let base = reqwest::Url::parse(&base_url)
+            .map_err(|error| AppError::FilePreview(error.to_string()))?;
+        let url = base
+            .join(&file.url)
+            .map_err(|error| AppError::FilePreview(error.to_string()))?;
+
+        let mut request = self.cli.get(url.clone());
+        if url.origin() == base.origin() {
+            request = request.bearer_auth(token);
+        }
+        let mut response = self.execute_request(request.build()?).await?.error_for_status()?;
+        if !sample_only {
+            return Ok(response.bytes().await?.to_vec());
+        }
+
+        // Stop reading after the prefix, even when the storage server cannot serve ranges.
+        const SAMPLE_BYTES: usize = 8192;
+        let mut sample = Vec::with_capacity(SAMPLE_BYTES);
+        while sample.len() < SAMPLE_BYTES {
+            let Some(chunk) = response.chunk().await? else { break };
+            let count = min(SAMPLE_BYTES - sample.len(), chunk.len());
+            sample.extend_from_slice(&chunk[..count]);
+        }
+        Ok(sample)
+    }
+
     pub async fn get_file_preview_session_url(&self, file_id: i64, token: &str) -> Result<String> {
         #[derive(serde::Deserialize)]
         struct WebSessionResponse {
@@ -573,26 +608,34 @@ impl Client {
         Ok(colors)
     }
 
-    pub async fn list_calendar_events_inner(
+    async fn list_assignment_calendar_events(
         &self,
         token: &str,
         context_codes: &[String],
-        start_date: &str,
-        end_date: &str,
+        date_range: Option<(&str, &str)>,
     ) -> Result<Vec<CalendarEvent>> {
-        let context_codes = context_codes
-            .iter()
-            .map(|context_code| format!("context_codes[]={context_code}"))
-            .reduce(|c1, c2| format!("{c1}&{c2}"))
-            .unwrap_or_default();
-        let url = format!(
-            "{}/api/v1/calendar_events?type=assignment&{}&start_date={}&end_date={}",
-            self.base_url.read().await,
-            context_codes,
-            start_date,
-            end_date
-        );
-        self.list_items(&url, token).await
+        let base_url = self.base_url.read().await.clone();
+        let mut events = Vec::new();
+        for context_batch in context_codes.chunks(10) {
+            let context_query = context_batch
+                .iter()
+                .map(|code| format!("context_codes[]={}", urlencoding::encode(code)))
+                .collect::<Vec<_>>()
+                .join("&");
+            let date_query = match date_range {
+                Some((start, end)) => format!(
+                    "start_date={}&end_date={}",
+                    urlencoding::encode(start),
+                    urlencoding::encode(end)
+                ),
+                None => "undated=true".to_owned(),
+            };
+            let url = format!(
+                "{base_url}/api/v1/calendar_events?type=assignment&{context_query}&{date_query}"
+            );
+            events.extend(self.list_items::<CalendarEvent>(&url, token).await?);
+        }
+        Ok(events)
     }
 
     pub async fn list_calendar_events(
@@ -602,27 +645,47 @@ impl Client {
         start_date: &str,
         end_date: &str,
     ) -> Result<Vec<CalendarEvent>> {
-        const BATCH_SIZE: usize = 10;
-        let n_codes = context_codes.len();
-        let n_batches = if n_codes.is_multiple_of(BATCH_SIZE) {
-            n_codes / BATCH_SIZE
-        } else {
-            n_codes / BATCH_SIZE + 1
-        };
+        self.list_assignment_calendar_events(token, context_codes, Some((start_date, end_date)))
+            .await
+    }
 
-        let mut start;
-        let mut end;
-        let mut all_events = vec![];
-        for batch_idx in 0..n_batches {
-            start = batch_idx * BATCH_SIZE;
-            end = min(start + BATCH_SIZE, n_codes);
-            let context_codes_batch = &context_codes[start..end];
-            let events = self
-                .list_calendar_events_inner(token, context_codes_batch, start_date, end_date)
-                .await?;
-            all_events.extend(events);
-        }
-        Ok(all_events)
+    pub async fn list_calendar_assignments_with_only_lock_dates(
+        &self,
+        token: &str,
+        context_codes: &[String],
+    ) -> Result<Vec<CalendarEvent>> {
+        let mut events = self.list_assignment_calendar_events(token, context_codes, None).await?;
+        events.retain(|event| event.assignment.due_at.is_none() && event.assignment.lock_at.is_some());
+        Ok(events)
+    }
+
+    pub async fn list_student_calendar_lock_dates(
+        &self,
+        token: &str,
+        course_id: i64,
+    ) -> Result<Vec<Assignment>> {
+        // The undated bucket uses the student's effective due date. The calendar
+        // endpoint's undated filter checks the default due date before overrides.
+        let url = format!(
+            "{}/api/v1/courses/{course_id}/assignments?bucket=undated&override_assignment_dates=true",
+            self.base_url.read().await
+        );
+        let mut assignments: Vec<Assignment> = self.list_items(&url, token).await?;
+        assignments.retain(|a| a.published && a.due_at.is_none() && a.lock_at.is_some());
+        Ok(assignments)
+    }
+
+    pub async fn list_course_members(
+        &self,
+        course_id: i64,
+        token: &str,
+    ) -> Result<Vec<crate::model::CourseMember>> {
+        let url = format!(
+            "{}/api/v1/courses/{}/users?include[]=enrollments",
+            self.base_url.read().await,
+            course_id
+        );
+        self.list_items(&url, token).await
     }
 
     pub async fn list_course_users(&self, course_id: i64, token: &str) -> Result<Vec<User>> {
@@ -779,8 +842,12 @@ impl Client {
     }
 
     pub async fn test_credential(&self, token: &str) -> Result<User> {
-        // Use the same URL for dispatch and diagnostics if settings change during the request.
-        let url = format!("{}/api/v1/users/self", self.base_url.read().await);
+        let base_url = self.base_url.read().await.clone();
+        self.test_credential_at(token, &base_url).await
+    }
+
+    pub async fn test_credential_at(&self, token: &str, base_url: &str) -> Result<User> {
+        let url = format!("{base_url}/api/v1/users/self");
         let result = self.get_json_with_token(&url, None::<&str>, token).await;
         tracing::info!(
             operation = "credential_test",
@@ -1065,6 +1132,199 @@ mod mock_tests {
             if error.status() == Some(reqwest::StatusCode::UNAUTHORIZED)));
         accepted.assert();
         rejected.assert();
+    }
+
+    #[tokio::test]
+    async fn course_roster_preserves_enrollment_roles_and_dates() {
+        let server = MockServer::start();
+        let user = |id| {
+            serde_json::to_value(crate::model::User { id, ..Default::default() }).unwrap()
+        };
+        let mut student = user(9);
+        student["enrollments"] = json!([{
+            "type": "StudentEnrollment",
+            "role": "StudentEnrollment",
+            "created_at": "2026-09-01T08:00:00Z"
+        }]);
+        let first = server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/courses/5/users")
+                .header("Authorization", "Bearer test-token")
+                .query_param("include[]", "enrollments")
+                .query_param("page", "1");
+            then.status(200).json_body(json!([user(8), student]));
+        });
+        let last = server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/courses/5/users")
+                .query_param("page", "2");
+            then.status(200).json_body(json!([]));
+        });
+
+        let client = create_test_client(&server.base_url());
+        let members = client.list_course_members(5, "test-token").await.unwrap();
+        assert_eq!(members.len(), 2);
+        assert_eq!(members[0].user.id, 8);
+        assert!(members[0].enrollments.is_none());
+        assert_eq!(members[1].user.id, 9);
+        let enrollment = &members[1].enrollments.as_ref().unwrap()[0];
+        assert_eq!(enrollment.role.as_deref(), Some("StudentEnrollment"));
+        assert_eq!(enrollment.enrollment_type.as_deref(), Some("StudentEnrollment"));
+        assert_eq!(enrollment.created_at.as_deref(), Some("2026-09-01T08:00:00Z"));
+        first.assert();
+        last.assert();
+    }
+
+    #[tokio::test]
+    async fn test_list_calendar_assignments_with_only_lock_dates_returns_closed_assignments() {
+        let server = MockServer::start();
+        let assignment = |id, due_at: Option<&str>, lock_at: Option<&str>| {
+            crate::model::CalendarEvent {
+                assignment: crate::model::Assignment {
+                    id,
+                    due_at: due_at.map(str::to_owned),
+                    lock_at: lock_at.map(str::to_owned),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        };
+        let past = "2024-04-01T10:00:00Z";
+        let first = server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/calendar_events")
+                .header("Authorization", "Bearer test-token")
+                .query_param("type", "assignment")
+                .query_param("undated", "true")
+                .query_param("context_codes[]", "course_37")
+                .query_param("page", "1");
+            then.status(200).json_body_obj(&[
+                assignment(1, None, Some(past)),
+                assignment(2, None, None),
+                assignment(3, Some(past), Some(past)),
+            ]);
+        });
+        let last = server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/calendar_events")
+                .query_param("undated", "true")
+                .query_param("page", "2");
+            then.status(200).json_body(json!([]));
+        });
+        let client = create_test_client(&server.base_url());
+        let events = client
+            .list_calendar_assignments_with_only_lock_dates("test-token", &["course_37".to_owned()])
+            .await
+            .unwrap();
+
+        assert_eq!(events, vec![assignment(1, None, Some(past))]);
+        first.assert();
+        last.assert();
+    }
+
+    #[tokio::test]
+    async fn test_student_calendar_lock_dates_requests_only_undated_assignments() {
+        let server = MockServer::start();
+        let date = "2026-11-29T10:00:00Z";
+        let assignment = |id, due_at, lock_at, published| crate::model::Assignment {
+            id,
+            course_id: 37,
+            due_at,
+            lock_at,
+            published,
+            ..Default::default()
+        };
+        let closed = assignment(1, None, Some(date.to_owned()), true);
+        let first = server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/courses/37/assignments")
+                .query_param("bucket", "undated")
+                .query_param("override_assignment_dates", "true")
+                .query_param("page", "1");
+            then.status(200).json_body_obj(&[
+                closed.clone(),
+                assignment(2, None, None, true),
+                assignment(3, Some(date.to_owned()), Some(date.to_owned()), true),
+                assignment(4, None, Some(date.to_owned()), false),
+            ]);
+        });
+        let last = server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/courses/37/assignments")
+                .query_param("bucket", "undated")
+                .query_param("page", "2");
+            then.status(200).json_body(json!([]));
+        });
+        let client = create_test_client(&server.base_url());
+        let assignments = client
+            .list_student_calendar_lock_dates("test-token", 37)
+            .await
+            .unwrap();
+
+        assert_eq!(assignments, vec![closed]);
+        first.assert();
+        last.assert();
+    }
+
+    #[tokio::test]
+    async fn test_read_canvas_preview_file_reads_prefix_or_full_text_with_canvas_auth() {
+        let server = MockServer::start();
+        let body = "word ".repeat(2000);
+        let metadata = server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/files/42")
+                .header("Authorization", "Bearer test-token");
+            then.status(200).json_body_obj(&crate::model::File {
+                id: 42,
+                url: "/files/42/download".to_owned(),
+                ..Default::default()
+            });
+        });
+        let download = server.mock(|when, then| {
+            when.method(GET)
+                .path("/files/42/download")
+                .header("Authorization", "Bearer test-token");
+            then.status(200).body(&body);
+        });
+        let client = create_test_client(&server.base_url());
+        let sample = client.read_canvas_preview_file(42, "test-token", true).await.unwrap();
+        let text = client.read_canvas_preview_file(42, "test-token", false).await.unwrap();
+
+        assert_eq!(sample, body.as_bytes()[..8192]);
+        assert_eq!(text, body.as_bytes());
+        metadata.assert_hits(2);
+        download.assert_hits(2);
+    }
+
+    #[tokio::test]
+    async fn test_read_canvas_preview_file_keeps_token_off_cross_origin_requests() {
+        let server = MockServer::start();
+        let storage = MockServer::start();
+        let metadata = server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/v1/files/42")
+                .header("Authorization", "Bearer test-token");
+            then.status(200).json_body_obj(&crate::model::File {
+                id: 42,
+                url: format!("{}/document?signature=test", storage.base_url()),
+                ..Default::default()
+            });
+        });
+        let unauthorized = storage.mock(|when, then| {
+            when.method(GET).path("/document").header_exists("Authorization");
+            then.status(403);
+        });
+        let download = storage.mock(|when, then| {
+            when.method(GET).path("/document").query_param("signature", "test");
+            then.status(200).body("preview");
+        });
+        let client = create_test_client(&server.base_url());
+        let text = client.read_canvas_preview_file(42, "test-token", false).await.unwrap();
+
+        assert_eq!(text, b"preview");
+        metadata.assert();
+        download.assert();
+        unauthorized.assert_hits(0);
     }
 
     #[tokio::test]

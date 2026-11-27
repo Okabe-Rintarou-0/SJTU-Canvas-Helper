@@ -744,6 +744,10 @@ impl App {
         self.client.test_credential(token).await
     }
 
+    pub async fn test_token_for_account(&self, token: &str, account_type: &AccountType) -> Result<User> {
+        self.client.test_credential_at(token, Self::get_base_url(account_type)).await
+    }
+
     pub async fn get_me(&self) -> Result<User> {
         self.client.get_me(&self.config.read().await.token).await
     }
@@ -779,6 +783,12 @@ impl App {
     pub async fn list_course_images(&self, course_id: i64) -> Result<Vec<File>> {
         let token = self.config.read().await.token.clone();
         self.client.list_course_images(course_id, &token).await
+    }
+
+    pub async fn list_course_members(&self, course_id: i64) -> Result<Vec<crate::model::CourseMember>> {
+        self.client
+            .list_course_members(course_id, &self.config.read().await.token)
+            .await
     }
 
     pub async fn list_course_users(&self, course_id: i64) -> Result<Vec<User>> {
@@ -1076,6 +1086,40 @@ impl App {
                 end_date,
             )
             .await
+    }
+
+    pub async fn list_calendar_assignments_with_only_lock_dates(
+        &self,
+        context_codes: &[String],
+        student_course_ids: Vec<i64>,
+    ) -> CalendarLockDates {
+        let token = self.config.read().await.token.clone();
+        let calendar_events = self
+            .client
+            .list_calendar_assignments_with_only_lock_dates(&token, context_codes);
+        let assignments = futures::stream::iter(student_course_ids)
+            .map(|id| self.client.list_student_calendar_lock_dates(&token, id))
+            .buffer_unordered(6)
+            .collect::<Vec<_>>();
+        let (calendar_events, student_results) = tokio::join!(calendar_events, assignments);
+        let mut result = match calendar_events {
+            Ok(events) => CalendarLockDates { events, incomplete: false },
+            Err(_) => CalendarLockDates { events: Vec::new(), incomplete: true },
+        };
+        for student_result in student_results {
+            match student_result {
+                Ok(assignments) => result.events.extend(assignments.into_iter().map(|assignment| {
+                    CalendarEvent {
+                        title: assignment.name.clone(),
+                        context_code: format!("course_{}", assignment.course_id),
+                        assignment,
+                        ..Default::default()
+                    }
+                })),
+                Err(_) => result.incomplete = true,
+            }
+        }
+        result
     }
 
     async fn apply_llm_config(config: &AppConfig, client: &Client) -> Result<()> {
@@ -1394,6 +1438,26 @@ impl App {
     }
 
     #[cfg(target_os = "windows")]
+    fn run_office_powershell(script: &str) -> std::io::Result<process::Output> {
+        let command = format!(
+            r#"[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$ErrorActionPreference = 'Stop'
+try {{
+    & {{
+{script}
+    }}
+}} catch {{
+    [Console]::Error.WriteLine($_.Exception.Message)
+    exit 1
+}}"#
+        );
+        process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command"])
+            .arg(command)
+            .output()
+    }
+
+    #[cfg(target_os = "windows")]
     fn convert_docx_to_pdf_inner(&self, docx_path: &Path, pdf_path: &Path) -> Result<()> {
         if self
             .try_convert_with_libreoffice(docx_path, pdf_path)
@@ -1405,8 +1469,7 @@ impl App {
         let input = docx_path.to_string_lossy().replace('\'', "''");
         let output_path = pdf_path.to_string_lossy().replace('\'', "''");
         let script = format!(
-            r#"$ErrorActionPreference = 'Stop'
-$wordApp = $null
+            r#"$wordApp = $null
 $document = $null
 try {{
     $wordApp = New-Object -ComObject Word.Application
@@ -1418,10 +1481,7 @@ try {{
     if ($null -ne $wordApp) {{ $wordApp.Quit() }}
 }}"#
         );
-        let output = process::Command::new("powershell.exe")
-            .args(["-NoProfile", "-NonInteractive", "-Command"])
-            .arg(script)
-            .output()?;
+        let output = Self::run_office_powershell(&script)?;
         if !output.status.success() || !pdf_path.exists() {
             return Err(AppError::DocumentConversion(format!(
                 "Word/LibreOffice 均无法完成转换：{}",
@@ -1453,22 +1513,31 @@ try {{
         let input = pptx_path.to_string_lossy().replace('\'', "''");
         let output_path = pdf_path.to_string_lossy().replace('\'', "''");
         let script = format!(
-            r#"$ErrorActionPreference = 'Stop'
+            r#"$powerPointWasRunning = [bool](Get-Process -Name POWERPNT -ErrorAction SilentlyContinue)
 $powerPointApp = $null
 $presentation = $null
 try {{
     $powerPointApp = New-Object -ComObject PowerPoint.Application
     $presentation = $powerPointApp.Presentations.Open('{input}', $true, $false, $false)
-    $presentation.SaveAs('{output_path}', 32)
+    try {{
+        # Export all slides using PowerPoint's fixed-format PDF exporter.
+        $presentation.ExportAsFixedFormat('{output_path}', 2, 1, 0, 1, 1, 0, $null, 1)
+    }} catch {{
+        $exportError = $_.Exception.Message
+        try {{
+            $presentation.SaveAs('{output_path}', 32)
+        }} catch {{
+            throw ('ExportAsFixedFormat: ' + $exportError + ' / SaveAs: ' + $_.Exception.Message)
+        }}
+    }}
 }} finally {{
     if ($null -ne $presentation) {{ $presentation.Close() }}
-    if ($null -ne $powerPointApp) {{ $powerPointApp.Quit() }}
+    if ($null -ne $powerPointApp -and -not $powerPointWasRunning -and $powerPointApp.Presentations.Count -eq 0) {{
+        $powerPointApp.Quit()
+    }}
 }}"#
         );
-        let output = process::Command::new("powershell.exe")
-            .args(["-NoProfile", "-NonInteractive", "-Command"])
-            .arg(script)
-            .output()?;
+        let output = Self::run_office_powershell(&script)?;
         if !output.status.success() || !pdf_path.exists() {
             return Err(AppError::DocumentConversion(format!(
                 "PowerPoint/LibreOffice 均无法完成转换：{}",
@@ -1536,6 +1605,11 @@ try {{
             tracing::warn!("Failed to remove conversion temp directory: {error}");
         }
         result
+    }
+
+    pub async fn read_canvas_preview_file(&self, file_id: i64, sample_only: bool) -> Result<Vec<u8>> {
+        let token = self.config.read().await.token.clone();
+        self.client.read_canvas_preview_file(file_id, &token, sample_only).await
     }
 
     pub async fn convert_pptx_to_pdf(&self, file: &mut File) -> Result<Vec<u8>> {

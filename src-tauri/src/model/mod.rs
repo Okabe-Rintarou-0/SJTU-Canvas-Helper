@@ -79,6 +79,8 @@ pub struct File {
     pub content_type: String,
     #[serde(default)]
     pub preview_url: Option<String>,
+    pub modified_at: Option<String>,
+    pub updated_at: Option<String>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -99,6 +101,7 @@ pub struct Folder {
     pub files_url: String,
     pub files_count: i64,
     pub folders_count: i64,
+    pub updated_at: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -161,6 +164,9 @@ pub struct LlmApiKeyEntry {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppConfig {
+    // Accounts configured before the setup wizard lack this flag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onboarding_completed: Option<bool>,
     #[serde(default)]
     pub token: String,
     #[serde(default)]
@@ -228,6 +234,7 @@ fn default_mcp_port() -> u16 {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
+            onboarding_completed: None,
             token: Default::default(),
             save_path: Default::default(),
             account_type: Default::default(),
@@ -285,6 +292,22 @@ pub struct User {
     pub email: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CourseMember {
+    #[serde(flatten)]
+    pub user: User,
+    #[serde(default)]
+    pub enrollments: Option<Vec<CourseMembership>>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CourseMembership {
+    #[serde(rename = "type")]
+    pub enrollment_type: Option<String>,
+    pub role: Option<String>,
+    pub created_at: Option<String>,
+}
+
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LLMChatMessage {
     pub role: String,
@@ -312,6 +335,12 @@ pub struct FileChatStreamErrorPayload {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Colors {
     pub custom_colors: HashMap<String, String>,
+}
+
+#[derive(Default, Serialize)]
+pub struct CalendarLockDates {
+    pub events: Vec<CalendarEvent>,
+    pub incomplete: bool,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -1,5 +1,5 @@
 ﻿import PictureAsPdfRoundedIcon from "@mui/icons-material/PictureAsPdfRounded";
-import { DocRendererProps } from "@cyntler/react-doc-viewer";
+import type { DocRenderer, DocRendererProps } from "@cyntler/react-doc-viewer";
 import ZoomInRoundedIcon from "@mui/icons-material/ZoomInRounded";
 import ZoomOutRoundedIcon from "@mui/icons-material/ZoomOutRounded";
 import {
@@ -9,13 +9,14 @@ import {
     Stack,
     Typography,
 } from "@mui/material";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { Document, Page, pdfjs } from "react-pdf";
 import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.js?url";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import { base64ToBuffer, getBase64Data } from "../lib/utils";
+import { PreviewErrorContext } from "./preview_error";
 import RendererShell from "./renderer_shell";
 import { getPdfAnchoredTop, getPdfPageLayout, getPdfPageWindow } from "../lib/pdf_page_window";
 
@@ -37,16 +38,18 @@ export default function PdfRenderer(props: DocRendererProps) {
         return () => URL.revokeObjectURL(url);
     }, [data, hasData]);
 
-    // Never show the previous document while its replacement URL is being created.
-    // A keyed viewer also scopes metadata, observers and pending frames to one PDF.
-    if (!currentDocument || !hasData || resource?.data !== data) return null;
-    return <PdfViewer key={resource.url} currentDocument={currentDocument} blobUrl={resource.url} />;
+    // Use the original URL so PDF.js can stream or request byte ranges directly.
+    // Some callers also supply in-memory data, which takes precedence.
+    const url = hasData ? (resource?.data === data ? resource.url : undefined) : currentDocument?.uri;
+    if (!currentDocument || !url) return null;
+    return <PdfViewer key={url} currentDocument={currentDocument} url={url} />;
 }
 
-function PdfViewer({ currentDocument, blobUrl }: {
+function PdfViewer({ currentDocument, url }: {
     currentDocument: NonNullable<DocRendererProps["mainState"]["currentDocument"]>;
-    blobUrl: string;
+    url: string;
 }) {
+    const onError = useContext(PreviewErrorContext);
     const containerRef = useRef<HTMLDivElement>(null);
     const pagesRef = useRef<HTMLDivElement>(null);
     const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
@@ -267,7 +270,9 @@ function PdfViewer({ currentDocument, blobUrl }: {
                     为降低内存占用，仅加载附近页面；⌘F / Ctrl+F 和跨页文本选择仅覆盖已加载页面。
                 </Typography>
                 <Document
-                    file={blobUrl}
+                    file={url}
+                    onSourceError={onError}
+                    onLoadError={onError}
                     onItemClick={jumpToPage}
                     loading={
                         <Box sx={{ py: 8, display: "grid", placeItems: "center" }}>
@@ -321,3 +326,4 @@ function PdfViewer({ currentDocument, blobUrl }: {
 
 PdfRenderer.fileTypes = ['pdf'];
 PdfRenderer.weight = 1;
+PdfRenderer.fileLoader = (({ fileLoaderComplete }) => fileLoaderComplete()) satisfies NonNullable<DocRenderer["fileLoader"]>;

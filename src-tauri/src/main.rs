@@ -13,7 +13,7 @@ use model::{
 };
 use serde::{Deserialize, Serialize};
 
-use tauri::{Emitter, Runtime, Window};
+use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize, Rect, Runtime, Webview, Window};
 
 use crate::app::App;
 mod app;
@@ -345,31 +345,219 @@ async fn list_course_files(course_id: i64) -> Result<Vec<File>> {
     APP.list_course_files(course_id).await
 }
 
+#[derive(Deserialize)]
+struct PreviewBounds {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+fn file_preview_label(preview_id: uuid::Uuid) -> String {
+    format!("file-preview-{preview_id}")
+}
+
+const PREVIEW_SESSION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(6);
+const PREVIEW_PAGE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+
+fn allow_preview_navigation(url: &tauri::Url, app_url: &tauri::Url) -> bool {
+    matches!(url.scheme(), "https" | "http") && url.origin() != app_url.origin()
+}
+
+fn is_loaded_preview_page(event: tauri::webview::PageLoadEvent, url: &tauri::Url) -> bool {
+    matches!(event, tauri::webview::PageLoadEvent::Finished)
+        && matches!(url.scheme(), "https" | "http")
+        && !url.path().starts_with("/login")
+}
+
 #[tauri::command]
-async fn open_file_preview_window(
-    app: tauri::AppHandle,
+async fn open_embedded_file_preview(
+    webview: Webview,
     file_id: i64,
-    title: String,
+    preview_id: uuid::Uuid,
+    bounds: PreviewBounds,
 ) -> Result<()> {
-    let session_url = APP.get_file_preview_session_url(file_id).await?;
-    let url = session_url
+    let session_url = tokio::time::timeout(
+        PREVIEW_SESSION_TIMEOUT,
+        APP.get_file_preview_session_url(file_id),
+    )
+    .await
+    .map_err(|_| AppError::FilePreview("Canvas preview request timed out".to_owned()))??;
+    mount_embedded_file_preview(&webview, session_url, preview_id, bounds, PREVIEW_PAGE_TIMEOUT)
+        .await
+}
+
+async fn mount_embedded_file_preview<R: Runtime>(
+    webview: &Webview<R>,
+    session_url: String,
+    preview_id: uuid::Uuid,
+    bounds: PreviewBounds,
+    page_timeout: std::time::Duration,
+) -> Result<()> {
+    let url: tauri::Url = session_url
         .parse()
         .map_err(|error| AppError::FilePreview(format!("Invalid preview URL: {error}")))?;
-    let label = format!("file-preview-{}", uuid::Uuid::new_v4());
-
-    tauri::WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::External(url))
-        .title(title)
-        .inner_size(1280.0, 820.0)
-        .min_inner_size(720.0, 480.0)
-        .center()
-        .build()
+    let app_url = webview
+        .url()
         .map_err(|error| AppError::FilePreview(error.to_string()))?;
+    let (page_loaded, finished) = tokio::sync::oneshot::channel();
+    let page_loaded = std::sync::Mutex::new(Some(page_loaded));
+    let builder = tauri::webview::WebviewBuilder::new(
+        file_preview_label(preview_id),
+        tauri::WebviewUrl::External(url),
+    )
+    .focused(false)
+    .on_navigation(move |url| allow_preview_navigation(url, &app_url))
+    .on_page_load(move |_, payload| {
+        if is_loaded_preview_page(payload.event(), payload.url()) {
+            if let Some(sender) = page_loaded.lock().ok().and_then(|mut sender| sender.take()) {
+                let _ = sender.send(());
+            }
+        }
+    });
+    let preview = webview
+        .window()
+        .add_child(
+            builder,
+            PhysicalPosition::new(bounds.x, bounds.y),
+            PhysicalSize::new(bounds.width, bounds.height),
+        )
+        .map_err(|error| AppError::FilePreview(error.to_string()))?;
+    if let Err(error) = preview.hide() {
+        let _ = preview.close();
+        return Err(AppError::FilePreview(error.to_string()));
+    }
+    if !matches!(
+        tokio::time::timeout(page_timeout, finished).await,
+        Ok(Ok(()))
+    ) {
+        let _ = preview.close();
+        return Err(AppError::FilePreview("Canvas preview did not load".to_owned()));
+    }
     Ok(())
+}
+
+fn embedded_file_preview<R: Runtime>(owner: &Webview<R>, preview_id: uuid::Uuid) -> Option<Webview<R>> {
+    owner
+        .app_handle()
+        .get_webview(&file_preview_label(preview_id))
+        .filter(|preview| preview.window().label() == owner.window().label())
+}
+
+#[tauri::command]
+fn resize_embedded_file_preview<R: Runtime>(
+    webview: Webview<R>,
+    preview_id: uuid::Uuid,
+    bounds: PreviewBounds,
+) -> Result<()> {
+    if let Some(preview) = embedded_file_preview(&webview, preview_id) {
+        preview
+            .set_bounds(Rect {
+                position: PhysicalPosition::new(bounds.x, bounds.y).into(),
+                size: PhysicalSize::new(bounds.width, bounds.height).into(),
+            })
+            .and_then(|_| preview.show())
+            .map_err(|error| AppError::FilePreview(error.to_string()))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn close_embedded_file_preview<R: Runtime>(webview: Webview<R>, preview_id: uuid::Uuid) -> Result<()> {
+    if let Some(preview) = embedded_file_preview(&webview, preview_id) {
+        preview
+            .close()
+            .map_err(|error| AppError::FilePreview(error.to_string()))?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod embedded_preview_tests {
+    use super::*;
+    use tauri::{test, webview::PageLoadEvent, WebviewUrl, WebviewWindowBuilder};
+
+    #[test]
+    fn only_external_http_navigation_can_continue_and_only_loaded_documents_are_ready() {
+        let app_url = "https://tauri.localhost/files".parse().unwrap();
+        let document = "https://canvas.example.test/courses/5/files/1/file_preview".parse().unwrap();
+        let login = "https://canvas.example.test/login/session_token".parse().unwrap();
+        let internal = "https://tauri.localhost/settings".parse().unwrap();
+        let blank = "about:blank".parse().unwrap();
+
+        assert!(allow_preview_navigation(&document, &app_url));
+        assert!(allow_preview_navigation(&login, &app_url));
+        assert!(!allow_preview_navigation(&internal, &app_url));
+        assert!(!allow_preview_navigation(&blank, &app_url));
+
+        assert!(is_loaded_preview_page(PageLoadEvent::Finished, &document));
+        assert!(!is_loaded_preview_page(PageLoadEvent::Started, &document));
+        assert!(!is_loaded_preview_page(PageLoadEvent::Finished, &login));
+        assert!(!is_loaded_preview_page(PageLoadEvent::Finished, &blank));
+    }
+
+    #[tokio::test]
+    async fn embedded_preview_times_out_without_a_document_and_rejects_invalid_session_urls() {
+        let app = test::mock_builder()
+            .build(test::mock_context(test::noop_assets()))
+            .unwrap();
+        let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::default())
+            .build()
+            .unwrap();
+        let owner = window.as_ref();
+        let preview_id = uuid::Uuid::new_v4();
+        let bounds = || PreviewBounds { x: 0, y: 0, width: 320, height: 240 };
+
+        let invalid = mount_embedded_file_preview(
+            owner, "invalid URL".to_owned(), preview_id, bounds(), std::time::Duration::ZERO,
+        )
+        .await;
+        assert!(matches!(invalid, Err(AppError::FilePreview(message)) if message.starts_with("Invalid preview URL")));
+        assert!(embedded_file_preview(owner, preview_id).is_none());
+
+        let unloaded = mount_embedded_file_preview(
+            owner, "https://canvas.example.test/login/session_token".to_owned(),
+            preview_id, bounds(), std::time::Duration::ZERO,
+        )
+        .await;
+        assert!(matches!(unloaded, Err(AppError::FilePreview(message)) if message == "Canvas preview did not load"));
+    }
+
+    #[test]
+    fn other_windows_cannot_control_the_embedded_preview() {
+        let app = test::mock_builder()
+            .build(test::mock_context(test::noop_assets()))
+            .unwrap();
+        let owner = WebviewWindowBuilder::new(&app, "owner", WebviewUrl::default())
+            .build()
+            .unwrap();
+        let other = WebviewWindowBuilder::new(&app, "unrelated", WebviewUrl::default())
+            .build()
+            .unwrap();
+        let preview_id = uuid::Uuid::new_v4();
+        let preview = owner.as_ref().window().add_child(
+            tauri::webview::WebviewBuilder::new(file_preview_label(preview_id), WebviewUrl::default()),
+            PhysicalPosition::new(0, 0),
+            PhysicalSize::new(320, 240),
+        ).unwrap();
+
+        assert!(embedded_file_preview(other.as_ref(), preview_id).is_none());
+        assert_eq!(embedded_file_preview(owner.as_ref(), preview_id).unwrap().label(), preview.label());
+        resize_embedded_file_preview(
+            owner.as_ref().clone(), preview_id, PreviewBounds { x: 12, y: 8, width: 360, height: 280 },
+        ).unwrap();
+        close_embedded_file_preview(owner.as_ref().clone(), preview_id).unwrap();
+    }
 }
 
 #[tauri::command]
 async fn list_course_images(course_id: i64) -> Result<Vec<File>> {
     APP.list_course_images(course_id).await
+}
+
+#[tauri::command]
+async fn list_course_members(course_id: i64) -> Result<Vec<crate::model::CourseMember>> {
+    APP.list_course_members(course_id).await
 }
 
 #[tauri::command]
@@ -423,9 +611,12 @@ async fn list_folder_folders(folder_id: i64) -> Result<Vec<Folder>> {
 }
 
 #[tauri::command]
-async fn test_token(token: String) -> Result<User> {
+async fn test_token(token: String, account_type: Option<model::AccountType>) -> Result<User> {
     diagnostics::protect_secret(&token);
-    APP.test_token(&token).await
+    match account_type {
+        Some(account_type) => APP.test_token_for_account(&token, &account_type).await,
+        None => APP.test_token(&token).await,
+    }
 }
 
 #[tauri::command]
@@ -740,6 +931,12 @@ async fn save_file_content(content: Vec<u8>, file_name: String, course: Option<u
 }
 
 #[tauri::command]
+async fn read_canvas_preview_file(file_id: i64, sample_only: Option<bool>) -> Result<tauri::ipc::Response> {
+    let bytes = APP.read_canvas_preview_file(file_id, sample_only.unwrap_or(false)).await?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+#[tauri::command]
 async fn convert_pptx_to_pdf(mut file: File) -> Result<Vec<u8>> {
     let content = APP.convert_pptx_to_pdf(&mut file).await?;
     Ok(content)
@@ -759,6 +956,14 @@ async fn list_calendar_events(
 ) -> Result<Vec<CalendarEvent>> {
     APP.list_calendar_events(&context_codes, &start_date, &end_date)
         .await
+}
+
+#[tauri::command]
+async fn list_calendar_assignments_with_only_lock_dates(
+    context_codes: Vec<String>,
+    student_course_ids: Vec<i64>,
+) -> model::CalendarLockDates {
+    APP.list_calendar_assignments_with_only_lock_dates(&context_codes, student_course_ids).await
 }
 
 #[tauri::command]
@@ -968,6 +1173,12 @@ async fn get_legacy_videos(
 #[tauri::command]
 async fn login_canvas_website() -> Result<()> {
     APP.login_canvas_website().await
+}
+
+#[tauri::command]
+async fn read_zhiyuan_api_key() -> client::zhiyuan_import::ZhiyuanKeyResult {
+    let config = APP.get_config().await;
+    client::zhiyuan_import::read_zhiyuan_key(&config.ja_auth_cookie).await
 }
 
 #[tauri::command]
@@ -1202,8 +1413,11 @@ async fn main() -> Result<()> {
             list_discussion_topics,
             sync_course_files,
             list_course_files,
-            open_file_preview_window,
+            open_embedded_file_preview,
+            resize_embedded_file_preview,
+            close_embedded_file_preview,
             list_course_images,
+            list_course_members,
             list_course_users,
             list_course_students,
             list_course_assignments,
@@ -1217,6 +1431,7 @@ async fn main() -> Result<()> {
             list_my_folders,
             list_folder_folders,
             list_calendar_events,
+            list_calendar_assignments_with_only_lock_dates,
             test_token,
             upload_submission_file,
             submit_assignment,
@@ -1259,6 +1474,7 @@ async fn main() -> Result<()> {
             delete_assignment_ddl_override,
             get_my_single_submission,
             // Utils
+            read_canvas_preview_file,
             convert_pptx_to_pdf,
             convert_docx_to_pdf,
             // Apis for course video
@@ -1272,6 +1488,7 @@ async fn main() -> Result<()> {
             get_legacy_videos,
             login_canvas_website,
             check_extra_login_status,
+            read_zhiyuan_api_key,
             get_video_course,
             get_video_info,
             get_canvas_video_info,

@@ -1,14 +1,3 @@
-import { enqueuePDFMerge } from "./pdf_tasks";
-import type { DownloadCourse } from "./downloads";
-import { useTasks } from "./task_hooks";
-import { isTaskActive, taskManager } from "./task_manager";
-import {
-  Button,
-  LinearProgress,
-  Stack,
-  TextField,
-  Typography,
-} from "@mui/material";
 import { invoke } from "@tauri-apps/api/core";
 import dayjs from "dayjs";
 import {
@@ -45,7 +34,7 @@ import {
   isFile,
 } from "./model";
 import { ConfigDispatch, ConfigState, courseSlice } from "./store";
-import { consoleLog, isMergableFileType, moduleItem2File } from "./utils";
+import { consoleLog, moduleItem2File } from "./utils";
 
 const UPDATE_QRCODE_MESSAGE = '{ "type": "UPDATE_QR_CODE" }';
 const SEND_INTERVAL = 1000 * 25;
@@ -54,6 +43,7 @@ const WEBSOCKET_BASE_URL = "wss://jaccount.sjtu.edu.cn/jaccount/sub";
 const QRCODE_TIMEOUT = 1000 * 8;
 
 const EMPTY_ARRAY: any[] = [];
+const EMPTY_FILES: File[] = [];
 
 export function usePreview(
   footer?: ReactNode,
@@ -265,88 +255,13 @@ function Previewer({
   );
 }
 
-export function useMerger({
-  setPreviewEntry,
-  onHoverEntry,
-  onLeaveEntry,
-  course,
+export function useQRCode({
+  onScanSuccess,
+  onSavingChange,
 }: {
-  setPreviewEntry: Dispatch<SetStateAction<EntryType>>;
-  onHoverEntry: (entry: Entry) => void;
-  onLeaveEntry: () => void;
-  course?: DownloadCourse;
+  onScanSuccess?: () => void;
+  onSavingChange?: (saving: boolean) => void;
 }) {
-  const tasks = useTasks();
-  const latest = [...tasks].reverse().find((task) => task.kind === "pdf-merge");
-  const [outFileName, setOutFileName] = useState("");
-  const result = useMemo(() => latest?.result ? ({
-    url: latest.result.url, display_name: latest.result.name,
-  } as File) : undefined, [latest?.result]);
-  const mergePDFs = async (files: File[]) => {
-    const selected = files.filter((file) => isMergableFileType(file.display_name));
-    if (selected.length < 2) {
-      appMessage().warning("请选择至少两个可合并的文件。");
-      return;
-    }
-    if (tasks.some((task) => task.kind === "pdf-merge" && isTaskActive(task))) {
-      appMessage().warning("请等待当前合并任务执行完毕。");
-      return;
-    }
-    const name = outFileName.trim().replace(/[\\/:*?"<>|]/g, "_") || `merged_${Date.now()}`;
-    enqueuePDFMerge(selected, `${name}.pdf`, course);
-  };
-  const progress = (
-    <Stack spacing={1}>
-      <Typography variant="body2" color={latest?.status === "failed" ? "error" : "text.secondary"}>
-        {latest?.error ?? latest?.stage ?? "当前无任务"}
-      </Typography>
-      <LinearProgress
-        variant={latest && isTaskActive(latest) && latest.progress === undefined ? "indeterminate" : "determinate"}
-        value={latest?.progress ?? 0}
-        color={latest?.status === "failed" ? "error" : "primary"}
-      />
-      {latest?.status === "failed" && <Button onClick={() => taskManager.retry(latest.id)}>重试合并</Button>}
-      {latest?.actionError && <Typography color="error">{latest.actionError}</Typography>}
-    </Stack>
-  );
-  const handleDownloadResult = () => latest ? taskManager.action(latest.id, "save") : undefined;
-
-  const merger = (
-    <Stack spacing={2} sx={{ width: "100%" }}>
-      <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }}>
-        <Typography variant="body2" color="text.secondary">
-          自定义文件名：
-        </Typography>
-        <TextField
-          size="small"
-          fullWidth
-          onChange={(e) => setOutFileName(e.target.value)}
-          placeholder="请输入自定义文件名"
-          InputProps={{
-            endAdornment: <Typography variant="caption" color="text.secondary">.pdf</Typography>,
-          }}
-        />
-      </Stack>
-      {progress}
-      {result && (
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }}>
-          <a
-            onMouseEnter={() => onHoverEntry(result)}
-            onMouseLeave={onLeaveEntry}
-          >
-            {result.display_name}
-          </a>
-          <Button variant="outlined" onClick={() => setPreviewEntry(result)}>预览</Button>
-          <Button variant="contained" onClick={handleDownloadResult}>下载</Button>
-        </Stack>
-      )}
-    </Stack>
-  );
-
-  return { merger, mergePDFs };
-}
-
-export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {
   const [uuid, setUuid] = useState<string>("");
   const [qrcode, setQrcode] = useState<string>("");
   const [wsURL, setWsURL] = useState<string>("");
@@ -354,6 +269,12 @@ export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {
   const [error, setError] = useState("");
   const hasRetriedRef = useRef(false);
   const uuidRef = useRef("");
+  const mountedRef = useRef(true);
+  const loginPendingRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   const { sendMessage, lastMessage, readyState } = useWebSocket(
     wsURL,
     undefined,
@@ -365,32 +286,44 @@ export function useQRCode({ onScanSuccess }: { onScanSuccess?: () => void }) {
     setError("");
     setQrcode("");
     hasRetriedRef.current = false;
-    const nextUuid = (await invoke("get_uuid")) as string | null;
-    consoleLog(LOG_LEVEL_ERROR, nextUuid)
-    if (nextUuid) {
-      uuidRef.current = nextUuid;
-      setUuid(nextUuid);
-      setWsURL(`${WEBSOCKET_BASE_URL}/${nextUuid}`);
-      return;
+    try {
+      const nextUuid = await invoke<string | null>("get_uuid");
+      if (!mountedRef.current) return;
+      if (nextUuid) {
+        uuidRef.current = nextUuid;
+        setUuid(nextUuid);
+        setWsURL(`${WEBSOCKET_BASE_URL}/${nextUuid}`);
+        return;
+      }
+    } catch { /* Fall through to the retryable error. */ }
+    if (mountedRef.current) {
+      setLoading(false);
+      setError("未能获取登录二维码，请检查网络后重试。");
     }
-    setLoading(false);
-    setError("未能获取登录二维码标识，请稍后重试。");
   }, []);
 
   const handleScanSuccess = async () => {
+    if (!mountedRef.current || loginPendingRef.current) return;
+    loginPendingRef.current = true;
+    onSavingChange?.(true);
     try {
-      const JAAuthCookie = (await invoke("express_login", { uuid: uuidRef.current || uuid })) as
-        | string
-        | null;
-      if (!JAAuthCookie) {
+      const cookie = await invoke<string | null>("express_login", { uuid: uuidRef.current || uuid });
+      if (!mountedRef.current) return;
+      if (!cookie) {
+        setError("扫码登录未完成，请重新扫码。");
         return;
       }
-      const config = await getConfig();
-      config.ja_auth_cookie = JAAuthCookie;
-      await saveConfig(config);
-      onScanSuccess?.();
+      const config = await getConfig(true);
+      if (!mountedRef.current) return;
+      await saveConfig({ ...config, ja_auth_cookie: cookie });
+      if (mountedRef.current) onScanSuccess?.();
     } catch (e) {
-      appMessage().error(`登录失败🥹：${e}`);
+      if (!mountedRef.current) return;
+      setError("扫码登录未能保存，请重新扫码或稍后重试。");
+      consoleLog(LOG_LEVEL_ERROR, e);
+    } finally {
+      loginPendingRef.current = false;
+      if (mountedRef.current) onSavingChange?.(false);
     }
   };
 
@@ -478,19 +411,25 @@ export function useLoginModal({ onLogin }: { onLogin?: () => void }) {
   return { modal, showModal, closeModal };
 }
 
-export function useData<T>(command: string, shouldFetch: boolean, args?: any) {
+export function useData<T>(
+  command: string,
+  shouldFetch: boolean,
+  args?: any,
+  notifyOnError = true
+) {
   const [data, setData] = useState<T | undefined>();
   const [error, setError] = useState<unknown>();
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState(shouldFetch);
 
   const mutate = async () => {
     setIsLoading(true);
+    setError(undefined);
     try {
       const data = (await invoke(command, args)) as T;
       setData(data);
     } catch (e) {
       consoleLog(LOG_LEVEL_ERROR, e);
-      appMessage().error(e as string);
+      if (notifyOnError) appMessage().error(e as string);
       setError(e);
     }
     setIsLoading(false);
@@ -520,8 +459,8 @@ export function useCourses() {
   };
 }
 
-export function useTAOrTeacherCourses() {
-  const courses = useData<Course[]>("list_courses", true);
+export function useTAOrTeacherCourses(notifyOnError = true) {
+  const courses = useData<Course[]>("list_courses", true, undefined, notifyOnError);
   const data = useMemo(() => (courses.data ?? (EMPTY_ARRAY as Course[])).filter((course) =>
     course.enrollments.find(
       (enrollment) =>
@@ -553,16 +492,18 @@ export function useMe() {
   return useData<User>("get_me", true);
 }
 
-export function useUserSubmissions(courseId?: number, studentIds?: number[]) {
-  const [args, setArgs] = useState<any>({ courseId, studentIds });
-  useEffect(() => {
-    setArgs({ courseId, studentIds });
-  }, [courseId, studentIds]);
+export function useUserSubmissions(
+  courseId?: number,
+  studentIds?: number[],
+  notifyOnError = true
+) {
+  const args = useMemo(() => ({ courseId, studentIds }), [courseId, studentIds]);
   const shouldFetch = courseId != undefined && (studentIds?.length ?? 0) > 0;
   const submissions = useData<UserSubmissions[]>(
     "list_user_submissions",
     shouldFetch,
-    args
+    args,
+    notifyOnError
   );
   return {
     ...submissions,
@@ -570,16 +511,14 @@ export function useUserSubmissions(courseId?: number, studentIds?: number[]) {
   };
 }
 
-export function useAssignments(courseId?: number) {
-  const [args, setArgs] = useState<any>({ courseId });
-  useEffect(() => {
-    setArgs({ courseId });
-  }, [courseId]);
+export function useAssignments(courseId?: number, notifyOnError = true) {
+  const args = useMemo(() => ({ courseId }), [courseId]);
   const shouldFetch = courseId != undefined;
   const assignments = useData<Assignment[]>(
     "list_course_assignments",
     shouldFetch,
-    args
+    args,
+    notifyOnError
   );
   return {
     ...assignments,
@@ -587,13 +526,10 @@ export function useAssignments(courseId?: number) {
   };
 }
 
-export function useStudents(courseId?: number) {
-  const [args, setArgs] = useState<any>({ courseId });
-  useEffect(() => {
-    setArgs({ courseId });
-  }, [courseId]);
+export function useStudents(courseId?: number, notifyOnError = true) {
+  const args = useMemo(() => ({ courseId }), [courseId]);
   const shouldFetch = courseId != undefined;
-  const students = useData<User[]>("list_course_students", shouldFetch, args);
+  const students = useData<User[]>("list_course_students", shouldFetch, args, notifyOnError);
   return {
     ...students,
     data: students.data ?? (EMPTY_ARRAY as User[]),
@@ -721,7 +657,7 @@ export function useExternalFiles(courseId?: number) {
     [data]);
 
   return {
-    data: externalFiles ?? [],
+    data: externalFiles ?? EMPTY_FILES,
     isLoading,
     error,
     mutate,

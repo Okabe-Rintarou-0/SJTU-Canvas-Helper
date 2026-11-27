@@ -35,7 +35,7 @@ export default function RendererShell({
     headerMode === "none" ? "100%" : headerMode === "compact" ? "calc(100% - 54px)" : "calc(100% - 78px)";
 
   return (
-    <Card
+    <Card data-preview-surface
       sx={{
         width: "100%",
         height: "100%",
