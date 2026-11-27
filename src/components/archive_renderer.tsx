@@ -1,67 +1,216 @@
-import DocViewer, { DocRendererProps, IDocument } from "@cyntler/react-doc-viewer";
+import DocViewer, { type DocRenderer, type DocRendererProps, type IDocument } from "@cyntler/react-doc-viewer";
 import { invoke } from "@tauri-apps/api/core";
 import ArticleRoundedIcon from "@mui/icons-material/ArticleRounded";
+import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
-import ExpandLessRoundedIcon from "@mui/icons-material/ExpandLessRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import FolderRoundedIcon from "@mui/icons-material/FolderRounded";
 import InsertDriveFileRoundedIcon from "@mui/icons-material/InsertDriveFileRounded";
-import {
-  Alert,
-  Box,
-  Button,
-  CircularProgress,
-  Divider,
-  List,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Stack,
-  Typography,
-} from "@mui/material";
-import { alpha, useTheme } from "@mui/material/styles";
+import { Alert, Box, Button, CircularProgress, Divider, List, ListItemButton, Stack, Typography } from "@mui/material";
 import { Archive } from "libarchive.js";
-import { Fragment, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { DownloadCourseContext } from "../lib/download_context";
-
 import { useAppMessage } from "../lib/message";
 import { LOG_LEVEL_ERROR } from "../lib/model";
-import { consoleLog, dataURLtoFile, formatSize, getFileType } from "../lib/utils";
+import { consoleLog, formatSize, getFileType } from "../lib/utils";
 import { PreviewErrorContext } from "./preview_error";
-import {
-  createPreviewRenderers,
-  isPreviewText,
-  knownPreviewType,
-  PREVIEW_SAMPLE_BYTES,
-} from "./preview_file_loader";
+import { createPreviewRenderers, isPreviewText, knownPreviewType, PREVIEW_SAMPLE_BYTES } from "./preview_file_loader";
 import PreviewUnavailable from "./preview_unavailable";
 import { ArchiveSupportedRenderers } from "./renderers";
 
-interface BlackListEntry {
-  name: string;
-  dir: boolean;
+type EntryReader = { size: number; extract: () => Promise<File> };
+type ArchiveNode = { name: string; path: string; children?: ArchiveNode[]; size?: number };
+
+const archiveWorkerUrl = new URL("libarchive.js/dist/worker-bundle.js", import.meta.url).toString();
+
+function buildTree(root: object) {
+  const readers = new Map<string, EntryReader>();
+  const tree: ArchiveNode[] = [];
+  const queue = [{ source: root, nodes: tree, parent: "" }];
+  for (let i = 0; i < queue.length; i += 1) {
+    const { source, nodes, parent } = queue[i];
+    for (const [name, entry] of Object.entries(source)) {
+      const path = parent + "/" + name;
+      if (typeof entry.extract === "function") {
+        readers.set(path, entry);
+        nodes.push({ name, path, size: entry.size });
+      } else if (name !== "node_modules") {
+        const children: ArchiveNode[] = [];
+        nodes.push({ name, path, children });
+        queue.push({ source: entry, nodes: children, parent: path });
+      }
+    }
+  }
+  return { tree, readers };
 }
 
-interface ArchiveTreeNode {
-  title: string;
-  key: string;
-  children: ArchiveTreeNode[];
-  isDir: boolean;
-  size?: number;
-}
-const BLACK_LIST: BlackListEntry[] = [{ name: "node_modules", dir: true }];
+const ArchiveRow = memo(function ArchiveRow({ node, depth, expanded, selected, onSelect, onToggle }: {
+  node: ArchiveNode;
+  depth: number;
+  expanded: boolean;
+  selected: boolean;
+  onSelect: (path: string) => void;
+  onToggle: (path: string) => void;
+}) {
+  const directory = Boolean(node.children);
+  const size = node.size == null ? null : formatSize(node.size);
+  const Icon = directory ? FolderRoundedIcon : InsertDriveFileRoundedIcon;
+  const Disclosure = expanded ? ExpandMoreRoundedIcon : ChevronRightRoundedIcon;
+  return (
+    <ListItemButton dense disableRipple selected={selected}
+      aria-expanded={directory ? expanded : undefined}
+      onClick={() => directory ? onToggle(node.path) : onSelect(node.path)}
+      sx={{
+        height: 29, minHeight: 29, py: 0, pr: 0.75, pl: 0.5 + Math.min(depth, 8) * 1.35,
+        gap: 0.5, borderRadius: 1, contentVisibility: "auto", containIntrinsicSize: "auto 29px",
+        "& svg": { fontSize: 16, flexShrink: 0 },
+      }}>
+      {directory ? <Disclosure color="action" /> : <Box sx={{ width: 16, flexShrink: 0 }} />}
+      <Icon color={directory ? "primary" : "action"} />
+      <Typography variant="caption" noWrap title={node.name} sx={{ flex: 1, minWidth: 0 }}
+        fontWeight={directory || selected ? 650 : 400}>
+        {node.name}
+      </Typography>
+      {size && <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10, flexShrink: 0 }}>{size}</Typography>}
+    </ListItemButton>
+  );
+});
 
-export default function ArchiveRenderer({
-  mainState: { currentDocument },
-}: DocRendererProps) {
-  const theme = useTheme();
+export default function ArchiveRenderer({ mainState }: DocRendererProps) {
+  const { currentDocument, requestHeaders } = mainState;
+  const uri = currentDocument?.uri;
+  const archiveName = currentDocument?.fileName;
   const course = useContext(DownloadCourseContext);
-  const [selectedPath, setSelectedPath] = useState("");
   const [messageApi, contextHolder] = useAppMessage();
-  const [treeData, setTreeData] = useState<ArchiveTreeNode | undefined>();
-  const [fileMap, setFileMap] = useState<Map<string, any> | undefined>();
-  const [selectedDoc, setSelectedDoc] = useState<IDocument | undefined>();
+  const [tree, setTree] = useState<ArchiveNode[]>([]);
+  const [expanded, setExpanded] = useState(() => new Set<string>());
+  const [selection, setSelection] = useState<{ path: string; file: File; doc: IDocument }>();
+  const [pendingPath, setPendingPath] = useState<string>();
   const [failedUri, setFailedUri] = useState<string>();
+  const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
+  const [error, setError] = useState<string>();
+  const readers = useRef(new Map<string, EntryReader>());
+  const activePath = useRef<string | undefined>(undefined);
+  const requestId = useRef(0);
+  const chosenUri = useRef<string | undefined>(undefined);
+  const selectedDoc = selection?.doc;
+
+  useEffect(() => {
+    if (!uri) return;
+    const controller = new AbortController();
+    let archive: Awaited<ReturnType<typeof Archive.open>> | undefined;
+    setLoading(true);
+    setError(undefined);
+    setTree([]);
+    setExpanded(new Set());
+    setSelection(undefined);
+    setPendingPath(undefined);
+    activePath.current = undefined;
+    Archive.init({ workerUrl: archiveWorkerUrl });
+    void (async () => {
+      try {
+        // Keep the compressed bytes as a Blob instead of converting to and from a data URL.
+        const response = await fetch(uri, { signal: controller.signal, headers: requestHeaders });
+        if (!response.ok) throw new Error("无法载入压缩包");
+        const blob = await response.blob();
+        if (controller.signal.aborted) return;
+        archive = await Archive.open(new File([blob], archiveName ?? "archive"));
+        if (controller.signal.aborted) {
+          await archive.close();
+          return;
+        }
+        const contents = await archive.getFilesObject();
+        if (controller.signal.aborted) return;
+        const result = buildTree(contents);
+        readers.current = result.readers;
+        setTree(result.tree);
+      } catch (failure) {
+        if (!controller.signal.aborted) {
+          consoleLog(LOG_LEVEL_ERROR, failure);
+          setError(failure instanceof Error ? failure.message : String(failure));
+        }
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    })();
+    return () => {
+      controller.abort();
+      requestId.current += 1;
+      readers.current.clear();
+      if (archive) void archive.close();
+      if (chosenUri.current) URL.revokeObjectURL(chosenUri.current);
+      chosenUri.current = undefined;
+    };
+  }, [uri, archiveName, requestHeaders]);
+
+  const select = useCallback(async (path: string) => {
+    const reader = readers.current.get(path);
+    if (!reader || activePath.current === path) return;
+    activePath.current = path;
+    const id = ++requestId.current;
+    setPendingPath(path);
+    try {
+      const file = await reader.extract();
+      const extension = await getFileType(file.name);
+      let fileType = knownPreviewType(extension, file.type, ArchiveSupportedRenderers);
+      if (!fileType && isPreviewText(new Uint8Array(await file.slice(0, PREVIEW_SAMPLE_BYTES).arrayBuffer()))) {
+        fileType = "txt";
+      }
+      if (id !== requestId.current) return;
+      if (chosenUri.current) URL.revokeObjectURL(chosenUri.current);
+      chosenUri.current = URL.createObjectURL(file);
+      setFailedUri(undefined);
+      setSelection({ path, file, doc: { uri: chosenUri.current, fileName: file.name, fileType: fileType ?? extension } });
+    } catch (failure) {
+      if (id !== requestId.current) return;
+      activePath.current = undefined;
+      consoleLog(LOG_LEVEL_ERROR, failure);
+      messageApi.error("文件解压失败：" + (failure instanceof Error ? failure.message : String(failure)));
+    } finally {
+      if (id === requestId.current) setPendingPath(undefined);
+    }
+  }, [messageApi]);
+
+  const download = async () => {
+    if (!selection || downloading) return;
+    setDownloading(true);
+    try {
+      const { file } = selection;
+      const content = Array.from(new Uint8Array(await file.arrayBuffer()));
+      await invoke("save_file_content", { content, fileName: file.name, ...(course ? { course } : {}) });
+      messageApi.success("下载成功", 0.5);
+    } catch (failure) {
+      messageApi.error("下载失败：" + String(failure));
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const toggleExpanded = useCallback((path: string) => {
+    setExpanded((previous) => {
+      const next = new Set(previous);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }, []);
+
+  const visibleRows = useMemo(() => {
+    const rows: { node: ArchiveNode; depth: number }[] = [];
+    const append = (nodes: ArchiveNode[], depth: number) => {
+      for (const node of nodes) {
+        rows.push({ node, depth });
+        if (node.children && expanded.has(node.path)) append(node.children, depth + 1);
+      }
+    };
+    append(tree, 0);
+    return rows;
+  }, [tree, expanded]);
+  const selectedPath = pendingPath ?? selection?.path;
+  const selectedName = pendingPath?.split("/").pop() ?? selection?.file.name;
+  const extracting = pendingPath !== undefined;
+
   const previewFailed = useCallback(() => setFailedUri(selectedDoc?.uri), [selectedDoc?.uri]);
   const renderers = useMemo(() => createPreviewRenderers(ArchiveSupportedRenderers, previewFailed), [previewFailed]);
   const selectedViewer = useMemo(() => {
@@ -71,276 +220,23 @@ export default function ArchiveRenderer({
     }
     return (
       <PreviewErrorContext.Provider value={previewFailed}>
-        <DocViewer
-          key={selectedDoc.uri}
-          config={{
-            header: { disableHeader: true },
-            noRenderer: { overrideComponent: PreviewUnavailable },
-          }}
-          pluginRenderers={renderers}
-          documents={[selectedDoc]}
+        <DocViewer key={selectedDoc.uri}
+          config={{ header: { disableHeader: true }, noRenderer: { overrideComponent: PreviewUnavailable } }}
+          pluginRenderers={renderers} documents={[selectedDoc]}
           style={{ height: "100%", backgroundColor: "transparent" }}
         />
       </PreviewErrorContext.Provider>
     );
   }, [selectedDoc, failedUri, previewFailed, renderers]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | undefined>();
-  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
-  const archiveInitializedRef = useRef(false);
 
-  const archiveWorkerUrl = new URL(
-    "libarchive.js/dist/worker-bundle.js",
-    import.meta.url
-  ).toString();
-
-  useEffect(() => {
-    if (!currentDocument || !currentDocument.fileData) {
-      return;
-    }
-    if (!archiveInitializedRef.current) {
-      Archive.init({ workerUrl: archiveWorkerUrl });
-      archiveInitializedRef.current = true;
-    }
-    void parse();
-  }, [currentDocument]);
-
-  useEffect(() => {
-    return () => {
-      if (selectedDoc) {
-        URL.revokeObjectURL(selectedDoc.uri);
-      }
-    };
-  }, [selectedDoc]);
-
-  const checkIsBanned = (fileName: string, isDir: boolean) => {
-    if (
-      BLACK_LIST.find(
-        (banned) => banned.name === fileName && banned.dir === isDir
-      )
-    ) {
-      messageApi.warning(`文件或目录 "${fileName}" 已被屏蔽`, 2);
-      return true;
-    }
-    return false;
-  };
-
-  const parseArchiveStructureBFS = async (root: any) => {
-    const nextTreeData: ArchiveTreeNode = {
-      title: "",
-      key: "",
-      children: [],
-      isDir: true,
-    };
-    const nextFileMap = new Map<string, File | null>();
-    const queue: [any, ArchiveTreeNode][] = [[root, nextTreeData]];
-
-    while (queue.length > 0) {
-      const [currentNode, currentTreeData] = queue.shift()!;
-      const currentDir = currentTreeData.key;
-      for (const fileName in currentNode) {
-        const entry = currentNode[fileName];
-        const path = `${currentDir}/${fileName}`;
-        const isDir = !entry.name;
-        if (checkIsBanned(fileName, isDir)) {
-          continue;
-        }
-
-        const nextNode: ArchiveTreeNode = {
-          title: fileName,
-          key: path,
-          children: [],
-          isDir,
-          size: isDir ? undefined : entry.size,
-        };
-
-        if (isDir) {
-          queue.push([entry, nextNode]);
-        } else {
-          try {
-            nextFileMap.set(path, entry);
-          } catch (e) {
-            nextFileMap.set(path, null);
-            messageApi.error(`文件 ${path} 解压失败`);
-          }
-        }
-        currentTreeData.children.push(nextNode);
-      }
-    }
-
-    setFileMap(nextFileMap);
-    return nextTreeData;
-  };
-
-  const setDocAndGC = (
-    oldDoc: IDocument | undefined,
-    newDoc: IDocument | undefined
-  ) => {
-    if (oldDoc) {
-      URL.revokeObjectURL(oldDoc.uri);
-    }
-    return newDoc;
-  };
-
-  async function parse() {
-    if (!currentDocument || !currentDocument.fileData) return;
-    setLoading(true);
-    setError(undefined);
-    setSelectedDoc((oldDoc) => setDocAndGC(oldDoc, undefined));
-    setSelectedPath("");
-    setTreeData(undefined);
-    setFileMap(undefined);
-    setExpandedKeys(new Set());
-    try {
-      const base64Content = currentDocument.fileData as string;
-      const file = dataURLtoFile(
-        base64Content,
-        currentDocument.fileName ?? "tmp"
-      );
-      const archive = await Archive.open(file);
-      const files = await archive.getFilesObject();
-      const nextTreeData = await parseArchiveStructureBFS(files);
-      setTreeData(nextTreeData);
-      setExpandedKeys(new Set([""]));
-    } catch (e) {
-      const errorMsg = e instanceof Error ? e.message : String(e);
-      consoleLog(LOG_LEVEL_ERROR, e);
-      messageApi.error(errorMsg);
-      setError(errorMsg);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const onSelect = async (path: string) => {
-    const fileReader = fileMap?.get(path);
-    if (fileReader) {
-      try {
-        const file = await fileReader.extract();
-        const extension = await getFileType(file.name);
-        let fileType = knownPreviewType(extension, file.type, ArchiveSupportedRenderers);
-        if (!fileType) {
-          const sample = await file.slice(0, PREVIEW_SAMPLE_BYTES).arrayBuffer();
-          if (isPreviewText(new Uint8Array(sample))) fileType = "txt";
-        }
-        const doc = {
-          uri: URL.createObjectURL(file),
-          fileName: file.name,
-          fileType: fileType ?? extension,
-        } as IDocument;
-        setSelectedDoc((oldDoc) => setDocAndGC(oldDoc, doc));
-        setSelectedPath(path);
-      } catch (e) {
-        consoleLog(LOG_LEVEL_ERROR, e);
-        messageApi.error(`文件 "${path}" 加载失败：${e instanceof Error ? e.message : String(e)}`);
-      }
-    } else {
-      setSelectedDoc((oldDoc) => setDocAndGC(oldDoc, undefined));
-      if (fileReader === null) {
-        messageApi.warning(`当前文件 ${path} 解压失败，无法预览`);
-      }
-    }
-  };
-
-  const handleDownloadSubFile = async () => {
-    if (!selectedDoc) {
-      return;
-    }
-    const fileReader = fileMap?.get(selectedPath);
-    if (!fileReader) {
-      return;
-    }
-    try {
-      const file = await fileReader.extract();
-      const buffer = await file.arrayBuffer();
-      const content = Array.from<number>(new Uint8Array(buffer));
-      const fileName = selectedDoc.fileName ?? "downloaded";
-      await invoke("save_file_content", { content, fileName, ...(course ? { course } : {}) });
-      messageApi.success("下载成功", 0.5);
-    } catch (e) {
-      messageApi.error(`下载失败：${e}`);
-    }
-  };
-
-  const toggleExpanded = (key: string) => {
-    setExpandedKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
-  };
-
-  const treeContent = useMemo(() => {
-    const renderTree = (nodes: ArchiveTreeNode[], depth = 0): ReactNode =>
-      nodes.map((node) => {
-        const expanded = expandedKeys.has(node.key);
-        const selected = selectedPath === node.key;
-
-        if (node.isDir) {
-          return (
-            <Fragment key={node.key}>
-              <ListItemButton
-                onClick={() => toggleExpanded(node.key)}
-                sx={{
-                  pl: 1.5 + depth * 2,
-                  borderRadius: "16px",
-                  mb: 0.5,
-                }}
-              >
-                <ListItemIcon sx={{ minWidth: 34 }}>
-                  <FolderRoundedIcon color="primary" />
-                </ListItemIcon>
-                <ListItemText
-                  primary={node.title}
-                  primaryTypographyProps={{ fontSize: 14, fontWeight: 600 }}
-                />
-                {expanded ? <ExpandLessRoundedIcon /> : <ExpandMoreRoundedIcon />}
-              </ListItemButton>
-              {expanded ? renderTree(node.children, depth + 1) : null}
-            </Fragment>
-          );
-        }
-
-        return (
-          <ListItemButton
-            key={node.key}
-            selected={selected}
-            onClick={() => void onSelect(node.key)}
-            sx={{
-              pl: 1.5 + depth * 2,
-              borderRadius: "16px",
-              mb: 0.5,
-              "&.Mui-selected": {
-                bgcolor: alpha(theme.palette.primary.main, 0.12),
-              },
-            }}
-          >
-            <ListItemIcon sx={{ minWidth: 34 }}>
-              <InsertDriveFileRoundedIcon color="action" />
-            </ListItemIcon>
-            <ListItemText
-              primary={node.title}
-              secondary={node.size != null ? formatSize(node.size) : undefined}
-              primaryTypographyProps={{ fontSize: 14, fontWeight: selected ? 700 : 500 }}
-              secondaryTypographyProps={{ fontSize: 11 }}
-            />
-          </ListItemButton>
-        );
-      });
-
-    return treeData ? renderTree(treeData.children) : null;
-  }, [treeData, expandedKeys, selectedPath, theme.palette.mode]);
-
-  if (!currentDocument || !currentDocument.fileData) return null;
+  if (!currentDocument) return null;
 
   return (
     <>
       {contextHolder}
-      <Stack sx={{ width: "100%", height: "100%", minHeight: 0 }}>
+      <Stack sx={{ width: "100%", height: "100%", minHeight: 0,
+        "& [data-preview-surface]": { border: 0, borderRadius: 0 },
+      }}>
         {loading ? (
           <Box
             sx={{
@@ -364,7 +260,7 @@ export default function ArchiveRenderer({
           <Box
             sx={{
               display: "grid",
-              gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "minmax(180px, 28%) minmax(0, 1fr)" },
+              gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "clamp(166px, 23%, 260px) minmax(0, 1fr)" },
               gridTemplateRows: { xs: "minmax(104px, 34%) minmax(0, 1fr)", sm: "minmax(0, 1fr)" },
               height: "100%",
               minHeight: 0,
@@ -386,27 +282,27 @@ export default function ArchiveRenderer({
                 direction="row"
                 justifyContent="space-between"
                 alignItems="center"
-                sx={{ px: 2, py: 1, flexShrink: 0 }}
+                sx={{ px: 1.25, py: 0.75, flexShrink: 0 }}
               >
-                <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                <Typography variant="subtitle2" fontWeight={700}>
                   压缩包目录
                 </Typography>
-                {selectedDoc ? (
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    startIcon={<DownloadRoundedIcon />}
-                    onClick={() => void handleDownloadSubFile()}
-                  >
-                    下载
-                  </Button>
-                ) : null}
               </Stack>
               <Divider />
-              {treeData?.children && treeData.children.length > 0 ? (
-                <Box sx={{ flex: 1, minHeight: 0, overflow: "auto", px: 1, py: 1 }}>
+              {tree.length > 0 ? (
+                <Box sx={{ flex: 1, minHeight: 0, overflow: "auto", px: 0.5, py: 0.5 }}>
                   <List disablePadding>
-                    {treeContent}
+                    {visibleRows.map(({ node, depth }) => (
+                      <ArchiveRow
+                        key={node.path}
+                        node={node}
+                        depth={depth}
+                        expanded={expanded.has(node.path)}
+                        selected={selectedPath === node.path}
+                        onSelect={select}
+                        onToggle={toggleExpanded}
+                      />
+                    ))}
                   </List>
                 </Box>
                 ) : (
@@ -430,21 +326,26 @@ export default function ArchiveRenderer({
                 direction="row"
                 justifyContent="space-between"
                 alignItems="center"
-                sx={{ px: 2, py: 1.75, flexShrink: 0 }}
+                sx={{ px: 1.5, py: 0.5, gap: 1, minHeight: 38, flexShrink: 0 }}
               >
-                <Stack spacing={0.35}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
-                    文件预览
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {selectedDoc?.fileName || "选择左侧文件开始预览"}
-                  </Typography>
-                </Stack>
-                <ArticleRoundedIcon color="action" />
+                <Typography variant="subtitle2" noWrap title={selectedName}>
+                  {selectedName ?? "文件预览"}
+                </Typography>
+                {selection && !extracting && (
+                  <Button size="small" startIcon={<DownloadRoundedIcon />}
+                    disabled={downloading} onClick={() => void download()}>
+                    下载文件
+                  </Button>
+                )}
               </Stack>
               <Divider />
               <Box sx={{ flex: 1, minHeight: 0 }}>
-                {selectedDoc ? (
+                {extracting ? (
+                  <Stack alignItems="center" spacing={1} sx={{ p: 3 }} role="status">
+                    <CircularProgress size={20} />
+                    <Typography variant="body2" color="text.secondary">正在解压文件…</Typography>
+                  </Stack>
+                ) : selection ? (
                   selectedViewer
                 ) : (
                   <Box
@@ -479,3 +380,4 @@ export default function ArchiveRenderer({
 
 ArchiveRenderer.fileTypes = ["zip", "rar", "tar", "7z", "gz"];
 ArchiveRenderer.weight = 1;
+ArchiveRenderer.fileLoader = ({ fileLoaderComplete }: Parameters<NonNullable<DocRenderer["fileLoader"]>>[0]) => fileLoaderComplete();

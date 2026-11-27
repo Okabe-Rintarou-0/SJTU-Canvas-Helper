@@ -28,7 +28,7 @@ export default function MarkdownRenderer({
       contentSx={{ p: 0 }}
     >
       <Box className={styles.markdown} sx={{ p: 2, "& pre": { overflowX: "auto", whiteSpace: "pre", bgcolor: "action.hover", p: 1.5 } }}>
-        <RenderMarkdown>{data}</RenderMarkdown>
+        <RenderMarkdown recoverCjkStrong>{data}</RenderMarkdown>
       </Box>
     </RendererShell>
   );

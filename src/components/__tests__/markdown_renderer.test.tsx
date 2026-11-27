@@ -24,3 +24,18 @@ it("preserves code nodes and horizontal scroll when the document rerenders", () 
   expect(view.container.querySelector("pre")).toBe(block);
   expect(block.scrollLeft).toBe(480);
 });
+
+it("renders CJK strong delimiters next to a word without changing literal code", () => {
+  const source = [
+    "- **换行符必须是 LF。**Windows 编辑器可能保存为 CRLF。",
+    "- **请使用普通用户。 **后续命令无需管理员权限。",
+    "",
+    "原文：`**请保留。**示例`",
+  ].join("\n");
+  const mainState: IMainState = { currentFileNo: 0, documents: [], language: "en",
+    currentDocument: { uri: "blob:markdown", fileName: "notes.md", fileType: "md", fileData: source } };
+  render(<MarkdownRenderer mainState={mainState} />);
+  expect(screen.getByText("换行符必须是 LF。", { selector: "strong" })).toBeVisible();
+  expect(screen.getByText("请使用普通用户。", { selector: "strong" })).toBeVisible();
+  expect(screen.getByText("**请保留。**示例", { selector: "code" })).toBeVisible();
+});

@@ -1,5 +1,31 @@
 .markdown {
-    white-space: pre-wrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.6;
+}
+
+.markdown :is(p, ul, ol, blockquote, pre, table) {
+    margin-block: 0.55em;
+}
+
+.markdown :is(ul, ol) {
+    padding-inline-start: 1.55em;
+}
+
+.markdown li + li {
+    margin-block-start: 0.15em;
+}
+
+.markdown li > p {
+    margin-block: 0.25em;
+}
+
+.markdown .content > :first-child {
+    margin-block-start: 0;
+}
+
+.markdown img {
+    max-width: 100%;
 }
 
 .content :global(.katex-display) {
