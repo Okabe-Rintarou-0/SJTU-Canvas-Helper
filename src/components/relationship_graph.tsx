@@ -1,7 +1,6 @@
-import G6, { Graph, GraphData } from "@antv/g6";
+import G6, { type Graph, type GraphData } from "@antv/g6";
 import { Box, CircularProgress, Typography } from "@mui/material";
-import { createRef, useEffect, useState } from "react";
-import ReactDOM from "react-dom";
+import { useEffect, useRef } from "react";
 
 import { useRelationship } from "../lib/hooks";
 
@@ -30,16 +29,35 @@ const graphOpt = {
 };
 
 export default function RelationshipGraph() {
-  const ref = createRef<HTMLDivElement>();
-  const [graph, setGraph] = useState<any>(undefined);
+  const ref = useRef<HTMLDivElement>(null);
+  const graph = useRef<Graph | null>(null);
   const relationship = useRelationship();
 
   useEffect(() => {
-    let g: Graph = graph;
-    if (!g) {
-      g = constructGraph();
-      setGraph(g);
-    }
+    const container = ref.current;
+    if (!container) return;
+    const g = new G6.Graph({
+      container,
+      width: container.clientWidth,
+      height: container.clientHeight,
+      ...graphOpt,
+    });
+    graph.current = g;
+    g.get("canvas").set("localRefresh", false);
+    const resize = () => {
+      if (graph.current === g) g.changeSize(container.clientWidth, container.clientHeight);
+    };
+    window.addEventListener("resize", resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      graph.current = null;
+      g.destroy();
+    };
+  }, []);
+
+  useEffect(() => {
+    const g = graph.current;
+    if (!g) return;
     g.clear();
     const topo = relationship.data;
     if (topo) {
@@ -65,29 +83,7 @@ export default function RelationshipGraph() {
       g.data({ nodes, edges: topo.edges } as GraphData);
       g.render();
     }
-  }, [graph, ref, relationship.data]);
-
-  const constructGraph = () => {
-    const container = ReactDOM.findDOMNode(ref.current) as HTMLElement;
-    const width = container.clientWidth;
-    const height = container.clientHeight;
-
-    const g = new G6.Graph({
-      container,
-      width,
-      height,
-      ...graphOpt,
-    });
-
-    if (typeof window !== "undefined") {
-      window.onresize = () => {
-        g.changeSize(container.clientWidth, container.clientHeight);
-      };
-    }
-
-    g.get("canvas").set("localRefresh", false);
-    return g;
-  };
+  }, [relationship.data]);
 
   return (
     <Box sx={{ position: "relative", overflow: "hidden" }}>
